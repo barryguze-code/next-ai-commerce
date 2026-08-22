@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: next-ai-commerce
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/next_ai_commerce}
+    username: ${DB_USER:nextcommerce}
+    password: ${DB_PASSWORD:local-only-password}
+  flyway:
+    enabled: true
+  thymeleaf:
+    cache: false
+server:
+  error:
+    include-message: never
+app:
+  local-admin:
+    email: ${APP_ADMIN_EMAIL:admin@nextaicommerce.local}
+    password: ${APP_ADMIN_PASSWORD:change-me-local}
