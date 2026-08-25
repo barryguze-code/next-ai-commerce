@@ -1,6 +1,23 @@
 # Next AI Commerce
 
-The new multi-tenant commerce operations platform. This first slice deliberately contains only the secure platform foundation: authentication, tenants, memberships, marketplace connections, an application shell, and tenant-isolation tests. Existing workflows are migration inputs, not architectural constraints.
+Next AI Commerce is a multi-tenant commerce operations platform for managing business accounts, users, and marketplace stores from one secure workspace.
+
+## Version 0.1
+
+The first production release provides:
+
+- Secure sign-in and account activation
+- Separate business workspaces with tenant-aware data access
+- Platform-wide Super Admin account management
+- Administrator, Operator, and Viewer roles
+- User invitations scoped to a business and its stores
+- Amazon US, UK, and Canada marketplace connections
+- Walmart US connections
+- Encrypted marketplace credential storage and live authorization checks
+- Account and store switching foundations for multi-channel operations
+- A consistent Apple system-font interface and responsive application shell
+
+Orders, inventory, reimbursements, distributor workflows, and shipping integrations will build on this foundation in later releases.
 
 ## Local start
 
@@ -11,10 +28,20 @@ docker compose up -d
 mvn spring-boot:run
 ```
 
-Open `http://localhost:8080`. For local development only, sign in with `admin@nextaicommerce.local` / `change-me-local`.
+Open `http://localhost:8080`. Configure your own local administrator credentials before signing in.
 
 Environment variables override the local defaults: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `APP_ADMIN_EMAIL`, and `APP_ADMIN_PASSWORD`.
 
 ## Non-negotiable tenant rule
 
 Every tenant-owned row includes `tenant_id`. The request layer must resolve an authenticated membership, application queries must include the tenant, and PostgreSQL row-level security provides the second boundary. No marketplace credential is ever sent to the browser.
+
+## Marketplace credential encryption
+
+Before starting the application, set `APP_CREDENTIAL_ENCRYPTION_KEY` to a Base64-encoded 32-byte key. Generate one once with `openssl rand -base64 32`, store it outside Git, and use the same value after every restart and deployment. Marketplace credentials are verified with Amazon or Walmart, encrypted with AES-256-GCM, and only the encrypted payload is stored in PostgreSQL.
+
+`SUPER_ADMIN` is a platform-level assignment, not a tenant role. It cannot be granted through a tenant invitation. Super Admin support actions require a reason and are written to the audit log.
+
+## Production deployment
+
+The Ubuntu deployment procedure, required environment values, service configuration, verification, and rollback steps are documented in [DEPLOYMENT.md](DEPLOYMENT.md). Secrets belong only in the server environment file and must never be committed to Git.

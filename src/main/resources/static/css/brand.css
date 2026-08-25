@@ -1,0 +1,110 @@
+html, body, button, input, select, textarea {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif !important;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, .brand-message h1 {font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif!important;font-weight:700;letter-spacing:-.035em}
+.brand-message{max-width:520px}
+.brand-message h1{font-size:clamp(36px,3.25vw,48px);line-height:1.08;letter-spacing:-.038em;margin:14px 0 16px}
+.brand-message p{max-width:500px;font-size:16px;line-height:1.65}
+.sidebar nav a{font-weight:500;letter-spacing:-.006em}.eyebrow{text-transform:none;letter-spacing:0;font-size:13px;font-weight:600}.page-intro,.muted{letter-spacing:-.006em}
+
+.brand-logo {
+  width: max-content;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.brand-logo img {
+  display: block;
+  width: 200px;
+  height: auto;
+}
+
+.sidebar .brand-logo {
+  padding: 0;
+  border-radius: 0;
+}
+
+.sidebar .brand-logo img {
+  width: 190px;
+}
+
+.sidebar > form { margin-top: auto; }
+.sidebar-tenant + form { margin-top: 0; }
+.sidebar-tenant span a,
+.sidebar-tenant span a:visited {
+  color: #9fc5ff;
+  font-weight: 650;
+  text-decoration-color: rgba(159, 197, 255, 0.55);
+  text-underline-offset: 3px;
+}
+.sidebar-tenant span a:hover {
+  color: #ffffff;
+  text-decoration-color: #ffffff;
+}
+.sidebar-tenant span a:focus-visible {
+  color: #ffffff;
+  outline: 2px solid #8db8ff;
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.brand-lockup {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 14px;
+  color: #f7f9fc;
+  text-decoration: none;
+}
+
+.brand-lockup > img {
+  display: block;
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.brand-wordmark {
+  display: grid;
+  gap: 3px;
+  line-height: 1;
+}
+
+.brand-wordmark strong {
+  display: flex;
+  align-items: baseline;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+  font-size: 34px;
+  font-weight: 720;
+  letter-spacing: -0.045em;
+}
+
+.brand-wordmark strong span { color: #f7f9fc; }
+.brand-wordmark strong b { color: #91cf2b; font: inherit; }
+
+.brand-wordmark small {
+  padding-left: 2px;
+  color: #b9c3d1;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .36em;
+}
+
+.sidebar .brand-lockup { gap: 10px; }
+.sidebar .brand-lockup > img { width: 54px; height: 54px; }
+.sidebar .brand-wordmark strong { font-size: 25px; }
+.sidebar .brand-wordmark small { font-size: 8px; letter-spacing: .31em; }
+
+.account-choice{display:block}.account-choice-button{width:100%;display:flex!important;align-items:center!important;justify-content:flex-start!important;text-align:left;padding:15px!important;background:#fff!important;color:var(--ink)!important;border:1px solid var(--line)!important;box-shadow:0 7px 22px #1e35520b!important}.account-choice-button:hover{border-color:var(--blue)!important;box-shadow:0 8px 24px #2d6cdf1c!important}.account-choice-button>span:nth-child(2){display:grid;gap:3px;flex:1}.account-choice-button small{color:var(--muted);font-weight:500}.account-choice-button b{color:var(--blue);font-size:18px}
+.first-account-action{text-decoration:none;font-size:13px}
+.context-switcher{display:flex;align-items:center;gap:11px;min-width:170px;padding:8px 11px;border:1px solid #d6dde7;border-radius:13px;background:#fff;color:var(--ink);text-decoration:none;box-shadow:0 1px 2px #13243a0a;transition:border-color .15s,box-shadow .15s}.context-switcher:hover{border-color:#8eb5ef;box-shadow:0 0 0 4px #2d6cdf12}.context-switcher .context-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#eaf2ff;font-size:18px}.context-switcher .context-copy{display:grid;gap:1px;flex:1}.context-switcher small{font-size:10px;color:var(--muted);font-weight:500}.context-switcher strong{font-size:13px;letter-spacing:-.01em}.context-switcher .chevron{color:#5e6b7c;font-size:13px}
+.sidebar .nav-coming{display:flex;align-items:center;justify-content:space-between;color:#7890aa;padding:11px 13px;border-radius:9px;font-size:14px;font-weight:560}.sidebar .nav-coming small{font-size:8px;text-transform:uppercase;letter-spacing:.06em;color:#607892}
+@media(max-width:760px){.brand-message h1{font-size:clamp(32px,9vw,40px);line-height:1.1}.brand-message p{font-size:15px}}

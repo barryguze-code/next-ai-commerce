@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  thymeleaf:
+    cache: true
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: strict
+      timeout: 8h
+app:
+  credentials:
+    encryption-key: ${APP_CREDENTIAL_ENCRYPTION_KEY}
+  local-admin:
+    email: ${APP_ADMIN_EMAIL}
+    password: ${APP_ADMIN_PASSWORD}

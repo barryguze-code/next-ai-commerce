@@ -13,6 +13,8 @@ server:
   error:
     include-message: never
 app:
+  credentials:
+    encryption-key: ${APP_CREDENTIAL_ENCRYPTION_KEY:}
   local-admin:
     email: ${APP_ADMIN_EMAIL:admin@nextaicommerce.local}
     password: ${APP_ADMIN_PASSWORD:change-me-local}
