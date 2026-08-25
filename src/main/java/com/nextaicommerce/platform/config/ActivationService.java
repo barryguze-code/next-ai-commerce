@@ -10,16 +10,19 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.nextaicommerce.platform.invitation.InvitationService;
 
 @Service
 public class ActivationService {
     private record Activation(UUID id, UUID userId, Instant expiresAt) {}
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
+    private final InvitationService invitationService;
 
-    ActivationService(JdbcTemplate jdbc, PasswordEncoder passwordEncoder) {
+    ActivationService(JdbcTemplate jdbc, PasswordEncoder passwordEncoder, InvitationService invitationService) {
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
+        this.invitationService = invitationService;
     }
 
     public boolean isValid(String token) {
@@ -28,7 +31,7 @@ public class ActivationService {
     }
 
     @Transactional
-    public void activate(String token, String password, String confirmation) {
+    public void activate(UUID tenantId, String token, String password, String confirmation) {
         if (password == null || password.length() < 12)
             throw new IllegalArgumentException("Use at least 12 characters");
         if (!password.equals(confirmation)) throw new IllegalArgumentException("Passwords do not match");
@@ -39,6 +42,8 @@ public class ActivationService {
             passwordEncoder.encode(password), activation.userId());
         jdbc.update("UPDATE user_activation_tokens SET status = 'USED', used_at = now() WHERE id = ? AND status = 'PENDING'",
             activation.id());
+        String email = jdbc.queryForObject("SELECT email FROM app_users WHERE id=?", String.class, activation.userId());
+        invitationService.accept(tenantId, activation.userId(), email, token);
     }
 
     private List<Activation> find(String token) {
@@ -49,7 +54,7 @@ public class ActivationService {
                 rs.getTimestamp("expires_at").toInstant()), hash(token));
     }
 
-    static String hash(String token) {
+    public static String hash(String token) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                 .digest(token.getBytes(StandardCharsets.UTF_8)));

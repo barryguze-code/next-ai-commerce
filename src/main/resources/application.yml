@@ -9,10 +9,22 @@ spring:
     enabled: true
   thymeleaf:
     cache: false
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
 server:
   error:
     include-message: never
 app:
+  public-url: ${APP_PUBLIC_URL:http://localhost:8080}
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    from: ${MAIL_FROM:}
   credentials:
     encryption-key: ${APP_CREDENTIAL_ENCRYPTION_KEY:}
   local-admin:

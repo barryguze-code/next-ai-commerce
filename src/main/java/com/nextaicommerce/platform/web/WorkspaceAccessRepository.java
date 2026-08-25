@@ -3,6 +3,7 @@ package com.nextaicommerce.platform.web;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.text.Normalizer;
 import java.util.Locale;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class WorkspaceAccessRepository {
     public record AccountView(UUID id, String name, String initials, String slug, String status, int users, int connections) {}
+    public record AccountOption(UUID id, String name, String initials, List<ConnectionView> stores) {}
     public record ConnectionView(UUID id, UUID tenantId, String tenantName, String name, String channel,
         String sellerId, String marketplaceId, String marketplaceLabel, String countryFlag,
         String status, Instant lastCheckedAt, boolean credentialsStored) {}
@@ -79,6 +81,31 @@ public class WorkspaceAccessRepository {
     }
 
     @Transactional(readOnly = true)
+    public List<AccountOption> listAccountOptions(String email, boolean superAdmin) {
+        return listAvailableAccounts(email, superAdmin).stream()
+            .map(account -> new AccountOption(account.id(), account.name(), account.initials(),
+                visibleConnections(account, email, superAdmin)))
+            .toList();
+    }
+
+    private List<ConnectionView> visibleConnections(AccountView account, String email, boolean superAdmin) {
+        List<ConnectionView> all = listConnections(account.id(), account.name());
+        if (superAdmin) return all;
+        setTenant(account.id());
+        String role = jdbc.query("""
+            SELECT m.role FROM tenant_memberships m JOIN app_users u ON u.id=m.user_id
+            WHERE m.tenant_id=? AND lower(u.email)=lower(?)
+            """, rs -> rs.next() ? rs.getString(1) : "", account.id(), email);
+        if ("OWNER".equals(role) || "ADMIN".equals(role)) return all;
+        Set<UUID> allowed = Set.copyOf(jdbc.query("""
+            SELECT msa.marketplace_connection_id FROM membership_store_access msa
+            JOIN app_users u ON u.id=msa.user_id
+            WHERE msa.tenant_id=? AND lower(u.email)=lower(?)
+            """, (rs, row) -> rs.getObject(1, UUID.class), account.id(), email));
+        return all.stream().filter(connection -> allowed.contains(connection.id())).toList();
+    }
+
+    @Transactional(readOnly = true)
     public boolean canAccessAccount(UUID tenantId, String email, boolean superAdmin) {
         if (superAdmin) return jdbc.queryForObject("SELECT count(*) FROM tenants WHERE id=? AND status='ACTIVE'", Integer.class, tenantId) == 1;
         setTenant(tenantId);
@@ -86,6 +113,15 @@ public class WorkspaceAccessRepository {
             SELECT count(*) FROM tenant_memberships m JOIN app_users u ON u.id=m.user_id
             WHERE m.tenant_id=? AND lower(u.email)=lower(?)
             """, Integer.class, tenantId, email);
+        return count != null && count == 1;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean connectionBelongsToAccount(UUID tenantId, UUID connectionId) {
+        setTenant(tenantId);
+        Integer count = jdbc.queryForObject(
+            "SELECT count(*) FROM marketplace_connections WHERE tenant_id=? AND id=?",
+            Integer.class, tenantId, connectionId);
         return count != null && count == 1;
     }
 

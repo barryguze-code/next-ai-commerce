@@ -97,6 +97,8 @@ public class AdministrationController {
             .orElseThrow(() -> new IllegalArgumentException("Account was not found."));
         session.setAttribute(AccountSelectionController.TENANT_ID, account.id());
         session.setAttribute(AccountSelectionController.TENANT_NAME, account.name());
-        return "redirect:/app/connections";
+        session.removeAttribute(AccountSelectionController.STORE_ID);
+        session.removeAttribute(AccountSelectionController.STORE_NAME);
+        return "redirect:/app?chooseStore=true";
     }
 }

@@ -22,7 +22,7 @@ public class SecurityConfig {
                 .requestMatchers("/app/orders/**", "/app/inventory/**")
                     .hasAnyRole("PLATFORM_ADMIN", "OWNER", "ADMIN", "OPERATOR", "VIEWER")
                 .anyRequest().authenticated())
-            .formLogin(form -> form.loginPage("/login").defaultSuccessUrl("/app/select-account", true).permitAll())
+            .formLogin(form -> form.loginPage("/login").defaultSuccessUrl("/app/select-account", false).permitAll())
             .logout(logout -> logout.logoutSuccessUrl("/login?logout"))
             .build();
     }

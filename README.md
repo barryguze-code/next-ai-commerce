@@ -32,6 +32,24 @@ Open `http://localhost:8080`. Configure your own local administrator credentials
 
 Environment variables override the local defaults: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `APP_ADMIN_EMAIL`, and `APP_ADMIN_PASSWORD`.
 
+## Invitation email verification
+
+Invitations use a single-use link that expires after seven days. New users verify their email by opening the link and creating a password. Existing users sign in before accepting access to an additional business account. Role and store permissions are applied only after verification.
+
+For Gmail SMTP testing, enable two-step verification on the sender account and create a Google App Password. Never use or store the normal Gmail password. Configure:
+
+```text
+MAIL_ENABLED=true
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=<sender Gmail address>
+MAIL_PASSWORD=<Google App Password>
+MAIL_FROM=<sender Gmail address>
+APP_PUBLIC_URL=http://localhost:8080
+```
+
+Keep these values outside Git. Production should set `APP_PUBLIC_URL` to the HTTPS application address.
+
 ## Non-negotiable tenant rule
 
 Every tenant-owned row includes `tenant_id`. The request layer must resolve an authenticated membership, application queries must include the tenant, and PostgreSQL row-level security provides the second boundary. No marketplace credential is ever sent to the browser.

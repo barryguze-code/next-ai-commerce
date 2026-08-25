@@ -21,6 +21,13 @@ DB_PASSWORD=<database password>
 APP_ADMIN_EMAIL=<super admin email>
 APP_ADMIN_PASSWORD=<strong super admin password>
 APP_CREDENTIAL_ENCRYPTION_KEY=<base64 encoded 32-byte key>
+MAIL_ENABLED=true
+MAIL_HOST=<SMTP server>
+MAIL_PORT=587
+MAIL_USERNAME=<SMTP username>
+MAIL_PASSWORD=<SMTP password or app password>
+MAIL_FROM=<verified sender address>
+APP_PUBLIC_URL=https://<production hostname>
 ```
 
 The encryption key must remain unchanged across deployments or previously stored marketplace credentials cannot be decrypted.

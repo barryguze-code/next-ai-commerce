@@ -8,6 +8,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 public class PageController {
@@ -19,9 +20,11 @@ public class PageController {
 
     @GetMapping("/login") String login() { return "login"; }
     @GetMapping({"/", "/app"})
-    String app(Authentication authentication, HttpSession session, Model model) {
+    String app(@RequestParam(defaultValue = "false") boolean chooseStore,
+            Authentication authentication, HttpSession session, Model model) {
         if (!addTenantModel(session, model)) return "redirect:/app/select-account";
         addAccessModel(authentication, model);
+        model.addAttribute("chooseStore", chooseStore);
         return "app";
     }
 

@@ -14,6 +14,10 @@ server:
         same-site: strict
       timeout: 8h
 app:
+  public-url: ${APP_PUBLIC_URL}
+  mail:
+    enabled: ${MAIL_ENABLED:true}
+    from: ${MAIL_FROM}
   credentials:
     encryption-key: ${APP_CREDENTIAL_ENCRYPTION_KEY}
   local-admin:
