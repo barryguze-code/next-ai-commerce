@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<nav class="product-nav" th:fragment="nav(active)">
+  <a class="nav-overview" th:classappend="${active == 'overview' ? 'active' : ''}" href="/app"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/></svg>Overview</a>
+
+  <details open>
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="M6 8h12l1 12H5L6 8Zm3 0V6a3 3 0 0 1 6 0v2"/></svg>Sales</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <a th:if="${canViewOperations}" th:classappend="${active == 'orders' ? 'active' : ''}" href="/app/orders">Orders</a>
+      <span class="nav-coming">Buy Shipping <small>Planned</small></span>
+      <span class="nav-coming">FBA Shipments <small>Planned</small></span>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Zm0 0v10l8 4 8-4V7M12 11v10"/></svg>Catalog &amp; Purchasing</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <span class="nav-coming">Global Catalog <small>Planned</small></span>
+      <span class="nav-coming">Account Catalog <small>Planned</small></span>
+      <span class="nav-coming">SKU Mapping <small>Planned</small></span>
+      <span class="nav-coming">Vendors &amp; Pricing <small>Planned</small></span>
+    </div>
+  </details>
+
+  <details th:attr="open=${active == 'inventory' ? 'open' : null}">
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Zm0 5 8 4 8-4M4 17l8 4 8-4"/></svg>Inventory</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <a th:if="${canViewOperations}" th:classappend="${active == 'inventory' ? 'active' : ''}" href="/app/inventory">Inventory Ledger</a>
+      <span class="nav-coming">Receiving <small>Planned</small></span>
+      <span class="nav-coming">Lots &amp; Expiration <small>Planned</small></span>
+      <span class="nav-coming">Replenishment <small>Planned</small></span>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="M4 18 10 12l4 3 6-9M16 6h4v4"/></svg>Growth &amp; Recovery</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <span class="nav-coming">Pricing &amp; Buy Box <small>Planned</small></span>
+      <span class="nav-coming">Reimbursements <small>Planned</small></span>
+      <span class="nav-coming">Feedback <small>Planned</small></span>
+    </div>
+  </details>
+
+  <details th:if="${canManageConnections}" th:attr="open=${active == 'connections' ? 'open' : null}">
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="M9 7H7a5 5 0 0 0 0 10h2m6 0h2a5 5 0 0 0 0-10h-2M8 12h8"/></svg>Integrations</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <a th:classappend="${active == 'connections' ? 'active' : ''}" href="/app/connections">Marketplace Connections</a>
+      <span class="nav-coming">Amazon Vendor <small>Planned</small></span>
+      <span class="nav-coming">Shipping &amp; Printers <small>Planned</small></span>
+    </div>
+  </details>
+
+  <details th:if="${canManageUsers == true or isSuperAdmin == true}" th:attr="open=${active == 'users' or active == 'accounts' ? 'open' : null}">
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8 7 10 4.2-2 7-5.4 7-10V6l-7-3Zm0 5v5m0 3h.01"/></svg>Administration</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <a th:if="${canManageUsers == true}" th:classappend="${active == 'users' ? 'active' : ''}" href="/app/users">Users &amp; Access</a>
+      <a th:if="${isSuperAdmin}" th:classappend="${active == 'accounts' ? 'active' : ''}" href="/app/platform/accounts">Platform Accounts</a>
+      <span class="nav-coming">Templates <small>Planned</small></span>
+      <span class="nav-coming">Activity History <small>Planned</small></span>
+    </div>
+  </details>
+</nav>
+</body>
+</html>

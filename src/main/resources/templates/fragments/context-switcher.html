@@ -3,25 +3,28 @@
 <body>
 <details class="context-menu" th:fragment="switcher" th:attr="open=${chooseStore == true ? 'open' : null}">
   <summary class="context-switcher" aria-label="Choose business account or marketplace store">
-    <span class="context-icon">◎</span>
-    <span class="context-copy"><small th:text="${selectedStoreName == null ? 'Current account' : selectedAccountName}">Current account</small><strong th:text="${selectedStoreName == null ? selectedAccountName : selectedStoreName}">Selected account</strong></span>
+    <span class="context-icon context-account-initials" th:if="${selectedStore == null}" th:text="${selectedAccountInitials}">BA</span>
+    <span class="context-selected-channel" th:if="${selectedStore != null}" th:classappend="${selectedStore.channel == 'WALMART' ? ' walmart-channel' : ' amazon-channel'}"><img th:src="${selectedStore.channel == 'AMAZON' ? '/images/channels/amazon-official.png' : '/images/channels/walmart-official.png'}" th:alt="${selectedStore.channel}"></span>
+    <span class="context-copy"><small th:if="${selectedStore == null}">All stores · Account overview</small><small th:if="${selectedStore != null}" th:text="${selectedAccountName + ' · ' + selectedStore.countryFlag + ' ' + selectedStore.marketplaceLabel}">Account · Marketplace</small><strong th:text="${selectedStore == null ? selectedAccountName : selectedStore.name}">Selected account</strong></span>
     <span class="chevron">⌄</span>
   </summary>
   <section class="context-popover">
     <header><strong>Choose workspace</strong><small>Accounts and connected stores</small></header>
-    <div class="context-account" th:each="option : ${accountOptions}">
+    <label class="context-filter"><span>⌕</span><input type="search" placeholder="Search accounts or stores" aria-label="Search accounts or stores" oninput="filterWorkspaceChoices(this)"></label>
+    <div class="context-account" th:each="option : ${accountOptions}" th:attr="data-account-search=${#strings.toLowerCase(option.name)}">
       <form method="post" th:action="@{/app/select-account}">
         <input type="hidden" name="tenantId" th:value="${option.id}"><input type="hidden" name="tenantName" th:value="${option.name}">
-        <button class="context-account-button" type="submit" th:classappend="${option.id == selectedAccountId ? ' selected' : ''}"><span class="avatar" th:text="${option.initials}">BA</span><span><strong th:text="${option.name}">Business account</strong><small th:text="${option.stores.size() + ' connected store(s)'}">Stores</small></span><b>›</b></button>
+        <button class="context-account-button" type="submit" th:classappend="${option.id == selectedAccountId and selectedStore == null ? ' selected' : ''}"><span class="avatar" th:text="${option.initials}">BA</span><span><strong th:text="${'All stores — ' + option.name}">All stores — Business account</strong><small th:text="${'Combined overview · ' + option.stores.size() + ' connected store(s)'}">Combined overview</small></span><b>›</b></button>
       </form>
       <div class="context-stores" th:if="${!#lists.isEmpty(option.stores)}">
-        <form method="post" th:action="@{/app/select-store}" th:each="store : ${option.stores}">
-          <input type="hidden" name="tenantId" th:value="${option.id}"><input type="hidden" name="tenantName" th:value="${option.name}"><input type="hidden" name="storeId" th:value="${store.id}"><input type="hidden" name="storeName" th:value="${store.name}">
+        <form method="post" th:action="@{/app/select-store}" th:each="store : ${option.stores}" th:attr="data-store-search=${#strings.toLowerCase(store.name + ' ' + store.channel + ' ' + store.marketplaceLabel)}">
+          <input type="hidden" name="tenantId" th:value="${option.id}"><input type="hidden" name="tenantName" th:value="${option.name}"><input type="hidden" name="storeId" th:value="${store.id}"><input type="hidden" name="storeName" th:value="${store.name}"><input type="hidden" name="returnTo" th:value="${currentWorkspacePath}">
           <button type="submit" th:classappend="${store.id == selectedStoreId ? ' selected' : ''}"><span class="mini-channel" th:classappend="${store.channel == 'WALMART' ? ' walmart-channel' : ' amazon-channel'}"><img th:src="${store.channel == 'AMAZON' ? '/images/channels/amazon-official.png' : '/images/channels/walmart-official.png'}" alt=""></span><span><strong th:text="${store.name}">Store</strong><small th:text="${store.countryFlag + ' ' + store.marketplaceLabel}">Marketplace</small></span></button>
         </form>
       </div>
       <p class="context-no-stores" th:if="${#lists.isEmpty(option.stores)}">No connected stores</p>
     </div>
   </section>
+  <script>function filterWorkspaceChoices(input){const query=input.value.trim().toLowerCase();const popover=input.closest('.context-popover');popover.querySelectorAll('.context-account').forEach(account=>{const accountMatch=account.dataset.accountSearch.includes(query);let storeMatch=false;account.querySelectorAll('[data-store-search]').forEach(store=>{const match=!query||accountMatch||store.dataset.storeSearch.includes(query);store.hidden=!match;storeMatch=storeMatch||match;});account.hidden=!!query&&!accountMatch&&!storeMatch;});}</script>
 </details>
 </body></html>

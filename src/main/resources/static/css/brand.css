@@ -10,6 +10,7 @@ h1, h2, h3, .brand-message h1 {font-family:-apple-system,BlinkMacSystemFont,"SF 
 .brand-message h1{font-size:clamp(36px,3.25vw,48px);line-height:1.08;letter-spacing:-.038em;margin:14px 0 16px}
 .brand-message p{max-width:500px;font-size:16px;line-height:1.65}
 .sidebar nav a{font-weight:500;letter-spacing:-.006em}.eyebrow{text-transform:none;letter-spacing:0;font-size:13px;font-weight:600}.page-intro,.muted{letter-spacing:-.006em}
+.product-nav{display:block!important;margin-top:14px!important;overflow-y:auto;overscroll-behavior:contain;padding-right:3px}.product-nav>a{display:flex!important;align-items:center;gap:10px;color:#f0f4f8!important;font-size:14px!important}.product-nav details{margin-top:3px}.product-nav summary{display:flex;align-items:center;justify-content:space-between;padding:9px 11px;color:#dce4ed;font-size:13px;font-weight:540;letter-spacing:0;text-transform:none;cursor:pointer;list-style:none;border-radius:8px}.product-nav summary::-webkit-details-marker{display:none}.product-nav summary:hover{color:#fff;background:#ffffff0d}.nav-group-label{display:flex;align-items:center;gap:10px}.product-nav svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}.product-nav .nav-overview svg{fill:currentColor;stroke:none}.product-nav .nav-chevron{font-size:12px;color:#9badbf;transition:transform .15s}.product-nav details[open] .nav-chevron{transform:rotate(180deg)}.product-nav details>div{display:grid;gap:1px}.product-nav details>div>a,.product-nav .nav-coming{padding:8px 10px 8px 37px!important;font-size:12.5px!important}.product-nav details>div>a{color:#d5dee8!important;font-weight:470!important}.product-nav .nav-coming{display:flex;align-items:center;justify-content:space-between;color:#aab8c7;border-radius:8px;font-weight:430}.product-nav .nav-coming small{color:#8094a9;font-size:7.5px;text-transform:uppercase;letter-spacing:.05em}.product-nav a.active{color:#fff!important;background:linear-gradient(90deg,#ffffff1a,#ffffff0d)!important;box-shadow:inset 2px 0 #91cf2b}.product-nav::-webkit-scrollbar{width:4px}.product-nav::-webkit-scrollbar-thumb{background:#ffffff18;border-radius:4px}
 
 .brand-logo {
   width: max-content;
@@ -53,6 +54,8 @@ h1, h2, h3, .brand-message h1 {font-family:-apple-system,BlinkMacSystemFont,"SF 
   outline-offset: 3px;
   border-radius: 3px;
 }
+
+.sidebar-user{display:flex;align-items:center;gap:7px;margin-top:auto;padding:14px 7px 0;border-top:1px solid #ffffff18;min-width:0}.sidebar-tenant+.sidebar-user{margin-top:0}.sidebar-user-avatar{display:grid;place-items:center;flex:0 0 31px;width:31px;height:31px;border-radius:50%;background:#7dcc36;color:#10233d;font-size:12px;font-weight:800}.sidebar-user-copy{display:grid;gap:1px;min-width:0;flex:1}.sidebar-user-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f5f7fa;font-size:11px;font-weight:650}.sidebar-user-copy small{color:#a7b7c8;font-size:9px;text-transform:uppercase;letter-spacing:.04em}.sidebar-user form{margin:0}.sidebar-user button{display:grid;place-items:center;width:27px;height:27px;padding:5px;border:0;border-radius:8px;background:transparent;color:#b9c7d5;cursor:pointer}.sidebar-user button:hover{background:#ffffff12;color:#fff}.sidebar-user button:focus-visible{outline:2px solid #8db8ff;outline-offset:2px}.sidebar-user svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.sun-icon{display:none}.theme-toggle[aria-pressed="true"] .moon-icon{display:none}.theme-toggle[aria-pressed="true"] .sun-icon{display:block}
 
 .brand-lockup {
   display: inline-flex;
@@ -98,20 +101,33 @@ h1, h2, h3, .brand-message h1 {font-family:-apple-system,BlinkMacSystemFont,"SF 
   letter-spacing: .36em;
 }
 
-.sidebar .brand-lockup { gap: 10px; }
+.sidebar .brand-lockup {
+  gap: 11px;
+  min-height: 96px;
+  align-items: center;
+}
 .sidebar .brand-lockup > img { width: 54px; height: 54px; }
 .sidebar .brand-wordmark strong { font-size: 25px; }
-.sidebar .brand-wordmark small { font-size: 8px; letter-spacing: .31em; }
+.sidebar .brand-wordmark small {
+  padding-left: 1px;
+  color: #e3e9f1;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .27em;
+}
 
 .account-choice{display:block}.account-choice-button{width:100%;display:flex!important;align-items:center!important;justify-content:flex-start!important;text-align:left;padding:15px!important;background:#fff!important;color:var(--ink)!important;border:1px solid var(--line)!important;box-shadow:0 7px 22px #1e35520b!important}.account-choice-button:hover{border-color:var(--blue)!important;box-shadow:0 8px 24px #2d6cdf1c!important}.account-choice-button>span:nth-child(2){display:grid;gap:3px;flex:1}.account-choice-button small{color:var(--muted);font-weight:500}.account-choice-button b{color:var(--blue);font-size:18px}
 .first-account-action{text-decoration:none;font-size:13px}
-.context-switcher{display:flex;align-items:center;gap:11px;min-width:170px;padding:8px 11px;border:1px solid #d6dde7;border-radius:13px;background:#fff;color:var(--ink);text-decoration:none;box-shadow:0 1px 2px #13243a0a;transition:border-color .15s,box-shadow .15s}.context-switcher:hover{border-color:#8eb5ef;box-shadow:0 0 0 4px #2d6cdf12}.context-switcher .context-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#eaf2ff;font-size:18px}.context-switcher .context-copy{display:grid;gap:1px;flex:1}.context-switcher small{font-size:10px;color:var(--muted);font-weight:500}.context-switcher strong{font-size:13px;letter-spacing:-.01em}.context-switcher .chevron{color:#5e6b7c;font-size:13px}
+.context-switcher{display:flex;align-items:center;gap:12px;min-width:220px;padding:9px 12px;border:1px solid #d6dde7;border-radius:13px;background:#fff;color:var(--ink);text-decoration:none;box-shadow:0 1px 2px #13243a0a;transition:border-color .15s,box-shadow .15s}.context-switcher:hover{border-color:#8eb5ef;box-shadow:0 0 0 4px #2d6cdf12}.context-switcher .context-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:11px;background:#eaf2ff;color:#2b61b8;font-size:13px;font-weight:800;letter-spacing:.01em}.context-switcher .context-copy{display:grid;gap:2px;flex:1;min-width:0}.context-switcher small{font-size:12px;color:var(--muted);font-weight:500}.context-switcher strong{font-size:15px;letter-spacing:-.01em}.context-switcher .chevron{color:#5e6b7c;font-size:14px}
 .sidebar .nav-coming{display:flex;align-items:center;justify-content:space-between;color:#7890aa;padding:11px 13px;border-radius:9px;font-size:14px;font-weight:560}.sidebar .nav-coming small{font-size:8px;text-transform:uppercase;letter-spacing:.06em;color:#607892}
 @media(max-width:760px){.brand-message h1{font-size:clamp(32px,9vw,40px);line-height:1.1}.brand-message p{font-size:15px}}
 
-/* Compact application density */
-.workspace{padding:24px 32px 44px}
-.workspace-header{align-items:center;gap:22px}
+/* Compact application density and shared information header */
+.sidebar{padding:0 20px 27px}
+.sidebar nav{margin-top:16px}
+.workspace{padding:0 32px 44px}
+.workspace-header{min-height:96px;padding:16px 0;align-items:center;gap:22px;border-bottom:1px solid #e4e9ef}
+.workspace-header>div:first-child{display:grid;align-content:center;gap:0;min-width:0}
 .workspace h1{font-size:27px;line-height:1.12;margin:5px 0 5px;letter-spacing:-.03em}
 .workspace .eyebrow{font-size:11px}
 .page-intro{font-size:13px}
@@ -123,23 +139,87 @@ h1, h2, h3, .brand-message h1 {font-family:-apple-system,BlinkMacSystemFont,"SF 
 .context-menu>summary{list-style:none;cursor:pointer}
 .context-menu>summary::-webkit-details-marker{display:none}
 .context-menu[open] .chevron{transform:rotate(180deg)}
-.context-popover{position:absolute;z-index:50;right:0;top:calc(100% + 9px);width:330px;max-height:520px;overflow:auto;background:#fff;border:1px solid #d9e1eb;border-radius:14px;box-shadow:0 20px 55px #10233d24;padding:8px}
+.context-popover{position:absolute;z-index:50;right:0;top:calc(100% + 9px);width:380px;max-height:560px;overflow:auto;background:#fff;border:1px solid #d9e1eb;border-radius:14px;box-shadow:0 20px 55px #10233d24;padding:9px}
 .context-popover>header{display:grid;gap:2px;padding:9px 10px 11px;border-bottom:1px solid #edf0f4}
-.context-popover>header strong{font-size:13px}.context-popover>header small{font-size:10px;color:var(--muted)}
+.context-popover>header strong{font-size:15px}.context-popover>header small{font-size:12px;color:var(--muted)}
+.context-filter{position:relative;display:block;margin:9px 4px 4px}.context-filter span{position:absolute;left:11px;top:10px;color:#8290a1;font-size:14px}.context-filter input{padding:10px 11px 10px 32px;border-radius:9px;font-size:13px;background:#f8fafc}
+.context-selected-channel{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;border-radius:10px;overflow:hidden;background:#f3f6fa}.context-selected-channel img{width:31px;height:31px;object-fit:contain}.context-selected-channel.walmart-channel{background:#0053a0}
+.context-copy small{white-space:nowrap;max-width:205px;overflow:hidden;text-overflow:ellipsis}
 .context-account{padding:7px 0;border-bottom:1px solid #edf0f4}.context-account:last-child{border:0}
 .context-account form{margin:0}
 .context-account-button,.context-stores button{width:100%;border:0;background:transparent;color:var(--ink);cursor:pointer;text-align:left}
 .context-account-button{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:10px}
 .context-account-button:hover,.context-account-button.selected{background:#f2f7ff}
 .context-account-button>span:nth-child(2),.context-stores button>span:last-child{display:grid;gap:2px;flex:1}
-.context-account-button strong,.context-stores strong{font-size:12px}.context-account-button small,.context-stores small{font-size:10px;color:var(--muted);font-weight:500}
+.context-account-button strong,.context-stores strong{font-size:14px}.context-account-button small,.context-stores small{font-size:12px;color:var(--muted);font-weight:500;line-height:1.35}
 .context-account-button b{margin-left:auto;color:#8390a0;font-size:18px}
 .context-stores{display:grid;gap:2px;margin:3px 5px 0 41px;padding-left:10px;border-left:1px solid #dfe6ef}
 .context-stores button{display:flex;align-items:center;gap:8px;padding:7px;border-radius:9px}
 .context-stores button:hover,.context-stores button.selected{background:#f5f8fc}
 .mini-channel{display:grid;place-items:center;width:28px;height:28px;border-radius:7px;overflow:hidden;background:#f3f6fa}.mini-channel img{width:24px;height:24px;object-fit:contain}.mini-channel.walmart-channel{background:#0053a0}
 .context-no-stores{margin:3px 10px 5px 51px;color:#8a96a5;font-size:10px}
+.store-required-icon{display:grid;place-items:center;width:42px;height:42px;margin:auto;border-radius:12px;background:#eaf2ff;color:var(--blue);font-size:22px;font-weight:750}.store-picker-action{width:max-content;margin:18px auto 0;border:0;font-size:13px}
+.app-page .primary-button{padding:9px 13px;border-radius:8px;font-size:12px;font-weight:650;gap:7px;box-shadow:0 5px 13px #2d6cdf20}.app-page .secondary-button,.invite-dialog .secondary-button{padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600}.invite-trigger{min-width:0!important}.invite-trigger b{font-size:14px!important}
 
 .account-table-row{cursor:pointer;transition:background .15s}.account-table-row:hover{background:#f7faff}.account-table-row:focus{outline:2px solid var(--blue);outline-offset:-2px}
 .account-table-search{position:relative;display:block}.account-table-search span{position:absolute;left:11px;top:9px;color:#8390a0}.account-table-search input{width:230px;padding:9px 11px 9px 31px;font-size:12px}
-@media(max-width:760px){.workspace{padding:20px 16px}.workspace h1{font-size:25px}.context-popover{position:fixed;left:12px;right:12px;top:76px;width:auto}.profile-chip{display:none}}
+@media(max-width:760px){.workspace{padding:0 16px 32px}.workspace-header{min-height:88px}.workspace h1{font-size:25px}.header-actions,.context-menu,.context-switcher{width:100%}.context-switcher{min-width:0}.context-copy small{max-width:none}.context-popover{position:fixed;left:12px;right:12px;top:82px;width:auto;max-height:calc(100vh - 96px)}.context-account-button strong,.context-stores strong{font-size:13px}.context-account-button small,.context-stores small{font-size:11px}.context-stores{margin-left:34px}.profile-chip{display:none}}
+
+/* User-selected dark appearance */
+html[data-theme="dark"]{--ink:#e8edf5;--muted:#9ba8b8;--line:#2b394a;--white:#151f2c;--bg:#0d1622;--sky:#192c45;--blue:#69a1ff;--green:#55c99a;--amber:#e4a14f}
+html[data-theme="dark"] body{background:#0d1622;color:var(--ink)}
+html[data-theme="dark"] .workspace-header{border-bottom-color:#243243}
+html[data-theme="dark"] .data-card,
+html[data-theme="dark"] .stat-card,
+html[data-theme="dark"] .empty-state,
+html[data-theme="dark"] .callout,
+html[data-theme="dark"] .context-switcher,
+html[data-theme="dark"] .context-popover,
+html[data-theme="dark"] .profile-chip,
+html[data-theme="dark"] .account-choice-button,
+html[data-theme="dark"] .invite-dialog,
+html[data-theme="dark"] .store-option,
+html[data-theme="dark"] .channel-choice{background:#151f2c!important;border-color:#2b394a!important;color:var(--ink)!important;box-shadow:0 10px 30px #00000024!important}
+html[data-theme="dark"] .context-popover>header,
+html[data-theme="dark"] .card-toolbar,
+html[data-theme="dark"] .dialog-header,
+html[data-theme="dark"] .dialog-actions,
+html[data-theme="dark"] td,
+html[data-theme="dark"] .table-footer{border-color:#2b394a}
+html[data-theme="dark"] th{background:#111b28;color:#8f9eb0}
+html[data-theme="dark"] td{color:#b4bfcc}
+html[data-theme="dark"] td strong,
+html[data-theme="dark"] .card-toolbar h2,
+html[data-theme="dark"] .dialog-header h2,
+html[data-theme="dark"] .empty-state h2,
+html[data-theme="dark"] .context-account strong,
+html[data-theme="dark"] .context-switcher strong{color:#edf2f8}
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] .context-filter input,
+html[data-theme="dark"] .search-field input,
+html[data-theme="dark"] .account-table-search input{background:#101925;color:#e9eef5;border-color:#344458}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder{color:#718096}
+html[data-theme="dark"] .secondary-button{background:#182433;color:#dde5ee;border-color:#35465a}
+html[data-theme="dark"] .context-account,
+html[data-theme="dark"] .context-stores{border-color:#2b394a}
+html[data-theme="dark"] .context-account-button:hover,
+html[data-theme="dark"] .context-account-button.selected,
+html[data-theme="dark"] .context-stores button:hover,
+html[data-theme="dark"] .context-stores button.selected,
+html[data-theme="dark"] .store-option:has(input:checked),
+html[data-theme="dark"] .channel-choice:has(input:checked){background:#1b304b!important;border-color:#4f7fbd!important}
+html[data-theme="dark"] .credential-security,
+html[data-theme="dark"] .store-empty,
+html[data-theme="dark"] .invite-scope{background:#182636;border-color:#33475f}
+html[data-theme="dark"] .notice{background:#153526;color:#8ee0b9}
+html[data-theme="dark"] .notice.error{background:#3b2024;color:#ffb0b5}
+html[data-theme="dark"] .table-empty strong{color:#e7edf5}
+html[data-theme="dark"] .account-table-row:hover{background:#192637}
+html[data-theme="dark"] .tenant-pill{background:#1a3150;color:#9bc0ff}
+html[data-theme="dark"] .dialog-close{background:#202d3d;color:#b9c5d2}
+html[data-theme="dark"] .status-badge.active,
+html[data-theme="dark"] .connection-state.ready,
+html[data-theme="dark"] .authorization-state.protected{background:#17392c;color:#76d6ab}

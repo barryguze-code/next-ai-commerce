@@ -48,6 +48,9 @@ public class PageController {
     String module(HttpServletRequest request, Authentication authentication, HttpSession session, Model model) {
         if (!addTenantModel(session, model)) return "redirect:/app/select-account";
         addAccessModel(authentication, model);
+        boolean storeSelected = session.getAttribute(AccountSelectionController.STORE_ID) instanceof UUID;
+        model.addAttribute("storeSelectionRequired", !storeSelected);
+        model.addAttribute("chooseStore", !storeSelected);
         String module = request.getRequestURI().substring(request.getRequestURI().lastIndexOf('/') + 1);
         model.addAttribute("activeModule", module);
         model.addAttribute("moduleTitle", switch (module) {
@@ -56,8 +59,8 @@ public class PageController {
             default -> "Workspace";
         });
         model.addAttribute("moduleDescription", switch (module) {
-            case "orders" -> "Review and operate orders from every marketplace store you can access.";
-            case "inventory" -> "Monitor inventory for the marketplace stores assigned to you.";
+            case "orders" -> "Review and operate orders for the selected marketplace store.";
+            case "inventory" -> "Monitor inventory for the selected marketplace store.";
             default -> "Your commerce workspace.";
         });
         return "module";

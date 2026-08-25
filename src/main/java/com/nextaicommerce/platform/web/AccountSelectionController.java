@@ -51,6 +51,7 @@ public class AccountSelectionController {
     @PostMapping("/app/select-store")
     String chooseStore(@RequestParam UUID tenantId, @RequestParam String tenantName,
             @RequestParam UUID storeId, @RequestParam String storeName,
+            @RequestParam(defaultValue = "/app") String returnTo,
             Authentication authentication, HttpSession session) {
         boolean superAdmin = authentication.getAuthorities().stream()
             .anyMatch(a -> a.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
@@ -64,6 +65,10 @@ public class AccountSelectionController {
         session.setAttribute(TENANT_NAME, tenantName);
         session.setAttribute(STORE_ID, storeId);
         session.setAttribute(STORE_NAME, storeName);
-        return "redirect:/app";
+        return "redirect:" + safeWorkspacePath(returnTo);
+    }
+
+    private static String safeWorkspacePath(String path) {
+        return path != null && path.matches("/app(?:/(?:orders|inventory))?") ? path : "/app";
     }
 }

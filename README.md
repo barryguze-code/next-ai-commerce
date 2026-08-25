@@ -2,9 +2,9 @@
 
 Next AI Commerce is a multi-tenant commerce operations platform for managing business accounts, users, and marketplace stores from one secure workspace.
 
-## Version 0.1
+## Version 0.2
 
-The first production release provides:
+The current foundation provides:
 
 - Secure sign-in and account activation
 - Separate business workspaces with tenant-aware data access
@@ -16,8 +16,12 @@ The first production release provides:
 - Encrypted marketplace credential storage and live authorization checks
 - Account and store switching foundations for multi-channel operations
 - A consistent Apple system-font interface and responsive application shell
+- Account-wide Overview context and store-specific operational context
+- Searchable account/store switching with Amazon and Walmart identity
+- Grouped module navigation and persistent light/dark appearance
+- Verified invitation email delivery and activation
 
-Orders, inventory, reimbursements, distributor workflows, and shipping integrations will build on this foundation in later releases.
+Amazon synchronization, catalogs, inventory, reimbursements, distributor workflows, and shipping integrations will build on this foundation in later releases.
 
 ## Local start
 
