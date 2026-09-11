@@ -9,10 +9,65 @@ spring:
     enabled: true
   thymeleaf:
     cache: false
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 80MB
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+  task:
+    scheduling:
+      pool:
+        size: 4
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSSXXX} %-5level %msg%n%wEx"
+  level:
+    com.nextaicommerce.platform.sync: INFO
 server:
+  # Bounded recovery headroom: legacy table cookies must reach the page once
+  # so the browser can migrate and expire them. New preferences use localStorage.
+  max-http-request-header-size: ${APP_MAX_REQUEST_HEADER_SIZE:64KB}
   error:
     include-message: never
 app:
+  read-cache:
+    enabled: ${APP_READ_CACHE_ENABLED:true}
+    ttl: ${APP_READ_CACHE_TTL:10s}
+    maximum-entries: ${APP_READ_CACHE_MAXIMUM_ENTRIES:256}
+  build-version: ${APP_BUILD_VERSION:1.0.0}
+  public-url: ${APP_PUBLIC_URL:http://localhost:8080}
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    provider: ${MAIL_PROVIDER:disabled}
+    from: ${MAIL_FROM:}
+    from-name: ${MAIL_FROM_NAME:Next AI Commerce}
+    graph:
+      tenant-id: ${MICROSOFT_TENANT_ID:}
+      client-id: ${MICROSOFT_CLIENT_ID:}
+      client-secret: ${MICROSOFT_CLIENT_SECRET:}
+  credentials:
+    encryption-key: ${APP_CREDENTIAL_ENCRYPTION_KEY:}
+  amazon:
+    sync-enabled: ${AMAZON_SYNC_ENABLED:true}
+    write-enabled: ${AMAZON_WRITE_ENABLED:true}
+    listing-actions-enabled: ${AMAZON_LISTING_ACTIONS_ENABLED:false}
+    recurring-enabled: ${AMAZON_RECURRING_SYNC_ENABLED:true}
+    startup-order-reconciliation-enabled: ${AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED:true}
+    worker-delay-ms: ${AMAZON_WORKER_DELAY_MS:5000}
+    order-worker-delay-ms: ${AMAZON_ORDER_WORKER_DELAY_MS:2000}
+    order-worker-initial-delay-ms: ${AMAZON_ORDER_WORKER_INITIAL_DELAY_MS:1000}
+    scheduler-delay-ms: ${AMAZON_SCHEDULER_DELAY_MS:60000}
+    buy-shipping-worker-delay-ms: ${AMAZON_BUY_SHIPPING_WORKER_DELAY_MS:1500}
+    buy-shipping-worker-initial-delay-ms: ${AMAZON_BUY_SHIPPING_WORKER_INITIAL_DELAY_MS:5000}
+    shipping-desk-worker-delay-ms: ${AMAZON_SHIPPING_DESK_WORKER_DELAY_MS:1000}
+    shipping-desk-worker-initial-delay-ms: ${AMAZON_SHIPPING_DESK_WORKER_INITIAL_DELAY_MS:6000}
   local-admin:
     email: ${APP_ADMIN_EMAIL:admin@nextaicommerce.local}
     password: ${APP_ADMIN_PASSWORD:change-me-local}

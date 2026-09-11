@@ -1,0 +1,13 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org"><head>
+<th:block th:fragment="head">
+  <link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7">
+  <link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2">
+  <link rel="stylesheet" href="/css/collaboration-thread.css?v=20260911-8">
+  <script defer src="/js/collaboration.js?v=20260911-8"></script>
+</th:block>
+</head><body>
+<th:block th:fragment="body">
+  <div th:replace="~{fragments/collaboration-thread :: modal('/app/collaboration')}"></div>
+</th:block>
+</body></html>

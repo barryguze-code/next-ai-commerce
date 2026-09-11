@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Review Catalogue Import | Next AI Commerce</title>
+<link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/brand.css?v=20260909-1">
+<link rel="stylesheet" href="/css/access.css">
+<link rel="stylesheet" href="/css/catalog-import.css">
+<script defer src="/js/theme.js?v=20260905-1">
+</script>
+<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block></head>
+<body class="app-page">
+<aside class="sidebar">
+<a class="brand brand-lockup" href="/app">
+<img src="/images/next-ai-mark-transparent.png" alt="">
+<span class="brand-wordmark">
+<strong>
+<span>Next</span>
+<b>AI</b>
+</strong>
+<small>COMMERCE</small>
+</span>
+</a>
+<div th:replace="~{fragments/sidebar-nav :: nav('account-catalog')}">
+</div>
+<div th:replace="~{fragments/sidebar-user :: user}">
+</div>
+</aside>
+<main class="workspace">
+<p class="notice error" th:if="${catalogError}" th:text="${catalogError}">Fix mapping.</p>
+<dialog id="catalog-import-dialog" class="catalog-import-dialog">
+<section class="catalog-import-progress" th:if="${catalogImport.processState == 'QUEUED' or catalogImport.processState == 'PROCESSING' or catalogImport.processState == 'MAPPING'}">
+<div class="import-dialog-heading"><div><strong>Building your account catalogue</strong><span th:text="${catalogImport.filename+' · '+catalogImport.vendorName}">File · Vendor</span></div><a class="dialog-close" href="/app/catalog" aria-label="Continue in background">×</a></div>
+<div class="progress-orbit" th:style="|--progress:${catalogImport.progressPercent}%|"><strong th:text="${catalogImport.progressPercent+'%'}">0%</strong></div>
+<h2 th:text="${catalogImport.processState == 'MAPPING' ? 'Mapping marketplace SKUs' : 'Importing products'}">Importing products</h2><p th:text="${catalogImport.processState == 'MAPPING' ? 'Products are ready. Matching seller SKUs to their catalogue products now.' : #numbers.formatInteger(catalogImport.processedRows,1,'COMMA')+' of '+#numbers.formatInteger(catalogImport.totalRows,1,'COMMA')+' rows completed'}">0 rows</p>
+<div class="import-progress-track"><i th:style="|width:${catalogImport.progressPercent}%|"></i></div><small>You may close this window. The import continues safely in the background.</small>
+</section>
+<section class="catalog-import-progress" th:if="${catalogImport.processState == 'COMPLETED'}"><div class="import-dialog-heading"><div><strong>Catalogue setup complete</strong><span th:text="${catalogImport.filename+' · '+catalogImport.vendorName}">File · Vendor</span></div><a class="dialog-close" href="/app/catalog" aria-label="Close">×</a></div><div class="progress-orbit" style="--progress:100%"><strong>✓</strong></div><h2 th:text="${#numbers.formatInteger(catalogImport.totalRows,1,'COMMA')+' products imported'}">Products imported</h2><p th:text="${#numbers.formatInteger(catalogImport.mappedSkus,1,'COMMA')+' marketplace SKUs mapped automatically'}">SKUs mapped</p><small th:text="${catalogImport.unmappedSkus == 0 ? 'Every marketplace SKU is mapped.' : #numbers.formatInteger(catalogImport.unmappedSkus,1,'COMMA')+' SKUs still need a quick review.'}">Mapping result</small><div class="import-actions"><a class="secondary-button" href="/app/marketplace-skus?status=UNMAPPED">Review unmapped SKUs</a><a class="primary-button compact-button" href="/app/catalog">View catalogue</a></div></section>
+<form th:unless="${catalogImport.processState == 'QUEUED' or catalogImport.processState == 'PROCESSING' or catalogImport.processState == 'MAPPING' or catalogImport.processState == 'COMPLETED'}" method="post" th:action="@{/app/catalog/imports/{id}/approve(id=${catalogImport.id})}">
+<div class="import-dialog-heading"><div><strong>Review detected columns</strong><span th:text="${catalogImport.filename+' · '+catalogImport.vendorName+' · '+#numbers.formatInteger(catalogImport.totalRows,1,'COMMA')+' products'}">File · Vendor</span></div><a class="dialog-close" href="/app/catalog" aria-label="Close">×</a></div>
+<p class="notice error" th:if="${catalogImport.processState == 'FAILED'}" th:text="${catalogImport.processError}">Import failed.</p>
+<section class="import-validation" th:if="${catalogImport.status == 'VALIDATED' or catalogImport.rejectedRows > 0}">
+<div><small>Valid rows</small><strong th:text="${catalogImport.validRows}">0</strong></div><div th:classappend="${catalogImport.rejectedRows > 0 ? ' has-errors' : ''}"><small>Rows needing attention</small><strong th:text="${catalogImport.rejectedRows}">0</strong></div>
+<ul th:unless="${#lists.isEmpty(catalogImport.validationMessages)}"><li th:each="message:${catalogImport.validationMessages}" th:text="${message}">Validation message</li></ul>
+</section>
+<section class="mapping-card">
+<div class="mapping-intro">
+<strong>Our field → Uploaded file column</strong>
+<span>We detected these automatically. Change only a row that does not look correct.</span>
+</div>
+<div class="mapping-grid">
+<label><span>Product name <b>Required</b></span>
+<select name="productName" required>
+<option value="">Choose column</option>
+<option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['productName']}">Column</option>
+</select>
+</label>
+<label><span>Vendor item code <b>Required</b></span>
+<select name="vendorItemCode" required>
+<option value="">Choose column</option>
+<option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['vendorItemCode']}">Column</option>
+</select>
+</label>
+<label><span>UPC / EAN <em>Optional</em></span>
+<select name="identifier">
+<option value="">Not in file</option>
+<option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['identifier']}">Column</option>
+</select>
+</label>
+<label><span>Identifier type</span><select name="identifierType">
+<option>UPC</option>
+<option>EAN</option>
+<option>GTIN</option>
+<option>MPN</option>
+</select>
+</label>
+<label><span>List / unit cost <b>Required</b></span>
+<select name="listCost" required>
+<option value="">Choose column</option>
+<option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['listCost']}">Column</option>
+</select>
+</label>
+<label><span>Brand</span><select name="brand">
+<option value="">Not in file</option>
+<option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['brand']}">Column</option>
+</select>
+</label>
+<label><span>Account SKU</span><select name="accountSku">
+<option value="">Not in file</option>
+<option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['accountSku']}">Column</option>
+</select>
+</label>
+<label><span>Discount rate</span><select name="discountRate">
+<option value="" th:text="|Use vendor default · ${#numbers.formatDecimal(catalogImport.vendorDiscountRate,1,2)}%|">Use vendor default</option>
+<option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['discountRate']}">Column</option>
+</select>
+</label>
+<label><span>Size</span><select name="size"><option value="">Not in file</option><option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['size']}">Column</option></select></label>
+<label><span>Unit of measure</span><select name="unitOfMeasure"><option value="">Not in file</option><option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['unitOfMeasure']}">Column</option></select></label>
+<label><span>Case pack</span><select name="casePack"><option value="">Not in file</option><option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['casePack']}">Column</option></select></label>
+<label><span>Unit of sale</span><select name="unitOfSale"><option value="">Not in file</option><option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['unitOfSale']}">Column</option></select></label>
+<label><span>Suggested retail / MSRP</span><select name="suggestedRetail"><option value="">Not in file</option><option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['suggestedRetail']}">Column</option></select></label>
+<label><span>Category</span><select name="category"><option value="">Not in file</option><option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['category']}">Column</option></select></label>
+<label><span>Effective date</span><select name="effectiveDate"><option value="">Not in file</option><option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['effectiveDate']}">Column</option></select></label>
+<label><span>Minimum quantity</span><select name="minimumQuantity"><option value="">Not in file</option><option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}" th:selected="${header == catalogImport.mapping['minimumQuantity']}">Column</option></select></label>
+<label><span>Expiration required</span><select name="expirationRequired">
+<option value="">No</option>
+<option th:each="header:${catalogImport.headers}" th:value="${header}" th:text="${header}">Column</option>
+</select>
+</label>
+</div>
+</section>
+<section class="ignored-columns" th:unless="${#lists.isEmpty(catalogImport.ignoredHeaders)}"><div><strong>Not used by our catalogue</strong><span>These uploaded columns will be ignored.</span></div><div><span th:each="header:${catalogImport.ignoredHeaders}" th:text="${header}">Column</span></div></section>
+<div class="approval-bar">
+<div>
+<strong th:text="${catalogImport.status == 'VALIDATED' ? 'Ready to import' : 'Mapping needs attention'}">Ready to import</strong>
+<span th:text="${catalogImport.status == 'VALIDATED' ? 'All rows were validated automatically. Nothing has been imported yet.' : 'Correct the mappings above. We will validate again automatically when you continue.'}">Automatically validated.</span>
+</div>
+<div class="import-actions"><button class="primary-button compact-button" type="submit" th:text="${catalogImport.status == 'VALIDATED' ? 'Import catalogue' : 'Check mapping and continue'}">Import catalogue</button></div>
+</div>
+</form>
+</dialog>
+</main>
+<script th:inline="javascript">window.addEventListener('DOMContentLoaded',()=>{const dialog=document.getElementById('catalog-import-dialog');if(dialog&&!dialog.open)dialog.showModal();const state=/*[[${catalogImport.processState}]]*/ null;if(state==='QUEUED'||state==='PROCESSING'||state==='MAPPING')setTimeout(()=>location.reload(),1200)})</script>
+<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block></body>
+</html>

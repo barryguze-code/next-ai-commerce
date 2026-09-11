@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Physical Count Uploads | Next AI Commerce</title>
+  <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
+  <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1"><link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/inventory.css"><link rel="stylesheet" href="/css/table-widget.css?v=1.0.0">
+  <script defer src="/js/theme.js?v=20260905-1"></script><script defer src="/js/table-preferences.js?v=20260911-2"></script><script defer src="/js/table-widget.js?v=1.0.0"></script>
+<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block></head>
+<body class="app-page">
+<aside class="sidebar"><a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a><div th:replace="~{fragments/sidebar-nav :: nav('inventory')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
+<main class="workspace">
+  <header class="workspace-header"><div><span class="eyebrow dark">Inventory audit</span><h1>Physical Count Uploads</h1><p class="page-intro">See exactly which file was uploaded, whether it completed, and every retained source row.</p><nav class="inventory-view-switch" aria-label="Inventory views"><a href="/app/inventory">Available Inventory</a><a href="/app/inventory/ledger">Inventory Ledger</a><a class="active" href="/app/inventory/physical-counts/history">Count Uploads</a></nav></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
+  <section class="data-card physical-upload-history-card">
+    <div class="card-toolbar"><div><h2>Uploaded files</h2><p>The latest 50 physical-count submissions are retained for review.</p></div></div>
+    <div class="table-wrap"><table data-table-widget="physical-count-files"><thead><tr><th data-column-required="true">File</th><th>Status</th><th>Uploaded</th><th>Rows</th><th>Applied</th><th>Vendor</th><th>Uploaded by</th><th data-column-required="true">Action</th></tr></thead><tbody>
+      <tr th:each="upload:${imports}" th:classappend="${upload.id == selectedImportId} ? 'selected-upload'">
+        <td><strong th:text="${upload.filename}">count.xlsx</strong></td><td><span class="movement-pill" th:text="${upload.state}">COMPLETED</span><small class="cell-note" th:if="${upload.error != null}" th:text="${upload.error}">Error</small></td><td th:text="${upload.uploadedDisplay()}">Sep 5</td><td th:text="${upload.totalRows}">0</td><td th:text="${upload.appliedRows}">0</td><td th:text="${upload.vendor ?: 'Automatic detection'}">Vendor</td><td th:text="${upload.uploadedBy}">User</td><td><a class="secondary-button compact-button" th:href="@{/app/inventory/physical-counts/history(importId=${upload.id})}">Inspect rows</a></td>
+      </tr><tr th:if="${#lists.isEmpty(imports)}"><td colspan="8"><div class="table-empty"><strong>No physical counts uploaded</strong><span>Your first reviewed upload will appear here.</span></div></td></tr>
+    </tbody></table></div>
+  </section>
+  <section class="data-card physical-upload-rows" th:if="${selectedImport != null}">
+    <div class="card-toolbar"><div><h2 th:text="${selectedImport.filename}">Uploaded rows</h2><p th:text="${#numbers.formatInteger(selectedImport.totalRows,1,'COMMA')+' retained source rows · column choices are shown exactly as applied'}">Rows retained</p></div><form method="get" action="/app/inventory/physical-counts/history"><input type="hidden" name="importId" th:value="${selectedImport.id}"><label class="search-field"><span>⌕</span><input type="search" name="q" th:value="${query}" placeholder="Find item code, UPC, location, or quantity" aria-label="Search uploaded rows"></label></form></div>
+    <div class="table-wrap"><table data-table-widget="physical-count-rows"><thead><tr><th data-column-required="true">File row</th><th th:each="header:${selectedImport.headers}" th:text="${header}">Column</th></tr></thead><tbody>
+      <tr th:each="source:${uploadedRows.rows}"><td><strong th:text="${source.rowNumber}">2</strong></td><td th:each="header:${selectedImport.headers}" th:text="${source.values.get(header) ?: '—'}">Value</td></tr>
+      <tr th:if="${#lists.isEmpty(uploadedRows.rows)}"><td th:colspan="${selectedImport.headers.size()+1}"><div class="table-empty"><strong>No uploaded rows match</strong><span>Try another item code or clear the search.</span></div></td></tr>
+    </tbody></table></div>
+    <div class="table-footer table-pagination" th:attr="data-page=${uploadedRows.page},data-page-max=${uploadedRows.totalPages()},data-page-size=${uploadedRows.size}"><span th:text="${uploadedRows.total == 0 ? 'No matching rows' : 'Showing '+(uploadedRows.page*uploadedRows.size+1)+'–'+(uploadedRows.page*uploadedRows.size+uploadedRows.rows.size())+' of '+uploadedRows.total}">Showing rows</span><nav aria-label="Uploaded row pages"><a th:if="${uploadedRows.hasPrevious()}" class="secondary-button compact-button" th:href="@{/app/inventory/physical-counts/history(importId=${selectedImport.id},q=${query},page=${uploadedRows.page-1})}">Previous</a><span th:unless="${uploadedRows.hasPrevious()}" class="secondary-button compact-button disabled">Previous</span><span th:text="${'Page '+(uploadedRows.page+1)+' of '+uploadedRows.totalPages()}">Page 1</span><a th:if="${uploadedRows.hasNext()}" class="secondary-button compact-button" th:href="@{/app/inventory/physical-counts/history(importId=${selectedImport.id},q=${query},page=${uploadedRows.page+1})}">Next</a><span th:unless="${uploadedRows.hasNext()}" class="secondary-button compact-button disabled">Next</span></nav></div>
+  </section>
+</main>
+<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block></body>
+</html>

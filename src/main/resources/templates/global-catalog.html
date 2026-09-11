@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Global Catalogue | Next AI Commerce</title>
+<link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/brand.css?v=20260909-1">
+<link rel="stylesheet" href="/css/access.css">
+<script defer src="/js/theme.js?v=20260905-1">
+</script>
+<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block></head>
+<body class="app-page">
+<aside class="sidebar">
+<a class="brand brand-lockup" href="/app">
+<img src="/images/next-ai-mark-transparent.png" alt="">
+<span class="brand-wordmark">
+<strong>
+<span>Next</span>
+<b>AI</b>
+</strong>
+<small>COMMERCE</small>
+</span>
+</a>
+<div th:replace="~{fragments/sidebar-nav :: nav('global-catalog')}">
+</div>
+<div th:replace="~{fragments/sidebar-user :: user}">
+</div>
+</aside>
+<main class="workspace">
+<header class="workspace-header">
+<div>
+<span class="eyebrow dark">Super Admin</span>
+<h1>Global Catalogue</h1>
+<p class="page-intro">Canonical product identities shared safely across every business account.</p>
+</div>
+<div class="header-actions">
+<div th:replace="~{fragments/context-switcher :: switcher}">
+</div>
+</div>
+</header>
+<section class="callout">
+<span class="callout-icon">G</span>
+<div>
+<strong>Product identity only</strong>
+<p>Vendor item codes identify products globally. Prices, discounts, landed costs, SKUs, and inventory remain private to each account.</p>
+</div>
+</section>
+<section class="data-card catalog-card">
+<div class="card-toolbar">
+<div>
+<h2>Products</h2>
+<p>Products are created as accounts approve their catalogue imports or add an unmatched item.</p>
+</div>
+<div class="toolbar-tools">
+<label class="search-field">
+<span>⌕</span>
+<input type="search" placeholder="Search products" oninput="filterRows(this.value)">
+</label>
+</div>
+</div>
+<div class="table-wrap">
+<table data-sortable>
+<thead>
+<tr>
+<th>Product</th>
+<th>Vendor item code</th>
+<th>UPC / EAN</th>
+<th>Unit</th>
+<th>Handling</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr class="catalog-row" th:each="product:${products}" th:attr="data-search=${#strings.toLowerCase(product.name + ' ' + (product.brand ?: '') + ' ' + (product.vendorName ?: '') + ' ' + (product.vendorItemCode ?: '') + ' ' + (product.identifier ?: ''))}">
+<td>
+<div class="product-cell">
+<span class="product-avatar" th:text="${#strings.substring(product.name,0,1)}">P</span>
+<div>
+<strong th:text="${product.name}">Product</strong>
+<small th:text="${product.brand ?: 'Brand not specified'}">Brand</small>
+</div>
+</div>
+</td>
+<td>
+<strong th:text="${product.vendorItemCode ?: 'Not assigned'}">Vendor code</strong>
+<small class="cell-note" th:if="${product.vendorName != null}" th:text="${product.vendorName}">Vendor</small>
+</td>
+<td>
+<strong th:text="${product.identifier ?: 'Not assigned'}">UPC</strong>
+</td>
+<td th:text="${product.unitOfMeasure}">EA</td>
+<td>
+<span class="catalog-pill" th:text="${product.expirationRequired ? 'Expiration tracked' : 'Standard'}">Standard</span>
+</td>
+<td>
+<span class="status-badge active">
+<i>
+</i>
+<span th:text="${product.status}">ACTIVE</span>
+</span>
+</td>
+</tr>
+<tr th:if="${#lists.isEmpty(products)}">
+<td colspan="6">
+<div class="table-empty">
+<strong>No global products yet</strong>
+<span>The first approved account product will create the catalogue.</span>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="table-footer">
+<span th:text="${'Showing '+products.size()+' global product(s)'}">Showing products</span>
+</div>
+</section>
+</main>
+<script>function filterRows(v){const q=v.trim().toLowerCase();document.querySelectorAll('.catalog-row').forEach(r=>r.hidden=!r.dataset.search.includes(q));}</script>
+<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block></body>
+</html>

@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Accept invitation | Next AI Commerce</title><link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png"><link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1"></head>
+<body><main class="form-panel" style="min-height:100vh"><form class="login-card" method="post" th:action="@{/invitation/accept}"><input type="hidden" name="tenantId" th:value="${tenantId}"><input type="hidden" name="token" th:value="${token}"><div><span class="eyebrow dark">Verified invitation</span><h2>Join <span th:text="${accountName}">this account</span></h2><p class="muted">You are signed in with the invited email. Accept to add this business and its assigned stores to your account switcher.</p></div><p class="notice error" th:if="${invitationError}" th:text="${invitationError}"></p><button type="submit">Accept invitation <span>→</span></button><p class="security-note">The invitation is single-use and expires after 7 days.</p></form></main></body>
+</html>

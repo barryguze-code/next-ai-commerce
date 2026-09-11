@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<th:block th:fragment="nav(active)">
+<link rel="stylesheet" href="/css/platform-controls.css?v=1.0.0">
+<script defer src="/js/platform-controls.js?v=1.0.0"></script>
+<nav class="product-nav">
+  <a class="nav-overview" th:classappend="${active == 'overview' ? 'active' : ''}" href="/app"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/></svg>Overview</a>
+
+  <details open>
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="M6 8h12l1 12H5L6 8Zm3 0V6a3 3 0 0 1 6 0v2"/></svg>Sales</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <a th:if="${canViewOperations}" th:classappend="${active == 'orders' ? 'active' : ''}" href="/app/orders">Orders</a>
+      <a th:if="${canEditCatalog}" th:classappend="${active == 'shipping' ? 'active' : ''}" href="/app/shipping">Buy Shipping</a>
+      <span class="nav-coming">FBA Shipments <small>Planned</small></span>
+    </div>
+  </details>
+
+  <details th:attr="open=${active == 'global-catalog' or active == 'account-catalog' or active == 'marketplace-skus' or active == 'vendors' ? 'open' : null}">
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Zm0 0v10l8 4 8-4V7M12 11v10"/></svg>Catalog &amp; Purchasing</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <a th:if="${isSuperAdmin}" th:classappend="${active == 'global-catalog' ? 'active' : ''}" href="/app/platform/catalog">Global Catalogue</a>
+      <a th:classappend="${active == 'account-catalog' ? 'active' : ''}" href="/app/catalog">Account Catalogue</a>
+      <a th:if="${canViewOperations}" th:classappend="${active == 'marketplace-skus' ? 'active' : ''}" href="/app/marketplace-skus">Marketplace SKUs</a>
+      <a th:classappend="${active == 'vendors' ? 'active' : ''}" href="/app/vendors">Vendors &amp; Pricing</a>
+    </div>
+  </details>
+
+  <details open>
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Zm0 5 8 4 8-4M4 17l8 4 8-4"/></svg>Inventory</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <a th:if="${canViewOperations}" th:classappend="${active == 'inventory' ? 'active' : ''}" href="/app/inventory">Available Inventory</a>
+      <a th:if="${canViewOperations}" th:classappend="${active == 'inventory-ledger' ? 'active' : ''}" href="/app/inventory/ledger">Inventory Ledger</a>
+      <a th:classappend="${active == 'receiving' ? 'active' : ''}" href="/app/receiving">Receiving</a>
+      <span class="nav-coming">Lots &amp; Expiration <small>Planned</small></span>
+      <span class="nav-coming">Replenishment <small>Planned</small></span>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="M4 18 10 12l4 3 6-9M16 6h4v4"/></svg>Growth &amp; Recovery</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <span class="nav-coming">Pricing &amp; Buy Box <small>Planned</small></span>
+      <span class="nav-coming">Reimbursements <small>Planned</small></span>
+      <span class="nav-coming">Feedback <small>Planned</small></span>
+    </div>
+  </details>
+
+  <details th:if="${canManageConnections}" th:attr="open=${active == 'connections' ? 'open' : null}">
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="M9 7H7a5 5 0 0 0 0 10h2m6 0h2a5 5 0 0 0 0-10h-2M8 12h8"/></svg>Integrations</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <a th:classappend="${active == 'connections' ? 'active' : ''}" href="/app/connections">Marketplace Connections</a>
+      <span class="nav-coming">Amazon Vendor <small>Planned</small></span>
+      <span class="nav-coming">Shipping &amp; Printers <small>Planned</small></span>
+    </div>
+  </details>
+
+  <details th:if="${canManageUsers == true or isSuperAdmin == true}" th:attr="open=${active == 'users' or active == 'accounts' ? 'open' : null}">
+    <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8 7 10 4.2-2 7-5.4 7-10V6l-7-3Zm0 5v5m0 3h.01"/></svg>Administration</span><span class="nav-chevron">⌄</span></summary>
+    <div>
+      <a th:if="${canManageUsers == true}" th:classappend="${active == 'users' ? 'active' : ''}" href="/app/users">Users &amp; Access</a>
+      <a th:if="${isSuperAdmin}" th:classappend="${active == 'accounts' ? 'active' : ''}" href="/app/platform/accounts">Platform Accounts</a>
+      <span class="nav-coming">Templates <small>Planned</small></span>
+      <span class="nav-coming">Activity History <small>Planned</small></span>
+    </div>
+  </details>
+</nav>
+<section class="sidebar-collaboration" th:if="${canViewOperations}" th:classappend="${active == 'collaboration' ? ' is-current' : ''}" data-sidebar-collaboration>
+  <div class="sidebar-collaboration-row">
+    <a class="sidebar-collaboration-heading" href="/app/collaboration" aria-label="Open the Collaboration workspace">
+      <span class="sidebar-collaboration-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v9H9l-4 4v-13Z"/><path d="M9 9h6M9 12h4"/></svg><i data-sidebar-live-dot></i></span>
+      <span><strong>Collaboration</strong><small data-sidebar-collaboration-count>Connecting to your team</small></span>
+    </a>
+    <button class="sidebar-huddle-trigger" type="button" aria-expanded="false" aria-controls="sidebar-huddle-menu" data-sidebar-huddle-trigger title="Collaboration and AI teammate" aria-label="Open collaboration and AI teammate">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 5h12v9H8l-4.5 4V5Z"/><path class="chat-sound-wave inner" d="M18 8.5c1 .9 1 2.1 0 3"/><path class="chat-sound-wave outer" d="M20 6.5c2.3 2.1 2.3 5.9 0 8"/></svg>
+      <span class="sidebar-huddle-ring" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="sidebar-huddle-menu" class="sidebar-huddle-menu" hidden data-sidebar-huddle-menu>
+    <details class="sidebar-ai-preview">
+      <summary aria-label="Next AI Commerce AI — locked, coming soon">
+        <span class="sidebar-ai-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 24V11l5-3 8 12V8l5 3v13l-5 3-8-12v12Z"/><path d="M12 4h8M16 2v4"/></svg></span>
+        <span><strong>Next AI Commerce AI</strong><small>Coming soon · Locked</small></span>
+        <svg class="sidebar-ai-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>
+      </summary>
+      <p>Your AI teammate is coming soon. This feature is not available yet. Subscription and activation details will be shared when it launches. No subscription is started and no data is sent to AI here.</p>
+    </details>
+    <header><span><strong>Online now</strong><small th:text="${selectedAccountName+' only'}">This account only</small></span><i></i></header>
+    <div data-sidebar-huddle-people><p>Checking your team…</p></div>
+    <a href="/app/collaboration">Open full collaboration view <span>→</span></a>
+  </div>
+  <div class="sidebar-huddle-live-slot" data-sidebar-huddle-live-slot></div>
+</section>
+</th:block>
+</body>
+</html>

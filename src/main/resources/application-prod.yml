@@ -1,0 +1,31 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  thymeleaf:
+    cache: true
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: strict
+      timeout: 8h
+app:
+  public-url: ${APP_PUBLIC_URL}
+  mail:
+    enabled: ${MAIL_ENABLED:true}
+    provider: ${MAIL_PROVIDER:graph}
+    from: ${MAIL_FROM}
+    from-name: ${MAIL_FROM_NAME:Next AI Commerce}
+    graph:
+      tenant-id: ${MICROSOFT_TENANT_ID}
+      client-id: ${MICROSOFT_CLIENT_ID}
+      client-secret: ${MICROSOFT_CLIENT_SECRET}
+  credentials:
+    encryption-key: ${APP_CREDENTIAL_ENCRYPTION_KEY}
+  local-admin:
+    email: ${APP_ADMIN_EMAIL}
+    password: ${APP_ADMIN_PASSWORD}

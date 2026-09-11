@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Receiving | Next AI Commerce</title>
+  <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
+  <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1">
+  <link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/receiving.css"><link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7"><link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2"><link rel="stylesheet" href="/css/collaboration-thread.css?v=20260911-8">
+  <script defer src="/js/theme.js?v=20260905-1"></script><script defer src="/js/collaboration.js?v=20260911-8"></script>
+  <link rel="stylesheet" href="/css/receiving-work.css?v=20260911-4"><script defer src="/js/receiving-documents.js?v=20260911-7"></script>
+</head>
+<body class="app-page">
+<aside class="sidebar">
+  <a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
+  <div th:replace="~{fragments/sidebar-nav :: nav('receiving')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div>
+</aside>
+<main class="workspace receiving-home">
+  <header class="workspace-header"><div><span class="eyebrow dark">Inventory operations</span><h1>Receiving</h1><p class="page-intro">Turn supplier documents into accurate, expiration-aware inventory.</p></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
+  <p class="notice" th:if="${catalogSuccess}" th:text="${catalogSuccess}"></p>
+  <p class="notice error" th:if="${catalogError}" th:text="${catalogError}"></p>
+
+  <section class="receiving-guide" th:if="${#lists.isEmpty(sessions) and #strings.isEmpty(query)}">
+    <div class="receiving-guide-copy">
+      <span class="eyebrow dark">First receiving setup</span>
+      <h2 th:text="${#lists.isEmpty(vendors) ? 'Prepare your first supplier' : 'Your supplier is ready'}">Prepare your first supplier</h2>
+      <p th:text="${#lists.isEmpty(vendors) ? 'Before we read an invoice, tell us who supplied the products. This keeps item codes, prices, receiving history, and future credits connected to the correct business.' : 'Next, upload one or several invoices or packing lists. We will match products and build the receiving checklist.'}">Guidance</p>
+    </div>
+    <ol class="receiving-journey" aria-label="Receiving process">
+      <li th:classappend="${#lists.isEmpty(vendors) ? ' current' : ' complete'}"><span th:text="${#lists.isEmpty(vendors) ? '1' : '✓'}">1</span><div><small>Step 1</small><strong>Add the vendor</strong><p>Identify who supplied the products and set simple buying defaults.</p></div><b th:text="${#lists.isEmpty(vendors) ? 'Current step' : 'Complete'}">Current step</b></li>
+      <li th:classappend="${#lists.isEmpty(vendors) ? ' upcoming' : ' current'}"><span>2</span><div><small>Step 2</small><strong>Upload documents</strong><p>Add one or several invoices or packing lists from this vendor.</p></div><b th:text="${#lists.isEmpty(vendors) ? 'Up next' : 'Current step'}">Up next</b></li>
+      <li class="upcoming"><span>3</span><div><small>Step 3</small><strong>Scan and receive</strong><p>Confirm cases, eaches, condition, and expiration dates.</p></div><b>After upload</b></li>
+      <li class="upcoming"><span>4</span><div><small>Step 4</small><strong>Close receiving</strong><p>Resolve differences and lock the final landed costs. Inventory is added as each receipt is saved.</p></div><b>Final step</b></li>
+    </ol>
+    <div class="receiving-next-action" th:if="${canEditCatalog}">
+      <div th:if="${#lists.isEmpty(vendors)}"><span class="next-action-number">1</span><div><strong>Start by adding the supplier</strong><p>You need its name and buying currency. Vendor code, discount, and freight defaults are optional.</p></div></div>
+      <div th:unless="${#lists.isEmpty(vendors)}"><span class="next-action-number">2</span><div><strong>Continue with the source documents</strong><p>Select the vendor, then choose all invoices or packing lists arriving together.</p></div></div>
+      <button th:if="${#lists.isEmpty(vendors)}" class="primary-button compact-button" type="button" onclick="document.getElementById('inline-vendor-dialog').showModal()">Add first vendor</button>
+      <button th:unless="${#lists.isEmpty(vendors)}" class="primary-button compact-button" type="button" onclick="document.getElementById('session-dialog').showModal()">Upload documents</button>
+    </div>
+  </section>
+
+  <section class="data-card catalog-card">
+    <div class="card-toolbar"><div><h2>Invoices &amp; packing lists</h2><p>Upload now, receive later. Select several documents to count them in one working view.</p></div>
+      <button th:if="${canEditCatalog}" class="primary-button compact-button" type="button" onclick="document.getElementById('session-dialog').showModal()">New receiving · Upload documents</button>
+    </div>
+    <div class="rw-selection-bar" th:attr="data-selection-account=${receivingTenantId}"><span data-selected-count>No documents selected</span><div class="rw-row-actions"><button class="secondary-button compact-button" type="button" data-clear-selected>Clear selection</button><button class="primary-button compact-button rw-receive-selected" type="button" data-open-selected disabled>Receive selected together</button></div></div>
+    <form method="get" action="/app/receiving" class="rw-source-search"><input type="search" name="q" th:value="${query}" placeholder="Search document, filename, or vendor" aria-label="Search all receiving documents"><button class="secondary-button compact-button">Search</button></form>
+    <div class="table-wrap"><table data-table-widget="receiving-documents">
+      <thead><tr><th data-column="selection" data-column-weight="0.35" data-no-sort="true">Select</th><th data-column="document" data-column-required="true" data-column-weight="3">Source document</th><th data-column="vendor" data-column-weight="1.4">Vendor</th><th data-column="date">Uploaded</th><th data-column="expected">Expected</th><th data-column="received">Received</th><th data-column="status">Receiving status</th><th data-column="actions" data-context-actions>Action</th></tr></thead>
+      <tbody>
+        <tr th:each="d:${workDocuments}">
+          <td data-column="selection"><input type="checkbox" data-source-select th:value="${d.id}" th:attr="aria-label=${'Select '+d.label()}" th:disabled="${d.closed or d.outstanding.signum() <= 0}" th:title="${d.closed ? 'Closed document — review only' : d.outstanding.signum() <= 0 ? 'Fully received — review or close this document' : 'Select to receive only the outstanding quantities'}"></td>
+          <td data-column="document"><strong th:text="${d.label()}">Invoice</strong><small th:text="${d.filename}">Source file</small></td>
+          <td data-column="vendor" th:text="${d.vendor}"></td>
+          <td data-column="date" th:text="${#temporals.format(d.uploadedAt,'MMM d, yyyy')}"></td>
+          <td data-column="expected" th:text="${#numbers.formatDecimal(d.expected,1,0)+' each'}"></td>
+          <td data-column="received" th:text="${#numbers.formatDecimal(d.received,1,0)+' each'}"></td>
+          <td data-column="status" th:attr="data-row-warning=${!d.closed and d.received.signum()>0 and d.outstanding.signum()>0 ? 'true' : null}" th:text="${d.progress()}"></td>
+          <td data-column="actions" th:with="conversation=${threadsByShipment==null?null:threadsByShipment[d.sessionId.toString()]}"><div class="rw-row-actions"><div data-context-menu th:attr="data-title=${d.label()}"><strong th:text="${d.label()}">Document</strong><p th:text="${d.closed ? 'Closed: review receipts or adjust stock. Original receipts are locked.' : d.outstanding.signum() <= 0 ? 'Fully received: review receipts or close the document.' : 'Continue with outstanding quantities. Previously received units will not be counted again.'}"></p><a class="rw-document-open" th:href="@{/app/receiving/work(documents=${d.id})}" th:text="${d.closed or d.outstanding.signum() <= 0 ? 'Review this document only' : 'Receive this document only'}">Open this document only</a><button type="button" data-open-selection hidden></button><small data-single-selection-hint hidden>Your checked documents remain selected; this opens only this document.</small></div>
+            <button class="collaboration-row-button" th:classappend="${conversation != null and conversation.totalCount > 0 ? 'has-conversation' : ''}" type="button" th:attr="data-entity-type='SHIPMENT',data-entity-id=${d.sessionId},data-title=${d.label()},data-identifier=${d.sessionId},data-parent-url=|/app/receiving/work?documents=${d.id}|,data-can-collaborate=${canEditCatalog},data-active-count=${conversation==null?0:conversation.activeCount},data-total-count=${conversation==null?0:conversation.totalCount},data-closed-count=${conversation==null?0:conversation.closedCount}" onclick="openRecordCollaboration(this)" title="Start or open collaboration"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/><path class="conversation-lines" d="M9 9h6M9 12h4"/></svg><b th:if="${conversation != null and conversation.totalCount > 0}" th:text="${conversation.totalCount}">1</b></button>
+          </div></td>
+        </tr>
+        <tr th:if="${#lists.isEmpty(workDocuments)}"><td colspan="8"><div class="table-empty"><strong th:text="${#strings.isEmpty(query)?'No source documents yet':'No matching documents'}">No source documents yet</strong><span th:text="${#strings.isEmpty(query)?'Upload an invoice or packing list. Inventory only changes when you save a receipt.':'Try another document number, filename, or vendor.'}">Upload an invoice or packing list.</span></div></td></tr>
+      </tbody>
+    </table></div>
+    <div class="table-footer table-pagination" th:if="${documentPage!=null}" th:attr="data-page=${documentPage.page},data-page-max=${documentPage.pages()},data-page-size=${documentPage.size}">
+      <span th:text="${documentPage.total+' documents · Page '+(documentPage.page+1)+' of '+documentPage.pages()}"></span>
+      <form method="get" action="/app/receiving"><input type="hidden" name="q" th:value="${query}"><label>Rows <select name="size" onchange="this.form.submit()"><option th:each="n:${ {25,50,100} }" th:value="${n}" th:selected="${n==documentPage.size}" th:text="${n}"></option></select></label></form>
+      <a class="secondary-button compact-button" th:if="${documentPage.hasPrevious()}" th:href="@{/app/receiving(q=${query},page=${documentPage.page-1},size=${documentPage.size})}">Previous</a>
+      <a class="secondary-button compact-button" th:href="@{/app/receiving(q=${query},page=${documentPage.page},size=${documentPage.size})}" aria-current="page" th:text="${documentPage.page+1}">1</a>
+      <a class="secondary-button compact-button" th:if="${documentPage.hasNext()}" th:href="@{/app/receiving(q=${query},page=${documentPage.page+1},size=${documentPage.size})}">Next</a>
+    </div>
+    <p class="rw-footnote">Receive together does not merge documents. Use only one receiving source for the same delivery; do not count its invoice and packing list twice.</p>
+  </section>
+</main>
+<div th:replace="~{fragments/collaboration-thread :: modal('/app/receiving')}"></div>
+
+<dialog id="session-dialog" class="invite-dialog"><form method="post" th:action="@{/app/receiving/start}" enctype="multipart/form-data" class="dialog-shell">
+  <div class="dialog-header"><div><span class="eyebrow dark">Source documents</span><h2>Upload receiving documents</h2><p>Choose the vendor and source files. Receive now or return when the delivery arrives; uploading does not add stock.</p></div><button class="dialog-close" type="button" aria-label="Close document upload" onclick="this.closest('dialog').close()">×</button></div>
+  <div class="dialog-body catalog-form">
+    <div class="process-context"><span>2</span><div><strong>What happens next?</strong><p>We read the documents, match existing products, and prepare the products for receiving.</p></div></div>
+    <label>Vendor <b class="required-label">Required</b><div class="inline-lookup"><select id="freight-vendor" name="vendorId" required onchange="prefillVendorDefaults(this)"><option value="" data-freight="0" data-currency="USD">Choose the supplier shown on these documents</option><option th:each="v:${vendors}" th:value="${v.id}" th:attr="data-freight=${v.defaultFreightAmount},data-currency=${v.currency}" th:text="${v.name}">Vendor</option></select><button class="lookup-button" type="button" onclick="document.getElementById('session-dialog').close();document.getElementById('inline-vendor-dialog').showModal()">Add vendor</button></div><small>Selecting the vendor ensures item codes, costs, and credits are assigned correctly.</small></label>
+    <label>Invoices or packing lists <b class="required-label">Required</b><input name="files" type="file" accept=".csv,.tsv,.xls,.xlsx,.pdf" multiple required onchange="showSelectedFiles(this)"><small class="selected-file-summary">Select up to 12 files from this vendor. CSV, TSV, XLS, XLSX, or text-based PDF.</small></label>
+    <div class="form-pair"><label>Document type<select name="documentType"><option value="INVOICE">Invoice</option><option value="PACKING_LIST">Packing list</option></select></label><label>Receiving reference · Optional<input name="reference" placeholder="We use the invoice number when available"><small>A shared reference for this complete delivery.</small></label></div>
+    <div class="form-pair"><label>Currency<input id="session-currency" name="currency" value="USD" maxlength="3"></label><label>Freight amount<input id="session-freight" name="freightAmount" type="number" min="0" step="0.01" value="0"><small>Prefilled from the vendor; editable for this delivery.</small></label></div>
+    <details class="optional-landed-costs"><summary>Additional landed costs</summary><div class="form-pair"><label>Duty / import amount<input name="dutyImportAmount" type="number" min="0" step="0.01" value="0"></label><label>Other costs<input name="otherSharedCost" type="number" min="0" step="0.01" value="0"></label></div></details>
+    <div class="import-safety"><strong>Safe draft first</strong><span>All selected files are validated together. Inventory changes only when you press Receive for a product.</span></div>
+  </div>
+  <div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button">Read documents</button></div>
+</form></dialog>
+
+<dialog id="inline-vendor-dialog" class="invite-dialog"><form method="post" th:action="@{/app/catalog/vendors}" class="dialog-shell">
+  <input type="hidden" name="returnTo" value="/app/receiving">
+  <div class="dialog-header"><div><span class="eyebrow dark">Step 1 of 4 · Supplier setup</span><h2>Tell us who supplied the products</h2><p>This one-time setup connects future documents, item codes, prices, and credits to the correct supplier.</p></div><button class="dialog-close" type="button" aria-label="Close vendor setup" onclick="this.closest('dialog').close()">×</button></div>
+  <div class="dialog-body catalog-form">
+    <div class="process-context"><span>1</span><div><strong>What do you need?</strong><p>Enter the supplier name and currency. Everything else is optional and can be updated later.</p></div></div>
+    <div class="vendor-form-grid">
+      <label><span>Vendor name <b class="required-label">Required</b></span><input name="name" required placeholder="Enter the supplier or distributor name"><small>Use the business name shown on invoices and packing lists.</small></label>
+      <label><span>Vendor code · Optional</span><input name="code" placeholder="Internal short code"><small>A reference used by your team; it does not come from the invoice.</small></label>
+      <label><span>Buying currency <b class="required-label">Required</b></span><input name="currency" value="USD" maxlength="3" required><small>Default currency for this vendor’s prices.</small></label>
+      <label><span>Default discount % · Optional</span><input name="discountRate" type="number" min="0" max="100" step="0.01" value="0"><small>Used only when an uploaded document has no discount.</small></label>
+      <label class="vendor-wide"><span>Default freight amount · Optional</span><input name="defaultFreightAmount" type="number" min="0" step="0.01" value="0"><small>A convenient prefill. You will confirm the actual freight for every receiving.</small></label>
+    </div>
+    <div class="import-safety"><strong>No inventory changes here</strong><span>This step only creates the supplier profile. After saving, we will take you directly to Step 2 to upload documents.</span></div>
+  </div>
+  <div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button">Save vendor and continue</button></div>
+</form></dialog>
+
+<script>
+function prefillVendorDefaults(select){const option=select.options[select.selectedIndex];document.getElementById('session-freight').value=option.dataset.freight||'0';document.getElementById('session-currency').value=option.dataset.currency||'USD'}
+function showSelectedFiles(input){const summary=input.parentElement.querySelector('.selected-file-summary');const count=input.files.length;summary.textContent=count===0?'Choose at least one document.':count===1?input.files[0].name:count+' documents selected · one receiving workspace'}
+</script>
+<script th:if="${vendorCreated}">window.addEventListener('DOMContentLoaded',()=>document.getElementById('session-dialog').showModal())</script>
+</body>
+</html>

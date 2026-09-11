@@ -1,10 +1,11 @@
 <!doctype html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in | Next AI Commerce</title><link rel="stylesheet" href="/css/app.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in | Next AI Commerce</title><link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png"><link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1"></head>
 <body class="auth-page">
+  <script src="/js/table-preferences.js?v=20260911-2"></script>
   <main class="auth-shell">
     <section class="brand-panel">
-      <a class="brand" href="#"><span class="brand-mark">N</span><span>Next AI Commerce</span></a>
+      <a class="brand brand-lockup" href="#" aria-label="Next AI Commerce"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
       <div class="brand-message"><span class="eyebrow">Commerce operations</span><h1>Run every marketplace from one calm workspace.</h1><p>Orders, inventory, profitability and operations—securely separated for every business.</p></div>
       <p class="brand-foot">Built for modern multi-channel teams</p>
     </section>
@@ -13,6 +14,7 @@
         <div><span class="eyebrow dark">Welcome back</span><h2>Sign in to Next AI Commerce</h2><p class="muted">Use your company account to continue.</p></div>
         <p class="notice error" th:if="${param.error}">The email or password is incorrect.</p>
         <p class="notice" th:if="${param.logout}">You have signed out safely.</p>
+        <p class="notice" th:if="${param.activated}">Your account is activated. You can sign in now.</p>
         <label>Email<input type="email" name="username" autocomplete="username" placeholder="you@company.com" required autofocus></label>
         <label>Password<input type="password" name="password" autocomplete="current-password" placeholder="Enter your password" required></label>
         <button type="submit">Sign in <span>→</span></button>

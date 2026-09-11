@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Something needs attention | Next AI Commerce</title>
+  <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
+  <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1">
+  <link rel="stylesheet" href="/css/error-page.css">
+</head>
+<body class="friendly-error-page">
+  <main class="friendly-error-card">
+    <a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
+    <div class="friendly-error-symbol" aria-hidden="true">!</div>
+    <span class="eyebrow dark">Nothing was changed</span>
+    <h1>We couldn’t complete that request</h1>
+    <p>The page or document needs attention. Return to the workspace and try again; if it continues, the application log contains the details for support.</p>
+    <div class="friendly-error-actions"><a class="primary-button" href="/app">Return to workspace</a><button class="secondary-button" type="button" onclick="history.back()">Go back</button></div>
+    <small th:if="${status}" th:text="${'Reference: '+status}">Reference</small>
+  </main>
+</body>
+</html>

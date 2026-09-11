@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title th:text="${moduleTitle + ' | Next AI Commerce'}">Module | Next AI Commerce</title><link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png"><link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1"><th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block></head>
+<body class="app-page">
+  <aside class="sidebar">
+    <a class="brand brand-lockup" href="/app" aria-label="Next AI Commerce"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
+    <div th:replace="~{fragments/sidebar-nav :: nav(${activeModule})}"></div>
+    <div th:replace="~{fragments/sidebar-user :: user}"></div>
+  </aside>
+  <main class="workspace"><header class="workspace-header"><div><span class="eyebrow dark">Workspace</span><h1 th:text="${moduleTitle}">Module</h1><p class="page-intro" th:text="${moduleDescription}">Module description</p></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header><div th:replace="~{fragments/background-sync-notice :: notice}"></div><section class="empty-state" th:if="${storeSelectionRequired}"><span class="store-required-icon">⌄</span><h2>Select a marketplace store</h2><p th:text="${'Choose an Amazon or Walmart store before opening ' + moduleTitle + '. Account-wide aggregation is available only on Overview.'}">Choose a store to continue.</p><button class="primary-button store-picker-action" type="button" onclick="document.querySelector('.context-menu').setAttribute('open','')">Choose store</button></section><section class="empty-state" th:unless="${storeSelectionRequired}"><span class="status-dot"></span><h2 th:text="${moduleTitle + ' access is active'}">Access is active</h2><p>This page is protected by your tenant role. Its records will be limited to the selected marketplace store.</p></section></main>
+<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block></body></html>

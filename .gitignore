@@ -7,3 +7,5 @@ target/
 .env
 *.log
 .DS_Store
+.local/
+*.dump

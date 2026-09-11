@@ -1,0 +1,27 @@
+# A local profile NEVER inherits the remote DB_URL from an Eclipse or production launch.
+spring:
+  config:
+    import: optional:file:./.local/app.properties
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:55432/next_ai_commerce_local
+    username: nextcommerce_local
+    password: ${LOCAL_DB_PASSWORD:}
+  thymeleaf:
+    cache: true
+server:
+  address: 127.0.0.1
+app:
+  public-url: http://localhost:8080
+  scheduling:
+    enabled: true
+  integrations:
+    external-enabled: true
+  amazon:
+    sync-enabled: true
+    write-enabled: false
+    recurring-enabled: false
+    startup-order-reconciliation-enabled: false
+    listing-actions-enabled: false
+  mail:
+    enabled: false
+    provider: disabled

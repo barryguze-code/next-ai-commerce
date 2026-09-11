@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Review Physical Count | Next AI Commerce</title>
+  <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
+  <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1"><link rel="stylesheet" href="/css/access.css">
+  <link rel="stylesheet" href="/css/catalog-import.css"><link rel="stylesheet" href="/css/physical-count-import.css?v=20260905-2"><link rel="stylesheet" href="/css/confirm-dialog.css">
+  <script defer src="/js/theme.js?v=20260905-1"></script><script defer src="/js/confirm-dialog.js?v=20260904-1"></script>
+<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block></head>
+<body class="app-page">
+<aside class="sidebar"><a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a><div th:replace="~{fragments/sidebar-nav :: nav('inventory')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
+<main class="workspace">
+  <dialog id="physical-count-review" class="catalog-import-dialog" th:classappend="${physicalCount.status == 'APPLIED' and (physicalCountProgress == null or physicalCountProgress.state != 'QUEUED' and physicalCountProgress.state != 'PROCESSING')} ? 'physical-count-result-dialog'">
+    <section class="catalog-import-progress physical-count-processing" th:if="${physicalCountProgress != null and (physicalCountProgress.state == 'QUEUED' or physicalCountProgress.state == 'PROCESSING')}">
+      <div class="import-dialog-heading"><div><strong>Applying your physical count</strong><span th:text="${physicalCount.filename+' · '+#numbers.formatInteger(physicalCount.totalRows,1,'COMMA')+' rows'}">File · rows</span></div><a class="dialog-close" href="/app/inventory" aria-label="Continue in background">×</a></div>
+      <div class="progress-orbit" data-count-progress-orbit th:style="|--progress:${physicalCountProgress.percent}%|"><strong data-count-progress-percent th:text="${physicalCountProgress.percent+'%'}">0%</strong></div>
+      <h2 data-count-progress-phase th:text="${physicalCountProgress.phase}">Validating inventory</h2><p>Products, locations, expiration batches, and quantities are being reconciled together.</p>
+      <div class="import-progress-track"><i data-count-progress-bar th:style="|width:${physicalCountProgress.percent}%|"></i></div><small>You may close this window. Processing continues safely in the background.</small>
+    </section>
+    <section class="catalog-import-progress physical-count-complete" th:if="${physicalCount.status == 'APPLIED' and (physicalCountProgress == null or physicalCountProgress.state != 'QUEUED' and physicalCountProgress.state != 'PROCESSING')}">
+      <div class="import-dialog-heading"><div><strong>Physical count complete</strong><span th:text="${physicalCount.filename}">count.xlsx</span></div><a class="dialog-close" href="/app/inventory" aria-label="Close">×</a></div>
+      <div class="physical-count-completion-body">
+        <div class="physical-count-completion-hero">
+          <span class="completion-emblem" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6.8 12.4 3.2 3.2 7.4-8"/></svg></span>
+          <div><span class="completion-kicker">Inventory updated</span><h2 th:text="${#numbers.formatInteger(physicalCount.appliedRows,1,'COMMA')+' count rows applied'}">Count applied</h2><p>Your uploaded count is now the account’s inventory source of truth.</p></div>
+        </div>
+        <div class="completion-facts">
+          <article><span aria-hidden="true">↻</span><div><strong>Positions reconciled</strong><small>Locations and expiration batches were updated together.</small></div></article>
+          <article><span aria-hidden="true">◇</span><div><strong>Marketplace unchanged</strong><small>No marketplace quantity was published.</small></div></article>
+        </div>
+        <div class="physical-count-shortage-result" th:if="${physicalCountProgress != null and physicalCountProgress.state == 'FAILED'}"><span class="shortage-symbol" aria-hidden="true">!</span><div><strong>Inventory accepted; order review needs attention</strong><span th:text="${physicalCountProgress.error}">Reservation refresh could not finish.</span></div></div>
+        <div class="physical-count-shortage-result" th:if="${physicalCountProgress != null and physicalCountProgress.shortageOrders > 0}"><span class="shortage-symbol" aria-hidden="true">!</span><div><strong th:text="${physicalCountProgress.shortageOrders+' pending order(s) need attention'}">Orders need attention</strong><span>The count was accepted. These orders could not be fully reserved from current stock.</span></div></div>
+        <div class="import-actions"><a class="secondary-button" th:if="${physicalCountProgress != null and physicalCountProgress.shortageOrders > 0}" href="/app/orders?status=INVENTORY_SHORTAGE">Review shortages</a><a class="primary-button compact-button" href="/app/inventory">View inventory</a></div>
+      </div>
+    </section>
+    <form th:unless="${physicalCount.status == 'APPLIED' or (physicalCountProgress != null and (physicalCountProgress.state == 'QUEUED' or physicalCountProgress.state == 'PROCESSING'))}" th:classappend="${physicalCountError} ? 'has-error'" method="post" th:action="@{/app/inventory/physical-counts/{id}/apply(id=${physicalCount.id})}" data-confirm-title="Apply physical count" th:attr="data-confirm-message=${physicalCount.mapping['scope']=='REPLACE_PRODUCTS' ? 'For products in this file, ALL omitted locations and expiration batches will be reduced to zero. Products absent from the file are unchanged. Confirm this is a complete count.' : 'Only listed item + location + expiration batches will be updated. Unlisted batches remain unchanged.'}" data-confirm-accept="Apply count">
+      <div class="import-dialog-heading"><div><strong>Review detected columns</strong><span th:text="${physicalCount.filename+' · '+#numbers.formatInteger(physicalCount.totalRows,1,'COMMA')+' rows'}">File · rows</span></div><a class="dialog-close" href="/app/inventory" aria-label="Close">×</a></div>
+      <div class="notice error actionable-notice" th:if="${physicalCountError}">
+        <span th:text="${physicalCountError}">Fix the upload.</span>
+      </div>
+      <section class="count-inline-repair" th:if="${physicalCountRepairType == 'LOCATION'}" data-count-repair data-endpoint="/app/catalog/location-options">
+        <div class="repair-copy"><span class="repair-icon">⌖</span><div><strong>Add this location without leaving your count</strong><small>We kept the uploaded file and your column choices. Add the missing account location, then this same count will continue automatically.</small></div></div>
+        <div class="repair-fields"><label>Location code<input name="repairCode" th:value="${physicalCountRepairValue}" maxlength="80" required></label><label>Location name<input name="repairName" th:value="${physicalCountRepairValue}" maxlength="160" placeholder="For example, Freezer 2" required></label><button class="primary-button compact-button" type="button" onclick="repairPhysicalCount(this)">Add and continue</button></div>
+        <p class="notice location-manager-feedback" data-repair-feedback hidden></p>
+      </section>
+      <section class="count-inline-repair" th:if="${physicalCountRepairType == 'PRODUCT'}" data-count-repair data-endpoint="/app/catalog/product-options">
+        <div class="repair-copy"><span class="repair-icon">＋</span><div><strong>Add this item to the account catalogue</strong><small>The item code is already filled from the problem row. Complete the product identity and we will continue this same count automatically.</small></div></div>
+        <div class="repair-fields product"><label>Item code<input name="repairAccountSku" th:value="${physicalCountRepairValue}" readonly></label><label>Product name<input name="repairProductName" placeholder="Product name" required autofocus></label><label>Brand <em>Optional</em><input name="repairBrand" placeholder="Brand"></label><label>UPC / EAN <em>Optional</em><input name="repairIdentifier" inputmode="numeric" placeholder="Scan or enter"></label><label>Vendor <em>Optional</em><select name="repairVendor"><option value="">No vendor association</option><option th:each="vendor:${vendors}" th:value="${vendor.id}" th:text="${vendor.name}" th:selected="${vendor.id == physicalCount.vendorId}">Vendor</option></select></label><label>Current unit cost <em>If vendor selected</em><input name="repairUnitCost" type="number" min="0" step="0.0001" placeholder="0.00"></label><label class="repair-check"><input name="repairExpiration" type="checkbox" value="true"><span>Track expiration dates</span></label><button class="primary-button compact-button" type="button" onclick="repairPhysicalCount(this)">Add and continue</button></div>
+        <p class="notice location-manager-feedback" data-repair-feedback hidden></p>
+      </section>
+      <section class="replace-count-file" th:if="${physicalCountError}">
+        <div><strong>Ready to try again?</strong><span>Choose a corrected CSV or Excel file. Its review will open automatically.</span></div>
+        <label class="primary-button replace-count-picker">
+          <span>Choose corrected file</span>
+          <input class="sr-only" type="file" name="file" accept=".csv,.tsv,.xls,.xlsx"
+                 onchange="if(this.files.length){this.closest('label').querySelector('span').textContent='Uploading '+this.files[0].name+'…';this.form.dataset.confirmed='true';this.form.requestSubmit(document.getElementById('replace-count-submit'))}">
+        </label>
+        <button id="replace-count-submit" class="sr-only" type="submit" formaction="/app/inventory/physical-counts" formmethod="post" formenctype="multipart/form-data" formnovalidate tabindex="-1">Upload replacement</button>
+      </section>
+      <section class="physical-count-summary"><article><span>1</span><div><strong>Review columns</strong><small>Nothing has changed yet</small></div></article><article><span>2</span><div><strong>Validate every row</strong><small>Any error stops the entire count</small></div></article><article><span>3</span><div><strong>Apply once</strong><small>Internal inventory only; never Amazon</small></div></article></section>
+      <section class="mapping-card">
+        <div class="mapping-intro"><strong>Our field → Uploaded file column</strong><span>Detected automatically. Confirm these before inventory is changed.</span></div>
+        <div class="mapping-grid">
+          <label><span>Item code, UPC, or SKU <b>Required</b></span><select name="itemCode" required><option value="">Choose column</option><option th:each="header:${physicalCount.headers}" th:value="${header}" th:text="${header}" th:selected="${header == physicalCount.mapping['itemCode']}">Column</option></select></label>
+          <label><span>Counted quantity <b>Required</b></span><select name="quantity" required><option value="">Choose column</option><option th:each="header:${physicalCount.headers}" th:value="${header}" th:text="${header}" th:selected="${header == physicalCount.mapping['quantity']}">Column</option></select></label>
+          <label><span>Expiration date <em>Required for dated products</em></span><select name="expiration"><option value="">Not in file</option><option th:each="header:${physicalCount.headers}" th:value="${header}" th:text="${header}" th:selected="${header == physicalCount.mapping['expiration']}">Column</option></select></label>
+          <label><span>Batch location <em>Optional</em></span><select name="locationColumn" autocomplete="off"><option value="" th:selected="${physicalCount.mapping['location'] == null or #strings.isEmpty(physicalCount.mapping['location'])}">Use each product’s default location</option><option th:each="header:${physicalCount.headers}" th:value="${header}" th:text="${header}" th:selected="${header == physicalCount.mapping['location']}">Column</option></select></label>
+          <label><span>Vendor <em>Use when item codes overlap</em></span><select name="vendorId"><option value="">Detect automatically</option><option th:each="vendor:${vendors}" th:value="${vendor.id}" th:text="${vendor.name}" th:selected="${vendor.id == physicalCount.vendorId}">Vendor</option></select></label>
+        </div>
+      </section>
+      <section class="physical-count-impact"><strong>Choose the count scope</strong>
+        <label>How should omitted batches be handled?<select name="scope" onchange="this.form.dataset.confirmMessage=this.value==='REPLACE_PRODUCTS'?'For products in this file, ALL omitted locations and expiration batches will be reduced to zero. Products absent from the file are unchanged. Confirm this is a complete count.':'Only listed item + location + expiration batches will be updated. Unlisted batches remain unchanged.'">
+          <option value="LISTED_BATCHES">Update listed batches only · recommended</option>
+          <option value="REPLACE_PRODUCTS" th:selected="${physicalCount.mapping['scope']=='REPLACE_PRODUCTS'}">Complete product count · zero omitted batches</option>
+        </select></label>
+        <p>This is an authoritative count for the selected scope. Ledger corrections record only the difference, never a duplicate receipt. Expired units remain visible as cannot sell. A count cannot remove units committed to active orders.</p>
+      </section>
+      <div class="approval-bar"><div><strong>Ready for your approval</strong><span>Validation and reconciliation run together; a single error rolls back the entire file.</span></div><div class="import-actions"><a class="secondary-button" href="/app/inventory">Cancel</a><button class="primary-button compact-button" type="submit">Validate and apply</button></div></div>
+    </form>
+  </dialog>
+</main>
+<script src="/js/physical-count-repair.js?v=20260904-1"></script>
+<script th:inline="javascript">window.addEventListener('DOMContentLoaded',()=>{const dialog=document.getElementById('physical-count-review');if(dialog&&!dialog.open)dialog.showModal();const state=/*[[${physicalCountProgress == null ? null : physicalCountProgress.state}]]*/ null;const id=/*[[${physicalCount.id}]]*/ null;if(state==='QUEUED'||state==='PROCESSING'){const poll=async()=>{try{const response=await fetch('/app/inventory/physical-counts/'+id+'/progress',{headers:{Accept:'application/json'}});if(!response.ok){if(response.status===409)location.href='/app/select-account';return}const job=await response.json();const percent=document.querySelector('[data-count-progress-percent]'),phase=document.querySelector('[data-count-progress-phase]'),bar=document.querySelector('[data-count-progress-bar]'),orbit=document.querySelector('[data-count-progress-orbit]');if(percent)percent.textContent=job.percent+'%';if(phase)phase.textContent=job.phase;if(bar)bar.style.width=job.percent+'%';if(orbit)orbit.style.setProperty('--progress',job.percent+'%');if(job.state==='COMPLETED'||job.state==='FAILED'){location.reload();return}setTimeout(poll,700)}catch(_){setTimeout(poll,1800)}};setTimeout(poll,500)}})</script>
+<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block></body>
+</html>

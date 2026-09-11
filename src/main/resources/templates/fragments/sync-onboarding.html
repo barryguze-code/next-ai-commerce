@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<th:block th:fragment="onboarding(syncStatuses,syncJobsByConnection)">
+  <section class="amazon-onboarding" th:each="sync : ${syncStatuses}" th:if="${sync.status != 'COMPLETED' and sync.status != 'ENRICHING'}">
+    <header class="onboarding-head">
+      <div class="onboarding-title">
+        <span class="sync-loader" aria-hidden="true"></span>
+        <div>
+          <small>Amazon initialization</small>
+          <h2 th:text="${sync.storeName}">Amazon store</h2>
+          <p th:text="${sync.message}">Preparing your Amazon data</p>
+        </div>
+      </div>
+      <div class="onboarding-progress-copy">
+        <strong th:text="${sync.displayProgress() + '%'}">25%</strong>
+        <small th:text="${sync.estimatedTimeRemaining()}">Amazon is preparing this step</small>
+      </div>
+    </header>
+    <div class="sync-progress large" th:classappend="${sync.starting() ? ' indeterminate' : ''}"
+         role="progressbar" th:attr="aria-valuenow=${sync.displayProgress()}" aria-valuemin="0" aria-valuemax="100">
+      <span th:style="${'width:' + sync.displayProgress() + '%'}"></span>
+    </div>
+    <div class="onboarding-stage-copy">
+      <strong th:text="${sync.stagePosition()}">Step 1 of 12</strong>
+      <span>Initial 30-day import</span>
+    </div>
+    <div class="sync-checklist">
+      <article th:each="job : ${syncJobsByConnection[sync.connectionId]}"
+               th:classappend="${' ' + #strings.toLowerCase(job.status)}">
+        <span class="job-state">
+          <b th:if="${job.status == 'COMPLETED'}" aria-label="Complete">✓</b>
+          <i th:if="${job.status == 'RUNNING' || job.status == 'WAITING'}" class="job-spinner" aria-label="In progress"></i>
+          <b th:if="${job.status == 'QUEUED'}" th:text="${job.sequence}">1</b>
+          <b th:if="${job.status == 'SKIPPED'}">–</b>
+          <b th:if="${job.status == 'FAILED'}">!</b>
+        </span>
+        <div>
+          <strong th:text="${job.label}">Products and SKUs</strong>
+          <small th:if="${job.status == 'RUNNING'}">Working now</small>
+          <small th:if="${job.status == 'WAITING'}"
+                 th:text="${job.detail != null ? job.detail : 'Waiting for Amazon'}">Waiting for Amazon</small>
+          <small th:if="${job.status == 'QUEUED'}">Queued</small>
+          <small th:if="${job.status == 'COMPLETED'}"
+                 th:text="${job.recordsProcessed > 0 ? job.recordsProcessed + ' records imported' : 'Completed'}">Completed</small>
+          <small th:if="${job.status == 'SKIPPED'}">Not available for this store</small>
+          <small th:if="${job.status == 'FAILED'}" th:text="${job.detail != null ? job.detail : 'Needs attention'}">Needs attention</small>
+        </div>
+      </article>
+    </div>
+    <footer><span>Safe to leave this page</span><p>Synchronization continues in the background. Amazon controls report preparation time.</p></footer>
+  </section>
+</th:block>
+</body>
+</html>

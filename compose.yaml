@@ -1,3 +1,6 @@
+# Legacy PostgreSQL 17 sandbox. Do not upgrade its existing volume in place.
+# The 1.0.0 local UAT workflow uses PostgreSQL 18 on port 55432 instead:
+# see docs/local-development.md. This file is not a production deployment.
 services:
   postgres:
     image: postgres:17-alpine

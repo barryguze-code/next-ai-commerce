@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Account Catalogue | Next AI Commerce</title>
+<link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/brand.css?v=20260909-1">
+<link rel="stylesheet" href="/css/access.css">
+<link rel="stylesheet" href="/css/table-widget.css?v=1.0.0">
+<link rel="stylesheet" href="/css/locations.css">
+<link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7"><link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2"><link rel="stylesheet" href="/css/collaboration-thread.css?v=20260911-8">
+<script defer src="/js/theme.js?v=20260905-1">
+</script>
+<script defer src="/js/table-preferences.js?v=20260911-2"></script><script defer src="/js/table-widget.js?v=1.0.0"></script>
+<script defer src="/js/collaboration.js?v=20260911-8"></script>
+</head>
+<body class="app-page">
+<aside class="sidebar">
+<a class="brand brand-lockup" href="/app">
+<img src="/images/next-ai-mark-transparent.png" alt="">
+<span class="brand-wordmark">
+<strong>
+<span>Next</span>
+<b>AI</b>
+</strong>
+<small>COMMERCE</small>
+</span>
+</a>
+<div th:replace="~{fragments/sidebar-nav :: nav('account-catalog')}">
+</div>
+<div th:replace="~{fragments/sidebar-user :: user}">
+</div>
+</aside>
+<main class="workspace">
+<header class="workspace-header">
+<div>
+<span class="eyebrow dark">Catalogue &amp; purchasing</span>
+<h1>Account Catalogue</h1>
+<p class="page-intro">Products, vendors, buying costs, and receiving readiness for this account.</p>
+</div>
+<div class="header-actions">
+<div th:replace="~{fragments/context-switcher :: switcher}">
+</div>
+</div>
+</header>
+<p class="notice" th:if="${catalogSuccess}" th:text="${catalogSuccess}">Saved.</p>
+<p class="notice error" th:if="${catalogError}" th:text="${catalogError}">Error.</p>
+<section class="catalog-readiness">
+<article>
+<span>1</span>
+<div>
+<strong>Products</strong>
+<small>Add one item or upload a vendor catalogue</small>
+</div>
+<b th:text="${#numbers.formatInteger(catalogPage.total,1,'COMMA')}">0</b>
+</article>
+<article>
+<span>2</span>
+<div>
+<strong>Vendors</strong>
+<small>Set buying currency and the default discount</small>
+</div>
+<b th:text="${vendors.size()}">0</b>
+</article>
+<article>
+<span>3</span>
+<div>
+<strong>Receiving ready</strong>
+<small>Freight and import charges are entered per receiving session</small>
+</div>
+<b th:text="${catalogPage.total > 0 and vendors.size() > 0 ? 'Ready' : 'Setup'}">Setup</b>
+</article>
+</section>
+<section class="data-card catalog-card">
+<div class="card-toolbar">
+<div>
+<h2>Products</h2>
+<p>Vendor item code is the primary buying identity; UPC or EAN confirms the global product.</p>
+</div>
+<div class="toolbar-tools table-widget-tools">
+<form method="get" action="/app/catalog"><label class="search-field">
+<span>⌕</span>
+<input type="search" name="q" th:value="${query}" placeholder="Search catalogue">
+</label></form><div data-column-control="account-catalogue"></div>
+<button th:if="${canEditCatalog}" class="secondary-button compact-button" type="button" onclick="document.getElementById('vendor-dialog').showModal()">Add vendor</button>
+<button th:if="${canEditCatalog}" class="secondary-button compact-button" type="button" onclick="document.getElementById('location-dialog').showModal()">Locations</button>
+<button th:if="${canEditCatalog}" class="secondary-button compact-button" type="button" th:disabled="${#lists.isEmpty(vendors)}" th:title="${#lists.isEmpty(vendors) ? 'Add a vendor first' : 'Upload CSV or XLSX'}" onclick="document.getElementById('upload-dialog').showModal()">Upload catalogue</button>
+<button th:if="${canEditCatalog}" class="primary-button compact-button" type="button" onclick="document.getElementById('product-dialog').showModal()">Add product</button>
+</div>
+</div>
+<div class="table-wrap">
+<table data-sortable data-table-widget="account-catalogue" data-table-min-width="1200">
+<thead>
+<tr>
+<th data-column-required="true" data-column-weight="3.5">Product</th>
+<th>Vendor item code</th>
+<th data-column-weight="3"><span class="column-heading-with-info">Marketplace SKUs <button class="column-info" type="button" aria-label="About marketplace SKUs" data-tip="Amazon or Walmart seller SKUs mapped to this catalogue item. Quantities show units consumed per marketplace sale.">i</button></span></th>
+<th>UPC / EAN</th>
+<th>Vendors</th>
+<th><span class="column-heading-with-info">Current buying cost <button class="column-info" type="button" aria-label="About current buying cost" data-tip="After vendor discount; receiving charges are excluded.">i</button></span></th>
+<th data-column-weight=".75"><span class="column-heading-with-info">Default location <button class="column-info" type="button" aria-label="About default inventory location" data-tip="New receipts and count rows use this location unless another location is supplied.">i</button></span></th>
+<th>Receiving</th>
+<th>Status</th>
+<th data-column-required="true">Action</th>
+</tr>
+</thead>
+<tbody>
+<tr class="catalog-row" th:each="item:${items}" th:attr="data-search=${#strings.toLowerCase(item.name + ' ' + (item.brand ?: '') + ' ' + (item.vendorName ?: '') + ' ' + (item.vendorItemCode ?: '') + ' ' + (item.identifier ?: '') + ' ' + (item.accountSku ?: ''))}">
+<td>
+<div class="product-cell">
+<form th:if="${canEditCatalog}" method="post" enctype="multipart/form-data" th:action="@{/app/catalog/products/{id}/image(id=${item.id})}" class="product-image-upload" onclick="event.stopPropagation()"><input type="hidden" name="returnTo" value="/app/catalog"><label th:title="${'Upload a picture for '+item.name}"><span class="product-avatar product-image"><img th:if="${item.imageUrl != null}" th:src="${item.imageUrl}" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><b th:hidden="${item.imageUrl != null}" th:text="${#strings.substring(item.name,0,1)}">P</b><i aria-hidden="true">↥</i></span><input class="sr-only" type="file" name="image" accept="image/png,image/jpeg,image/webp" onchange="this.form.requestSubmit()"></label></form><span th:unless="${canEditCatalog}" class="product-avatar product-image"><img th:if="${item.imageUrl != null}" th:src="${item.imageUrl}" alt="" loading="lazy"><b th:unless="${item.imageUrl != null}" th:text="${#strings.substring(item.name,0,1)}">P</b></span>
+<div>
+<strong th:text="${item.name}">Product</strong>
+<small th:text="${item.brand ?: 'Brand not specified'}">Brand</small>
+</div>
+</div>
+</td>
+<td>
+<strong th:text="${item.vendorItemCode ?: 'Not assigned'}">Vendor code</strong>
+<small class="cell-note" th:if="${item.vendorName != null}" th:text="${item.vendorName}">Vendor</small>
+</td>
+<td th:with="refs=${skusByItem == null ? null : skusByItem[item.id]}"><div class="marketplace-sku-stack" th:if="${refs != null and !#lists.isEmpty(refs)}"><span th:each="ref,status:${refs}" th:if="${status.index < 3}"><strong th:text="${ref.sku}" th:title="${ref.sku}">SKU</strong><nav data-marketplace-shortcuts th:attr="data-sku=${ref.sku},data-asin=${ref.asin},data-channel=${ref.channel},data-amazon-domain=${ref.amazonDomain}"></nav><small th:text="${'× '+#numbers.formatDecimal(ref.quantity,1,0)}">× 1</small></span><button th:if="${#lists.size(refs) > 3}" type="button" th:attr="data-target=|skus-${item.id}|" onclick="document.getElementById(this.dataset.target).showModal()" th:text="${'+'+(#lists.size(refs)-3)+' more'}">+2 more</button></div><span th:if="${refs == null or #lists.isEmpty(refs)}" class="cell-note">No marketplace SKU mapped</span></td>
+<td><strong th:text="${item.identifier ?: 'Not supplied'}">UPC</strong></td>
+<td>
+<button th:if="${item.vendorCount > 0}" class="vendor-count-button" type="button" th:attr="data-target=|offers-${item.id}|" onclick="document.getElementById(this.dataset.target).showModal()">
+<strong th:text="${item.vendorCount}">0</strong>
+<span>View vendor prices</span>
+</button>
+<span th:if="${item.vendorCount == 0}" class="cell-note">Price setup needed</span>
+</td>
+<td>
+<strong th:text="${item.currentBuyingCost == null ? 'Not calculated' : item.currency+' '+#numbers.formatDecimal(item.currentBuyingCost,1,'COMMA',2,'POINT')}">USD 0.00</strong>
+</td>
+<td><form th:if="${canEditCatalog}" method="post" th:action="|/app/catalog/products/${item.id}/default-location|" class="default-location-form"><input type="hidden" name="q" th:value="${query}"><input type="hidden" name="page" th:value="${catalogPage.page}"><select name="locationId" onchange="this.form.requestSubmit()" th:aria-label="${'Default location for '+item.name}"><option th:each="location:${locations}" th:if="${location.status == 'ACTIVE'}" th:value="${location.id}" th:selected="${location.id == item.defaultLocationId}" th:text="${location.code+' · '+location.name}">MAIN · Main storage</option></select></form><span th:unless="${canEditCatalog}" class="location-chip"><strong th:text="${item.defaultLocationCode}">MAIN</strong><small th:text="${item.defaultLocationName}">Main storage</small></span></td>
+<td>
+<span class="catalog-pill" th:text="${item.expirationRequired ? 'Expiration required' : 'Standard receiving'}">Standard</span>
+</td>
+<td>
+<span class="status-badge" th:classappend="${item.completionStatus == 'NEEDS_COMPLETION' ? ' needs-completion' : ' active'}">
+<i>
+</i>
+<span th:text="${item.completionStatus == 'NEEDS_COMPLETION' ? 'NEEDS COMPLETION' : item.status}">ACTIVE</span>
+</span>
+<small th:if="${item.completionStatus == 'NEEDS_COMPLETION'}" class="cell-note">Receiving can continue · add UPC/EAN later</small>
+</td>
+<td th:with="conversation=${threadsByCatalogItem == null ? null : threadsByCatalogItem.get(item.id.toString())}"><div class="collaboration-row-actions"><span class="record-collaboration-actions"><button class="collaboration-row-button" th:classappend="${conversation != null and conversation.totalCount > 0 ? 'has-conversation' : ''}" type="button" th:attr="data-entity-type='CATALOG',data-entity-id=${item.id},data-title=${item.name},data-identifier=${item.accountSku ?: item.vendorItemCode ?: item.identifier},data-image=${item.imageUrl ?: ''},data-location-label=${item.defaultLocationCode+' · '+item.defaultLocationName},data-status=${item.status},data-price=${item.currentBuyingCost == null ? '' : item.currency+' '+item.currentBuyingCost},data-parent-url='/app/catalog',data-can-collaborate=${canEditCatalog},data-active-count=${conversation == null ? 0 : conversation.activeCount},data-total-count=${conversation == null ? 0 : conversation.totalCount},data-closed-count=${conversation == null ? 0 : conversation.closedCount}" onclick="openRecordCollaboration(this)" title="Start or open collaboration"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/><path class="conversation-lines" d="M9 9h6M9 12h4"/></svg><b th:if="${conversation != null and conversation.totalCount > 0}" th:text="${conversation.totalCount}">1</b></button></span><button th:if="${canEditCatalog}" class="secondary-button compact-action" type="button" th:disabled="${#lists.isEmpty(vendors)}" th:attr="data-item-id=${item.id},data-item-name=${item.name}" onclick="openCost(this)">Set price</button></div>
+</td>
+</tr>
+<tr th:if="${#lists.isEmpty(items)}">
+<td colspan="10">
+<div class="table-empty">
+<strong>Your catalogue is ready to begin</strong>
+<span>Add one product or upload a vendor catalogue with guided column mapping.</span>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="table-footer table-pagination" th:attr="data-page=${catalogPage.page},data-page-max=${catalogPage.totalPages()},data-page-size=${catalogPage.size}">
+<span th:text="${catalogPage.total == 0 ? 'Showing 0 products' : 'Showing '+#numbers.formatInteger(catalogPage.firstItem(),1,'COMMA')+'–'+#numbers.formatInteger(catalogPage.lastItem(),1,'COMMA')+' of '+#numbers.formatInteger(catalogPage.total,1,'COMMA')+' products'}">Showing products</span>
+<nav aria-label="Catalogue pages"><a th:if="${catalogPage.hasPrevious()}" th:href="@{/app/catalog(q=${query},page=0)}">First</a><a th:if="${catalogPage.hasPrevious()}" th:href="@{/app/catalog(q=${query},page=${catalogPage.page-1})}">Previous</a><form method="get" action="/app/catalog" class="page-jump" data-page-jump><input type="hidden" name="q" th:value="${query}"><label><span>Page</span><input type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" name="goToPage" th:attr="data-page-max=${catalogPage.totalPages()}" th:value="${catalogPage.displayPage()}" aria-label="Page number"><span th:text="${'of '+catalogPage.totalPages()}">of 1</span></label></form><a th:if="${catalogPage.hasNext()}" th:href="@{/app/catalog(q=${query},page=${catalogPage.page+1})}">Next</a><a th:if="${catalogPage.hasNext()}" th:href="@{/app/catalog(q=${query},page=${catalogPage.totalPages()-1})}">Last</a></nav>
+</div>
+</section>
+<dialog th:each="item:${items}" th:id="|offers-${item.id}|" class="invite-dialog offer-dialog">
+<div class="dialog-shell">
+<div class="dialog-header">
+<div>
+<span class="eyebrow dark">Vendor pricing</span>
+<h2 th:text="${item.name}">Product</h2>
+<p>Current buying terms for this account. Historical received costs remain unchanged.</p>
+</div>
+<button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button>
+</div>
+<div class="dialog-body">
+<div class="offer-list">
+<article th:each="offer:${offersByItem[item.id]}">
+<div>
+<strong th:text="${offer.vendorName}">Vendor</strong>
+<small th:text="${offer.vendorItemCode ?: 'No vendor item code'}">Item code</small>
+</div>
+<dl>
+<div>
+<dt>List price</dt>
+<dd th:text="${offer.currency+' '+#numbers.formatDecimal(offer.listCost,1,'COMMA',2,'POINT')}">USD 0.00</dd>
+</div>
+<div>
+<dt>Discount</dt>
+<dd th:text="${offer.discountRate+'%'}">0%</dd>
+</div>
+<div>
+<dt>Buying cost</dt>
+<dd th:text="${offer.currency+' '+#numbers.formatDecimal(offer.buyingCost,1,'COMMA',2,'POINT')}">USD 0.00</dd>
+</div>
+</dl>
+<span th:if="${offer.preferred}" class="catalog-pill">Preferred</span>
+</article>
+</div>
+</div>
+<div class="dialog-actions">
+<button class="primary-button compact-button" type="button" onclick="this.closest('dialog').close()">Done</button>
+</div>
+</div>
+</dialog>
+<dialog th:each="item:${items}" th:if="${skusByItem == null ? false : (skusByItem[item.id] != null and #lists.size(skusByItem[item.id]) > 3)}" th:id="|skus-${item.id}|" class="invite-dialog offer-dialog"><div class="dialog-shell"><div class="dialog-header"><div><span class="eyebrow dark">Marketplace mappings</span><h2 th:text="${item.name}">Product</h2><p>Every seller SKU that consumes this catalogue item.</p></div><button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button></div><div class="dialog-body"><div class="mapped-sku-list"><article th:each="ref:${skusByItem == null ? null : skusByItem[item.id]}"><strong th:text="${ref.sku}" th:title="${ref.sku}">SKU</strong><nav data-marketplace-shortcuts th:attr="data-sku=${ref.sku},data-asin=${ref.asin},data-channel=${ref.channel},data-amazon-domain=${ref.amazonDomain}"></nav><span th:text="${#numbers.formatDecimal(ref.quantity,1,0)+' item(s) per marketplace unit'}">1 item</span></article></div></div><div class="dialog-actions"><button class="primary-button compact-button" type="button" onclick="this.closest('dialog').close()">Done</button></div></div></dialog>
+<section class="data-card vendor-card">
+<div class="card-toolbar">
+<div>
+<h2>Vendors &amp; buying terms</h2>
+<p>Vendor defaults speed up purchasing; actual landed costs remain attached to each receiving.</p>
+</div>
+<a class="secondary-button compact-button" href="/app/vendors">Open vendor directory</a>
+</div>
+<div class="vendor-grid">
+<article th:each="vendor:${vendors}">
+<div>
+<strong th:text="${vendor.name}">Vendor</strong>
+<small th:text="${vendor.code ?: 'No vendor code'}">Code</small>
+</div>
+<span th:text="${vendor.currency}">USD</span>
+<dl>
+<div>
+<dt>Default discount</dt>
+<dd th:text="${vendor.discountRate+'%'}">0%</dd>
+</div>
+<div>
+<dt>Freight prefill</dt>
+<dd th:text="${vendor.currency+' '+#numbers.formatDecimal(vendor.defaultFreightAmount,1,'COMMA',2,'POINT')}">USD 0.00</dd>
+</div>
+<div>
+<dt>Products</dt>
+<dd th:text="${vendor.productCount}">0</dd>
+</div>
+</dl>
+</article>
+<div class="vendor-empty" th:if="${#lists.isEmpty(vendors)}">
+<strong>No vendors yet</strong>
+<span>Add the first vendor before receiving inventory.</span>
+</div>
+</div>
+</section>
+</main>
+<div th:replace="~{fragments/collaboration-thread :: modal('/app/catalog')}"></div>
+<dialog id="product-dialog" class="invite-dialog">
+<form method="post" th:action="@{/app/catalog/products}" class="dialog-shell">
+<div class="dialog-header">
+<div>
+<span class="eyebrow dark">Account catalogue</span>
+<h2>Add a product</h2>
+<p>We match the identifier globally; unmatched products safely create a new global record.</p>
+</div>
+<button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button>
+</div>
+<div class="dialog-body catalog-form">
+<label>Product name<input name="name" required placeholder="Enter the product name">
+<small>Use the consumer-facing product name, without vendor pricing.</small>
+</label>
+<div class="form-pair">
+<label>Brand<input name="brand" placeholder="Brand name">
+</label>
+<label>Account SKU<input name="accountSku" placeholder="Your internal SKU">
+</label>
+</div>
+<div class="form-pair">
+<label>Identifier type<select name="identifierType">
+<option>UPC</option>
+<option>EAN</option>
+<option>GTIN</option>
+<option>MPN</option>
+</select>
+</label>
+<label>Identifier<input name="identifier" placeholder="Scan or enter identifier">
+</label>
+</div>
+<label class="check-line">
+<input type="checkbox" name="expirationRequired" value="true">
+<span>
+<strong>Track expiration dates</strong>
+<small>Receiving will require an expiration date for this product.</small>
+</span>
+</label>
+</div>
+<div class="dialog-actions">
+<button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button>
+<button class="primary-button compact-button" type="submit">Add product</button>
+</div>
+</form>
+</dialog>
+<dialog id="vendor-dialog" class="invite-dialog">
+<form method="post" th:action="@{/app/catalog/vendors}" class="dialog-shell">
+<input type="hidden" name="returnTo" value="/app/catalog">
+<div class="dialog-header">
+<div>
+<span class="eyebrow dark">Purchasing setup</span>
+<h2>Add a vendor</h2>
+<p>Defaults speed up purchasing and can always be replaced during receiving.</p>
+</div>
+<button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button>
+</div>
+<div class="dialog-body catalog-form">
+<div class="vendor-form-grid">
+<label>
+<span>Vendor name</span>
+<input name="name" required placeholder="Enter vendor name">
+<small>Supplier or distributor name.</small>
+</label>
+<label>
+<span>Vendor code</span>
+<input name="code" placeholder="Optional internal code">
+<small>Optional reference used by your team.</small>
+</label>
+<label>
+<span>Currency</span>
+<input name="currency" value="USD" maxlength="3" required>
+<small>Default for catalogue prices.</small>
+</label>
+<label>
+<span>Default discount %</span>
+<input name="discountRate" type="number" min="0" max="100" step="0.01" value="0">
+<small>Used only when a file supplies no discount.</small>
+</label>
+<label class="vendor-wide">
+<span>Default freight amount</span>
+<input name="defaultFreightAmount" type="number" min="0" step="0.01" value="0">
+<small>Prefills a new receiving; actual freight is saved per receiving session.</small>
+</label>
+</div>
+</div>
+<div class="dialog-actions">
+<button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button>
+<button class="primary-button compact-button" type="submit">Add vendor</button>
+</div>
+</form>
+</dialog>
+<dialog id="location-dialog" class="invite-dialog location-manager-dialog">
+<form method="post" th:action="@{/app/catalog/location-options}" class="dialog-shell" onsubmit="return createManagedLocation(event,this)">
+<div class="dialog-header">
+<div><span class="eyebrow dark">Inventory routing</span><h2>Storage locations</h2><p>See every location in this account and add another without leaving the catalogue.</p></div>
+<button class="dialog-close" type="button" aria-label="Close storage locations" onclick="this.closest('dialog').close()">×</button>
+</div>
+<div class="dialog-body catalog-form">
+<div th:replace="~{fragments/location-directory :: directory(${locations})}"></div>
+<section class="location-create-panel">
+<div class="location-create-section"><div><strong>Add a new location</strong><small>Use concise codes that warehouse teams can scan on counts and packing slips.</small></div>
+<div class="form-pair"><label>Location code<input name="code" maxlength="80" placeholder="A-01" required><small>Unique within this account.</small></label><label>Location name<input name="name" maxlength="160" placeholder="Aisle A · Shelf 01" required><small>Human-readable picking label.</small></label></div></div>
+<div class="import-safety"><strong>Defaults do not move stock</strong><span>Changing a product default routes future receipts only. Existing batches remain at their recorded locations.</span></div>
+<p class="notice location-manager-feedback" data-location-feedback hidden></p>
+</section>
+</div>
+<div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Done</button><button class="primary-button compact-button" type="submit">Add new location</button></div>
+</form>
+</dialog>
+<dialog id="upload-dialog" class="invite-dialog">
+<form method="post" th:action="@{/app/catalog/imports}" enctype="multipart/form-data" class="dialog-shell">
+<div class="dialog-header">
+<div>
+<span class="eyebrow dark">Guided import</span>
+<h2>Upload vendor catalogue</h2>
+<p>Your file is staged first. Nothing is added until you map, review, and approve it.</p>
+</div>
+<button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button>
+</div>
+<div class="dialog-body catalog-form">
+<label>Vendor<select name="vendorId" required>
+<option value="">Choose vendor</option>
+<option th:each="vendor:${vendors}" th:value="${vendor.id}" th:text="${vendor.name}">Vendor</option>
+</select>
+</label>
+<label>Catalogue file<input name="file" type="file" accept=".csv,.tsv,.xlsx" required>
+<small>CSV, TSV, or XLSX · maximum 20 MB and 50,000 product rows.</small>
+</label>
+<div class="import-safety">
+<strong>Safe staged import</strong>
+<span>We will show the column mapping and sample rows before creating products or costs.</span>
+</div>
+</div>
+<div class="dialog-actions">
+<button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button>
+<button class="primary-button compact-button" type="submit">Review file</button>
+</div>
+</form>
+</dialog>
+<dialog id="cost-dialog" class="invite-dialog">
+<form method="post" th:action="@{/app/catalog/offers}" class="dialog-shell">
+<input type="hidden" name="itemId" id="cost-item-id">
+<div class="dialog-header">
+<div>
+<span class="eyebrow dark">Vendor pricing</span>
+<h2 id="cost-product-name">Set product price</h2>
+<p>Update buying terms without changing historical received costs.</p>
+</div>
+<button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button>
+</div>
+<div class="dialog-body catalog-form">
+<div class="form-pair">
+<label>Vendor<select name="vendorId" required>
+<option value="">Choose vendor</option>
+<option th:each="vendor:${vendors}" th:value="${vendor.id}" th:text="${vendor.name}">Vendor</option>
+</select>
+</label>
+<label>Vendor item code<input name="vendorItemCode" placeholder="Vendor SKU or item number">
+</label>
+</div>
+<div class="form-pair">
+<label>List / unit price<input name="listCost" type="number" min="0" step="0.01" required>
+</label>
+<label>Discount %<input name="discountRate" type="number" min="0" max="100" step="0.01" value="0">
+</label>
+</div>
+<label>Currency<input name="currency" value="USD" maxlength="3" required>
+<small>This calculates buying cost only. Freight, duty, and other shared costs are entered once for the complete receiving session.</small>
+</label>
+</div>
+<div class="dialog-actions">
+<button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button>
+<button class="primary-button compact-button" type="submit">Save price</button>
+</div>
+</form>
+</dialog>
+<script src="/js/location-manager.js?v=1.0.0"></script>
+<script>function openCost(button){document.getElementById('cost-item-id').value=button.dataset.itemId;document.getElementById('cost-product-name').textContent=button.dataset.itemName;document.getElementById('cost-dialog').showModal();}</script>
+<script th:if="${openPanel == 'locations'}">window.addEventListener('DOMContentLoaded',()=>document.getElementById('location-dialog')?.showModal())</script>
+</body>
+</html>

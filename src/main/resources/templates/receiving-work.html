@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Receive documents | Next AI Commerce</title>
+  <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1">
+  <link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/receiving-work.css?v=20260911-1">
+  <script defer src="/js/receiving-work.js?v=20260911-1"></script>
+  <th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block>
+</head>
+<body class="app-page">
+<aside class="sidebar">
+  <a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
+  <div th:replace="~{fragments/sidebar-nav :: nav('receiving')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div>
+</aside>
+<main class="workspace receive-work" th:attr="data-can-edit=${canEditCatalog}">
+  <input id="receiving-csrf" type="hidden" th:if="${_csrf}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
+  <header class="workspace-header"><div><a class="rw-back" href="/app/receiving">← Receiving documents</a><h1>Receive together</h1><p class="page-intro">One working view. Separate documents, quantities, and audit histories.</p></div><div th:replace="~{fragments/context-switcher :: switcher}"></div></header>
+  <p class="notice" th:if="${catalogSuccess}" th:text="${catalogSuccess}"></p>
+  <p class="notice error" th:if="${catalogError}" th:text="${catalogError}"></p>
+  <p id="rw-feedback" class="notice" role="status" hidden></p>
+  <section class="rw-documents" aria-label="Selected source documents">
+    <article class="rw-document" th:each="d:${workDocuments}" th:attr="data-document=${d.id}">
+      <span class="rw-document-icon" aria-hidden="true">▤</span><div><strong th:text="${d.label()}">Invoice</strong><small th:text="${d.vendor}">Vendor</small><span class="rw-progress" th:text="${d.progress()}">Partial</span></div>
+      <button class="secondary-button compact-button" type="button" th:attr="data-review-document=${d.id}">Review</button>
+    </article>
+  </section>
+  <section class="data-card" id="rw-lines-card">
+    <div class="card-toolbar"><div><h2>Receiving checklist</h2><p>Count what arrived. Save each expiration batch separately; come back for the rest anytime.</p></div><span class="rw-saved-hint">✓ Every receipt saves immediately</span></div>
+    <div class="table-wrap"><table data-table-widget="receiving-work" class="rw-table">
+      <thead><tr><th data-column="product">Product</th><th data-column="source">Source document</th><th data-column="expected">Expected</th><th data-column="received">Received</th><th data-column="remaining">Remaining</th><th data-column="actions">Actions</th></tr></thead>
+      <tbody>
+        <tr th:each="l:${workLines}" th:attr="data-line=${l.id},data-document=${l.documentId}">
+          <td data-column="product"><strong th:text="${l.product}">Product</strong><small th:text="${l.code}">Code</small></td>
+          <td data-column="source"><span th:each="d:${workDocuments}" th:if="${d.id==l.documentId}" th:text="${d.label()}">Invoice</span></td>
+          <td data-column="expected" th:text="${#numbers.formatDecimal(l.expected,1,0)+' each'}"></td>
+          <td data-column="received" th:text="${#numbers.formatDecimal(l.received,1,0)+' each'}"></td>
+          <td data-column="remaining"><span th:if="${l.closed}" class="rw-locked">Closed</span><span th:unless="${l.closed}" th:text="${#numbers.formatDecimal(l.remaining,1,0)+' each'}"></span></td>
+          <td data-column="actions"><div class="rw-row-actions">
+            <button th:if="${canEditCatalog and !l.closed and l.remaining.signum()>0}" class="primary-button compact-button" type="button" th:attr="data-receive=${l.id}">Receive</button>
+            <button th:if="${l.receipts>0}" class="secondary-button compact-button" type="button" th:attr="data-review-line=${l.id}">Review receipts</button>
+            <span th:if="${l.closed and l.receipts==0}" class="rw-locked">No receipts</span>
+          </div></td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p class="rw-footnote">Past-expiration stock stays visible in inventory as cannot sell. No Amazon inventory is published by this workflow.</p>
+  </section>
+</main>
+<dialog id="receiving-drawer" class="invite-dialog rw-drawer" aria-labelledby="rw-drawer-title">
+  <div class="dialog-shell">
+    <div class="dialog-header"><div><span class="eyebrow dark" id="rw-drawer-context">Receiving</span><h2 id="rw-drawer-title">Review</h2><p id="rw-drawer-subtitle"></p></div><button class="dialog-close" type="button" data-rw-close aria-label="Close receiving panel">×</button></div>
+    <div class="dialog-body" id="rw-drawer-body"></div>
+    <p class="notice error rw-panel-feedback" id="rw-panel-feedback" role="alert" hidden></p>
+    <div class="dialog-actions"><button class="secondary-button" type="button" data-rw-close>Back to checklist</button></div>
+  </div>
+</dialog>
+<script th:inline="javascript">
+window.receivingWork = {documents:/*[[${workDocuments}]]*/[],lines:/*[[${workLines}]]*/[],locations:/*[[${locations}]]*/[]};
+</script>
+<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block>
+</body>
+</html>

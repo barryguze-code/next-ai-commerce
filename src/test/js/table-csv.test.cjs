@@ -1,0 +1,10 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const context={window:{},document:{readyState:'loading',addEventListener(){}}};
+vm.runInNewContext(fs.readFileSync('src/main/resources/static/js/table-data-tools.js','utf8'),context);
+const cell=context.window.NextAiTableDataTools.csvCell;
+test('CSV escapes commas and quotes',()=>assert.equal(cell('Salt, "fine"'),'"Salt, ""fine"""'));
+test('CSV guards spreadsheet formulas',()=>{for(const prefix of ['=','+','-','@'])assert.equal(cell(prefix+'A1'),'"\''+prefix+'A1"')});
+test('CSV handles missing values and whitespace',()=>{assert.equal(cell(null),'""');assert.equal(cell('  hello\nworld  '),'"hello world"');assert.equal(cell('USD 12.50'),'"USD 12.50"')});

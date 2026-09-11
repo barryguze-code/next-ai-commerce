@@ -1,0 +1,55 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org"><body>
+<th:block th:fragment="modal(returnTo)">
+<dialog id="contextual-thread-dialog" class="invite-dialog contextual-thread-dialog">
+  <section class="dialog-shell">
+    <div class="dialog-header thread-dialog-header">
+      <div class="thread-record">
+        <span id="thread-record-visual" class="thread-record-visual"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v9H9l-4 4v-13Z"/><path d="M9 9h6M9 12h4"/></svg></span>
+        <div><small id="thread-record-type" class="eyebrow dark">Collaboration</small><h2 id="thread-record-title">Record conversation</h2><p id="thread-record-context">Record context</p><div class="thread-record-meta"><div id="thread-record-badges" class="thread-record-badges"></div><a id="thread-parent-link" class="thread-header-source" href="#" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8"/><path d="M18 13v5a1 1 0 01-1 1H6a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg><span>Open source</span></a></div></div>
+      </div>
+      <button class="dialog-close" type="button" aria-label="Close conversation" data-thread-dialog-close>×</button>
+    </div>
+    <div class="thread-mode-switch" role="tablist" aria-label="Conversation visibility">
+      <button type="button" role="tab" aria-selected="true" data-thread-tab="TEAM_CHAT"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg><span><strong>Team Chat</strong><small>Visible to permitted teammates</small></span></button>
+      <button type="button" role="tab" aria-selected="false" data-thread-tab="PRIVATE_NOTE"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="10" width="12" height="10" rx="2"/><path d="M9 10V7a3 3 0 016 0v3"/></svg><span><strong>Private Note</strong><small>Visible only to you</small></span></button>
+      <button type="button" role="tab" aria-selected="false" data-thread-tab="QUICK_HUDDLE"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/></svg><span><strong>Quick Huddle <i data-huddle-live-dot></i></strong><small><b data-huddle-online-count>Connecting…</b></small></span></button>
+    </div>
+    <div id="thread-persistent-panel" class="dialog-body thread-dialog-body">
+      <div id="thread-conversation-list" class="conversation-list"><div class="conversation-loading">Loading conversations…</div></div>
+      <form id="thread-conversation-start" method="post" enctype="multipart/form-data" th:action="@{/app/collaboration/reviews}" class="conversation-compose collaboration-composer" hidden>
+        <input name="subjectType" type="hidden"><input name="subjectKey" type="hidden"><input name="subjectLabel" type="hidden"><input name="actionKind" value="CONVERSATION" type="hidden"><input name="title" type="hidden"><input name="messageType" value="TEAM_CHAT" type="hidden"><input name="contextSnapshot" type="hidden"><input name="parentUrl" type="hidden"><input name="returnTo" th:value="${returnTo}" type="hidden">
+        <textarea data-collaboration-composer name="message" maxlength="4000" placeholder="Write a message… Type @ to mention a teammate"></textarea><div class="mention-menu" role="listbox" hidden></div>
+        <div class="thread-compose-tools"><label class="thread-attachment-button"><input type="file" name="attachments" multiple accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv,.xls,.xlsx"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 12 5.5-5.5a3 3 0 014.2 4.2l-7.4 7.4a5 5 0 01-7.1-7.1l7.1-7.1"/></svg><span>Attach</span></label><small data-attachment-name>No files selected</small><button class="composer-huddle-button" type="button" data-open-huddle><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/></svg><span>Huddle</span><b data-huddle-online-count>Connecting…</b></button></div>
+        <footer><small data-thread-composer-hint>Type @ to notify a teammate by email.</small><button class="primary-button compact-button" type="submit">Start conversation</button></footer>
+      </form>
+      <form id="thread-conversation-reply" method="post" enctype="multipart/form-data" th:action="@{/app/collaboration/reviews/placeholder/reply}" class="conversation-reply collaboration-composer" hidden>
+        <input name="messageType" value="TEAM_CHAT" type="hidden"><input name="returnTo" th:value="${returnTo}" type="hidden">
+        <textarea data-collaboration-composer name="body" maxlength="4000" placeholder="Reply… Type @ to notify a teammate"></textarea><div class="mention-menu" role="listbox" hidden></div>
+        <div class="thread-compose-tools"><label class="thread-attachment-button"><input type="file" name="attachments" multiple accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv,.xls,.xlsx"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 12 5.5-5.5a3 3 0 014.2 4.2l-7.4 7.4a5 5 0 01-7.1-7.1l7.1-7.1"/></svg><span>Attach</span></label><small data-attachment-name>No files selected</small><button class="composer-huddle-button" type="button" data-open-huddle><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/></svg><span>Huddle</span><b data-huddle-online-count>Connecting…</b></button></div>
+        <footer><small data-thread-composer-hint>History stays with this record.</small><div class="conversation-buttons"><button class="conversation-close-button" type="submit" name="status" value="CLOSED" formnovalidate onclick="return confirm('Close this conversation? Everyone involved will be notified by email.')">Close conversation</button><button class="primary-button compact-button" type="submit">Send</button></div></footer>
+      </form>
+    </div>
+    <section id="quick-huddle-panel" class="quick-huddle-panel" hidden>
+      <div id="huddle-setup" class="huddle-setup">
+        <header><span class="huddle-bolt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/></svg></span><div><strong>Talk now, decide what to keep later</strong><p>Live messages stay in memory and disappear when the huddle ends unless someone saves them.</p></div></header>
+        <div class="huddle-presence-line"><span><i></i><b data-huddle-presence-label>Connecting to your team…</b></span><small>Invite up to two teammates</small></div>
+        <div id="huddle-online-people" class="huddle-online-people" aria-live="polite"><div class="huddle-empty-online">Checking who is online…</div></div>
+        <footer><small>No transcript is stored while you talk.</small><button id="huddle-start-button" class="primary-button compact-button" type="button" disabled>Start quick huddle</button></footer>
+      </div>
+      <div id="huddle-live" class="huddle-live" hidden>
+        <header><div><span class="huddle-live-pill"><i></i> Live</span><strong id="huddle-live-title">Quick huddle</strong><small id="huddle-live-people">You and your team</small></div><button id="huddle-leave-button" type="button">Leave</button></header>
+        <div id="huddle-messages" class="huddle-messages" aria-live="polite"></div>
+        <form id="huddle-message-form" class="huddle-composer"><textarea id="huddle-message-input" maxlength="2000" rows="1" placeholder="Message the huddle… Type @ to mention someone here"></textarea><div class="mention-menu" role="listbox" hidden></div><button type="submit" aria-label="Send live message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 17-8-8 17-2-7-7-2Z"/><path d="m10 13 10-10"/></svg></button><small>Enter to send · Shift+Enter for a new line</small></form>
+        <footer><div><strong>Temporary by default</strong><small>45-minute idle expiry · nothing written to the database</small></div><div><button id="huddle-save-followup" class="huddle-secondary-button" type="button">Save for follow-up</button><button id="huddle-finish-button" class="primary-button compact-button" type="button">Finish huddle</button></div></footer>
+      </div>
+      <div id="huddle-status" class="huddle-status" role="status" aria-live="polite" hidden></div>
+    </section>
+  </section>
+</dialog>
+<aside id="huddle-invitation" class="huddle-invitation" aria-live="assertive" aria-label="Quick huddle invitation" hidden>
+  <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/></svg></span><div><small>Quick huddle invitation</small><strong data-huddle-invite-title>A teammate wants to talk</strong><p data-huddle-invite-context>Record context</p><div><button type="button" data-huddle-decline>Not now</button><button type="button" class="primary-button compact-button" data-huddle-join>Join huddle</button></div></div>
+</aside>
+<aside id="huddle-dock" class="huddle-dock" aria-live="polite" hidden><button type="button" data-huddle-resume><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/></svg><i></i></span><span><strong data-huddle-dock-title>Live huddle</strong><small data-huddle-dock-context>Open the conversation</small></span><b data-huddle-dock-count>1</b></button></aside>
+</th:block>
+</body></html>
