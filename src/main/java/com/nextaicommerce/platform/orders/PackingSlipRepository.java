@@ -13,7 +13,7 @@ public class PackingSlipRepository {
     private final JdbcTemplate jdbc;
     public PackingSlipRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
 
-    public record Slip(String orderId,String sellerCentralUrl,String packageName,boolean packageMatched,List<Line> lines){}
+    public record Slip(String orderId,String sellerCentralUrl,String brandName,String packageName,boolean packageMatched,List<Line> lines){}
     public record Line(String sku,String title,int quantity,LocalDate expirationDate,String location){}
 
     @Transactional(readOnly=true)
@@ -33,6 +33,16 @@ public class PackingSlipRepository {
               AND (amazon_order_id=? OR order_item_summary=?)
             ORDER BY CASE WHEN amazon_order_id=? THEN 0 ELSE 1 END,imported_at DESC LIMIT 1
             """,rs->rs.next()?rs.getString(1):null,tenantId,connectionId,orderId,orderSummary,orderId);
+        String brand=jdbc.queryForObject("""
+            SELECT coalesce(min(nullif(product.brand,'')),'NextAI Commerce')
+            FROM amazon_order_items item
+            LEFT JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=item.tenant_id
+              AND mapping.marketplace_connection_id=item.marketplace_connection_id AND mapping.marketplace_sku=item.seller_sku AND mapping.status='ACTIVE'
+            LEFT JOIN marketplace_sku_mapping_components component ON component.tenant_id=mapping.tenant_id AND component.marketplace_sku_mapping_id=mapping.id
+            LEFT JOIN account_catalog_items catalog ON catalog.tenant_id=component.tenant_id AND catalog.id=component.account_catalog_item_id
+            LEFT JOIN global_catalog_products product ON product.id=catalog.global_product_id
+            WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id=?
+            """,String.class,tenantId,connectionId,orderId);
         var lines=jdbc.query("""
             SELECT coalesce(nullif(catalog.account_sku,''),nullif(item.seller_sku,''),'Unmapped SKU') sku,
                    coalesce(nullif(catalog.display_name,''),nullif(product.canonical_name,''),nullif(item.title,''),'Unnamed item') title,
@@ -61,7 +71,7 @@ public class PackingSlipRepository {
             ORDER BY 1
             """,(rs,row)->new Line(rs.getString(1),rs.getString(2),rs.getInt(3),rs.getObject(4,LocalDate.class),rs.getString(5)),tenantId,connectionId,orderId);
         String marketplace=(String)order.getFirst()[1];
-        return new Slip(orderId,sellerCentralUrl((String)order.getFirst()[0],marketplace),
+        return new Slip(orderId,sellerCentralUrl((String)order.getFirst()[0],marketplace),brand,
             packageName==null||packageName.isBlank()?"Package to confirm":packageName,
             packageName!=null&&!packageName.isBlank(),lines);
     }

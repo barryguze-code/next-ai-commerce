@@ -14,10 +14,10 @@ class PackingSlipTemplateTest {
     @Test void rendersThePrintSizedInternalPackingDetails(){
         var resolver=new ClassLoaderTemplateResolver();resolver.setPrefix("templates/");resolver.setSuffix(".html");resolver.setTemplateMode(TemplateMode.HTML);
         var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);
-        var slip=new PackingSlipRepository.Slip("113-1234567-1234567","https://sellercentral.amazon.com/orders-v3/order/113-1234567-1234567",
+        var slip=new PackingSlipRepository.Slip("113-1234567-1234567","https://sellercentral.amazon.com/orders-v3/order/113-1234567-1234567","Ski Queen",
             "XSmall",true,List.of(new PackingSlipRepository.Line("IB-MKH-53383-GJETOST-SKIQUEEN-EA","Cheese Gjetost",1,LocalDate.of(2027,6,17),"MAIN")));
         assertThat(engine.process("packing-slip",new Context(null,java.util.Map.of("slip",slip))))
-            .contains("NextAI Commerce","XSmall","Cheese Gjetost","2027-06-17","MAIN","Seller Central","Save package","Print 2 × 1 slip")
+            .contains("Ski Queen","XSmall","Cheese Gjetost","2027-06-17","MAIN","Seller Central","Save package","Print 2 × 1 slip")
             .doesNotContain("No historical package match");
     }
 }

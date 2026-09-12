@@ -16,7 +16,7 @@
     <a class="seller-central-shortcut" th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" title="Open this order in Seller Central"><img src="/images/channels/amazon.svg" alt="">Open in Seller Central <span>↗</span></a>
   </section>
   <section class="packing-slip" aria-label="Internal packing slip">
-    <header><strong>NextAI Commerce</strong><span id="printed-package" th:text="${slip.packageName}">Package</span></header>
+    <header><strong th:text="${slip.brandName}">Brand</strong><span id="printed-package" th:text="${slip.packageName}">Package</span></header>
     <p class="order">Order <b th:text="${slip.orderId}">113-1234567-1234567</b></p>
     <section class="lines">
       <article th:each="line:${slip.lines}">
