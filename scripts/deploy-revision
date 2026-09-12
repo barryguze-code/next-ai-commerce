@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Runs only on the production instance through AWS Systems Manager.
+set -euo pipefail
+
+revision="${1:?A full Git revision is required}"
+repo=/opt/next-ai-commerce/source
+releases=/opt/next-ai-commerce/releases
+service=next-ai-commerce
+
+if ! [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Refusing a non-SHA revision" >&2
+  exit 2
+fi
+
+git -C "$repo" fetch --depth=1 origin "$revision"
+git -C "$repo" checkout --detach "$revision"
+
+cd "$repo"
+mvn --batch-mode --quiet -DskipTests package
+
+version="$(mvn --batch-mode --quiet -DforceStdout help:evaluate -Dexpression=project.version)"
+jar="target/next-ai-commerce-${version}.jar"
+test -f "$jar"
+
+staged="${releases}/next-ai-commerce-${version}-${revision:0:12}.jar"
+sudo install -o nextaicommerce -g nextaicommerce -m 0640 "$jar" "$staged"
+previous="$(readlink -f /opt/next-ai-commerce/next-ai-commerce.jar || true)"
+
+rollback() {
+  if [[ -n "$previous" && -f "$previous" ]]; then
+    echo "Restoring the previous release after an unsuccessful deployment."
+    sudo ln -sfn "$previous" /opt/next-ai-commerce/next-ai-commerce.jar
+    sudo systemctl restart "$service" || true
+  fi
+}
+
+sudo ln -sfn "$staged" /opt/next-ai-commerce/next-ai-commerce.jar
+if ! sudo systemctl restart "$service"; then
+  rollback
+  exit 1
+fi
+
+for _ in $(seq 1 18); do
+  if curl --fail --silent --show-error http://127.0.0.1:8080/login >/dev/null; then
+    echo "Deployment healthy: ${version} (${revision})"
+    exit 0
+  fi
+  sleep 5
+done
+
+echo "The service did not become healthy; the previous release remains on disk for rollback." >&2
+rollback
+exit 1
