@@ -11,6 +11,8 @@ public class BuildVersionAdvice {
     @ModelAttribute("buildVersion") String buildVersion() { return buildVersion; }
     @ModelAttribute("displayVersion") String displayVersion() {
         var match=java.util.regex.Pattern.compile("^(\\d+(?:\\.\\d+){1,3})").matcher(buildVersion);
-        return match.find()?match.group(1):buildVersion;
+        if(!match.find()) return buildVersion;
+        var version=match.group(1);
+        return buildVersion.contains("-local-uat") ? version+" · Local UAT" : version;
     }
 }
