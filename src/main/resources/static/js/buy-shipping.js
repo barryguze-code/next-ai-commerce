@@ -1,20 +1,39 @@
 (()=>{
+  function orderShortcutStyle(){
+    if(document.getElementById('order-packing-shortcuts-style'))return;
+    const style=document.createElement('style');style.id='order-packing-shortcuts-style';style.textContent='.order-reference-shortcuts{display:flex;gap:6px;max-width:100%;overflow:hidden;margin-top:2px}.order-reference-shortcuts button{overflow:hidden;padding:0;border:0;background:transparent;color:#8190a4;font:650 .58rem/1.15 inherit;letter-spacing:.015em;text-align:left;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}.order-reference-shortcuts button:hover,.order-reference-shortcuts button.active{color:#2867bd;text-decoration:underline}.order-icon-action.packing-slip{color:#715bd2!important;border-color:#cfc5f0!important;background:linear-gradient(180deg,#fff,#f3f0ff)!important}.order-icon-action.packing-slip:hover{border-color:#9f8ee4!important;background:#eeeaff!important}';document.head.append(style);
+  }
+  function applyOrderQuery(value){
+    const url=new URL(window.location.href),active=url.searchParams.get('q')===value;
+    if(active)url.searchParams.delete('q');else url.searchParams.set('q',value);
+    url.searchParams.delete('page');url.searchParams.delete('goToPage');window.location.assign(url);
+  }
+  function addOrderSearchShortcuts(){
+    orderShortcutStyle();document.querySelectorAll('.order-item').forEach(item=>{
+      const copy=item.querySelector('.item-product-copy'),sku=copy?.querySelector('code')?.textContent?.trim();
+      const amazon=item.querySelector('a[title="Open the Amazon product page"]'),asin=amazon?.getAttribute('aria-label')?.replace(/^Open\s+|\s+on Amazon$/g,'').trim();
+      const itemCode=item.querySelector('.mapping-codes')?.textContent?.trim().split(/\s*[×x]\s*/)[0];
+      if(!copy||copy.querySelector('.order-reference-shortcuts'))return;
+      const shortcuts=document.createElement('div');shortcuts.className='order-reference-shortcuts';
+      [[asin,'ASIN'],[itemCode&&itemCode!==sku?itemCode:null,'Code']].forEach(([value,label])=>{if(!value)return;const button=document.createElement('button');button.type='button';button.textContent=label+' '+value;button.title='Show orders with '+label.toLowerCase()+' '+value;button.classList.toggle('active',new URL(window.location.href).searchParams.get('q')===value);button.addEventListener('click',()=>applyOrderQuery(value));shortcuts.append(button);});
+      if(shortcuts.childElementCount)copy.append(shortcuts);
+    });
+  }
   function addPackingSlipActions(){
     document.querySelectorAll('.order-icon-action.shipping[data-order-id]').forEach(shipping=>{
       if(shipping.parentElement?.parentElement?.querySelector('.order-icon-action.packing-slip'))return;
       const orderId=shipping.dataset.orderId,orderRow=shipping.closest('.order-row');
-      const sellerCentral=orderRow?.querySelector('a[title="Open this order in Seller Central"]')?.href;
-      if(!orderId||!sellerCentral)return;
-      const tip=document.createElement('span');tip.className='order-action-tip';tip.dataset.tooltip='Print packing slip and open Seller Central';
+      if(!orderId||!orderRow)return;
+      const tip=document.createElement('span');tip.className='order-action-tip';tip.dataset.tooltip='Open packing slip';
       const button=document.createElement('button');button.type='button';button.className='order-icon-action shipping packing-slip';
-      button.setAttribute('aria-label','Print packing slip and open this order in Seller Central');button.title='Print packing slip';
-      button.innerHTML='<span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3h10v5H7z"/><path d="M5 8H4a2 2 0 0 0-2 2v6h4v5h12v-5h4v-6a2 2 0 0 0-2-2h-1"/><path d="M8 16h8M17 11h.01"/></svg></span>';
-      button.addEventListener('click',()=>{window.open('/app/orders/'+encodeURIComponent(orderId)+'/packing-slip','_blank','noopener');window.open(sellerCentral,'_blank','noopener');});
+      button.setAttribute('aria-label','Open internal packing slip');button.title='Open packing slip';
+      button.innerHTML='<span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 8.2 9-4.7 9 4.7v8.3L12 21l-9-4.5V8.2Z"/><path d="m3.5 8.5 8.5 4.3 8.5-4.3M12 12.8V21"/><path d="M8.5 6.2h7"/></svg></span>';
+      button.addEventListener('click',()=>window.open('/app/orders/'+encodeURIComponent(orderId)+'/packing-slip','_blank','noopener'));
       tip.append(button);shipping.parentElement.parentElement.append(tip);
     });
   }
-  addPackingSlipActions();
-  new MutationObserver(()=>queueMicrotask(addPackingSlipActions)).observe(document.body,{childList:true,subtree:true});
+  addPackingSlipActions();addOrderSearchShortcuts();
+  new MutationObserver(()=>queueMicrotask(()=>{addPackingSlipActions();addOrderSearchShortcuts();})).observe(document.body,{childList:true,subtree:true});
   const dialog=document.getElementById('buy-shipping-drawer');
   if(!dialog)return;
   const template=document.getElementById('shipping-package-template');

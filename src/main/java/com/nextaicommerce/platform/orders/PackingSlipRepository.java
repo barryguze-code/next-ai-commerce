@@ -26,10 +26,13 @@ public class PackingSlipRepository {
             WHERE order_row.tenant_id=? AND order_row.marketplace_connection_id=? AND order_row.amazon_order_id=?
             """,(rs,row)->new Object[]{rs.getString(1),rs.getString(2)},tenantId,connectionId,orderId);
         if(order.isEmpty())return null;
+        String orderSummary=signature(tenantId,connectionId,orderId,"asin");
         String packageName=jdbc.query("""
             SELECT packaging FROM temporary_order_packaging_lookup
-            WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?
-            """,rs->rs.next()?rs.getString(1):null,tenantId,connectionId,orderId);
+            WHERE tenant_id=? AND marketplace_connection_id=?
+              AND (amazon_order_id=? OR order_item_summary=?)
+            ORDER BY CASE WHEN amazon_order_id=? THEN 0 ELSE 1 END,imported_at DESC LIMIT 1
+            """,rs->rs.next()?rs.getString(1):null,tenantId,connectionId,orderId,orderSummary,orderId);
         var lines=jdbc.query("""
             SELECT coalesce(nullif(catalog.account_sku,''),nullif(item.seller_sku,''),'Unmapped SKU') sku,
                    coalesce(nullif(catalog.display_name,''),nullif(product.canonical_name,''),nullif(item.title,''),'Unnamed item') title,
@@ -61,6 +64,33 @@ public class PackingSlipRepository {
         return new Slip(orderId,sellerCentralUrl((String)order.getFirst()[0],marketplace),
             packageName==null||packageName.isBlank()?"Package to confirm":packageName,
             packageName!=null&&!packageName.isBlank(),lines);
+    }
+
+    @Transactional
+    public String savePackaging(UUID tenantId,UUID connectionId,String orderId,String packageName){
+        setTenant(tenantId);String clean=packageName==null?"":packageName.trim();
+        if(clean.isBlank()||clean.length()>120)throw new IllegalArgumentException("Choose a package name of up to 120 characters.");
+        String orderSummary=signature(tenantId,connectionId,orderId,"asin");
+        String skuSummary=signature(tenantId,connectionId,orderId,"seller_sku");
+        if(orderSummary.isBlank())throw new IllegalArgumentException("This order has no items to package.");
+        jdbc.update("""
+            INSERT INTO temporary_order_packaging_lookup(tenant_id,marketplace_connection_id,amazon_order_id,order_item_summary,packaging,order_sku_qty_list,source_note)
+            VALUES (?,?,?,?,?,?,'Saved from local packing-slip workspace')
+            ON CONFLICT (tenant_id,marketplace_connection_id,amazon_order_id) DO UPDATE SET
+              order_item_summary=EXCLUDED.order_item_summary,packaging=EXCLUDED.packaging,
+              order_sku_qty_list=EXCLUDED.order_sku_qty_list,source_note=EXCLUDED.source_note,imported_at=now()
+            """,tenantId,connectionId,orderId,orderSummary,clean,skuSummary);
+        return clean;
+    }
+
+    private String signature(UUID tenantId,UUID connectionId,String orderId,String field){
+        String column=switch(field){case "asin"->"asin";case "seller_sku"->"seller_sku";default->throw new IllegalArgumentException("Unsupported packing signature field.");};
+        String value=jdbc.queryForObject("""
+            SELECT coalesce(string_agg(coalesce(nullif(%s,''),'UNKNOWN')||'-'||quantity_ordered::text,',' ORDER BY %s,quantity_ordered),'')
+            FROM amazon_order_items
+            WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=? AND quantity_ordered>0
+            """.formatted(column,column),String.class,tenantId,connectionId,orderId);
+        return value==null?"":value;
     }
 
     static String sellerCentralUrl(String orderId,String marketplace){

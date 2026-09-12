@@ -3,21 +3,31 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title th:text="${'Packing slip · '+slip.orderId}">Packing slip</title>
-  <link rel="stylesheet" href="/css/packing-slip.css?v=1.0.1-local">
+  <link rel="stylesheet" href="/css/packing-slip.css?v=1.0.1-local-2">
 </head>
 <body>
-<main class="packing-slip" aria-label="Internal packing slip">
-  <header><strong>NextAI Commerce</strong><span th:text="${slip.packageName}">Package</span></header>
-  <p class="order">Order <b th:text="${slip.orderId}">113-1234567-1234567</b></p>
-  <p class="package-note" th:if="${!slip.packageMatched}">No historical package match — confirm the box before shipping.</p>
-  <section class="lines">
-    <article th:each="line:${slip.lines}">
-      <b class="quantity" th:text="${line.quantity}">1</b>
-      <div><strong th:text="${line.sku}">SKU</strong><span th:text="${line.title}">Product name</span></div>
-      <small><b th:text="${line.expirationDate == null ? 'No expiry' : line.expirationDate}">2026-09-15</b><span th:text="${line.location}">MAIN</span></small>
-    </article>
+<main class="packing-workspace" th:attr="data-order-id=${slip.orderId}">
+  <section class="packing-controls" aria-label="Packing-slip settings">
+    <div><span class="eyebrow">Internal fulfilment</span><h1>Packing slip</h1><p>Choose the package, save the decision for this ASIN and quantity combination, then print the 2 × 1 label.</p></div>
+    <label><span>Package</span><select id="packing-package"><option value="XSmall">XSmall</option><option value="Pak">Pak</option><option value="UPS OMBox">UPS OMBox</option><option value="Medium">Medium</option><option value="Large">Large</option><option value="XLarge">XLarge</option><option value="__custom">Write a package name…</option></select></label>
+    <label id="custom-package-field" hidden><span>Package name</span><input id="custom-package" maxlength="120" placeholder="e.g. Cold box · Large"></label>
+    <div class="packing-control-actions"><button type="button" class="secondary-button" id="save-package">Save package</button><button type="button" class="primary-button" id="print-slip">Print 2 × 1 slip</button></div>
+    <p class="packing-status" id="packing-status" role="status"></p>
+    <a class="seller-central-shortcut" th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" title="Open this order in Seller Central"><img src="/images/channels/amazon.svg" alt="">Open in Seller Central <span>↗</span></a>
   </section>
-  <footer><span>Internal packing only</span><a th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer">Seller Central ↗</a></footer>
+  <section class="packing-slip" aria-label="Internal packing slip">
+    <header><strong>NextAI Commerce</strong><span id="printed-package" th:text="${slip.packageName}">Package</span></header>
+    <p class="order">Order <b th:text="${slip.orderId}">113-1234567-1234567</b></p>
+    <section class="lines">
+      <article th:each="line:${slip.lines}">
+        <b class="quantity" th:text="${line.quantity}">1</b>
+        <div><strong th:text="${line.sku}">SKU</strong><span th:text="${line.title}">Product name</span></div>
+        <small><b th:text="${line.expirationDate == null ? 'No expiry' : line.expirationDate}">2026-09-15</b><span th:text="${line.location}">MAIN</span></small>
+      </article>
+    </section>
+    <footer><span>Internal packing only</span><a th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer">Seller Central ↗</a></footer>
+  </section>
 </main>
-<script>window.addEventListener('load',()=>window.print());</script>
+<input id="packing-slip-csrf" th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
+<script src="/js/packing-slip-workspace.js?v=1.0.1-local-2"></script>
 </body></html>

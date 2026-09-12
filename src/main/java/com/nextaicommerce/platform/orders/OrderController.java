@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
+import java.util.Map;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import com.nextaicommerce.platform.sync.AmazonManualOrderSync;
 import com.nextaicommerce.platform.collaboration.CollaborationRepository;
@@ -83,6 +84,13 @@ public class OrderController {
         var slip=packingSlips.find(tenant(session),connection,orderId);
         if(slip==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"This order is not available in the selected store.");
         model.addAttribute("slip",slip);return "packing-slip";
+    }
+
+    @PostMapping("/app/orders/{orderId}/packing-slip/package") @ResponseBody Map<String,String> savePackingPackage(
+            @PathVariable String orderId,@RequestParam String packageName,HttpSession session){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
+        return Map.of("packageName",packingSlips.savePackaging(tenant(session),connection,orderId,packageName));
     }
 
     private static UUID tenant(HttpSession session){Object id=session.getAttribute(AccountSelectionController.TENANT_ID);if(id instanceof UUID value)return value;throw new IllegalArgumentException("Choose an account first.");}
