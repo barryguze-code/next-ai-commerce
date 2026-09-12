@@ -14,6 +14,7 @@ app:
   # The local UAT badge deliberately identifies the active feature build.  The
   # production default remains the APP_BUILD_VERSION value from application.yml.
   build-version: 1.0.1-local-uat
+  build-branch: feature/packing-slip-v1.0.1
   public-url: http://localhost:8080
   scheduling:
     enabled: true

@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 @ControllerAdvice
 public class BuildVersionAdvice {
     @Value("${app.build-version:development}") private String buildVersion;
+    @Value("${app.build-branch:}") private String buildBranch;
     @ModelAttribute("buildVersion") String buildVersion() { return buildVersion; }
+    @ModelAttribute("buildBranch") String buildBranch() { return buildBranch; }
     @ModelAttribute("displayVersion") String displayVersion() {
         var match=java.util.regex.Pattern.compile("^(\\d+(?:\\.\\d+){1,3})").matcher(buildVersion);
         if(!match.find()) return buildVersion;
