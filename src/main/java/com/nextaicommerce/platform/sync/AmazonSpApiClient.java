@@ -127,6 +127,13 @@ public class AmazonSpApiClient {
             JsonNode parsed=response.body()==null||response.body().isBlank()?json.createObjectNode():json.readTree(response.body());
             return new ApiResponse(response.statusCode(), requestId, parsed, response.body());
         } catch (AmazonApiException ex) { throw ex; }
+        catch (IllegalStateException ex) {
+            // Credential decryption/configuration happens before the HTTP request.
+            // Preserve its safe, actionable message instead of mislabelling it as a
+            // network failure; never log or expose credential values.
+            log.warn("Amazon request could not start — {}", ex.getMessage());
+            throw ex;
+        }
         catch (HttpTimeoutException ex) { throw new AmazonTransportException("Amazon did not answer before the request timed out.",true,ex); }
         catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw new AmazonTransportException("The Amazon request was interrupted.",true,ex); }
         catch (Exception ex) { throw new AmazonTransportException("Amazon could not be reached.",false,ex); }
