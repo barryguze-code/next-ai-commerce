@@ -22,6 +22,8 @@ app:
     recurring-enabled: false
     startup-order-reconciliation-enabled: false
     listing-actions-enabled: false
+  local-packing-history:
+    path: ${LOCAL_PACKING_HISTORY_FILE:}
   mail:
     enabled: false
     provider: disabled
