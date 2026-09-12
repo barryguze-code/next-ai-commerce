@@ -61,6 +61,13 @@ function prepareContextColumn(root){
       }catch(_){batch.forEach(button=>button.title='Conversation history unavailable. Click to retry.')}
     }
   });
+  // Picture-first rows own their chat and actions on the product image.  Do not
+  // create the legacy leading context rail beside an image-based product cell.
+  if(records.some(row=>row.querySelector('[data-picture-actions]'))){
+    root.classList.add('table-picture-first');
+    if(!isTable)root.querySelectorAll('.order-actions').forEach(el=>el.hidden=true);
+    return;
+  }
   if(!records.some(row=>row.querySelector('.collaboration-row-button')||row.closest('.order-row')?.querySelector('.collaboration-row-button')))return;
   if(header.firstElementChild)header.firstElementChild.dataset.columnRequired='true';
   const heading=document.createElement(isTable?'th':'span');heading.dataset.column='record-context';heading.dataset.title='Conversation and alerts';heading.dataset.columnRequired='true';heading.dataset.noSort='true';heading.setAttribute('aria-label','Conversation and alerts');header.prepend(heading);
