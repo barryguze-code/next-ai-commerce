@@ -75,6 +75,10 @@ html[data-theme=dark] .weekly-sales-bars>span{background:#294766;color:#c3ddff}
 .table-standard-search{padding:7px 10px;border:1px solid var(--line,#dce4ee);border-radius:9px}
 .table-standard-search input{width:100%;border:0;background:transparent;color:var(--ink);font:inherit;font-size:.6875rem;outline-offset:4px}
 .table-standard-toolbar .table-widget-tools{flex-wrap:wrap;margin-left:auto}
+.table-standard-toolbar.table-has-active-filters{background:#f3f8ff;border-color:#b9d4f5}
+.table-filter-control.has-active-filters>summary{border-color:#6e9de3;background:#e7f1ff;color:#1f5ead}
+.table-clear-active-filters{display:grid;place-items:center;width:34px;height:34px;padding:7px;border:1px solid #8fb5e9;border-radius:9px;background:#eaf3ff;color:#2464ba;cursor:pointer}
+.table-clear-active-filters:hover{background:#dbeaff;border-color:#5e91d6}.table-clear-active-filters svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .table-export{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .table-export svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .table-filter-control>summary{list-style:none;cursor:pointer;white-space:nowrap}
@@ -98,6 +102,7 @@ html[data-theme=dark] .weekly-sales-bars>span{background:#294766;color:#c3ddff}
 .desk-table.table-widget [data-column=select]{flex:0 0 28px}
 .desk-table.table-widget [data-column=product]{flex:2}
 html[data-theme=dark] .table-standard-toolbar,html[data-theme=dark] .table-filter-panel,html[data-theme=dark] .table-filter-panel input{background:#17222e;color:#dbe5f1;border-color:#344354}
+html[data-theme=dark] .table-standard-toolbar.table-has-active-filters{background:#182f49;border-color:#3971b2}html[data-theme=dark] .table-filter-control.has-active-filters>summary,html[data-theme=dark] .table-clear-active-filters{background:#203e61;color:#a8cbff;border-color:#4e83bd}
 @media(max-width:600px){.table-standard-toolbar>.table-widget-tools{margin-left:0;width:100%}.table-standard-toolbar>form,.table-standard-toolbar .search-field,.table-standard-search{width:100%}.table-standard-pagination nav{gap:5px}}
 .table-column-control{position:relative}
 .table-column-control>summary{display:flex;align-items:center;gap:7px;cursor:pointer;list-style:none}

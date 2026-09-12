@@ -89,6 +89,10 @@ function init(root){
   });
   const clear=document.createElement('button');clear.type='button';clear.className='secondary-button compact-button';clear.textContent='Clear column filters';
   clear.onclick=()=>{saved.filters={};panel.querySelectorAll('input').forEach(input=>input.value='');saved.page=1;render()};panel.append(clear);host.prepend(filters);
+  const clearAll=document.createElement('button');clearAll.type='button';clearAll.className='table-clear-active-filters';clearAll.hidden=true;clearAll.setAttribute('aria-label','Clear all table filters');clearAll.title='Clear all filters';clearAll.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M7 5l1 14h8l1-14M9 9v6m6-6v6M9 5l1-2h4l1 2"/></svg>';host.prepend(clearAll);
+  const hasDomainFilter=()=>{const url=new URL(location.href);return !!url.searchParams.get('q')||!!(url.searchParams.get('status')&&url.searchParams.get('status')!=='ALL')};
+  function updateActiveFilterState(){const columnCount=Object.values(saved.filters).filter(Boolean).length;const searchActive=!!search.value.trim();const active=columnCount>0||searchActive||hasDomainFilter();const total=columnCount+(hasDomainFilter()?1:0);toolbar.classList.toggle('table-has-active-filters',active);filters.classList.toggle('has-active-filters',active);summary.textContent='Filters'+(total?' · '+total:'');clearAll.hidden=!active;}
+  clearAll.onclick=()=>{saved.filters={};panel.querySelectorAll('input').forEach(input=>input.value='');saved.page=1;if(isServer||hasDomainFilter()){const url=new URL(location.href);url.searchParams.delete('q');url.searchParams.delete('status');url.searchParams.delete('page');location.assign(url);return;}search.value='';saved.query='';render()};
   filters.addEventListener('toggle',()=>{if(filters.open){const box=summary.getBoundingClientRect();panel.style.top=Math.min(box.bottom+8,Math.max(12,innerHeight-360))+'px';panel.style.left=Math.max(12,Math.min(box.left,innerWidth-332))+'px'}});
   const close=event=>{if(!root.isConnected){document.removeEventListener('pointerdown',close);return}if(!filters.contains(event.target))filters.open=false};document.addEventListener('pointerdown',close);
   filters.addEventListener('keydown',event=>{if(event.key==='Escape'){filters.open=false;summary.focus()}});
@@ -125,7 +129,7 @@ function init(root){
     const shown=new Set(footer?filtered.slice((saved.page-1)*saved.size,saved.page*saved.size):filtered);
     all.forEach(row=>row.classList.toggle('table-data-hidden',!shown.has(row)));
     if(!root.matches('table'))root.querySelectorAll('.order-row').forEach(row=>row.classList.toggle('table-data-hidden',![...row.querySelectorAll('.order-item')].some(item=>!item.classList.contains('table-data-hidden'))));
-    const count=Object.values(saved.filters).filter(Boolean).length;summary.textContent='Filters'+(count?' · '+count:'');
+    const count=Object.values(saved.filters).filter(Boolean).length;updateActiveFilterState();
     if(!exportButton.disabled)status.textContent=!filtered.length?'No matching rows. Try changing your search or filters.':count&&isServer?filtered.length+' matching rows on this page.':'';
     if(footer){footer.dataset.pages=String(pages);updatePager(saved.page,pages,saved.size);pageLabel.textContent=filtered.length?'Showing '+((saved.page-1)*saved.size+1)+'–'+Math.min(saved.page*saved.size,filtered.length)+' of '+filtered.length+' · Page '+saved.page+' of '+pages:'0 rows'}
   }
@@ -168,7 +172,7 @@ function init(root){
   // Page-specific search/status handlers can still set hidden without fighting pagination.
   const observer=new MutationObserver(records=>{if(!root.isConnected){observer.disconnect();return}if(records.some(record=>record.type==='childList'||record.attributeName==='hidden'||record.attributeName==='style'))render()});
   observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','style']});
-  search.addEventListener('input',()=>{saved.page=1;queueMicrotask(render)});
+  search.addEventListener('input',()=>{saved.page=1;updateActiveFilterState();queueMicrotask(render)});
   root.addEventListener('table:filter',()=>{saved.page=1;render()});
   render();
 }

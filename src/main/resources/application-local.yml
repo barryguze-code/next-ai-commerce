@@ -19,7 +19,8 @@ app:
   amazon:
     sync-enabled: true
     write-enabled: false
-    recurring-enabled: false
+    # Local UAT continuously imports Amazon data, but write-enabled remains false.
+    recurring-enabled: true
     startup-order-reconciliation-enabled: false
     listing-actions-enabled: false
   local-packing-history:
