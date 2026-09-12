@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title th:text="${'Packing slip · '+slip.orderId}">Packing slip</title>
+  <link rel="stylesheet" href="/css/packing-slip.css?v=1.0.1-local">
+</head>
+<body>
+<main class="packing-slip" aria-label="Internal packing slip">
+  <header><strong>NextAI Commerce</strong><span th:text="${slip.packageName}">Package</span></header>
+  <p class="order">Order <b th:text="${slip.orderId}">113-1234567-1234567</b></p>
+  <p class="package-note" th:if="${!slip.packageMatched}">No historical package match — confirm the box before shipping.</p>
+  <section class="lines">
+    <article th:each="line:${slip.lines}">
+      <b class="quantity" th:text="${line.quantity}">1</b>
+      <div><strong th:text="${line.sku}">SKU</strong><span th:text="${line.title}">Product name</span></div>
+      <small><b th:text="${line.expirationDate == null ? 'No expiry' : line.expirationDate}">2026-09-15</b><span th:text="${line.location}">MAIN</span></small>
+    </article>
+  </section>
+  <footer><span>Internal packing only</span><a th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer">Seller Central ↗</a></footer>
+</main>
+<script>window.addEventListener('load',()=>window.print());</script>
+</body></html>

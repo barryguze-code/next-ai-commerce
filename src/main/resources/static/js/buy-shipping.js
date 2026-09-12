@@ -1,4 +1,20 @@
 (()=>{
+  function addPackingSlipActions(){
+    document.querySelectorAll('.order-icon-action.shipping[data-order-id]').forEach(shipping=>{
+      if(shipping.parentElement?.parentElement?.querySelector('.order-icon-action.packing-slip'))return;
+      const orderId=shipping.dataset.orderId,orderRow=shipping.closest('.order-row');
+      const sellerCentral=orderRow?.querySelector('a[title="Open this order in Seller Central"]')?.href;
+      if(!orderId||!sellerCentral)return;
+      const tip=document.createElement('span');tip.className='order-action-tip';tip.dataset.tooltip='Print packing slip and open Seller Central';
+      const button=document.createElement('button');button.type='button';button.className='order-icon-action shipping packing-slip';
+      button.setAttribute('aria-label','Print packing slip and open this order in Seller Central');button.title='Print packing slip';
+      button.innerHTML='<span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3h10v5H7z"/><path d="M5 8H4a2 2 0 0 0-2 2v6h4v5h12v-5h4v-6a2 2 0 0 0-2-2h-1"/><path d="M8 16h8M17 11h.01"/></svg></span>';
+      button.addEventListener('click',()=>{window.open('/app/orders/'+encodeURIComponent(orderId)+'/packing-slip','_blank','noopener');window.open(sellerCentral,'_blank','noopener');});
+      tip.append(button);shipping.parentElement.parentElement.append(tip);
+    });
+  }
+  addPackingSlipActions();
+  new MutationObserver(()=>queueMicrotask(addPackingSlipActions)).observe(document.body,{childList:true,subtree:true});
   const dialog=document.getElementById('buy-shipping-drawer');
   if(!dialog)return;
   const template=document.getElementById('shipping-package-template');

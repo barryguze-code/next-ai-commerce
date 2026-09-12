@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import com.nextaicommerce.platform.sync.AmazonManualOrderSync;
 import com.nextaicommerce.platform.collaboration.CollaborationRepository;
@@ -23,8 +25,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Controller
 public class OrderController {
-    private final OrderRepository orders;private final WorkspaceAccessRepository workspace;private final AmazonManualOrderSync manualSync;private CollaborationRepository collaboration;
-    public OrderController(OrderRepository orders,WorkspaceAccessRepository workspace,AmazonManualOrderSync manualSync){this.orders=orders;this.workspace=workspace;this.manualSync=manualSync;}
+    private final OrderRepository orders;private final WorkspaceAccessRepository workspace;private final AmazonManualOrderSync manualSync;private final PackingSlipRepository packingSlips;private CollaborationRepository collaboration;
+    public OrderController(OrderRepository orders,WorkspaceAccessRepository workspace,AmazonManualOrderSync manualSync,PackingSlipRepository packingSlips){this.orders=orders;this.workspace=workspace;this.manualSync=manualSync;this.packingSlips=packingSlips;}
     @Autowired(required=false) void configureCollaboration(CollaborationRepository repository){this.collaboration=repository;}
 
     @GetMapping("/app/orders") String orders(@RequestParam(defaultValue="ALL") String status,
@@ -73,6 +75,14 @@ public class OrderController {
         Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection))return ResponseEntity.status(409).build();
         return ResponseEntity.ok(orders.streamVersion(tenant(session),connection));
+    }
+
+    @GetMapping("/app/orders/{orderId}/packing-slip") String packingSlip(@PathVariable String orderId,HttpSession session,Model model){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
+        var slip=packingSlips.find(tenant(session),connection,orderId);
+        if(slip==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"This order is not available in the selected store.");
+        model.addAttribute("slip",slip);return "packing-slip";
     }
 
     private static UUID tenant(HttpSession session){Object id=session.getAttribute(AccountSelectionController.TENANT_ID);if(id instanceof UUID value)return value;throw new IllegalArgumentException("Choose an account first.");}
