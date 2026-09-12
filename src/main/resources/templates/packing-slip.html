@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title th:text="${'Packing slip · '+slip.orderId}">Packing slip</title>
-  <link rel="stylesheet" href="/css/packing-slip.css?v=1.0.1-local-3">
+  <link rel="stylesheet" href="/css/packing-slip.css?v=1.0.1-local-4">
 </head>
 <body>
 <main class="packing-workspace" th:attr="data-order-id=${slip.orderId}">
@@ -15,17 +15,18 @@
     <p class="packing-status" id="packing-status" role="status"></p>
     <a class="seller-central-shortcut" th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" title="Open this order in Seller Central"><img src="/images/channels/amazon.svg" alt="">Open in Seller Central <span>↗</span></a>
   </section>
-  <section class="packing-slip" aria-label="Internal packing slip">
-    <header><strong th:text="${slip.brandName}">Brand</strong><span id="printed-package" th:text="${slip.packageName}">Package</span></header>
-    <p class="order">Order <b th:text="${slip.orderId}">113-1234567-1234567</b></p>
-    <section class="lines">
-      <article th:each="line:${slip.lines}">
-        <b class="quantity" th:text="${line.quantity}">1</b>
-        <div><strong th:text="${line.sku}">SKU</strong><span th:text="${line.title}">Product name</span></div>
-        <small><b th:text="${line.expirationDate == null ? 'No expiry' : line.expirationDate}">2026-09-15</b><span th:text="${line.location}">MAIN</span></small>
-      </article>
+  <section class="packing-labels" aria-label="Internal packing slips">
+    <section class="packing-slip" th:each="page:${slip.pages}" aria-label="Internal packing slip">
+      <header><strong th:text="${slip.brandName}">Brand</strong><span id="printed-package" th:text="${slip.packageName}">Package</span></header>
+      <section class="lines">
+        <article th:each="line:${page}">
+          <b class="quantity" th:text="${line.quantity}">1</b>
+          <div><strong th:text="${line.sku}">SKU</strong><span th:text="${line.title}">Product name</span></div>
+          <small><b th:text="${line.expirationDate == null ? 'No expiry' : line.expirationDate}">2026-09-15</b><span th:text="${line.location}">MAIN</span></small>
+        </article>
+      </section>
+      <footer><span>Internal packing only</span><a th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer">Seller Central ↗</a></footer>
     </section>
-    <footer><span>Internal packing only</span><a th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer">Seller Central ↗</a></footer>
   </section>
 </main>
 <input id="packing-slip-csrf" th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">

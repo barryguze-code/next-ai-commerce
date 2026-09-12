@@ -13,7 +13,15 @@ public class PackingSlipRepository {
     private final JdbcTemplate jdbc;
     public PackingSlipRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
 
-    public record Slip(String orderId,String sellerCentralUrl,String brandName,String packageName,boolean packageMatched,List<Line> lines){}
+    public record Slip(String orderId,String sellerCentralUrl,String brandName,String packageName,boolean packageMatched,List<Line> lines){
+        /** Thermal labels stay readable: two pick lines per physical 2 × 1 inch page. */
+        public List<List<Line>> pages(){
+            if(lines==null||lines.isEmpty())return List.of(List.of());
+            java.util.ArrayList<List<Line>> pages=new java.util.ArrayList<>();
+            for(int index=0;index<lines.size();index+=2)pages.add(lines.subList(index,Math.min(index+2,lines.size())));
+            return List.copyOf(pages);
+        }
+    }
     public record Line(String sku,String title,int quantity,LocalDate expirationDate,String location){}
 
     @Transactional(readOnly=true)
