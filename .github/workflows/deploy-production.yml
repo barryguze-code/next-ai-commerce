@@ -1,0 +1,39 @@
+name: Deploy production
+
+on:
+  push:
+    branches: ["release/v1.0.0"]
+  workflow_dispatch:
+
+concurrency:
+  group: next-ai-commerce-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: mvn --batch-mode verify
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::038462776212:role/NextAICommerceGitHubDeployRole
+          aws-region: us-west-1
+      - env:
+          INSTANCE_ID: i-043ea7df8377dd0a9
+          REVISION: ${{ github.sha }}
+        run: |
+          command_id=$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --parameters commands="[\"/opt/next-ai-commerce/bin/deploy-revision '$REVISION'\"]" --query 'Command.CommandId' --output text)
+          aws ssm wait command-executed --command-id "$command_id" --instance-id "$INSTANCE_ID"
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query '{status:Status,summary:StandardOutputContent,error:StandardErrorContent}' --output json
+
