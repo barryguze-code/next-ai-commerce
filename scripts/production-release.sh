@@ -39,7 +39,7 @@ pg_restore --list "$backup_dir/database.dump" >/dev/null
 sha256sum "$backup_dir/database.dump" "$backup_dir/previous.jar"
 echo "Pre-release backup verified at $backup_dir"
 
-# Version metadata only. Do not change Amazon write, listing, shipping or mail policies.
+# Version metadata and read-only recovery only. Preserve publishing and mail policies.
 grep -Eq 'APP_BUILD_VERSION=[0-9]+\.[0-9]+\.[0-9]+' "$runtime_config"
 rollback() {
   trap - ERR
@@ -52,6 +52,14 @@ rollback() {
 }
 trap rollback ERR
 sed -i -E "s/APP_BUILD_VERSION=[0-9]+\.[0-9]+\.[0-9]+/APP_BUILD_VERSION=$version/" "$runtime_config"
+# Restore the approved read-only, guarded history recovery. The original startup
+# configuration is included in the rollback backup above.
+if grep -Eq 'AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED=(true|false)' "$runtime_config"; then
+  sed -i -E 's/AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED=(true|false)/AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED=true/g' "$runtime_config"
+else
+  echo 'Missing explicit startup order recovery setting; refusing to guess runtime configuration.' >&2
+  false
+fi
 ln -sfn "$release_jar" /opt/next-ai-commerce/next-ai-commerce.jar
 systemctl restart next-ai-commerce
 healthy=false

@@ -261,26 +261,30 @@ public class AmazonSyncStore {
                 job.tenantId(),job.runId());
             jdbc.update("UPDATE marketplace_connections SET status='ACTIVE',last_synced_at=now() WHERE tenant_id=? AND id=?",job.tenantId(),job.connectionId());
             jdbc.update("""
-                UPDATE marketplace_sync_schedules schedule SET last_success_at=now(),
+                UPDATE marketplace_sync_schedules schedule SET last_success_at=CASE WHEN ? THEN last_success_at ELSE now() END,
                     last_error=CASE WHEN ? THEN last_error ELSE NULL END,updated_at=now()
                 FROM marketplace_sync_runs run
                 WHERE run.tenant_id=? AND run.id=? AND schedule.tenant_id=run.tenant_id
                   AND schedule.marketplace_connection_id=run.marketplace_connection_id
                   AND schedule.schedule_key=run.sync_profile
-                """,warnings,job.tenantId(),job.runId());
+                """,warnings,warnings,job.tenantId(),job.runId());
             jdbc.update("""
                 INSERT INTO amazon_sync_watermarks(tenant_id,marketplace_connection_id,dataset,
                     high_watermark,last_success_at,last_reconciliation_at)
                 SELECT run.tenant_id,run.marketplace_connection_id,run.sync_profile,run.window_end,now(),
                     CASE WHEN run.run_type='RECONCILIATION' THEN now() ELSE NULL END
                 FROM marketplace_sync_runs run WHERE run.tenant_id=? AND run.id=?
+                  AND NOT EXISTS (SELECT 1 FROM marketplace_sync_jobs incomplete
+                    WHERE incomplete.tenant_id=run.tenant_id AND incomplete.sync_run_id=run.id
+                      AND incomplete.status<>'COMPLETED')
                 ON CONFLICT(tenant_id,marketplace_connection_id,dataset) DO UPDATE SET
                     high_watermark=greatest(amazon_sync_watermarks.high_watermark,EXCLUDED.high_watermark),
                     last_success_at=EXCLUDED.last_success_at,
                     last_reconciliation_at=coalesce(EXCLUDED.last_reconciliation_at,
                         amazon_sync_watermarks.last_reconciliation_at),updated_at=now()
                 """,job.tenantId(),job.runId());
-            log.info("{} [{}] finished successfully.",readableProfile(job.profile()),shortRun(job));
+            log.info("{} [{}] {}.",readableProfile(job.profile()),shortRun(job),
+                warnings?"finished with unavailable data; successful sync position retained":"finished successfully");
         });
     }
 

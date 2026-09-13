@@ -57,6 +57,7 @@ public class AmazonReportNormalizer {
 
     public long normalizeOrderItems(AmazonSyncStore.Job job,String orderId,JsonNode root,UUID sourceDocument){
         return transactions.execute(status->{setTenant(job.tenantId());long count=0;
+            jdbc.query("SELECT id FROM amazon_orders WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=? FOR UPDATE",rs->{},job.tenantId(),job.connectionId(),orderId);
             for(JsonNode item:root.path("payload").path("OrderItems")){upsertApiOrderItem(job,orderId,item);count++;}
             refreshOrderTotal(job,orderId);return count;
         });
@@ -90,6 +91,19 @@ public class AmazonReportNormalizer {
 
     private void upsertApiOrderItem(AmazonSyncStore.Job job,String orderId,JsonNode item){
         String itemId=item.path("OrderItemId").asText();
+        String apiItemId=itemId;
+        if(!blank(itemId)){
+            var matches=jdbc.queryForList("""
+                SELECT amazon_order_item_id FROM amazon_order_items
+                WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?
+                  AND (amazon_order_item_id=? OR raw_payload->>'apiOrderItemId'=?
+                    OR (amazon_order_item_id=? AND raw_payload->>'apiOrderItemId' IS NULL))
+                ORDER BY CASE WHEN amazon_order_item_id=? THEN 0
+                    WHEN raw_payload->>'apiOrderItemId'=? THEN 1 ELSE 2 END LIMIT 1
+                """,String.class,job.tenantId(),job.connectionId(),orderId,itemId,itemId,
+                stableItemId(orderId,item.path("SellerSKU").asText(),item.path("ASIN").asText()),itemId,itemId);
+            if(!matches.isEmpty())itemId=matches.getFirst();
+        }
         if(blank(itemId))itemId=stableItemId(orderId,item.path("SellerSKU").asText(),item.path("ASIN").asText());
         jdbc.update("""
             INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,
@@ -108,6 +122,10 @@ public class AmazonReportNormalizer {
             item.path("QuantityShipped").asInt(0),money(item,"ItemPrice"),money(item,"ItemTax"),
             money(item,"ShippingPrice"),money(item,"ShippingTax"),money(item,"PromotionDiscount"),money(item,"ShippingDiscount"),
             moneyCurrency(item,"ItemPrice","ShippingPrice"));
+        if(!blank(apiItemId))jdbc.update("""
+            UPDATE amazon_order_items SET raw_payload=jsonb_set(raw_payload,'{apiOrderItemId}',to_jsonb(?::text))
+            WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_item_id=?
+            """,apiItemId,job.tenantId(),job.connectionId(),itemId);
     }
 
     private void refreshOrderTotal(AmazonSyncStore.Job job,String orderId){
@@ -209,7 +227,17 @@ public class AmazonReportNormalizer {
                 value(report,row,"sales-channel"),value(report,row,"ship-service-level"));
             String sku=value(report,row,"sku","seller-sku");String asin=value(report,row,"asin");
             String itemId=value(report,row,"order-item-id","amazon-order-item-id");
-            if(blank(itemId))itemId=stableItemId(orderId,sku,asin);
+            if(blank(itemId)){
+                var existing=jdbc.queryForList("""
+                    SELECT amazon_order_item_id FROM amazon_order_items
+                    WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?
+                      AND seller_sku IS NOT DISTINCT FROM ? AND asin IS NOT DISTINCT FROM ?
+                    """,String.class,job.tenantId(),job.connectionId(),orderId,sku,asin);
+                // Reports can aggregate multiple API lines for the same SKU. Preserve
+                // those distinct lines rather than adding a duplicate aggregate item.
+                if(existing.size()>1){updateOperationalState(job,orderId);count++;continue;}
+                itemId=existing.isEmpty()?stableItemId(orderId,sku,asin):existing.getFirst();
+            }
             jdbc.update("""
                 INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,
                     seller_sku,asin,title,quantity_ordered,quantity_shipped,item_price,item_tax,shipping_price,shipping_tax,

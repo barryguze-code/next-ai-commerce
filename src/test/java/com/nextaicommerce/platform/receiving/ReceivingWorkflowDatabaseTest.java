@@ -165,6 +165,67 @@ class ReceivingWorkflowDatabaseTest {
         org.mockito.Mockito.verifyNoInteractions(amazon);
     }
 
+    @Test void orderReportAndApiReuseItemsWithoutDuplicatingSales() throws Exception {
+        UUID connection=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Import test','America/Los_Angeles',now())",connection,tenant,"test-"+connection);
+        });
+        var json=new tools.jackson.databind.ObjectMapper();
+        var normalizer=new com.nextaicommerce.platform.sync.AmazonReportNormalizer(jdbc,tx,json,null);
+        var now=java.time.Instant.now();
+        var job=new com.nextaicommerce.platform.sync.AmazonSyncStore.Job(UUID.randomUUID(),tenant,UUID.randomUUID(),connection,"ORDERS_30_DAY","STARTUP_ORDERS","ATVPDKIKX0DER",now.minusSeconds(2592000),now,null,0,0,false,null);
+        for(boolean reportFirst:List.of(true,false)){
+            String order=reportFirst?"REPORT-FIRST":"API-FIRST";
+            String report="amazon-order-id\tpurchase-date\torder-status\tfulfillment-channel\tsku\tasin\tquantity\titem-price\tcurrency\n"+order+"\t2026-09-13T19:00:00Z\tUnshipped\tMerchant\tSKU\tASIN\t1\t10.00\tUSD\n";
+            normalizer.normalizeOrderPage(job,json.readTree("{\"payload\":{\"Orders\":[{\"AmazonOrderId\":\""+order+"\",\"PurchaseDate\":\"2026-09-13T19:00:00Z\",\"OrderStatus\":\"Unshipped\",\"FulfillmentChannel\":\"MFN\"}]}}"),null);
+            var items=json.readTree("{\"payload\":{\"OrderItems\":[{\"OrderItemId\":\""+order+"-ITEM\",\"SellerSKU\":\"SKU\",\"ASIN\":\"ASIN\",\"QuantityOrdered\":1,\"ItemPrice\":{\"Amount\":\"10.00\",\"CurrencyCode\":\"USD\"}}]}}");
+            if(reportFirst)normalizer.normalize(job,report,null);
+            normalizer.normalizeOrderItems(job,order,items,null);
+            normalizer.normalize(job,report,null);
+            normalizer.normalizeOrderItems(job,order,items,null);
+            tx.executeWithoutResult(s->{setTenant();
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM amazon_order_items WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",Integer.class,tenant,connection,order)).isEqualTo(1);
+                assertThat(jdbc.queryForObject("SELECT sum(item_price) FROM amazon_order_items WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",BigDecimal.class,tenant,connection,order)).isEqualByComparingTo("10.00");
+            });
+            var twoItems=json.readTree("{\"payload\":{\"OrderItems\":[{\"OrderItemId\":\""+order+"-ITEM\",\"SellerSKU\":\"SKU\",\"ASIN\":\"ASIN\",\"QuantityOrdered\":1,\"ItemPrice\":{\"Amount\":\"10.00\",\"CurrencyCode\":\"USD\"}},{\"OrderItemId\":\""+order+"-ITEM-2\",\"SellerSKU\":\"SKU\",\"ASIN\":\"ASIN\",\"QuantityOrdered\":1,\"ItemPrice\":{\"Amount\":\"10.00\",\"CurrencyCode\":\"USD\"}}]}}");
+            normalizer.normalizeOrderItems(job,order,twoItems,null);
+            normalizer.normalize(job,report.replace("\t1\t10.00\t","\t2\t20.00\t"),null);
+            normalizer.normalizeOrderItems(job,order,twoItems,null);
+            tx.executeWithoutResult(s->{setTenant();
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM amazon_order_items WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",Integer.class,tenant,connection,order)).isEqualTo(2);
+                assertThat(jdbc.queryForObject("SELECT sum(item_price) FROM amazon_order_items WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",BigDecimal.class,tenant,connection,order)).isEqualByComparingTo("20.00");
+            });
+        }
+    }
+
+    @Test void skippedSyncDoesNotAdvanceWatermarkAndFinishedRunRepairIsGuarded() throws Exception {
+        UUID connection=UUID.randomUUID();
+        var old=java.time.Instant.parse("2026-09-10T00:00:00Z");
+        var end=old.plusSeconds(86400);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Recovery test','America/Los_Angeles',now())",connection,tenant,"test-"+connection);
+            jdbc.update("INSERT INTO amazon_sync_watermarks(tenant_id,marketplace_connection_id,dataset,high_watermark,last_success_at) VALUES (?,?,'ORDER_CHANGES',?,?)",tenant,connection,java.sql.Timestamp.from(old),java.sql.Timestamp.from(old));
+        });
+        var store=new com.nextaicommerce.platform.sync.AmazonSyncStore(jdbc,tx);
+        for(String status:List.of("SKIPPED","COMPLETED")){
+            UUID run=UUID.randomUUID(),finalJob=UUID.randomUUID();
+            tx.executeWithoutResult(s->{setTenant();
+                jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,window_start,window_end,status) VALUES (?,?,?,'INCREMENTAL','ORDER_CHANGES',?,?,'RUNNING')",run,tenant,connection,java.sql.Timestamp.from(old),java.sql.Timestamp.from(end));
+                jdbc.update("INSERT INTO marketplace_sync_jobs(tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,status,required_for_ready) VALUES (?,?,?,'ORDERS_API_DELTA',1,?,false)",tenant,run,connection,status);
+                jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,required_for_ready) VALUES (?,?,?,?,'FINAL_RECONCILIATION',2,false)",finalJob,tenant,run,connection);
+            });
+            store.finishRun(new com.nextaicommerce.platform.sync.AmazonSyncStore.Job(finalJob,tenant,run,connection,"FINAL_RECONCILIATION","ORDER_CHANGES","ATVPDKIKX0DER",old,end,null,0,0,false,null),"Done");
+            var actual=tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT high_watermark FROM amazon_sync_watermarks WHERE tenant_id=? AND marketplace_connection_id=? AND dataset='ORDER_CHANGES'",java.sql.Timestamp.class,tenant,connection).toInstant();});
+            assertThat(actual).isEqualTo(status.equals("SKIPPED")?old:end);
+        }
+        var repair=new String(getClass().getResourceAsStream("/db/migration/V68__repair_finished_sync_run_tracking.sql").readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE marketplace_sync_runs SET status='RUNNING' WHERE tenant_id=? AND marketplace_connection_id=?",tenant,connection);
+            jdbc.execute(repair);setTenant();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM marketplace_sync_runs WHERE tenant_id=? AND marketplace_connection_id=? AND status='RUNNING'",Integer.class,tenant,connection)).isZero();
+        });
+    }
+
     @Test void catalogueCountsAndRowsAgreeForSecondaryIdentifiersAndMappedAsins(){
         var first=fixture("INVOICE");var other=fixture("INVOICE");UUID connection=UUID.randomUUID(),mapping=UUID.randomUUID();
         tx.executeWithoutResult(s->{setTenant();

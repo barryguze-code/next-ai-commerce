@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.0.5",
+    "title": "More reliable Amazon order recovery",
+    "sections": [{
+      "title": "Complete order history",
+      "items": [
+        "Guarded startup recovery refreshes the last 30 days of orders when no recent full check has completed.",
+        "Finished setup jobs no longer block scheduled history refreshes, and unsuccessful imports no longer advance the successful sync position.",
+        "History reports and live order updates reuse matching items to prevent duplicate sales. Amazon inventory, listing and pricing changes remain disabled."
+      ]
+    }]
+  },
+  {
     "version": "1.0.4",
     "title": "Accurate order times and clearer shortcuts",
     "sections": [{

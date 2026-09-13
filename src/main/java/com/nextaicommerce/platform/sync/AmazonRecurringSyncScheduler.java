@@ -53,6 +53,9 @@ public class AmazonRecurringSyncScheduler {
                   WHERE active_run.tenant_id=schedule.tenant_id
                     AND active_run.marketplace_connection_id=schedule.marketplace_connection_id
                     AND active_run.status IN ('QUEUED','RUNNING')
+                    AND EXISTS (SELECT 1 FROM marketplace_sync_jobs unfinished
+                      WHERE unfinished.tenant_id=active_run.tenant_id AND unfinished.sync_run_id=active_run.id
+                        AND unfinished.status NOT IN ('COMPLETED','SKIPPED'))
                     AND (schedule.schedule_key<>'ORDER_CHANGES'
                       OR active_run.sync_profile='ORDER_CHANGES'))
             ORDER BY schedule.priority,schedule.next_run_at
