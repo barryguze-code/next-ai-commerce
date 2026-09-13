@@ -121,10 +121,10 @@ function prepareContextColumn(root){
           if(control.closest('.table-action-heading'))return;
           control.classList.add('table-action-entry');
           const icon=document.createElement('span');icon.className='table-action-icon';icon.setAttribute('aria-hidden','true');
-          icon.textContent=control.matches('[data-open-selection]')?'⇉':menu?'↗':'±';
+          icon.textContent=control.dataset.actionIcon||(control.matches('[data-open-selection]')?'⇉':menu?'↗':'±');
           const label=document.createElement('span');label.className='table-action-label';
           const strong=document.createElement('strong');strong.textContent=control.textContent.trim();
-          const small=document.createElement('small');small.textContent=control.matches('[data-open-selection]')?'Open your checked documents in one workspace':menu?'Open only this document; keep your selection':'Update stock for the mapped products';
+          const small=document.createElement('small');small.textContent=control.dataset.actionDescription||(control.matches('[data-open-selection]')?'Open your checked documents in one workspace':menu?'Open only this document; keep your selection':'Update stock for the mapped products');
           label.append(strong,small);control.replaceChildren(icon,label);
         });
         details.append(summary,panel);cell.append(details);

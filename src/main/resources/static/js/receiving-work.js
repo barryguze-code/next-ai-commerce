@@ -170,6 +170,7 @@ function reviewDocument(id){
   },'secondary-button compact-button rw-danger'));
 }
 function closeDocument(id){
+  if(!canEdit||!doc(id)||doc(id).closed)return;
   const d=doc(id),partial=Number(d.outstanding)>0;open(partial?'Close with a remaining balance?':'Close this document?',label(d),'Final review');
   body.innerHTML=note(number(d.received)+' each received · '+number(d.outstanding)+' each still expected',
     'Received stock stays in inventory. Closing locks the document and its receipts. Future corrections use an adjustment; this document cannot be reopened.',true);
@@ -184,4 +185,6 @@ document.addEventListener('click',event=>{
   if(target.dataset.reviewLine)review(target.dataset.reviewLine);
   if(target.dataset.reviewDocument)reviewDocument(target.dataset.reviewDocument);
 });
+const requestedClose=new URLSearchParams(window.location.search).get('closeDocument');
+if(requestedClose&&canEdit&&doc(requestedClose)&&!doc(requestedClose).closed)closeDocument(requestedClose);
 })();

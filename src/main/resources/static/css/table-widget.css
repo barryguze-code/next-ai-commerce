@@ -204,3 +204,15 @@ html[data-theme=dark] .marketplace-links a:hover{border-color:#537ba8;background
 .marketplace-sku-stack>span>strong{grid-column:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .marketplace-sku-stack>span>.standard-marketplace-shortcuts{grid-column:2;grid-row:1/3}
 .marketplace-sku-stack>span>small{grid-column:1}
+
+/* Menus use an explicit dark surface even when a page omits --surface. */
+html[data-theme=dark] .table-warning-panel{background:#172535;color:#e2ebf6;border-color:#3b5067;box-shadow:0 16px 40px #0006;color-scheme:dark}
+html[data-theme=dark] .table-warning-panel .table-action-heading{border-color:#3b5067}
+html[data-theme=dark] .table-warning-panel .table-action-heading strong,
+html[data-theme=dark] .table-warning-panel .table-action-label strong{color:#e2ebf6}
+html[data-theme=dark] .table-warning-panel small,
+html[data-theme=dark] .table-warning-panel .table-action-heading small{color:#aebed0}
+html[data-theme=dark] .table-warning-panel .table-action-entry{color:#e2ebf6!important}
+html[data-theme=dark] .table-warning-panel .table-action-icon{background:#28425e;color:#b7d4ff}
+.table-warning-panel .table-action-entry:focus-visible{outline:2px solid #79aaff;outline-offset:-2px}
+.table-warning-panel .table-action-entry:disabled{opacity:.45;cursor:not-allowed}
