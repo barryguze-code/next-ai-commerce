@@ -24,16 +24,20 @@ public class SmtpInvitationMailer implements InvitationMailer, PlatformMailer {
     @Override
     public void send(String recipient, String inviterName, String accountName, String role, String verificationUrl) {
         sendHtml(recipient, InvitationEmailContent.subject(accountName),
-            InvitationEmailContent.html(inviterName, accountName, role, verificationUrl));
+            InvitationEmailContent.html(inviterName, accountName, role, verificationUrl),inviterName);
     }
 
     @Override
     public void sendHtml(String recipient, String subject, String html) {
+        sendHtml(recipient,subject,html,fromName);
+    }
+
+    private void sendHtml(String recipient, String subject, String html,String senderName) {
         if (from == null || from.isBlank()) throw new InvitationException("Invitation email sender is not configured.");
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, "UTF-8");
-            helper.setFrom(from, fromName);
+            helper.setFrom(from, InvitationEmailContent.senderName(senderName,fromName));
             helper.setTo(recipient);
             helper.setSubject(subject);
             helper.setText(html, true);

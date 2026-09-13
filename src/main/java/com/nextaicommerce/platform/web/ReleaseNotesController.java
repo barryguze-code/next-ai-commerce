@@ -17,7 +17,7 @@ public class ReleaseNotesController {
 
     public ReleaseNotesController(ObjectMapper json) throws IOException {
         try(var input=new ClassPathResource("releases/history.json").getInputStream()){
-            releases=Arrays.stream(json.readValue(input,Release[].class)).limit(5).toList();
+            releases=featureReleases(Arrays.asList(json.readValue(input,Release[].class)));
         }
     }
 
@@ -25,11 +25,25 @@ public class ReleaseNotesController {
     String releases(@RequestParam(required=false) String version,Authentication authentication,Model model){
         PageController.addAccessModel(authentication,model);
         model.addAttribute("releases",releases);
-        model.addAttribute("release",releases.stream().filter(item->item.version().equals(version))
+        model.addAttribute("release",releases.stream().filter(item->item.version().equals(featureVersion(version)))
             .findFirst().orElse(releases.getFirst()));
         return "release-notes";
     }
 
     public record Release(String version,String title,List<Section> sections){}
     public record Section(String title,List<String> items){}
+
+    static String featureVersion(String version){
+        if(version==null)return "";
+        return version.replaceFirst("^(\\d+\\.\\d+)\\.\\d+$","$1");
+    }
+
+    static List<Release> featureReleases(List<Release> history){
+        var features=new java.util.LinkedHashMap<String,Release>();
+        for(var release:history){
+            String version=featureVersion(release.version());
+            features.putIfAbsent(version,new Release(version,release.title(),release.sections()));
+        }
+        return features.values().stream().limit(5).toList();
+    }
 }
