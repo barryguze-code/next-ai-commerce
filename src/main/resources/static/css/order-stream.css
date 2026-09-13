@@ -81,3 +81,7 @@ html[data-theme="dark"] .item-buy-box strong:not(.buy-box-missing){color:#79d5ad
 .order-stage-actions nav .table-action-label{min-width:0;display:block}
 .order-stage-actions nav .table-action-label strong{font-size:.7rem;white-space:normal}
 .order-stage-actions nav .table-action-label small{margin-top:3px}
+.order-stage-actions nav header strong{color:#975814}
+html[data-theme=dark] .order-stage-actions nav header strong{color:#f2bf73}
+.order-list.table-widget .order-item>[data-column=four-week-sales],.order-list.table-widget .order-item-grid-header>[data-column=four-week-sales]{flex:.8;min-width:82px}
+html[data-theme=dark] .order-icon-action.packing-slip{color:#c4b5fd!important;border-color:#665390!important;background:#2a2540!important}

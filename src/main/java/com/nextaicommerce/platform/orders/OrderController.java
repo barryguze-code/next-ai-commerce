@@ -44,6 +44,7 @@ public class OrderController {
         int requestedPage=goToPage==null?page:Math.max(0,goToPage-1);
         var orderPage=orders.orders(tenant,connection,status,q,requestedPage,com.nextaicommerce.platform.web.TablePaging.size(size));var rows=orderPage.rows();
         var items=orders.itemsForOrders(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList());
+        model.addAttribute("fourWeekSales",orders.fourWeekSales(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).toList()));
         model.addAttribute("orders",rows);model.addAttribute("orderPage",orderPage);model.addAttribute("itemsByOrder",items);var summary=orders.summary(tenant,connection);
         model.addAttribute("threadsByOrder",collaboration==null?java.util.Map.of():collaboration.openSubjectSummaries(
             tenant,"ORDER",rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList(),auth.getName()));

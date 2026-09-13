@@ -422,6 +422,33 @@ public class OrderRepository {
     }
 
     @Transactional(readOnly=true)
+    public Map<String,String> fourWeekSales(UUID tenantId,UUID connectionId,java.util.Collection<String> skus){
+        setTenant(tenantId);
+        Map<String,String> result=new LinkedHashMap<>();
+        var values=skus.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if(values.isEmpty())return result;
+        String placeholders=String.join(",",java.util.Collections.nCopies(values.size(),"?"));
+        List<Object> params=new ArrayList<>();params.add(tenantId);params.add(connectionId);params.addAll(values);
+        jdbc.query("""
+            SELECT item.seller_sku,
+              coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date<now()-interval '21 days'),0),
+              coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '21 days' AND orders.purchase_date<now()-interval '14 days'),0),
+              coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '14 days' AND orders.purchase_date<now()-interval '7 days'),0),
+              coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '7 days'),0)
+            FROM amazon_order_items item JOIN amazon_orders orders
+              ON orders.tenant_id=item.tenant_id AND orders.marketplace_connection_id=item.marketplace_connection_id
+              AND orders.amazon_order_id=item.amazon_order_id
+            WHERE item.tenant_id=? AND item.marketplace_connection_id=?
+              AND orders.purchase_date>=now()-interval '28 days' AND orders.purchase_date<=now()
+              AND upper(coalesce(orders.order_status,'')) NOT IN ('CANCELLED','CANCELED')
+              AND item.seller_sku IN (
+            """+placeholders+") GROUP BY item.seller_sku",rs->{
+                result.put(rs.getString(1),rs.getLong(2)+" | "+rs.getLong(3)+" | "+rs.getLong(4)+" | "+rs.getLong(5));
+            },params.toArray());
+        return result;
+    }
+
+    @Transactional(readOnly=true)
     public Map<String,List<OrderItemView>> itemsForOrders(UUID tenantId,UUID connectionId,List<String> orderIds){
         setTenant(tenantId);Map<String,List<OrderItemView>> result=new LinkedHashMap<>();
         for(String id:orderIds)result.put(id,new ArrayList<>());
