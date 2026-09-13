@@ -53,3 +53,16 @@ html[data-theme="dark"] .item-buy-box strong:not(.buy-box-missing){color:#79d5ad
 /* This selector intentionally outranks the generic collaboration stylesheet,
    which loads later and otherwise returns the button to normal document flow. */
 .order-list.table-widget .order-product-stage>.order-stage-chat{position:absolute!important;right:-8px!important;bottom:-8px!important;top:auto!important;left:auto!important;margin:0!important;z-index:6!important}
+
+/* Picture-first tables reserve a small, airy control rail beside the image.
+   Controls never compete with the product or its text. */
+.order-list.table-widget .item-product{gap:14px}
+.order-list.table-widget .order-product-stage{margin-left:35px}
+.order-list.table-widget .order-stage-actions{top:5px!important;right:auto!important;left:-37px!important}
+.order-list.table-widget .order-stage-actions summary{width:29px;height:29px;border-color:#d8e3ee;background:rgba(255,255,255,.78);box-shadow:0 2px 8px rgba(34,63,97,.08);color:#7990a7;opacity:.72;backdrop-filter:blur(4px)}
+.order-list.table-widget .order-stage-actions summary:hover,.order-list.table-widget .order-stage-actions[open] summary{opacity:1}
+.order-list.table-widget .order-stage-actions summary b{top:-6px;right:-6px}
+.order-list.table-widget .order-stage-actions nav{right:auto;left:0}
+.order-list.table-widget .order-product-stage>.order-stage-chat{right:auto!important;bottom:5px!important;left:-37px!important;width:29px!important;height:29px!important;border-color:#dce6ef!important;background:rgba(248,250,252,.82)!important;box-shadow:0 2px 8px rgba(34,63,97,.08);opacity:.5;backdrop-filter:blur(4px)}
+.order-list.table-widget .order-product-stage>.order-stage-chat:hover,.order-list.table-widget .order-product-stage>.order-stage-chat.has-conversation{opacity:1}
+@media(max-width:760px){.order-list.table-widget .order-product-stage{margin-left:33px}.order-list.table-widget .order-stage-actions{left:-34px!important}.order-list.table-widget .order-product-stage>.order-stage-chat{left:-34px!important}}
