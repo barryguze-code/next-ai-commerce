@@ -1,32 +1,95 @@
 [
   {
-    "version": "1.0",
+    "version": "1.0.3",
+    "title": "Release notes without leaving your work",
+    "sections": [
+      {
+        "title": "A clearer release history",
+        "items": [
+          "Open the version button to read release notes in a right-side panel. Back or Close returns to the same page without losing your place.",
+          "A blue dot marks a new deployed version until you open its notes. Your read state is remembered for your account in this browser.",
+          "Choose among the five latest releases, or browse all documented deployments at the bottom of the panel.",
+          "The release panel works in light and dark appearance and adapts to smaller screens."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.0.2",
+    "title": "Clearer connection errors and complete packaging history",
+    "sections": [
+      {
+        "title": "Marketplace connections",
+        "items": [
+          "Unreadable saved credentials now show an action-required message instead of appearing healthy.",
+          "Re-enter your credentials to verify Amazon access and the selected marketplace before replacing the saved values. Imported orders and inventory are retained."
+        ]
+      },
+      {
+        "title": "Packaging history",
+        "items": [
+          "The supplied packaging history is now available in production, while existing order-level choices are preserved.",
+          "Save a package for an order to reuse that choice for future orders with the same ASINs and quantities. Orders with their own saved choices keep them."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.0.1",
     "title": "Clearer orders and easier packing",
     "sections": [
-      {"title": "Orders at a glance", "items": [
-        "See four weeks of SKU sales alongside your orders to help plan fulfillment.",
-        "Click an ASIN or item-code button to filter the table; click again to release it. Full codes appear on hover, and active filters are easier to spot and clear.",
-        "Larger, uncropped product pictures keep collaboration and relevant actions together without duplicate menus."
-      ]},
-      {"title": "Packing made simpler", "items": [
-        "Choose and save packaging for an ASIN and quantity combination, then print a compact 2 × 1 label with up to two items per page.",
-        "Labels show product brand, packaging, quantities, item details, expiry and location without unnecessary footer links.",
-        "For UPS, Medium and OMBox packaging, open Veeqo directly and automatically copy the order ID, ready to paste."
-      ]},
-      {"title": "Inventory and receiving", "items": [
-        "Clearer action menus explain stock warnings and guide you to the appropriate inventory task.",
-        "A smaller product-mapping dialog shows search progress, offers product creation when nothing matches, and prevents incomplete bundle lines.",
-        "Receiving menus and disabled selections are easier to read in dark mode. Open invoices offer a close action; closed invoices no longer offer inappropriate actions."
-      ]},
-      {"title": "Quieter refreshes and release history", "items": [
-        "Buy Box prices refresh no more often than every three hours, with gentler request spacing and longer pauses if Amazon asks us to slow down. Order updates continue independently.",
-        "Click the version number to see feature-release highlights. Patch updates are grouped into their feature release; this history keeps the five most recent feature releases."
-      ]},
-      {"title": "Everyday operations", "items": [
-        "Consistent tables and marketplace shortcuts across catalogue, inventory and order workspaces.",
-        "Clearer inventory movement history, location selection and download progress.",
-        "Improved catalogue search and readable table layouts."
-      ]}
+      {
+        "title": "Orders at a glance",
+        "items": [
+          "See four weeks of SKU sales alongside your orders to help plan fulfillment.",
+          "Click an ASIN or item-code button to filter the table; click again to release it. Full codes appear on hover, and active filters are easier to spot and clear.",
+          "Larger, uncropped product pictures keep collaboration and relevant actions together without duplicate menus."
+        ]
+      },
+      {
+        "title": "Packing made simpler",
+        "items": [
+          "Choose and save packaging for an ASIN and quantity combination, then print a compact 2 × 1 label with up to two items per page.",
+          "Labels show product brand, packaging, quantities, item details, expiry and location without unnecessary footer links.",
+          "For UPS, Medium and OMBox packaging, open Veeqo directly and automatically copy the order ID, ready to paste."
+        ]
+      },
+      {
+        "title": "Inventory and receiving",
+        "items": [
+          "Clearer action menus explain stock warnings and guide you to the appropriate inventory task.",
+          "A smaller product-mapping dialog shows search progress, offers product creation when nothing matches, and prevents incomplete bundle lines.",
+          "Receiving menus and disabled selections are easier to read in dark mode. Open invoices offer a close action; closed invoices no longer offer inappropriate actions."
+        ]
+      },
+      {
+        "title": "Quieter refreshes and release history",
+        "items": [
+          "Buy Box prices refresh no more often than every three hours, with gentler request spacing and longer pauses if Amazon asks us to slow down. Order updates continue independently.",
+          "Release highlights explain changes in everyday language."
+        ]
+      },
+      {
+        "title": "Everyday operations",
+        "items": [
+          "Consistent tables and marketplace shortcuts across catalogue, inventory and order workspaces.",
+          "Clearer inventory movement history, location selection and download progress.",
+          "Improved catalogue search and readable table layouts."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.0.0",
+    "title": "Your production commerce workspace",
+    "sections": [
+      {
+        "title": "Everyday operations",
+        "items": [
+          "Work with marketplace orders, available inventory and receiving in one account-aware workspace.",
+          "Manage marketplace connections, catalogue mappings and team access."
+        ]
+      }
     ]
   }
 ]

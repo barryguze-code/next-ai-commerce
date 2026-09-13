@@ -11,7 +11,9 @@
   <script defer src="/js/background-jobs.js?v=1.0.0"></script>
   <span class="sidebar-user-avatar" th:text="${#strings.toUpperCase(#strings.substring(signedInEmail,0,1))}">B</span>
   <span class="sidebar-user-copy"><strong th:text="${signedInEmail}" th:title="${signedInEmail}">Signed-in user</strong></span>
-  <a class="sidebar-build-info" href="/app/releases" th:text="${#strings.isEmpty(buildBranch) ? 'v'+displayVersion : buildBranch}" th:title="${'What’s new · Running '+buildVersion}">v1.0.1</a>
+  <link rel="stylesheet" href="/css/release-panel.css?v=1.0.3">
+  <script defer src="/js/release-panel.js?v=1.0.3"></script>
+  <a class="sidebar-build-info release-trigger" href="/app/releases" aria-haspopup="dialog" th:attr="data-release-version=${buildVersion},data-release-user=${signedInEmail},data-release-notification=${#strings.isEmpty(buildBranch)}" th:title="${'What’s new · Running '+buildVersion}"><span th:text="${#strings.isEmpty(buildBranch) ? 'v'+displayVersion : buildBranch}">v1.0.3</span><span class="release-unread-dot" hidden aria-label="New release notes"></span><span aria-hidden="true">›</span></a>
   <div class="text-size-control">
     <button class="text-size-trigger" data-text-size-toggle type="button" aria-label="Adjust text size" title="Adjust text size" aria-expanded="false" onclick="toggleTextSizeMenu(this,event)">Aa</button>
     <section class="text-size-popover" data-text-size-menu hidden aria-label="Text size settings">

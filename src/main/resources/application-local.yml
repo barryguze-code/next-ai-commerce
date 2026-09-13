@@ -11,10 +11,9 @@ spring:
 server:
   address: 127.0.0.1
 app:
-  # The local UAT badge deliberately identifies the active feature build.  The
-  # production default remains the APP_BUILD_VERSION value from application.yml.
-  build-version: 1.0.1-local-uat
-  build-branch: feature/packing-slip-v1.0.1
+  # Local pages read the real checkout branch; the version follows application.yml.
+  local-development: true
+  build-branch: local
   public-url: http://localhost:8080
   scheduling:
     enabled: true

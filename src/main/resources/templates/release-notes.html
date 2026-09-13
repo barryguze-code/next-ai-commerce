@@ -17,7 +17,7 @@
       <option th:each="item:${releases}" th:value="${item.version}" th:text="${'v'+item.version}" th:selected="${item.version == release.version}">v1.0.1</option>
     </select>
     <noscript><button type="submit">Show release</button></noscript>
-    <small>Up to five most recent feature releases · patch updates included</small>
+    <small>Five most recent deployments · full history below</small>
   </form>
   <article class="release-card">
     <span class="release-number" th:text="${'v'+release.version}">v1.0.1</span>
@@ -27,5 +27,6 @@
       <ul><li th:each="item:${section.items}" th:text="${item}">Improvement</li></ul>
     </section>
   </article>
+  <footer class="release-card" style="margin-top:24px"><h2>Deployment history</h2><p th:each="item:${releaseHistory}"><a th:href="${'/app/releases?version='+item.version}" th:text="${'v'+item.version+' · '+item.title}">Release notes</a></p></footer>
 </main>
 </body></html>
