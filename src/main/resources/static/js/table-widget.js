@@ -1,6 +1,7 @@
 (()=>{
 if(window.NextAiTableWidget)return;
-document.addEventListener('pointerdown',event=>document.querySelectorAll('.table-row-warning[open]').forEach(details=>{if(!details.contains(event.target))details.open=false}));
+document.addEventListener('pointerdown',event=>document.querySelectorAll('.table-row-warning[open],.order-stage-actions[open]').forEach(details=>{if(!details.contains(event.target))details.open=false}));
+document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelectorAll('.order-stage-actions[open]').forEach(details=>{details.open=false;details.querySelector('summary')?.focus()})});
 function read(key){return window.NextAiTablePreferences?.read(key)||null}
 function write(key,value){window.NextAiTablePreferences?.write(key,value)}
 function actionTrigger(element,warning){
@@ -65,6 +66,14 @@ function prepareContextColumn(root){
   // create the legacy leading context rail beside an image-based product cell.
   if(records.some(row=>row.querySelector('[data-picture-actions]'))){
     root.classList.add('table-picture-first');
+    records.forEach(row=>{
+      const action=row.querySelector('[data-context-action]');
+      if(action){
+        const shelf=row.querySelector('.shelf-status:not(.healthy):not(.undated)');
+        action.dataset.warningText=shelf?shelf.parentElement.textContent.trim():'';
+        action.title=(action.dataset.warningText? action.dataset.warningText+' · ':'')+'Inventory actions';
+      }
+    });
     if(!isTable)root.querySelectorAll('.order-actions').forEach(el=>el.hidden=true);
     return;
   }

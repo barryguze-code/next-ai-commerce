@@ -66,3 +66,8 @@ html[data-theme="dark"] .item-buy-box strong:not(.buy-box-missing){color:#79d5ad
 .order-list.table-widget .order-product-stage>.order-stage-chat{right:auto!important;bottom:5px!important;left:-37px!important;width:29px!important;height:29px!important;border-color:#dce6ef!important;background:rgba(248,250,252,.82)!important;box-shadow:0 2px 8px rgba(34,63,97,.08);opacity:.5;backdrop-filter:blur(4px)}
 .order-list.table-widget .order-product-stage>.order-stage-chat:hover,.order-list.table-widget .order-product-stage>.order-stage-chat.has-conversation{opacity:1}
 @media(max-width:760px){.order-list.table-widget .order-product-stage{margin-left:33px}.order-list.table-widget .order-stage-actions{left:-34px!important}.order-list.table-widget .order-product-stage>.order-stage-chat{left:-34px!important}}
+.order-stage-actions nav{width:260px;max-width:calc(100vw - 32px);z-index:40}
+.order-stage-actions nav header{padding:10px;border-bottom:1px solid var(--line);cursor:default;white-space:normal}
+.order-stage-actions nav header strong{display:block;white-space:normal;font-size:.75rem}
+.order-stage-actions nav header p,.order-stage-actions nav small{display:block;margin:5px 0 0;color:var(--muted);font-size:.65rem;line-height:1.45;font-weight:400;white-space:normal}
+.order-row:has(.order-stage-actions[open]){position:relative;z-index:20}
