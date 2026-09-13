@@ -39,6 +39,9 @@ public class OrderRepository {
             String buyBoxCurrency,Instant buyBoxUpdatedAt){
         public BigDecimal safeItemPrice(){return itemPrice==null?BigDecimal.ZERO:itemPrice;}
         public BigDecimal safeShippingPrice(){return shippingPrice==null?BigDecimal.ZERO:shippingPrice;}
+        public String inventoryUrl(String marketplaceId){return asin==null||asin.isBlank()?null:
+            "https://"+sellerCentralDomain(marketplaceId)+"/myinventory/inventory?searchTerm="+
+                java.net.URLEncoder.encode(asin,java.nio.charset.StandardCharsets.UTF_8);}
         public String amazonUrl(String marketplaceId){return asin==null||asin.isBlank()?null:
             "https://www."+amazonDomain(marketplaceId)+"/dp/"+asin;}
     }

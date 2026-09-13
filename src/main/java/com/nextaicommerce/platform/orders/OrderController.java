@@ -4,7 +4,6 @@ import com.nextaicommerce.platform.web.AccountSelectionController;
 import com.nextaicommerce.platform.web.PageController;
 import com.nextaicommerce.platform.web.WorkspaceAccessRepository;
 import jakarta.servlet.http.HttpSession;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
@@ -56,9 +55,14 @@ public class OrderController {
         model.addAttribute("orderSyncAvailable",syncAvailability.allowed());model.addAttribute("orderSyncActive",syncAvailability.activeRun()!=null);
         model.addAttribute("orderSyncFresh",fresh);model.addAttribute("orderSyncRun",syncAvailability.activeRun());
         model.addAttribute("lastOrderSync",summary.lastSyncedAt()==null?"Waiting for Amazon":
-            "Last Amazon order check · "+DateTimeFormatter.ofPattern("MMM d · h:mm a").withZone(ZoneId.systemDefault()).format(summary.lastSyncedAt()));
-        model.addAttribute("orderTime",DateTimeFormatter.ofPattern("MMM d · h:mm a").withZone(ZoneId.systemDefault()));
+            "Last Amazon order check · "+orderTime(identity.marketplaceId()).format(summary.lastSyncedAt()));
+        model.addAttribute("orderTime",orderTime(identity.marketplaceId()));
         return "orders";
+    }
+
+    static DateTimeFormatter orderTime(String marketplaceId){
+        return DateTimeFormatter.ofPattern("MMM d · h:mm a z",java.util.Locale.US)
+            .withZone(com.nextaicommerce.platform.sync.AmazonMarketplaceTime.zone(marketplaceId));
     }
 
     @PostMapping("/app/orders/sync") String syncOrders(Authentication auth,HttpSession session,RedirectAttributes redirect){

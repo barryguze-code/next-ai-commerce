@@ -13,17 +13,17 @@ class ReleaseNotesControllerTest {
         var controller=new ReleaseNotesController(new ObjectMapper());
         var model=new ExtendedModelMap();
         assertThat(controller.releases(null,null,model)).isEqualTo("release-notes");
-        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.0.3");
+        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.0.4");
         controller.releases("1.0.2",null,model);
         assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.0.2");
         controller.releases("unknown",null,model);
-        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.0.3");
+        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.0.4");
         assertThat((java.util.List<?>)model.get("releases")).hasSizeLessThanOrEqualTo(5);
         var resolver=new ClassLoaderTemplateResolver();resolver.setPrefix("templates/");resolver.setSuffix(".html");
         var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);
         assertThat(engine.process("release-notes",new Context(null,model)))
-            .contains("Release notes without leaving your work","v1.0.3","Deployment history","/css/release-notes.css");
+            .contains("Accurate order times and clearer shortcuts","v1.0.4","Deployment history","/css/release-notes.css");
         assertThat(controller.history()).extracting(ReleaseNotesController.Release::version)
-            .containsExactly("1.0.3","1.0.2","1.0.1","1.0.0");
+            .containsExactly("1.0.4","1.0.3","1.0.2","1.0.1","1.0.0");
     }
 }

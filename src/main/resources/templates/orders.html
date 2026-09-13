@@ -26,7 +26,7 @@
 <code th:text="${item.sellerSku ?: 'No seller SKU'}">SKU</code>
 </div>
 <span class="marketplace-links listing-shortcuts order-marketplace-links">
-<a th:href="${order.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" title="Open this order in Seller Central" th:aria-label="${'Open Amazon order '+order.amazonOrderId+' in Seller Central'}">
+<a th:if="${item.inventoryUrl(order.marketplaceId) != null}" th:href="${item.inventoryUrl(order.marketplaceId)}" target="_blank" rel="noopener noreferrer" title="Manage this ASIN in Seller Central inventory" th:aria-label="${'Manage '+item.asin+' in Seller Central inventory'}">
 <img src="/images/channels/amazon-seller.png" alt="">
 </a>
 <a th:if="${item.amazonUrl(order.marketplaceId) != null}" th:href="${item.amazonUrl(order.marketplaceId)}" target="_blank" rel="noopener noreferrer" title="Open the Amazon product page" th:aria-label="${'Open '+item.asin+' on Amazon'}">
@@ -35,9 +35,9 @@
 </span>
 </div>
 <div class="item-order-reference">
-<span class="order-number">
+<a class="order-number" th:href="${order.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" title="Open this order in Seller Central">
 <span th:text="${order.amazonOrderId}">Amazon order</span>
-</span>
+</a>
 <small th:text="${order.purchaseDate == null ? 'Purchase time unavailable' : orderTime.format(order.purchaseDate)}">Aug 30</small>
 <span class="amazon-order-status" th:text="${order.amazonStatusLabel}">Unshipped</span>
 </div>

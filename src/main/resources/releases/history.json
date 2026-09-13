@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.0.4",
+    "title": "Accurate order times and clearer shortcuts",
+    "sections": [{
+      "title": "Orders",
+      "items": [
+        "Amazon US order and last-sync times now show Pacific time, including the PDT or PST label.",
+        "Click an Amazon order number to open that order in Seller Central. The Amazon Seller icon opens Manage Inventory for the item's ASIN."
+      ]
+    }]
+  },
+  {
     "version": "1.0.3",
     "title": "Release notes without leaving your work",
     "sections": [
