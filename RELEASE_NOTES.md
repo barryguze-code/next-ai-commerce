@@ -1,6 +1,6 @@
 # Next AI Commerce 1.0.1
 
-See [the user-facing v1.0.1 release notes](docs/releases/V1.0.1.md). The same
+See [the user-facing v1.0 feature notes](docs/releases/V1.0.md). The same
 functionality summary is available from the version link in the application.
 
 - Clearer product-first tables, filtering and four-week SKU sales.

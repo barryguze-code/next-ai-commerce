@@ -27,7 +27,7 @@
 </div>
 <span class="marketplace-links listing-shortcuts order-marketplace-links">
 <a th:href="${order.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" title="Open this order in Seller Central" th:aria-label="${'Open Amazon order '+order.amazonOrderId+' in Seller Central'}">
-<img src="/images/channels/amazon.svg" alt="">
+<img src="/images/channels/amazon-seller.png" alt="">
 </a>
 <a th:if="${item.amazonUrl(order.marketplaceId) != null}" th:href="${item.amazonUrl(order.marketplaceId)}" target="_blank" rel="noopener noreferrer" title="Open the Amazon product page" th:aria-label="${'Open '+item.asin+' on Amazon'}">
 <img src="/images/channels/amazon-product.svg" alt="">

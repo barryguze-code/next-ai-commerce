@@ -242,7 +242,7 @@ class TemplateRenderingTest {
         assertThat(rendered).contains("Marketplace SKUs","Ibcore assortment","IB-TEST-SKU","B012345678",
             "4w sales","1 | 2 | 3 | 4","Profit","Pending","Catalogue","Unmapped","Price (+ shipping)","Buy Box",
             "Customer shipping (30d)","Shipping template","data-column-control=\"marketplace-skus\"",
-            "647 sellable units","/images/channels/amazon.svg","/images/channels/amazon-product.svg",
+            "647 sellable units","/images/channels/amazon-seller.png","/images/channels/amazon-product.svg",
             "https://www.amazon.com/dp/B012345678","sellercentral.amazon.com")
             .doesNotContain(">Seller SKU <","Seller SKU &amp; links","SKU Mapping <small>Planned");
     }

@@ -1,6 +1,6 @@
 [
   {
-    "version": "1.0.1",
+    "version": "1.0",
     "title": "Clearer orders and easier packing",
     "sections": [
       {"title": "Orders at a glance", "items": [
@@ -20,14 +20,8 @@
       ]},
       {"title": "Quieter refreshes and release history", "items": [
         "Buy Box prices refresh no more often than every three hours, with gentler request spacing and longer pauses if Amazon asks us to slow down. Order updates continue independently.",
-        "Click the version number to see what changed. This history will keep the five most recent releases available as new versions are deployed."
-      ]}
-    ]
-  },
-  {
-    "version": "1.0.0",
-    "title": "A more consistent workspace",
-    "sections": [
+        "Click the version number to see feature-release highlights. Patch updates are grouped into their feature release; this history keeps the five most recent feature releases."
+      ]},
       {"title": "Everyday operations", "items": [
         "Consistent tables and marketplace shortcuts across catalogue, inventory and order workspaces.",
         "Clearer inventory movement history, location selection and download progress.",

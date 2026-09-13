@@ -13,7 +13,7 @@
     <label id="custom-package-field" hidden><span>Package name</span><input id="custom-package" maxlength="120" placeholder="e.g. Cold box · Large"></label>
     <div class="packing-control-actions"><button type="button" class="secondary-button" id="save-package">Save package</button><button type="button" class="primary-button" id="print-slip">Print 2 × 1 slip</button></div>
     <p class="packing-status" id="packing-status" role="status"></p>
-    <a class="seller-central-shortcut" th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" title="Open this order in Seller Central"><img src="/images/channels/amazon.svg" alt="">Open in Seller Central <span>↗</span></a>
+    <a class="seller-central-shortcut" th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" title="Open this order in Seller Central"><img src="/images/channels/amazon-seller.png" alt="">Open in Seller Central <span>↗</span></a>
     <a id="veeqo-shortcut" class="seller-central-shortcut" href="https://app.veeqo.com/" target="_blank" rel="noopener noreferrer" title="Open Veeqo for shipping" hidden><img src="https://static.veeqo.com/assets/pathfinder_favicon-130f9544f6fc9243713b38d5e21b736360dfac941b1a9585f0482b1577772fd4.ico" referrerpolicy="no-referrer" alt="" onerror="this.hidden=true">Open in Veeqo <span aria-hidden="true">↗</span></a>
   </section>
   <section class="packing-labels" aria-label="Internal packing slips">

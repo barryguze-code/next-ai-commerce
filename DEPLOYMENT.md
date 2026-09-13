@@ -65,10 +65,12 @@ customer files or unrestricted build outputs.
 ## Version and user-facing history
 
 For each approved release, increment the patch version in `pom.xml`, the default
-`app.build-version`, and the deployment workflow version argument. Add the release
-at the start of `src/main/resources/releases/history.json` and create the matching
-`docs/releases/V<version>.md`. Write functionality and benefits, not implementation
-details. `/app/releases` displays up to five entries, selected from a dropdown;
+`app.build-version`, and the deployment workflow version argument. Patch versions
+do not create separate user-facing release notes. When the feature version changes
+(for example 1.0.x to 1.1.0), add a major.minor entry to
+`src/main/resources/releases/history.json` and create `docs/releases/V<major.minor>.md`.
+Write functionality and benefits, not implementation details. `/app/releases`
+displays up to five feature releases, selected from a dropdown;
 unknown version requests show the latest entry. Only add versions being released,
 not unapproved development iterations. Local launches keep their branch marker
 and their enforced read-only Amazon access. Tag the successfully deployed revision.

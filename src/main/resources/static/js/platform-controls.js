@@ -13,7 +13,7 @@
       const add = (url, label, asset) => {
         const link = document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener noreferrer';
         link.title=label;link.setAttribute('aria-label',label);
-        const image=document.createElement('img');image.src='/images/channels/'+asset+'.svg';image.alt='';
+        const image=document.createElement('img');image.src=asset==='amazon'?'/images/channels/amazon-seller.png':'/images/channels/'+asset+'.svg';image.alt='';
         link.append(image);host.append(link);
       };
       if(sku)add('https://sellercentral.'+domain+'/myinventory/inventory?searchTerm='+encodeURIComponent(sku),'Open '+sku+' in Seller Central','amazon');
