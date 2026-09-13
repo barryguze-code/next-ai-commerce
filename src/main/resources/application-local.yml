@@ -25,7 +25,7 @@ app:
     write-enabled: false
     # Local UAT continuously imports Amazon data, but write-enabled remains false.
     recurring-enabled: true
-    startup-order-reconciliation-enabled: false
+    startup-order-reconciliation-enabled: true
     listing-actions-enabled: false
   local-packing-history:
     path: ${LOCAL_PACKING_HISTORY_FILE:}

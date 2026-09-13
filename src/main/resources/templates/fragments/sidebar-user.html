@@ -10,7 +10,8 @@
   <link rel="stylesheet" href="/css/background-jobs.css?v=1.0.0">
   <script defer src="/js/background-jobs.js?v=1.0.0"></script>
   <span class="sidebar-user-avatar" th:text="${#strings.toUpperCase(#strings.substring(signedInEmail,0,1))}">B</span>
-  <span class="sidebar-user-copy"><strong th:text="${signedInEmail}">Signed-in user</strong><small class="build-version" th:if="${#strings.isEmpty(buildBranch)}" th:text="${'v'+displayVersion}" th:title="${'Running '+buildVersion}">v1.0.0</small><small class="build-branch" th:if="${!#strings.isEmpty(buildBranch)}" th:text="${buildBranch}" th:title="${'Local checkout: '+buildBranch}">feature/packing-slip-v1.0.1</small></span>
+  <span class="sidebar-user-copy"><strong th:text="${signedInEmail}" th:title="${signedInEmail}">Signed-in user</strong></span>
+  <small class="sidebar-build-info" th:text="${#strings.isEmpty(buildBranch) ? 'v'+displayVersion : buildBranch}" th:title="${'Running '+buildVersion}">feature/packing-slip-v1.0.1</small>
   <div class="text-size-control">
     <button class="text-size-trigger" data-text-size-toggle type="button" aria-label="Adjust text size" title="Adjust text size" aria-expanded="false" onclick="toggleTextSizeMenu(this,event)">Aa</button>
     <section class="text-size-popover" data-text-size-menu hidden aria-label="Text size settings">

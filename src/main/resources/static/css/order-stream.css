@@ -71,3 +71,13 @@ html[data-theme="dark"] .item-buy-box strong:not(.buy-box-missing){color:#79d5ad
 .order-stage-actions nav header strong{display:block;white-space:normal;font-size:.75rem}
 .order-stage-actions nav header p,.order-stage-actions nav small{display:block;margin:5px 0 0;color:var(--muted);font-size:.65rem;line-height:1.45;font-weight:400;white-space:normal}
 .order-row:has(.order-stage-actions[open]){position:relative;z-index:20}
+.order-list.table-widget .order-stage-actions[open]{z-index:50}
+.order-stage-actions nav{padding:6px;border-radius:14px;background:var(--white,#fff);box-shadow:0 16px 40px #142a4226}
+.order-stage-actions nav header{display:flex;align-items:flex-start;gap:8px;margin-bottom:5px;padding:10px 8px 12px}
+.order-stage-actions nav header>div{min-width:0;flex:1}
+.order-stage-actions nav header>button{border:0;background:transparent;color:var(--muted);padding:0 3px;font-size:1rem;cursor:pointer}
+.order-stage-actions nav>.table-action-entry{display:flex;align-items:center;gap:10px;padding:10px 8px;white-space:normal}
+.order-stage-actions nav .table-action-icon{display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;border-radius:9px;background:#eaf2ff;color:#2867bd;font-size:1.05rem}
+.order-stage-actions nav .table-action-label{min-width:0;display:block}
+.order-stage-actions nav .table-action-label strong{font-size:.7rem;white-space:normal}
+.order-stage-actions nav .table-action-label small{margin-top:3px}
