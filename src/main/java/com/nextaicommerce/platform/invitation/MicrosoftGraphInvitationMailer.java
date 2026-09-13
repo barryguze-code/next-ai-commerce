@@ -46,21 +46,17 @@ public class MicrosoftGraphInvitationMailer implements InvitationMailer, Platfor
     @Override
     public void send(String recipient, String inviterName, String accountName, String role, String verificationUrl) {
         sendHtml(recipient, InvitationEmailContent.subject(accountName),
-            InvitationEmailContent.html(inviterName, accountName, role, verificationUrl),inviterName);
+            InvitationEmailContent.html(inviterName, accountName, role, verificationUrl));
     }
 
     @Override
     public void sendHtml(String recipient, String subject, String html) {
-        sendHtml(recipient,subject,html,fromName);
-    }
-
-    private void sendHtml(String recipient, String subject, String html,String senderName) {
         validateConfiguration();
         try {
             Map<String, Object> message = Map.of("message", Map.of(
                 "subject", subject,
                 "body", Map.of("contentType", "HTML", "content", html),
-                "from", Map.of("emailAddress", Map.of("address", from, "name", InvitationEmailContent.senderName(senderName,fromName))),
+                "from", Map.of("emailAddress", Map.of("address", from, "name", fromName)),
                 "toRecipients", new Object[] { Map.of("emailAddress", Map.of("address", recipient)) }
             ), "saveToSentItems", true);
             HttpRequest request = HttpRequest.newBuilder()

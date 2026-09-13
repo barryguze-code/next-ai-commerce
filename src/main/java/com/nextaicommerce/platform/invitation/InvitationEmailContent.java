@@ -3,13 +3,6 @@ package com.nextaicommerce.platform.invitation;
 final class InvitationEmailContent {
     private InvitationEmailContent() {}
 
-    static String senderName(String value,String fallback) {
-        String name=value==null?"":value.replaceAll("[\\r\\n]+"," ").strip();
-        if(name.isBlank())name=fallback==null?"Next AI Commerce":fallback.replaceAll("[\\r\\n]+"," ").strip();
-        if(name.isBlank())name="Next AI Commerce";
-        return name.substring(0,Math.min(name.length(),120));
-    }
-
     static String subject(String accountName) {
         return "You’re invited to " + accountName + " on Next AI Commerce";
     }
