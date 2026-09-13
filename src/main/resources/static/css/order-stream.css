@@ -85,3 +85,8 @@ html[data-theme="dark"] .item-buy-box strong:not(.buy-box-missing){color:#79d5ad
 html[data-theme=dark] .order-stage-actions nav header strong{color:#f2bf73}
 .order-list.table-widget .order-item>[data-column=four-week-sales],.order-list.table-widget .order-item-grid-header>[data-column=four-week-sales]{flex:.8;min-width:82px}
 html[data-theme=dark] .order-icon-action.packing-slip{color:#c4b5fd!important;border-color:#665390!important;background:#2a2540!important}
+
+/* Intrinsic image height must not grow the stage's implicit grid track.
+   Keep overflow available for menus, but size pictures against the fixed stage. */
+.order-list.table-widget .order-product-stage{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.order-list.table-widget .order-product-stage>img{position:absolute;inset:0;display:block;width:100%;height:100%;min-width:0;min-height:0;max-width:100%;max-height:100%;margin:0;box-sizing:border-box;object-fit:contain;object-position:center;pointer-events:none}
