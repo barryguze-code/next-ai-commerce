@@ -422,5 +422,6 @@
 <script src="/js/location-manager.js?v=1.0.0"></script>
 <script>function openCost(button){document.getElementById('cost-item-id').value=button.dataset.itemId;document.getElementById('cost-product-name').textContent=button.dataset.itemName;document.getElementById('cost-dialog').showModal();}</script>
 <script th:if="${openPanel == 'locations'}">window.addEventListener('DOMContentLoaded',()=>document.getElementById('location-dialog')?.showModal())</script>
+<script>if(new URLSearchParams(location.search).get('addProduct')==='true'){const productDialog=document.getElementById('product-dialog');if(productDialog){productDialog.showModal();productDialog.querySelector('[name=name]')?.focus();}}</script>
 </body>
 </html>
