@@ -21,7 +21,9 @@ public class WorkspaceAccessRepository {
     public record ConnectionView(UUID id, UUID tenantId, String tenantName, String name, String channel,
         String sellerId, String marketplaceId, String marketplaceLabel, String countryFlag,
         String status, Instant lastCheckedAt, boolean credentialsStored) {}
-    public record ConnectionIdentity(UUID id, String channel) {}
+    public record ConnectionIdentity(UUID id, String channel, String marketplaceId) {
+        public ConnectionIdentity(UUID id, String channel) { this(id, channel, "ATVPDKIKX0DER"); }
+    }
     public record CredentialEnvelope(byte[] payload, byte[] nonce) {}
     public record SyncStatusView(UUID connectionId, String storeName, String status, int progress,
         String stage, String message, Instant startedAt) {
@@ -199,8 +201,8 @@ public class WorkspaceAccessRepository {
     @Transactional(readOnly = true)
     public ConnectionIdentity findConnection(UUID tenantId, UUID connectionId) {
         setTenant(tenantId);
-        return jdbc.query("SELECT id, channel FROM marketplace_connections WHERE tenant_id=? AND id=?",
-            (rs, row) -> new ConnectionIdentity(rs.getObject("id", UUID.class), rs.getString("channel")),
+        return jdbc.query("SELECT id, channel, marketplace_identifier FROM marketplace_connections WHERE tenant_id=? AND id=?",
+            (rs, row) -> new ConnectionIdentity(rs.getObject("id", UUID.class), rs.getString("channel"), rs.getString("marketplace_identifier")),
             tenantId, connectionId).stream().findFirst()
             .orElseThrow(() -> new IllegalArgumentException("Marketplace connection was not found."));
     }

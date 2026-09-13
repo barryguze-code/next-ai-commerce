@@ -34,12 +34,22 @@ public class AdministrationController {
         UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
         String tenantName = (String) session.getAttribute(AccountSelectionController.TENANT_NAME);
         var connections = repository.listConnections(tenantId, tenantName);
+        var connectionErrors = new java.util.LinkedHashMap<UUID,String>();
+        for (var connection : connections) {
+            if (connection.credentialsStored()) {
+                try { credentialService.credentials(tenantId, connection.id()); }
+                catch (IllegalStateException ex) {
+                    connectionErrors.put(connection.id(), "Stored credentials cannot be opened. Re-enter all credentials and verify the connection. Imported data is retained.");
+                }
+            }
+        }
+        model.addAttribute("connectionErrors", connectionErrors);
         model.addAttribute("connections", connections);
         model.addAttribute("connectionCount", connections.size());
         model.addAttribute("activeConnectionCount", connections.stream()
-            .filter(connection -> "ACTIVE".equals(connection.status())).count());
+            .filter(connection -> "ACTIVE".equals(connection.status()) && !connectionErrors.containsKey(connection.id())).count());
         model.addAttribute("setupConnectionCount", connections.stream()
-            .filter(connection -> "PENDING".equals(connection.status()) || "ERROR".equals(connection.status())).count());
+            .filter(connection -> "PENDING".equals(connection.status()) || "ERROR".equals(connection.status()) || connectionErrors.containsKey(connection.id())).count());
         var syncStatuses=repository.listCurrentSyncStatuses(tenantId);
         model.addAttribute("syncStatuses",syncStatuses);
         model.addAttribute("syncInProgress",syncStatuses.stream().anyMatch(sync->

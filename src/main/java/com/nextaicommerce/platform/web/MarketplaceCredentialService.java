@@ -29,19 +29,25 @@ public class MarketplaceCredentialService {
     private final byte[] encryptionKey;
     private final AmazonInitializationService initializationService;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public MarketplaceCredentialService(WorkspaceAccessRepository repository,
             AmazonInitializationService initializationService,
             @Value("${app.credentials.encryption-key:}") String encodedKey) {
+        this(repository, initializationService, encodedKey, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
+    }
+
+    MarketplaceCredentialService(WorkspaceAccessRepository repository,
+            AmazonInitializationService initializationService, String encodedKey, HttpClient httpClient) {
         this.repository = repository;
         this.initializationService = initializationService;
-        this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+        this.httpClient = httpClient;
         this.encryptionKey = decodeKey(encodedKey);
     }
 
     public void connect(UUID tenantId, UUID connectionId, Map<String, String> form) {
         var connection = repository.findConnection(tenantId, connectionId);
         Map<String, String> credentials = credentialsFor(connection.channel(), form);
-        validate(connection.channel(), credentials);
+        validate(connection.channel(), connection.marketplaceId(), credentials);
         EncryptedCredentials encrypted = encrypt(credentials);
         boolean amazon = "AMAZON".equals(connection.channel());
         repository.saveCredentials(tenantId, connectionId, encrypted.payload(), encrypted.nonce(), amazon);
@@ -84,13 +90,31 @@ public class MarketplaceCredentialService {
         return values;
     }
 
-    private void validate(String channel, Map<String, String> credentials) {
+    private void validate(String channel, String marketplaceId, Map<String, String> credentials) {
         try {
             HttpRequest request = "AMAZON".equals(channel)
                 ? amazonRequest(credentials) : walmartRequest(credentials);
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300)
                 throw new IllegalArgumentException("The marketplace rejected these credentials. Check the values and permissions.");
+            if ("AMAZON".equals(channel)) {
+                String token = new tools.jackson.databind.ObjectMapper().readTree(response.body()).path("access_token").asText();
+                if (token.isBlank()) throw new IllegalArgumentException("Amazon did not return an access token. Check the credentials.");
+                String region = "A1F83G8C2ARO7P".equals(marketplaceId) ? "eu" : "na";
+                HttpResponse<String> health = httpClient.send(HttpRequest.newBuilder(
+                        URI.create("https://sellingpartnerapi-" + region + ".amazon.com/sellers/v1/marketplaceParticipations"))
+                    .timeout(Duration.ofSeconds(20)).header("x-amz-access-token", token)
+                    .header("Accept", "application/json").GET().build(), HttpResponse.BodyHandlers.ofString());
+                if (health.statusCode() / 100 != 2)
+                    throw new IllegalArgumentException("Amazon login succeeded, but the SP-API health check failed. Check seller authorization and API permissions, then try again. Existing credentials were not changed.");
+                var participations = new tools.jackson.databind.ObjectMapper().readTree(health.body()).path("payload");
+                boolean authorized = false;
+                for (var participation : participations) {
+                    if (marketplaceId.equals(participation.path("marketplace").path("id").asText())
+                            && participation.path("participation").path("isParticipating").asBoolean()) authorized = true;
+                }
+                if (!authorized) throw new IllegalArgumentException("These credentials do not authorize the selected Amazon marketplace. Existing credentials were not changed.");
+            }
         } catch (IllegalArgumentException ex) {
             throw ex;
         } catch (InterruptedException ex) {
