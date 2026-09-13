@@ -1,4 +1,15 @@
-# Next AI Commerce 1.0.0
+# Next AI Commerce 1.0.1
+
+See [the user-facing v1.0.1 release notes](docs/releases/V1.0.1.md). The same
+functionality summary is available from the version link in the application.
+
+- Clearer product-first tables, filtering and four-week SKU sales.
+- Compact packing labels and a Veeqo shortcut that copies the order ID.
+- Improved product mapping and dark-theme receiving actions.
+- Shared three-hour Buy Box cooldown, slower batches and no immediate retries
+  after Amazon pricing throttles. Order synchronization remains independent.
+
+## Previous release — 1.0.0
 
 ## Local release candidate — verification in progress
 

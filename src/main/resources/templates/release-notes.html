@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>What's new | Next AI Commerce</title>
+  <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260913-3">
+  <link rel="stylesheet" href="/css/release-notes.css?v=1.0.1">
+  <script src="/js/theme.js?v=20260905-1"></script>
+</head>
+<body class="app-page">
+<main class="release-workspace">
+  <a class="release-back" href="/app">← Back to workspace</a>
+  <header><span class="eyebrow">Next AI Commerce</span><h1>What's new</h1><p>Small improvements that make everyday work easier.</p></header>
+  <form action="/app/releases" method="get" class="release-picker">
+    <label for="release-version">Release</label>
+    <select id="release-version" name="version" onchange="this.form.requestSubmit()">
+      <option th:each="item:${releases}" th:value="${item.version}" th:text="${'v'+item.version}" th:selected="${item.version == release.version}">v1.0.1</option>
+    </select>
+    <noscript><button type="submit">Show release</button></noscript>
+    <small>Up to five most recent releases</small>
+  </form>
+  <article class="release-card">
+    <span class="release-number" th:text="${'v'+release.version}">v1.0.1</span>
+    <h2 th:text="${release.title}">Clearer orders and easier packing</h2>
+    <section th:each="section:${release.sections}">
+      <h3 th:text="${section.title}">Orders</h3>
+      <ul><li th:each="item:${section.items}" th:text="${item}">Improvement</li></ul>
+    </section>
+  </article>
+</main>
+</body></html>

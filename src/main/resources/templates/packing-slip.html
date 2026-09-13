@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title th:text="${'Packing slip · '+slip.orderId}">Packing slip</title>
-  <link rel="stylesheet" href="/css/packing-slip.css?v=1.0.1-local-4">
+  <link rel="stylesheet" href="/css/packing-slip.css?v=20260913-9">
 </head>
 <body>
 <main class="packing-workspace" th:attr="data-order-id=${slip.orderId}">
@@ -26,7 +26,6 @@
           <small><b th:text="${line.expirationDate == null ? 'No expiry' : line.expirationDate}">2026-09-15</b><span th:text="${line.location}">MAIN</span></small>
         </article>
       </section>
-      <footer><span>Internal packing only</span><a th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer">Seller Central ↗</a></footer>
     </section>
   </section>
 </main>

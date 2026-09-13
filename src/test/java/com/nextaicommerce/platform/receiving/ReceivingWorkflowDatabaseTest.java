@@ -144,18 +144,33 @@ class ReceivingWorkflowDatabaseTest {
 
     @Test void itemHistoryIncludesAllDatedAndFifoBatchesAndIsTenantScoped(){
         var f=fixture("INVOICE");receive(f,3);
-        tx.executeWithoutResult(s->{setTenant();jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,entry_type,quantity,expiration_date,source_type,notes,location_id) VALUES (?,?,'ADJUSTMENT',2,NULL,'MANUAL','FIFO test',?)",tenant,f.product(),f.location());});
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,entry_type,quantity,expiration_date,source_type,notes,location_id,occurred_at,idempotency_key) VALUES (?,?,'ADJUSTMENT',2,NULL,'MANUAL','FIFO test',?,now(),?)",tenant,f.product(),f.location(),"test-"+UUID.randomUUID());});
         assertThat(inventory.movements(tenant,f.product(),null,null,true,0)).hasSize(2);
         assertThat(inventory.movements(tenant,f.product(),null,f.location(),false,0)).hasSize(1);
         assertThat(inventory.movements(tenant,f.product(),expiry,f.location(),false,0)).hasSize(1);
         assertThat(inventory.movements(UUID.randomUUID(),f.product(),null,null,true,0)).isEmpty();
     }
+    @Test void pricingCooldownPersistsAndIsTenantScoped(){
+        UUID connection=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Pricing test','America/Los_Angeles',now())",connection,tenant,"test-"+connection);});
+        var amazon=org.mockito.Mockito.mock(com.nextaicommerce.platform.sync.AmazonSpApiClient.class);
+        var pricing=new com.nextaicommerce.platform.sync.AmazonCompetitivePricingService(jdbc,amazon,tx,new tools.jackson.databind.ObjectMapper());
+        pricing.refresh(tenant,connection,"ATVPDKIKX0DER");
+        java.util.function.Supplier<java.time.Instant> deadline=()->tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT buy_box_refresh_after FROM marketplace_connections WHERE tenant_id=? AND id=?",java.sql.Timestamp.class,tenant,connection).toInstant();});
+        var first=deadline.get();
+        assertThat(first).isAfter(java.time.Instant.now().plusSeconds(10790));
+        pricing.refresh(tenant,connection,"ATVPDKIKX0DER");
+        pricing.refresh(UUID.randomUUID(),connection,"ATVPDKIKX0DER");
+        assertThat(deadline.get()).isEqualTo(first);
+        org.mockito.Mockito.verifyNoInteractions(amazon);
+    }
+
     @Test void catalogueCountsAndRowsAgreeForSecondaryIdentifiersAndMappedAsins(){
         var first=fixture("INVOICE");var other=fixture("INVOICE");UUID connection=UUID.randomUUID(),mapping=UUID.randomUUID();
         tx.executeWithoutResult(s->{setTenant();
-            jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) SELECT global_product_id,'MPN','PRIMARY-'+id,true FROM account_catalog_items WHERE id=?",first.product());
+            jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) SELECT global_product_id,'MPN','PRIMARY-'||id,true FROM account_catalog_items WHERE id=?",first.product());
             jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) SELECT global_product_id,'MPN','SECONDARY-NEEDLE',false FROM account_catalog_items WHERE id=?",first.product());
-            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status) VALUES (?,?,'AMAZON','synthetic','ATVPDKIKX0DER','test-only','ACTIVE')",connection,tenant);
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON','synthetic','ATVPDKIKX0DER','test-only','ACTIVE','Test store','America/Los_Angeles',now())",connection,tenant);
             jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,marketplace_sku,asin,account_catalog_item_id,quantity_per_marketplace_unit,status) VALUES (?,?,?,'QA-MAPPED-SKU','B0TESTASIN1',?,1,'ACTIVE')",mapping,tenant,connection,first.product());
         });
         var catalog=context.getBean(CatalogRepository.class);

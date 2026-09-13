@@ -26,8 +26,8 @@ public class AmazonCompetitivePricingScheduler {
         this.jdbc=jdbc;this.transactions=transactions;this.pricing=pricing;this.enabled=enabled;
     }
 
-    @Scheduled(initialDelayString="${app.amazon.pricing-initial-delay-ms:12000}",
-        fixedDelayString="${app.amazon.pricing-delay-ms:900000}")
+    @Scheduled(initialDelayString="${app.amazon.pricing-initial-delay-ms:300000}",
+        fixedDelayString="${app.amazon.pricing-delay-ms:3600000}")
     public void refreshStalePrices(){
         if(!enabled||!running.compareAndSet(false,true))return;
         try{
@@ -51,6 +51,7 @@ public class AmazonCompetitivePricingScheduler {
                 SELECT connection.id,connection.marketplace_identifier,connection.display_name
                 FROM marketplace_connections connection
                 WHERE connection.tenant_id=? AND connection.channel='AMAZON' AND connection.status='ACTIVE'
+                  AND (connection.buy_box_refresh_after IS NULL OR connection.buy_box_refresh_after<=now())
                   AND EXISTS (SELECT 1 FROM marketplace_connection_credentials credential
                     WHERE credential.tenant_id=connection.tenant_id
                       AND credential.marketplace_connection_id=connection.id)
@@ -58,7 +59,7 @@ public class AmazonCompetitivePricingScheduler {
                     WHERE listing.tenant_id=connection.tenant_id
                       AND listing.marketplace_connection_id=connection.id
                       AND listing.platform_status NOT IN ('DELETED','REMOVED')
-                      AND (listing.buy_box_updated_at IS NULL OR listing.buy_box_updated_at<now()-interval '15 minutes'))
+                      AND (listing.buy_box_updated_at IS NULL OR listing.buy_box_updated_at<now()-interval '3 hours'))
                 ORDER BY connection.id
                 """,(rs,row)->new Target(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3)),tenantId);
         });

@@ -26,6 +26,7 @@ public class AmazonCompetitivePricingService {
     private final AmazonSpApiClient amazon;
     private final TransactionTemplate transactions;
     private final ObjectMapper json;
+    private static long nextPricingRequestNanos;
 
     public AmazonCompetitivePricingService(JdbcTemplate jdbc,AmazonSpApiClient amazon,TransactionTemplate transactions,
             ObjectMapper json){
@@ -37,15 +38,38 @@ public class AmazonCompetitivePricingService {
     }
 
     public long refresh(UUID tenantId,UUID connectionId,String marketplaceId){
+        // Claim before reading or calling Amazon, including on imports and after restarts.
+        Boolean claimed=transactions.execute(status->{setTenant(tenantId);return jdbc.update("""
+            UPDATE marketplace_connections SET buy_box_refresh_after=now()+interval '3 hours'
+            WHERE tenant_id=? AND id=?
+              AND (buy_box_refresh_after IS NULL OR buy_box_refresh_after<=now())
+            """,tenantId,connectionId)==1;});
+        if(!Boolean.TRUE.equals(claimed))return 0;
+        log.info("Buy Box refresh started — this store will not refresh again for at least 3 hours.");
+        try{return refreshPrices(tenantId,connectionId,marketplaceId);}
+        catch(AmazonSpApiClient.AmazonApiException ex){
+            if(ex.status()==429){
+                long seconds=Math.max(10800,ex.retryAfter()==null?0:ex.retryAfter().toSeconds()+1);
+                transactions.executeWithoutResult(status->{setTenant(tenantId);jdbc.update("""
+                    UPDATE marketplace_connections
+                    SET buy_box_refresh_after=GREATEST(buy_box_refresh_after,now()+(? * interval '1 second'))
+                    WHERE tenant_id=? AND id=?
+                    """,seconds,tenantId,connectionId);});
+                log.warn("Amazon pricing rate limit reached — no immediate retries; refresh deferred at least {} seconds.",seconds);
+            }
+            throw ex;
+        }
+    }
+
+    private long refreshPrices(UUID tenantId,UUID connectionId,String marketplaceId){
         List<ListingKey> listings=listings(tenantId,connectionId);
         List<String> asins=listings.stream().map(ListingKey::asin).filter(value->value!=null&&!value.isBlank()).distinct().toList();
         List<String> skus=listings.stream().filter(value->value.asin()==null||value.asin().isBlank()).map(ListingKey::sellerSku).toList();
         long updated=0;
-        boolean requested=false;
         List<String> missingAsins=new ArrayList<>();
         for(QuerySet query:new QuerySet[]{new QuerySet("Asin","Asins",asins,true),new QuerySet("Sku","Skus",skus,false)}){
             for(int start=0;start<query.identifiers().size();start+=AMAZON_BATCH_SIZE){
-                if(requested)pauseForAmazon();
+                pacePricingRequest(10000);
                 List<String> batch=query.identifiers().subList(start,Math.min(query.identifiers().size(),start+AMAZON_BATCH_SIZE));
                 String path="/products/pricing/v0/competitivePrice?MarketplaceId="+encode(marketplaceId)+
                     "&ItemType="+query.itemType()+"&CustomerType=Consumer&"+query.parameter()+"="+
@@ -58,18 +82,15 @@ public class AmazonCompetitivePricingService {
                     batch.stream().filter(identifier->!returned.contains(identifier)).forEach(missingAsins::add);
                 }
                 if(prices.size()<batch.size())log.info("Amazon competitive pricing returned Buy Box prices for {} of {} requested {}(s).",prices.size(),batch.size(),query.itemType());
-                requested=true;
             }
         }
-        boolean offerBatchRequested=false;
         for(int start=0;start<missingAsins.size();start+=AMAZON_BATCH_SIZE){
-            if(offerBatchRequested)pauseForOfferBatch();
+            pacePricingRequest(30000);
             List<String> batch=missingAsins.subList(start,Math.min(missingAsins.size(),start+AMAZON_BATCH_SIZE));
             var response=offerBatch(tenantId,connectionId,batch,marketplaceId);
             List<BuyBoxPrice> prices=readOfferPrices(response.json());
             updated+=savePrices(tenantId,connectionId,marketplaceId,prices,true);
             if(prices.size()<batch.size())log.info("Amazon offer pricing returned a current Buy Box for {} of {} fallback ASIN(s).",prices.size(),batch.size());
-            offerBatchRequested=true;
         }
         return updated;
     }
@@ -86,16 +107,8 @@ public class AmazonCompetitivePricingService {
     }
 
     private AmazonSpApiClient.ApiResponse offerBatch(UUID tenantId,UUID connectionId,List<String> asins,String marketplaceId){
-        for(int attempt=1;;attempt++)try{
-            return amazon.post(tenantId,connectionId,"/batches/products/pricing/v0/itemOffers",
-                itemOffersRequest(asins,marketplaceId));
-        }catch(AmazonSpApiClient.AmazonApiException ex){
-            if(ex.status()!=429||attempt>=3)throw ex;
-            Duration amazonWait=ex.retryAfter();
-            long waitMillis=Math.max(20500,amazonWait==null?0:amazonWait.plusSeconds(1).toMillis());
-            log.info("Amazon asked the Featured Offer refresh to slow down; retrying this batch in {} seconds.",waitMillis/1000);
-            pause(waitMillis);
-        }
+        return amazon.post(tenantId,connectionId,"/batches/products/pricing/v0/itemOffers",
+            itemOffersRequest(asins,marketplaceId));
     }
 
     private List<ListingKey> listings(UUID tenantId,UUID connectionId){
@@ -205,8 +218,11 @@ public class AmazonCompetitivePricingService {
     private static boolean bool(JsonNode node,String... names){JsonNode value=field(node,names);return value.isBoolean()&&value.asBoolean();}
     private static BigDecimal decimal(JsonNode node,String... names){String value=text(node,names);if(value.isBlank())return null;try{return new BigDecimal(value);}catch(NumberFormatException ignored){return null;}}
     private static String encode(String value){return URLEncoder.encode(value,StandardCharsets.UTF_8);}
-    private static void pauseForAmazon(){try{Thread.sleep(2100);}catch(InterruptedException ex){Thread.currentThread().interrupt();throw new IllegalStateException("Buy Box refresh interrupted.",ex);}}
-    private static void pauseForOfferBatch(){pause(20500);}
+    private static synchronized void pacePricingRequest(long intervalMillis){
+        long remaining=nextPricingRequestNanos-System.nanoTime();
+        if(remaining>0)pause((remaining+999999)/1000000);
+        nextPricingRequestNanos=System.nanoTime()+Duration.ofMillis(intervalMillis).toNanos();
+    }
     private static void pause(long millis){try{Thread.sleep(millis);}catch(InterruptedException ex){Thread.currentThread().interrupt();throw new IllegalStateException("Buy Box fallback refresh interrupted.",ex);}}
 
     record ListingKey(String sellerSku,String asin){}

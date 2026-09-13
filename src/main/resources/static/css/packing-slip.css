@@ -15,18 +15,19 @@ body { min-height: 100vh; margin: 0; background: #eef3f9; color: #16253a; font-f
 /* The preview has a dedicated column. The extra grid gap reserves the scale-up height. */
 .packing-labels { display: grid; align-content: center; gap: 1.1in; }
 .packing-slip { justify-self: start; width: 2in; height: 1in; overflow: hidden; padding: .045in .06in; background: #fff; color: #000; font-family: Arial,sans-serif; line-height: 1.02; box-shadow: 0 16px 42px #152c4b2b; transform: scale(2); transform-origin: left center; }
-.packing-slip header { display: flex; justify-content: space-between; gap: .06in; min-height: .105in; border-bottom: 2px solid #000; padding-bottom: .025in; font-size: 7pt; font-weight: 800; }
-.packing-slip header strong { max-width: 1.22in; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.packing-slip header span { max-width: .5in; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.packing-slip header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .02in .06in; min-height: .105in; border-bottom: 2px solid #000; padding-bottom: .025in; font-size: 6.5pt; font-weight: 800; }
+.packing-slip header strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Package descriptions take their natural width and wrap instead of disappearing. */
+.packing-slip header span { flex: 0 1 auto; max-width: 100%; margin-left: auto; text-align: right; overflow-wrap: anywhere; white-space: normal; }
 .lines { display: grid; gap: .018in; padding-top: .018in; }.lines article { display: grid; grid-template-columns: .24in 1fr .38in; gap: .028in; align-items: center; min-height: .295in; border-top: 1px solid #000; padding-top: .018in; }
 .lines article:first-child { border-top: 0; }.quantity { display: grid; place-items: center; min-height: .25in; border: 2px solid #000; font-size: 14pt; line-height: 1; }.lines div { min-width: 0; }
 .lines div strong,.lines div span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.lines div strong { font-size: 6.3pt; }.lines div span { margin-top: .01in; font-size: 5.4pt; }
 .lines small { display: grid; gap: .018in; font-size: 5.2pt; text-align: right; }.lines small b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.lines small span { border: 1px solid #000; padding: .01in; font-size: 4.9pt; }
-.packing-slip footer { display: flex; justify-content: space-between; margin-top: .02in; border-top: 1px solid #000; padding-top: .02in; font-size: 4.9pt; }.packing-slip footer a { color: #000; }
 
 @media (max-width: 900px) { .packing-workspace { grid-template-columns: 1fr; gap: 44px; padding: 30px; }.packing-labels { justify-items: center; gap: .85in; }.packing-slip { justify-self: center; transform: scale(1.7); transform-origin: center; } }
 @media print {
   html,body { width: 2in !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
   .packing-workspace { display: block !important; width: 2in !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; }
   .packing-controls { display: none !important; }.packing-labels { display: block !important; }.packing-slip { display: block !important; width: 2in !important; height: 1in !important; min-height: 0 !important; max-height: 1in !important; margin: 0 !important; padding: .045in .06in !important; overflow: hidden !important; box-shadow: none !important; transform: none !important; break-inside: avoid !important; page-break-inside: avoid !important; }
-  .packing-labels .packing-slip:not(:last-child) { break-after: page !important; page-break-after: always !important; }.packing-slip footer a { display: none !important; }
+  .packing-labels .packing-slip:not(:last-child) { break-after: page !important; page-break-after: always !important; }
 }

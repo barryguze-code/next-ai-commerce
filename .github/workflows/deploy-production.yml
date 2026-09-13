@@ -25,6 +25,9 @@ jobs:
           java-version: "21"
           cache: maven
       - run: mvn --batch-mode verify
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::038462776212:role/NextAICommerceGitHubDeployRole
@@ -33,7 +36,13 @@ jobs:
           INSTANCE_ID: i-043ea7df8377dd0a9
           REVISION: ${{ github.sha }}
         run: |
-          command_id=$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --parameters commands="[\"/opt/next-ai-commerce/bin/deploy-revision '$REVISION'\"]" --query 'Command.CommandId' --output text)
-          aws ssm wait command-executed --command-id "$command_id" --instance-id "$INSTANCE_ID"
+          encoded=$(base64 -w0 scripts/production-release.sh)
+          parameters=$(jq -n --arg command "printf '%s' '$encoded' | base64 -d | bash -s -- '$REVISION' '1.0.1'" '{commands:[$command],executionTimeout:["1800"]}')
+          command_id=$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --parameters "$parameters" --query 'Command.CommandId' --output text)
+          for attempt in $(seq 1 120); do
+            status=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || echo Pending)
+            case "$status" in Success|Failed|Cancelled|TimedOut) break;; esac
+            sleep 15
+          done
           aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query '{status:Status,summary:StandardOutputContent,error:StandardErrorContent}' --output json
-
+          test "$status" = Success

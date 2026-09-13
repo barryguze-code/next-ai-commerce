@@ -68,6 +68,9 @@ class SecurityConfigTest {
     }
     @TestConfiguration
     static class StubConfig {
+        @Bean com.nextaicommerce.platform.orders.PackingSlipRepository packingSlips(){
+            return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.PackingSlipRepository.class);
+        }
         @Bean MarketplaceCredentialService marketplaceCredentialService(WorkspaceAccessRepository repository) {
             return new MarketplaceCredentialService(repository, new AmazonInitializationService(null), "");
         }

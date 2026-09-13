@@ -17,3 +17,6 @@ jobs:
           java-version: "21"
           cache: maven
       - run: mvn --batch-mode verify
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test

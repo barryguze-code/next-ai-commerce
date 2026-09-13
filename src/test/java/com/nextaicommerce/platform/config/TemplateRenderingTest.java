@@ -73,6 +73,7 @@ class TemplateRenderingTest {
                 order.firstSku(),"B012345678","Test product",2,0,"MAPPED","63792 × 2",BigDecimal.ZERO,
                 "https://images.example.test/product.jpg",new BigDecimal("12"),new BigDecimal("42.50"),
                 new BigDecimal("6.99"),"USD",new BigDecimal("39.95"),"USD",Instant.parse("2026-09-10T16:00:00Z"))))),
+            Map.entry("fourWeekSales",Map.of(order.firstSku(),"1 | 2 | 3 | 4")),
             Map.entry("todayOrders",1L),Map.entry("todaySales",new BigDecimal("42.50")),
             Map.entry("sales30Days",new BigDecimal("420.50")),Map.entry("liveCount",1L),
             Map.entry("historicalCount",0L),Map.entry("selectedStatus","ALL"),Map.entry("query",""),

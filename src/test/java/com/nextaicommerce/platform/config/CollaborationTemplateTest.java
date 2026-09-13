@@ -90,7 +90,7 @@ class CollaborationTemplateTest {
     @Test
     void inventoryTableKeepsReadableColumnWidthsAtSplitScreenSizes() throws Exception {
         String styles=Files.readString(Path.of("src/main/resources/static/css/inventory.css"));
-        assertThat(styles).contains("min-width: 1110px", ".available-inventory-table th:nth-child(1){width:300px}",
+        assertThat(styles).contains("min-width: 1110px", ".available-inventory-table th:nth-child(1){width:350px}",
             "@media (max-width: 1180px)", "flex: 1 1 720px", "flex: 1 1 260px",
             ".available-inventory-table .product-cell>div { flex: 1 1 0; width: 0;",
             ".inventory-toolbar-actions{justify-content:flex-start;width:100%}");

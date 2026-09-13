@@ -1,6 +1,6 @@
 # Production deployment
 
-Next AI Commerce 1.0.0 runs as a Spring Boot service on Ubuntu. This document is
+Next AI Commerce 1.0.1 runs as a Spring Boot service on Ubuntu. This document is
 the release procedure, not deployment authorization. Local development and UAT
 use an isolated database; see [local development](docs/local-development.md).
 
@@ -50,9 +50,28 @@ The production service runs the release JAR with Java, loads its secrets from `/
 7. Verify login, account isolation, catalogue search, movement history, receiving locks and background processing. Monitor errors and latency. Do not use a real inventory mutation as a smoke test.
 8. Preserve the previous artifact and release evidence. Production publishing settings remain a separately controlled decision.
 
-CI currently runs verification only. Automatic artifact uploads and deployments
-are intentionally not enabled. Never upload local database copies, credentials,
+The existing production delivery branch is `release/v1.0.0` (the branch name is
+not the application version). Pushing an approved revision there starts the
+production workflow. Feature-branch CI runs Java and browser regressions without
+deploying. The production workflow also runs both suites before using the existing
+SSM deployment entry point. `scripts/production-release.sh` first requires a healthy
+existing service, saves a full server-local database backup and the previous JAR,
+and validates the backup archive. It does not change Amazon publishing policies.
+The current server entry point builds the pinned tested Git revision on the server;
+it does not yet consume the exact CI-built artifact described in the preferred
+build-once procedure above. Never upload local database copies, credentials,
 customer files or unrestricted build outputs.
+
+## Version and user-facing history
+
+For each approved release, increment the patch version in `pom.xml`, the default
+`app.build-version`, and the deployment workflow version argument. Add the release
+at the start of `src/main/resources/releases/history.json` and create the matching
+`docs/releases/V<version>.md`. Write functionality and benefits, not implementation
+details. `/app/releases` displays up to five entries, selected from a dropdown;
+unknown version requests show the latest entry. Only add versions being released,
+not unapproved development iterations. Local launches keep their branch marker
+and their enforced read-only Amazon access. Tag the successfully deployed revision.
 
 The catalogue display cache is per instance. Before deploying multiple instances,
 disable it or add shared invalidation; see [cache boundaries](docs/performance-and-cache.md).
