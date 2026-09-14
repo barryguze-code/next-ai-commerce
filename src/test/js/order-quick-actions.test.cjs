@@ -6,15 +6,15 @@ const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../../main/resources/static/js/order-quick-actions.js'),'utf8');
 
 function harness(writeText){
-  let click,notice;
+  const clicks=[];let notice;
   const document={
-    addEventListener:(type,handler)=>{if(type==='click')click=handler;},
+    addEventListener:(type,handler)=>{if(type==='click')clicks.push(handler);},
     querySelector:()=>notice,
     createElement:()=>({dataset:{},setAttribute(){},classList:{add(){},remove(){}}}),
-    body:{append:element=>notice=element}
+    body:{append:element=>{if(element.dataset.orderActionNotice!==undefined)notice=element;}}
   };
-  vm.runInNewContext(source,{document,navigator:{clipboard:{writeText}},setTimeout:()=>1,clearTimeout(){}});
-  return {copy:sku=>click({target:{closest:()=>({dataset:{copySku:sku}})}}),message:()=>notice.textContent};
+  vm.runInNewContext(source,{document,window:{addEventListener(){}},navigator:{clipboard:{writeText}},setTimeout:()=>1,clearTimeout(){}});
+  return {copy:async sku=>{for(const click of clicks)await click({target:{closest:()=>({dataset:{copySku:sku}})}});},message:()=>notice.textContent};
 }
 
 test('copies full SKU and handles rows replaced by live refresh',async()=>{
