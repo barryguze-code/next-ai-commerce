@@ -24,4 +24,13 @@ class LocalEnvironmentSafetyTest {
         assertThatThrownBy(()->LocalEnvironmentSafety.protectLocalEnvironment(safe().withProperty("app.mail.provider","graph"))
             .postProcessBeanFactory(new DefaultListableBeanFactory())).isInstanceOf(IllegalStateException.class);
     }
+    @Test void explicitlyAllowListedLocalEmailUatCanUseGraph(){
+        var emailUat=safe().withProperty("app.local-email-uat-enabled","true")
+            .withProperty("app.mail.enabled","true").withProperty("app.mail.provider","graph")
+            .withProperty("app.mail.local-uat-recipients","barry.guze@nextaicommerce.com");
+        assertThatCode(()->LocalEnvironmentSafety.protectLocalEnvironment(emailUat)
+            .postProcessBeanFactory(new DefaultListableBeanFactory())).doesNotThrowAnyException();
+        assertThatThrownBy(()->LocalEnvironmentSafety.protectLocalEnvironment(emailUat.withProperty("app.mail.local-uat-recipients",""))
+            .postProcessBeanFactory(new DefaultListableBeanFactory())).isInstanceOf(IllegalStateException.class);
+    }
 }

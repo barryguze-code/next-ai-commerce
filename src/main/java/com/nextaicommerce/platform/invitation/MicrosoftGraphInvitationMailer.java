@@ -27,6 +27,9 @@ public class MicrosoftGraphInvitationMailer implements InvitationMailer, Platfor
     private final String clientSecret;
     private final String from;
     private final String fromName;
+    private final String senderMailbox;
+    private final String replyTo;
+    private final LocalEmailDeliveryGuard localGuard;
     private volatile AccessToken accessToken;
 
     MicrosoftGraphInvitationMailer(ObjectMapper json,
@@ -34,13 +37,18 @@ public class MicrosoftGraphInvitationMailer implements InvitationMailer, Platfor
             @Value("${app.mail.graph.client-id:}") String clientId,
             @Value("${app.mail.graph.client-secret:}") String clientSecret,
             @Value("${app.mail.from:}") String from,
-            @Value("${app.mail.from-name:Next AI Commerce}") String fromName) {
+            @Value("${app.mail.from-name:Next AI Commerce}") String fromName,
+            @Value("${app.mail.sender-mailbox:}") String senderMailbox,
+            @Value("${app.mail.reply-to:}") String replyTo,LocalEmailDeliveryGuard localGuard) {
         this.json = json;
         this.tenantId = clean(tenantId);
         this.clientId = clean(clientId);
         this.clientSecret = clean(clientSecret);
         this.from = clean(from);
         this.fromName = clean(fromName);
+        this.senderMailbox = clean(senderMailbox);
+        this.replyTo = clean(replyTo);
+        this.localGuard = localGuard;
     }
 
     @Override
@@ -52,15 +60,17 @@ public class MicrosoftGraphInvitationMailer implements InvitationMailer, Platfor
     @Override
     public void sendHtml(String recipient, String subject, String html) {
         validateConfiguration();
+        localGuard.verify(recipient);
         try {
             Map<String, Object> message = Map.of("message", Map.of(
                 "subject", subject,
                 "body", Map.of("contentType", "HTML", "content", html),
                 "from", Map.of("emailAddress", Map.of("address", from, "name", fromName)),
+                "replyTo", new Object[] { Map.of("emailAddress", Map.of("address", replyTo)) },
                 "toRecipients", new Object[] { Map.of("emailAddress", Map.of("address", recipient)) }
             ), "saveToSentItems", true);
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://graph.microsoft.com/v1.0/users/" + encodePath(from) + "/sendMail"))
+                .uri(URI.create("https://graph.microsoft.com/v1.0/users/" + encodePath(senderMailbox) + "/sendMail"))
                 .header("Authorization", "Bearer " + token())
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(message)))
@@ -110,7 +120,7 @@ public class MicrosoftGraphInvitationMailer implements InvitationMailer, Platfor
     }
 
     private void validateConfiguration() {
-        if (tenantId.isBlank() || clientId.isBlank() || clientSecret.isBlank() || from.isBlank()) {
+        if (tenantId.isBlank() || clientId.isBlank() || clientSecret.isBlank() || from.isBlank() || senderMailbox.isBlank() || replyTo.isBlank()) {
             throw new InvitationException("Invitation email is not fully configured. Please contact the platform administrator.");
         }
     }

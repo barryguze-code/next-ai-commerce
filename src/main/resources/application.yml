@@ -48,6 +48,9 @@ app:
     provider: ${MAIL_PROVIDER:disabled}
     from: ${MAIL_FROM:}
     from-name: ${MAIL_FROM_NAME:Next AI Commerce}
+    sender-mailbox: ${MAIL_SENDER_MAILBOX:${MAIL_FROM:}}
+    reply-to: ${MAIL_REPLY_TO:${MAIL_FROM:}}
+    local-uat-recipients: ${LOCAL_EMAIL_UAT_RECIPIENTS:}
     graph:
       tenant-id: ${MICROSOFT_TENANT_ID:}
       client-id: ${MICROSOFT_CLIENT_ID:}

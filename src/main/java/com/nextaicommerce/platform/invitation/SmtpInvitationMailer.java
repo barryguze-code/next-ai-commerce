@@ -13,12 +13,17 @@ public class SmtpInvitationMailer implements InvitationMailer, PlatformMailer {
     private final JavaMailSender mailSender;
     private final String from;
     private final String fromName;
+    private final String replyTo;
+    private final LocalEmailDeliveryGuard localGuard;
 
     SmtpInvitationMailer(JavaMailSender mailSender, @Value("${app.mail.from:}") String from,
-            @Value("${app.mail.from-name:Next AI Commerce}") String fromName) {
+            @Value("${app.mail.from-name:Next AI Commerce}") String fromName,
+            @Value("${app.mail.reply-to:}") String replyTo,LocalEmailDeliveryGuard localGuard) {
         this.mailSender = mailSender;
         this.from = from;
         this.fromName = fromName;
+        this.replyTo = replyTo;
+        this.localGuard = localGuard;
     }
 
     @Override
@@ -30,10 +35,12 @@ public class SmtpInvitationMailer implements InvitationMailer, PlatformMailer {
     @Override
     public void sendHtml(String recipient, String subject, String html) {
         if (from == null || from.isBlank()) throw new InvitationException("Invitation email sender is not configured.");
+        localGuard.verify(recipient);
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, "UTF-8");
             helper.setFrom(from, fromName);
+            if(replyTo != null && !replyTo.isBlank()) helper.setReplyTo(replyTo);
             helper.setTo(recipient);
             helper.setSubject(subject);
             helper.setText(html, true);
