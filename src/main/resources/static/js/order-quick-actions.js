@@ -10,4 +10,40 @@
     try{await navigator.clipboard.writeText(button.dataset.copySku);notify('SKU copied');}
     catch(_){notify('Could not copy SKU. Allow clipboard access and try again.');}
   });
+  document.addEventListener('submit',async event=>{
+    const form=event.target.closest('.platform-pickup-action');
+    if(!form||event.defaultPrevented)return;
+    event.preventDefault();
+    if(window.NextAiOrderActionPending)return;
+    window.NextAiOrderActionPending=true;
+    const button=form.querySelector('button[type=submit]');
+    const body=new FormData(form),waiting=body.get('waiting')==='true';
+    button.disabled=true;
+    let saved=false;
+    try{
+      const result=await fetch(form.action,{method:'POST',body,credentials:'same-origin'});
+      if(!result.ok||new URL(result.url).pathname==='/login')throw new Error('save');
+      saved=true;
+      const response=await fetch(location.href,{cache:'no-store',headers:{'X-Order-Stream':'refresh'}});
+      if(!response.ok)throw new Error('refresh');
+      const incoming=new DOMParser().parseFromString(await response.text(),'text/html').querySelector('[data-order-stream]');
+      const current=document.querySelector('[data-order-stream]');
+      if(!incoming||!current)throw new Error('refresh');
+      // Capture immediately before replacement so scrolling during the request is preserved.
+      const selectors=['.orders-workspace','.order-list.table-widget-scroll'];
+      const positions=selectors.map(selector=>{const el=document.querySelector(selector);return {selector,top:el?.scrollTop||0,left:el?.scrollLeft||0};});
+      const x=window.scrollX,y=window.scrollY;
+      current.replaceWith(incoming);
+      window.NextAiTableWidget?.refresh();
+      const restore=()=>{positions.forEach(({selector,top,left})=>{const el=document.querySelector(selector);if(el){el.scrollTop=top;el.scrollLeft=left;}});window.scrollTo(x,y);};
+      restore();
+      requestAnimationFrame(restore);
+      notify(waiting?'Marked shipped — waiting for pickup':'Pickup mark removed');
+    }catch(_){
+      notify(saved?'Saved. Could not refresh the table; refresh when ready.':'Could not save. Please try again.');
+    }finally{
+      button.disabled=false;
+      window.NextAiOrderActionPending=false;
+    }
+  });
 })();
