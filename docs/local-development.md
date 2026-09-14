@@ -41,6 +41,10 @@ In Eclipse, refresh the project and use **Run > External Tools**. The included
 PostgreSQL - Status** launchers run the same safe lifecycle commands without
 leaving Eclipse.
 
+Use **Local UAT - Start Application** from the same Eclipse menu to start the
+application with the local profile. Its output appears in Eclipse's Console;
+use the red stop button there when you are done.
+
 The agent sandbox cannot initialize PostgreSQL shared memory on this Mac.
 The normal Terminal startup is required once; afterward tests can connect over
 loopback. The script creates random credentials with owner-only file access,
