@@ -36,6 +36,11 @@ From the project directory, in a normal Terminal:
 node scripts/local-database.cjs start
 ```
 
+In Eclipse, refresh the project and use **Run > External Tools**. The included
+**Local PostgreSQL - Start**, **Local PostgreSQL - Stop**, and **Local
+PostgreSQL - Status** launchers run the same safe lifecycle commands without
+leaving Eclipse.
+
 The agent sandbox cannot initialize PostgreSQL shared memory on this Mac.
 The normal Terminal startup is required once; afterward tests can connect over
 loopback. The script creates random credentials with owner-only file access,
