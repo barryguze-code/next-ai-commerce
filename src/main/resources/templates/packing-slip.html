@@ -3,16 +3,18 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title th:text="${'Packing slip · '+slip.orderId}">Packing slip</title>
-  <link rel="stylesheet" href="/css/packing-slip.css?v=20260913-9">
+  <link rel="stylesheet" href="/css/packing-slip.css?v=20260914-1">
 </head>
 <body>
 <main class="packing-workspace" th:attr="data-order-id=${slip.orderId}">
   <section class="packing-controls" aria-label="Packing-slip settings">
+    <nav class="packing-steps" aria-label="Fulfilment steps"><a href="#packing-package" aria-current="page">1 · Packing label</a><a th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer">2 · Seller Central ↗</a></nav>
     <div><span class="eyebrow">Internal fulfilment</span><h1>Packing slip</h1><p>Choose the package, save the decision for this ASIN and quantity combination, then print the 2 × 1 label.</p></div>
     <label><span>Package</span><select id="packing-package"><option value="XSmall">XSmall</option><option value="Pak">Pak</option><option value="UPS OMBox">UPS OMBox</option><option value="Medium">Medium</option><option value="Large">Large</option><option value="XLarge">XLarge</option><option value="__custom">Write a package name…</option></select></label>
     <label id="custom-package-field" hidden><span>Package name</span><input id="custom-package" maxlength="120" placeholder="e.g. Cold box · Large"></label>
     <div class="packing-control-actions"><button type="button" class="secondary-button" id="save-package">Save package</button><button type="button" class="primary-button" id="print-slip">Print 2 × 1 slip</button></div>
     <p class="packing-status" id="packing-status" role="status"></p>
+    <button th:if="${canEditCatalog == true and pickupEligible == true}" id="packing-complete" class="packing-complete" th:disabled="${pickupMarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5v17h14V4h-4M9 2h6v5H9zM8 14l3 3 5-6"/></svg><span th:text="${pickupMarked ? 'Waiting for pickup' : 'Mark as shipped'}">Mark as shipped</span></button>
     <a class="seller-central-shortcut" th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" title="Open this order in Seller Central"><img src="/images/channels/amazon-seller.png" alt="">Open in Seller Central <span>↗</span></a>
     <a id="veeqo-shortcut" class="seller-central-shortcut" href="https://app.veeqo.com/" target="_blank" rel="noopener noreferrer" title="Open Veeqo for shipping" hidden><img src="https://static.veeqo.com/assets/pathfinder_favicon-130f9544f6fc9243713b38d5e21b736360dfac941b1a9585f0482b1577772fd4.ico" referrerpolicy="no-referrer" alt="" onerror="this.hidden=true">Open in Veeqo <span aria-hidden="true">↗</span></a>
   </section>
@@ -30,5 +32,5 @@
   </section>
 </main>
 <input id="packing-slip-csrf" th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
-<script src="/js/packing-slip-workspace.js?v=20260913-8"></script>
+<script src="/js/packing-slip-workspace.js?v=20260914-4"></script>
 </body></html>

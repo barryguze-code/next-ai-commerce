@@ -21,14 +21,30 @@
   }
   function addPackingSlipActions(){
     document.querySelectorAll('.order-icon-action.shipping[data-order-id]').forEach(shipping=>{
+      if(shipping.closest('[data-tooltip]'))shipping.removeAttribute('title');
       if(shipping.parentElement?.parentElement?.querySelector('.order-icon-action.packing-slip'))return;
       const orderId=shipping.dataset.orderId,orderRow=shipping.closest('.order-row');
       if(!orderId||!orderRow)return;
       const tip=document.createElement('span');tip.className='order-action-tip';tip.dataset.tooltip='Open packing slip';
       const button=document.createElement('button');button.type='button';button.className='order-icon-action shipping packing-slip';
-      button.setAttribute('aria-label','Open internal packing slip');button.title='Open packing slip';
+      button.setAttribute('aria-label','Open packing slip and Seller Central order');
       button.innerHTML='<span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 4H5v17h10M15 4h3v7M9 2h5v4H9zM8 10l1.5 1.5L12 9M8 15h3"/><path d="m15 14 3-1.5 3 1.5v5l-3 1.5-3-1.5zM15 14l3 1.5 3-1.5M18 15.5v5"/></svg></span>';
-      button.addEventListener('click',()=>window.open('/app/orders/'+encodeURIComponent(orderId)+'/packing-slip','_blank','noopener'));
+      button.addEventListener('click',()=>{
+        const labelUrl='/app/orders/'+encodeURIComponent(orderId)+'/packing-slip';
+        const sellerUrl=orderRow.querySelector('.order-number')?.href;
+        const label=window.open('about:blank','_blank');
+        if(label){label.opener=null;label.location.href=labelUrl;}
+        const seller=sellerUrl?window.open('about:blank','_blank'):null;
+        if(seller){seller.opener=null;seller.location.href=sellerUrl;seller.focus();}
+        if(!label||!seller){
+          let notice=document.querySelector('[data-packing-tabs-notice]');
+          if(!notice){notice=document.createElement('div');notice.className='stream-toast show';notice.dataset.packingTabsNotice='';notice.setAttribute('role','status');document.body.append(notice);}
+          notice.replaceChildren(document.createTextNode('Your browser blocked a tab. '));
+          const addLink=(url,text)=>{const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=text;link.style.cssText='color:inherit;text-decoration:underline;margin-left:10px';notice.append(link);};
+          if(!label)addLink(labelUrl,'Open packing slip');if(!seller&&sellerUrl)addLink(sellerUrl,'Open Seller Central');
+          const close=document.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label','Dismiss');close.onclick=()=>notice.remove();notice.append(close);
+        }
+      });
       tip.append(button);shipping.parentElement.parentElement.append(tip);
     });
   }

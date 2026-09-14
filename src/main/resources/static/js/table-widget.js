@@ -153,7 +153,7 @@ function prepareSalesBars(root){
     el.classList.add('weekly-sales-bars');el.textContent='';
     const max=Math.max(1,...values),anchor=new Date(root.dataset.salesAsOf||Date.now());
     values.forEach((value,index)=>{
-      const bar=document.createElement('span');bar.textContent=String(value);bar.style.height=(18+26*value/max)+'px';
+      const bar=document.createElement('span');bar.textContent=String(value);bar.dataset.value=String(value);bar.style.height=Math.max(2,32*value/max)+'px';bar.dataset.week=String(index);
       const end=new Date(anchor.getTime()-(3-index)*7*86400000),start=new Date(end.getTime()-7*86400000);
       bar.title=start.toLocaleDateString()+' – '+end.toLocaleDateString()+': '+value+' units (rolling 7 days)';
       bar.setAttribute('aria-label',bar.title);bar.tabIndex=0;el.append(bar);

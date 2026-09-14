@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.1.0",
+    "title": "Easier fulfilment and email invitations",
+    "sections": [
+      {"title": "Invite your team", "items": ["Send store invitations from info@nextaicommerce.com. Invitations identify who invited you, and replies go to info@nextaicommerce.com."]},
+      {"title": "Pack and complete orders", "items": ["Open the packing label and Seller Central order together from the packing-slip button. If your browser blocks a tab, use the provided link.", "Mark an order shipped from the packing page to place it in Waiting for pickup in this platform. The packing tab closes after saving, and Orders refreshes when you return while keeping your place. This does not confirm shipment in Amazon."]},
+      {"title": "Clearer order tools", "items": ["Copy SKUs with the familiar copy icon and see full SKU, ASIN and item-code values immediately on hover.", "Spot missing SKU mappings in the warning menu and open mapping directly from the table.", "Read four-week sales in refreshed colored bar charts. Clear Filters stays disabled until a filter is active."]}
+    ]
+  },
+  {
     "version": "1.0.5",
     "title": "More reliable Amazon order recovery",
     "sections": [{

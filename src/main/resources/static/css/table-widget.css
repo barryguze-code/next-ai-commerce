@@ -66,8 +66,11 @@ html[data-theme=dark] .table-action-trigger .table-action-alert{border-color:#17
 .table-warning-panel .shortage-message{display:grid;gap:12px;white-space:normal;margin:0}
 .table-warning-panel .shortage-message>span{white-space:normal}
 .table-widget .weekly-sales-bars{display:flex;align-items:end;gap:4px;height:44px;min-width:76px}
-.weekly-sales-bars>span{display:flex;flex:1;align-items:center;justify-content:center;min-height:18px;background:#dbe9fb;color:#245b9d;border-radius:3px 3px 0 0;font-size:10px;font-weight:750}
-html[data-theme=dark] .weekly-sales-bars>span{background:#294766;color:#c3ddff}
+.weekly-sales-bars{padding-top:12px;border-bottom:1px solid #879ab744;background:repeating-linear-gradient(to top,transparent 0,transparent 13px,#879ab71c 13px,#879ab71c 14px)}
+.weekly-sales-bars>span{position:relative;display:flex;flex:1;align-items:start;justify-content:center;min-height:2px;background:color-mix(in srgb,var(--bar) 18%,transparent);color:var(--bar);border:1px solid var(--bar);border-bottom:0;border-radius:2px 2px 0 0;font-size:10px;font-weight:750;line-height:12px;text-indent:0;padding:0;--bar:#3678bd;transform:none}
+.weekly-sales-bars>span[data-week="1"]{--bar:#9271c2}.weekly-sales-bars>span[data-week="2"]{--bar:#bd8724}.weekly-sales-bars>span[data-week="3"]{--bar:#238d86}
+.weekly-sales-bars>span{color:transparent}.weekly-sales-bars>span:before{content:attr(data-value);position:absolute;bottom:100%;padding-bottom:3px;color:var(--text,#29435e)}html[data-theme=dark] .weekly-sales-bars>span:before{color:#dce9fa}
+html[data-theme=dark] .weekly-sales-bars>span{background:color-mix(in srgb,var(--bar) 22%,transparent)}
 .table-standard-toolbar{justify-content:space-between;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line,#dce4ee);background:var(--surface,#fff);gap:10px}
 .table-standard-toolbar>form{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0}
 .table-standard-toolbar input[type=search]{min-width:0}
@@ -79,6 +82,7 @@ html[data-theme=dark] .weekly-sales-bars>span{background:#294766;color:#c3ddff}
 .table-filter-control.has-active-filters>summary{border-color:#6e9de3;background:#e7f1ff;color:#1f5ead}
 .table-clear-active-filters{display:grid;place-items:center;width:34px;height:34px;padding:7px;border:1px solid #8fb5e9;border-radius:9px;background:#eaf3ff;color:#2464ba;cursor:pointer}
 .table-clear-active-filters:hover{background:#dbeaff;border-color:#5e91d6}.table-clear-active-filters svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.table-standard-toolbar .table-clear-active-filters:disabled,html[data-theme=dark] .table-standard-toolbar .table-clear-active-filters:disabled{background:transparent;color:var(--muted,#8693a5);border-color:var(--line,#d5dce5);opacity:.45;cursor:default}
 .table-export{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .table-export svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .table-filter-control>summary{list-style:none;cursor:pointer;white-space:nowrap}

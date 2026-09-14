@@ -89,11 +89,14 @@ public class OrderController {
         return ResponseEntity.ok(orders.streamVersion(tenant(session),connection));
     }
 
-    @GetMapping("/app/orders/{orderId}/packing-slip") String packingSlip(@PathVariable String orderId,HttpSession session,Model model){
+    @GetMapping("/app/orders/{orderId}/packing-slip") String packingSlip(@PathVariable String orderId,Authentication auth,HttpSession session,Model model){
+        PageController.addAccessModel(auth,model);
         Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
         var slip=packingSlips.find(tenant(session),connection,orderId);
         if(slip==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"This order is not available in the selected store.");
+        model.addAttribute("pickupEligible",orders.pickupEligibleOrders(tenant(session),connection).contains(orderId));
+        model.addAttribute("pickupMarked",orders.pickupOverrides(tenant(session),connection).contains(orderId));
         model.addAttribute("slip",slip);return "packing-slip";
     }
 
