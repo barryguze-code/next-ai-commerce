@@ -165,6 +165,47 @@ class ReceivingWorkflowDatabaseTest {
         org.mockito.Mockito.verifyNoInteractions(amazon);
     }
 
+    @Test void orderTabsCountUnitsAndCombinePendingWithoutIncludingShippedOrders(){
+        UUID connection=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Tab test','America/Los_Angeles',now())",connection,tenant,"test-"+connection);
+            var statuses=List.of("Pending","Unshipped","Shipped - Waiting for Pick Up","Shipped","Partially shipped","Cancelled");
+            for(int n=0;n<statuses.size();n++){
+                jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status,fulfillment_state) VALUES (?,?,'ATVPDKIKX0DER',?,now(),?,?)",tenant,connection,"TAB-"+n,statuses.get(n),n<2?"READY_TO_SHIP":"SHIPPED");
+                jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,?,?,3)",tenant,connection,"TAB-"+n,"ITEM-"+n,"SKU-"+n);
+            }
+            jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,'TAB-0','SECOND-ITEM','SECOND-SKU',1)",tenant,connection);
+        });
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        var tabs=repo.tabs(tenant,connection).stream().collect(java.util.stream.Collectors.toMap(com.nextaicommerce.platform.orders.OrderRepository.OrderTab::key,t->t));
+        assertThat(tabs.get("ALL").orders()).isEqualTo(6);assertThat(tabs.get("ALL").units()).isEqualTo(19);
+        assertThat(tabs.get("UNSHIPPED").orders()).isEqualTo(2);assertThat(tabs.get("UNSHIPPED").units()).isEqualTo(7);
+        assertThat(tabs).doesNotContainKeys("PENDING","READY_TO_SHIP");
+        for(String key:List.of("UNSHIPPED","WAITING_FOR_PICKUP","SHIPPED")){
+            var page=repo.orders(tenant,connection,key,"",0,25);
+            assertThat(page.total()).isEqualTo(tabs.get(key).orders()).isEqualTo(key.equals("UNSHIPPED")?2:1);
+        }
+        assertThat(repo.orders(tenant,connection,"WAITING_FOR_PICKUP","",0,25).rows().getFirst().amazonOrderId()).isEqualTo("TAB-2");
+        assertThat(repo.orders(tenant,connection,"SHIPPED","",0,25).rows().getFirst().amazonOrderId()).isEqualTo("TAB-3");
+        assertThat(repo.tabs(tenant,UUID.randomUUID())).allMatch(t->t.orders()==0&&t.units()==0);
+        String before=repo.streamVersion(tenant,connection);
+        assertThat(repo.setPickupOverride(tenant,connection,"TAB-0",true,"operator@test")).isTrue();
+        assertThat(repo.pickupOverrides(tenant,connection)).containsExactly("TAB-0");
+        assertThat(repo.streamVersion(tenant,connection)).isNotEqualTo(before);
+        assertThat(repo.orders(tenant,connection,"UNSHIPPED","",0,25).total()).isEqualTo(1);
+        assertThat(repo.orders(tenant,connection,"WAITING_FOR_PICKUP","",0,25).total()).isEqualTo(2);
+        // Simulate an Amazon refresh with its unchanged Pending status.
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE amazon_orders SET order_status='Pending',updated_at=now() WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id='TAB-0'",tenant,connection);});
+        var restarted=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        assertThat(restarted.pickupOverrides(tenant,connection)).contains("TAB-0");
+        assertThat(restarted.orders(tenant,connection,"WAITING_FOR_PICKUP","TAB-0",0,25).rows().getFirst().amazonStatus()).isEqualTo("Pending");
+        assertThat(repo.setPickupOverride(tenant,UUID.randomUUID(),"TAB-0",false,"other")).isFalse();
+        assertThat(repo.setPickupOverride(tenant,connection,"TAB-3",true,"operator@test")).isFalse();
+        assertThat(repo.setPickupOverride(tenant,connection,"TAB-0",false,"operator@test")).isTrue();
+        assertThat(repo.pickupOverrides(tenant,connection)).isEmpty();
+        assertThat(repo.orders(tenant,connection,"UNSHIPPED","",0,25).total()).isEqualTo(2);
+    }
+
     @Test void orderReportAndApiReuseItemsWithoutDuplicatingSales() throws Exception {
         UUID connection=UUID.randomUUID();
         tx.executeWithoutResult(s->{setTenant();

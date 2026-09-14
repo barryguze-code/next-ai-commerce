@@ -52,7 +52,7 @@ public class PackingSlipRepository {
             WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id=?
             """,String.class,tenantId,connectionId,orderId);
         var lines=jdbc.query("""
-            SELECT coalesce(nullif(catalog.account_sku,''),nullif(item.seller_sku,''),'Unmapped SKU') sku,
+            SELECT coalesce(nullif(mapped_offer.vendor_item_code,''),nullif(catalog.account_sku,''),nullif(item.seller_sku,''),'Unmapped SKU') sku,
                    coalesce(nullif(catalog.display_name,''),nullif(product.canonical_name,''),nullif(item.title,''),'Unnamed item') title,
                    sum(item.quantity_ordered*coalesce(component.quantity,1)) quantity,
                    reserved.expiration_date,
@@ -68,13 +68,18 @@ public class PackingSlipRepository {
             LEFT JOIN account_catalog_item_locations default_link ON default_link.tenant_id=catalog.tenant_id
               AND default_link.account_catalog_item_id=catalog.id AND default_link.is_default
             LEFT JOIN warehouse_locations default_location ON default_location.tenant_id=default_link.tenant_id AND default_location.id=default_link.location_id
+            LEFT JOIN LATERAL (SELECT offer.vendor_item_code FROM vendor_catalog_offers offer
+              WHERE offer.tenant_id=catalog.tenant_id AND offer.account_catalog_item_id=catalog.id
+                AND nullif(offer.vendor_item_code,'') IS NOT NULL
+              ORDER BY (offer.effective_to IS NULL) DESC,offer.is_default DESC,offer.updated_at DESC LIMIT 1
+            ) mapped_offer ON true
             LEFT JOIN LATERAL (SELECT min(reservation.expiration_date) expiration_date
               FROM order_inventory_reservations reservation
               WHERE reservation.tenant_id=item.tenant_id AND reservation.amazon_order_item_id=item.id
                 AND (component.account_catalog_item_id IS NULL OR reservation.account_catalog_item_id=component.account_catalog_item_id)
                 AND reservation.status='ACTIVE') reserved ON true
             WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id=? AND item.quantity_ordered>0
-            GROUP BY coalesce(nullif(catalog.account_sku,''),nullif(item.seller_sku,''),'Unmapped SKU'),
+            GROUP BY catalog.id,coalesce(nullif(mapped_offer.vendor_item_code,''),nullif(catalog.account_sku,''),nullif(item.seller_sku,''),'Unmapped SKU'),
                 coalesce(nullif(catalog.display_name,''),nullif(product.canonical_name,''),nullif(item.title,''),'Unnamed item'),reserved.expiration_date
             ORDER BY 1
             """,(rs,row)->new Line(rs.getString(1),rs.getString(2),rs.getInt(3),rs.getObject(4,LocalDate.class),rs.getString(5)),tenantId,connectionId,orderId);

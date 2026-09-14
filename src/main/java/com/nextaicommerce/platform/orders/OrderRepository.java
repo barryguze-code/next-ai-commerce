@@ -47,6 +47,32 @@ public class OrderRepository {
     }
     public record OrderSummary(long todayOrders,BigDecimal todaySales,BigDecimal sales30Days,long live,long historical,
             Instant lastSyncedAt){}
+    public record OrderTab(String key,String label,boolean readiness,long orders,long units){}
+    static final List<String> TAB_KEYS=List.of("ALL","UNSHIPPED","WAITING_FOR_PICKUP","SHIPPED","INVENTORY_SHORTAGE","NEEDS_MAPPING");
+    static String tabPredicate(String key){
+        String status="regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g')";
+        String pickup="(orders.platform_waiting_for_pickup OR "+status+" IN ('WAITINGFORPICKUP','READYFORPICKUP','PICKUPREADY','AWAITINGPICKUP','AWAITINGCARRIERPICKUP','SHIPPEDWAITINGFORPICKUP'))";
+        return switch(key.toUpperCase(java.util.Locale.ROOT)){
+            case "PENDING"->status+" IN ('PENDING','PENDINGAVAILABILITY')";
+            case "UNSHIPPED"->"NOT ("+pickup+") AND ("+status+" IN ('PENDING','PENDINGAVAILABILITY','UNSHIPPED') OR (orders.fulfillment_state='READY_TO_SHIP' AND "+status+" NOT IN ('CANCELLED','CANCELED','PICKEDUP','INTRANSIT','OUTFORDELIVERY','DELIVERED') AND "+status+" NOT LIKE '%SHIPPED%'))";
+            case "WAITING_FOR_PICKUP"->pickup;
+            case "SHIPPED"->"NOT ("+pickup+") AND ("+status+" LIKE 'SHIPPED%' OR "+status+" IN ('PICKEDUP','INTRANSIT','OUTFORDELIVERY','DELIVERED'))";
+            case "NEEDS_MAPPING","INVENTORY_SHORTAGE","READY_TO_SHIP"->"NOT orders.platform_waiting_for_pickup AND orders.fulfillment_state='"+key.toUpperCase(java.util.Locale.ROOT)+"'";
+            default->"true";
+        };
+    }
+    @Transactional(readOnly=true)
+    public List<OrderTab> tabs(UUID tenantId,UUID connectionId){
+        setTenant(tenantId);
+        String columns=TAB_KEYS.stream().map(key->"count(DISTINCT orders.id) FILTER (WHERE "+tabPredicate(key)+"),coalesce(sum(item.quantity_ordered) FILTER (WHERE "+tabPredicate(key)+"),0)").collect(java.util.stream.Collectors.joining(","));
+        return jdbc.queryForObject("SELECT "+columns+" FROM amazon_orders orders JOIN amazon_order_items item ON item.tenant_id=orders.tenant_id AND item.marketplace_connection_id=orders.marketplace_connection_id AND item.amazon_order_id=orders.amazon_order_id WHERE orders.tenant_id=? AND orders.marketplace_connection_id=?",
+            (rs,row)->{
+                var result=new java.util.ArrayList<OrderTab>();
+                var labels=List.of("All","Unshipped","Waiting for pickup","Shipped","Stock shortage","Unmapped");
+                for(int i=0;i<TAB_KEYS.size();i++)result.add(new OrderTab(TAB_KEYS.get(i),labels.get(i),i>=4,rs.getLong(i*2+1),rs.getLong(i*2+2)));
+                return result;
+            },tenantId,connectionId);
+    }
     public record OrderPage(List<OrderView> rows,long total,int page,int size){
         public int totalPages(){return total==0?1:(int)Math.ceil((double)total/size);}
         public boolean hasPrevious(){return page>0;}
@@ -329,7 +355,28 @@ public class OrderRepository {
               AND run.sync_profile IN ('ORDER_CHANGES','STARTUP_ORDERS',
                 'RECENT_ORDER_RECONCILIATION','ORDER_LIFECYCLE')
             """,rs->rs.next()?rs.getString(1):null,tenantId,connectionId);
-        return version==null?"waiting":version;
+        String local=jdbc.queryForObject("SELECT coalesce(max(platform_pickup_changed_at)::text,'') FROM amazon_orders WHERE tenant_id=? AND marketplace_connection_id=?",String.class,tenantId,connectionId);
+        return (version==null?"waiting":version)+":"+local;
+    }
+
+    @Transactional(readOnly=true)
+    public java.util.Set<String> pickupOverrides(UUID tenantId,UUID connectionId){
+        setTenant(tenantId);
+        return new java.util.HashSet<>(jdbc.queryForList("SELECT amazon_order_id FROM amazon_orders WHERE tenant_id=? AND marketplace_connection_id=? AND platform_waiting_for_pickup",String.class,tenantId,connectionId));
+    }
+
+    @Transactional
+    public boolean setPickupOverride(UUID tenantId,UUID connectionId,String orderId,boolean waiting,String actor){
+        setTenant(tenantId);
+        // Explicit assignment is retry-safe. No Amazon status or inventory fields are changed.
+        return jdbc.update("UPDATE amazon_orders orders SET platform_waiting_for_pickup=?,platform_pickup_changed_at=clock_timestamp(),platform_pickup_changed_by=? WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=? AND (?=false OR "+tabPredicate("UNSHIPPED")+" OR platform_waiting_for_pickup)",
+            waiting,actor,tenantId,connectionId,orderId,waiting)>0;
+    }
+
+    @Transactional(readOnly=true)
+    public java.util.Set<String> pickupEligibleOrders(UUID tenantId,UUID connectionId){
+        setTenant(tenantId);
+        return new java.util.HashSet<>(jdbc.queryForList("SELECT amazon_order_id FROM amazon_orders orders WHERE tenant_id=? AND marketplace_connection_id=? AND ("+tabPredicate("UNSHIPPED")+" OR platform_waiting_for_pickup)",String.class,tenantId,connectionId));
     }
 
     @Transactional(readOnly=true)
@@ -402,7 +449,9 @@ public class OrderRepository {
                 WHERE reservation.tenant_id=orders.tenant_id AND reservation.marketplace_connection_id=orders.marketplace_connection_id
                   AND reservation.amazon_order_id=orders.amazon_order_id AND reservation.status='ACTIVE') reserved ON true
             WHERE orders.tenant_id=? AND orders.marketplace_connection_id=?
-              AND (?='ALL' OR orders.fulfillment_state=?)
+              AND (
+            """+tabPredicate(state)+"""
+              )
               AND (?='%%' OR lower(orders.amazon_order_id) LIKE ? OR lower(coalesce(item.seller_sku,'')) LIKE ?
                    OR lower(coalesce(item.title,'')) LIKE ?
                    OR lower(coalesce(item.asin,listing.asin,mapping.asin,'')) LIKE ?
@@ -418,7 +467,7 @@ public class OrderRepository {
                 rs.getTimestamp(3)==null?null:rs.getTimestamp(3).toInstant(),rs.getObject(4,LocalDate.class),
                 rs.getString(5),rs.getString(6),rs.getString(7),rs.getString(8),rs.getInt(9),rs.getInt(10),
                 rs.getString(11),rs.getBigDecimal(12),rs.getString(13),rs.getString(14),rs.getInt(15),
-                rs.getBigDecimal(16),rs.getString(17),rs.getString(18)),rs.getLong(19)},tenantId,connectionId,state,state,q,q,q,q,q,q,size,offset);
+                rs.getBigDecimal(16),rs.getString(17),rs.getString(18)),rs.getLong(19)},tenantId,connectionId,q,q,q,q,q,q,size,offset);
         long total=raw.isEmpty()?0:(long)raw.getFirst()[1];
         if(total>0&&offset>=total)return orders(tenantId,connectionId,state,search,(int)((total-1)/size),size);
         return new OrderPage(raw.stream().map(row->(OrderView)row[0]).toList(),total,page,size);

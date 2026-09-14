@@ -236,6 +236,15 @@ class SecurityConfigTest {
             .andExpect(status().isOk()).andExpect(view().name("marketplace-skus"));
     }
 
+    @Test void pickupOverrideRequiresOperatorAccessAndCsrf() throws Exception {
+        mvc.perform(post("/app/orders/111-1234567-1234567/pickup-override")
+                .param("waiting","true").with(user("viewer@example.com").roles("VIEWER")).with(csrf()))
+            .andExpect(status().isForbidden());
+        mvc.perform(post("/app/orders/111-1234567-1234567/pickup-override")
+                .param("waiting","true").with(user("operator@example.com").roles("OPERATOR")))
+            .andExpect(status().isForbidden());
+    }
+
     @Test void viewerCannotChangeReceivingData() throws Exception {
         for(String action:java.util.List.of("receive","undo","adjust","close","remove","prepare")){
             mvc.perform(post("/app/receiving/work/"+action+"/"+UUID.randomUUID())

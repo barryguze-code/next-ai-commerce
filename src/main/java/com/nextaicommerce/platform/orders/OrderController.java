@@ -40,6 +40,12 @@ public class OrderController {
         if(!(selected instanceof UUID connection)){model.addAttribute("storeSelectionRequired",true);model.addAttribute("chooseStore",true);return "orders";}
         var identity=workspace.findConnection(tenant,connection);
         if(!"AMAZON".equalsIgnoreCase(identity.channel())){model.addAttribute("unsupportedChannel",true);return "orders";}
+        if(java.util.List.of("PENDING","READY_TO_SHIP").contains(status.toUpperCase(java.util.Locale.ROOT)))status="UNSHIPPED";
+        if(!OrderRepository.TAB_KEYS.contains(status.toUpperCase(java.util.Locale.ROOT)))status="ALL";
+        model.addAttribute("selectedStatus",status.toUpperCase(java.util.Locale.ROOT));
+        model.addAttribute("orderTabs",orders.tabs(tenant,connection));
+        model.addAttribute("pickupOverrides",orders.pickupOverrides(tenant,connection));
+        model.addAttribute("pickupEligibleOrders",orders.pickupEligibleOrders(tenant,connection));
         int requestedPage=goToPage==null?page:Math.max(0,goToPage-1);
         var orderPage=orders.orders(tenant,connection,status,q,requestedPage,com.nextaicommerce.platform.web.TablePaging.size(size));var rows=orderPage.rows();
         var items=orders.itemsForOrders(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList());
@@ -96,6 +102,18 @@ public class OrderController {
         Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
         return Map.of("packageName",packingSlips.savePackaging(tenant(session),connection,orderId,packageName));
+    }
+
+    @PostMapping("/app/orders/{orderId}/pickup-override") String pickupOverride(
+            @PathVariable String orderId,@RequestParam boolean waiting,
+            @RequestParam(defaultValue="ALL") String status,Authentication auth,HttpSession session,RedirectAttributes redirect){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a store first.");
+        if(!orders.setPickupOverride(tenant(session),connection,orderId,waiting,auth.getName()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,"This order is no longer eligible. Refresh the page.");
+        redirect.addFlashAttribute("orderSuccess",waiting?"Marked shipped — awaiting pickup in this platform only. Amazon is unchanged.":"Platform mark removed. Amazon status is unchanged.");
+        String tab=OrderRepository.TAB_KEYS.contains(status)?status:"ALL";
+        return "redirect:/app/orders?status="+tab;
     }
 
     private static UUID tenant(HttpSession session){Object id=session.getAttribute(AccountSelectionController.TENANT_ID);if(id instanceof UUID value)return value;throw new IllegalArgumentException("Choose an account first.");}

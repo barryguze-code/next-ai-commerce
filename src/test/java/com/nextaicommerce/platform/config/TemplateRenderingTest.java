@@ -69,6 +69,11 @@ class TemplateRenderingTest {
             Map.entry("selectedAccountName","Ibcore LLC"),Map.entry("signedInEmail","barry.guze@gmail.com"),
             Map.entry("roleLabel","Super Admin"),Map.entry("orders",List.of(order)),
             Map.entry("orderPage",new OrderPage(List.of(order),1,0,25)),
+            Map.entry("orderTabs",List.of(
+                new com.nextaicommerce.platform.orders.OrderRepository.OrderTab("ALL","All",false,12,15),
+                new com.nextaicommerce.platform.orders.OrderRepository.OrderTab("UNSHIPPED","Unshipped",false,2,3),
+                new com.nextaicommerce.platform.orders.OrderRepository.OrderTab("WAITING_FOR_PICKUP","Waiting for pickup",false,0,0),
+                new com.nextaicommerce.platform.orders.OrderRepository.OrderTab("NEEDS_MAPPING","Unmapped",true,1,1))),
             Map.entry("itemsByOrder",Map.of(order.amazonOrderId(),List.of(new OrderItemView(UUID.randomUUID(),
                 order.firstSku(),"B012345678","Test product",2,0,"MAPPED","63792 × 2",BigDecimal.ZERO,
                 "https://images.example.test/product.jpg",new BigDecimal("12"),new BigDecimal("42.50"),
@@ -88,7 +93,13 @@ class TemplateRenderingTest {
             "Item sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
             "Showing 1–1 of 1","data-order-stream","Sync now","Last Amazon order check",
             "New Amazon orders just arrived","Open this order in Seller Central","Open the Amazon product page",
-            "amazon-product.svg","amazon.com/dp/B012345678").doesNotContain("order-day",">Historical<","Reporting only");
+            "amazon-product.svg","amazon.com/dp/B012345678","Orders/Units","Unmapped","Waiting for pickup",
+            "data-copy-sku=","has-issues","aria-current=\"page\"","12 orders / 15 units","status=UNSHIPPED").doesNotContain("order-day",">Historical<","Reporting only","status=PENDING","Stock readiness");
+        context.setVariable("selectedStatus","WAITING_FOR_PICKUP");
+        context.setVariable("pickupOverrides",java.util.Set.of(order.amazonOrderId()));
+        context.setVariable("pickupEligibleOrders",java.util.Set.of(order.amazonOrderId()));
+        assertThat(templateEngine().process("orders",context)).contains("Platform only","Undo platform pickup mark","/pickup-override");
+        assertThat(templateEngine().process("orders",context)).contains("aria-current=\"page\"").doesNotContain("order-pickup-note");
     }
 
     @Test

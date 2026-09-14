@@ -3,6 +3,20 @@ const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const path=require('node:path');
 let browser;
+test('order completion action stays compact and workspace scroll is contained',async()=>{
+  const page=await browser.newPage({viewport:{width:1280,height:800}});
+  await page.setContent('<body class="app-page"><aside class="sidebar">Navigation</aside><main class="workspace orders-workspace"><div class="order-list table-widget"><div class="order-item"><div class="item-actions"><button class="order-icon-action" style="min-width:32px;width:32px;padding:0">P</button><button class="order-icon-action" style="min-width:32px;width:32px;padding:0">S</button><form class="platform-pickup-action"><button class="order-icon-action" title="Mark as shipped">✓</button></form></div><div class="item-number">USD 28.97</div></div></div><div style="height:1400px">Rows</div></main></body>');
+  for(const file of ['app.css','orders.css','order-stream.css','table-widget.css'])await page.addStyleTag({path:path.resolve('src/main/resources/static/css',file)});
+  for(const theme of ['light','dark']){
+    await page.locator('html').evaluate((el,value)=>el.dataset.theme=value,theme);
+    const button=await page.getByTitle('Mark as shipped').boundingBox();
+    const price=await page.locator('.item-number').boundingBox();
+    assert.equal(button.width,32);assert.ok(button.x+button.width<=price.x);
+    assert.equal(await page.locator('.orders-workspace').evaluate(el=>getComputedStyle(el).overflowY),'auto');
+    assert.equal(await page.locator('body').evaluate(el=>getComputedStyle(el).overflowY),'hidden');
+  }
+  await page.close();
+});
 before(async()=>{browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})})});
 after(async()=>{await browser?.close()});
 async function fixture(){

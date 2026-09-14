@@ -123,3 +123,11 @@ html[data-theme=dark] .order-icon-action.packing-slip{color:#c4b5fd!important;bo
 html[data-theme=dark] #order-mapping-drawer .order-product-results,html[data-theme=dark] #order-mapping-drawer .order-product-results button{background:#172b3e;color:#e2ebf5;border-color:#3a5068}
 html[data-theme=dark] #order-mapping-drawer .order-product-results button:hover,html[data-theme=dark] #order-mapping-drawer .mapping-create-product{background:#233e5a;color:#b4d3ff}
 @media(max-width:520px){#order-mapping-drawer .drawer-body,#order-mapping-drawer header,#order-mapping-drawer footer{padding:14px}#order-mapping-drawer .order-mapping-line{grid-template-columns:minmax(0,1fr) 64px 26px;padding:9px}#order-mapping-drawer .mapping-component-picture{display:none}}
+/* Fixed-size completion control and a contained order workspace prevent cell overlap and page drift. */
+.order-list.table-widget .item-actions{min-width:112px!important;flex:0 0 112px!important;gap:6px;flex-wrap:wrap}
+.order-item-grid-header>[data-column=action]{min-width:112px!important;flex:0 0 112px!important}
+.item-actions .platform-pickup-action{flex:0 0 32px;min-width:32px;width:32px;order:3;margin:0}
+.item-actions .platform-pickup-action .order-icon-action{width:32px;min-width:32px;max-width:32px;height:32px;padding:0;color:#16865b;border-color:#a4d8c1;background:#ecf9f2}
+.item-actions .platform-pickup-action .order-icon-action:hover{background:#d7f2e4;border-color:#43a47b}
+html[data-theme=dark] .item-actions .platform-pickup-action .order-icon-action{color:#9be6c3;border-color:#3d8166;background:#173d30}
+@media(min-width:761px){body.app-page:has(.orders-workspace){height:100dvh;min-height:0;overflow:hidden}.orders-workspace{height:100dvh;min-height:0;overflow:auto;overscroll-behavior:contain}.orders-workspace .table-widget-scroll{overscroll-behavior:contain}}
