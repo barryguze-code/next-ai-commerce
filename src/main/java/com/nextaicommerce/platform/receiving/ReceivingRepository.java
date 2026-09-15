@@ -523,6 +523,9 @@ public class ReceivingRepository {
             JOIN global_catalog_products product ON product.id=account_item.global_product_id
             WHERE receipt.voided_at IS NULL AND receipt.tenant_id=? AND po.receiving_session_id=? AND EXISTS(SELECT 1 FROM receiving_documents active_doc WHERE active_doc.tenant_id=po.tenant_id AND active_doc.id=po.receiving_document_id AND active_doc.removed_at IS NULL) AND product.requires_expiration_date
               AND receipt.disposition IN ('SELLABLE','SOON_EXPIRED','EXPIRED','OVER_SHIPPED') AND receipt.expiration_date IS NULL
+              AND NOT EXISTS (SELECT 1 FROM inventory_ledger_entries posted
+                  WHERE posted.tenant_id=receipt.tenant_id AND posted.source_type='RECEIVING'
+                    AND posted.source_id=receipt.id AND posted.idempotency_key='receiving:'||receipt.id)
             """,Integer.class,tenantId,sessionId);
         if(missingExpiration>0) throw new IllegalArgumentException("Add the required expiration date before closing this receiving.");
         BigDecimal sellable=jdbc.queryForObject("""

@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.2.1",
+    "title": "Receiving closure and inventory pictures",
+    "sections": [{"title":"Inventory hotfix","items":["Close receiving documents containing historical undated receipts that are already recorded in inventory. New stock still requires an expiration date when applicable.","Upload or change a product picture directly from Available Inventory details. Pictures are saved to your Account Catalogue."]}]
+  },
+  {
     "version": "1.2.0",
     "title": "Inventory that follows your warehouse",
     "sections": [

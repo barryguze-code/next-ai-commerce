@@ -368,6 +368,37 @@ class ReceivingWorkflowDatabaseTest {
         assertThat(search.page().total()).isEqualTo(80);assertThat(search.page().rows()).hasSize(25);
         assertThat(firstMs).isLessThan(1000);assertThat(searchMs).isLessThan(1000);
     }
+    @Test void closeAllowsAlreadyPostedHistoricalUndatedReceiptWithoutAddingStock(){
+        var f=fixture("INVOICE");receive(f,3);
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE receiving_line_receipts SET expiration_date=NULL WHERE tenant_id=? AND id=?",tenant,receipt(f));});
+        work.closeDocument(tenant,actor,f.document(),"Physical count completed; no further receipts",false,new BigDecimal("3"),new BigDecimal("7"));
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().closed()).isTrue();
+        assertThat(stock(f)).isEqualByComparingTo("3");
+    }
+    @Test void closeStillRejectsUnpostedReceiptMissingRequiredExpiration(){
+        var f=fixture("INVOICE");receive(f,3);UUID receipt=receipt(f);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE receiving_line_receipts SET expiration_date=NULL WHERE tenant_id=? AND id=?",tenant,receipt);
+            jdbc.update("DELETE FROM inventory_ledger_entries WHERE tenant_id=? AND source_type='RECEIVING' AND source_id=?",tenant,receipt);
+        });
+        assertThatThrownBy(()->work.closeDocument(tenant,actor,f.document(),"No further receipts",false,new BigDecimal("3"),new BigDecimal("7")))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("required expiration date");
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().closed()).isFalse();
+        assertThat(stock(f)).isEqualByComparingTo("0");
+    }
+    @Test void physicalCountKeepsDistinctItemCodesSeparateAtTheSameExpiration(){
+        var a=fixture("INVOICE");var b=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE account_catalog_items SET account_sku='381003' WHERE tenant_id=? AND id=?",tenant,a.product());
+            jdbc.update("UPDATE account_catalog_items SET account_sku='381005' WHERE tenant_id=? AND id=?",tenant,b.product());
+        });
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,List.of(
+            new InventoryRepository.PhysicalCountRow(2,"381005",new BigDecimal("60"),expiry,"MAIN"),
+            new InventoryRepository.PhysicalCountRow(3,"381003",new BigDecimal("156"),expiry,"MAIN"),
+            new InventoryRepository.PhysicalCountRow(4,"381003",new BigDecimal("144"),expiry.plusDays(22),"MAIN")));
+        assertThat(stock(a)).isEqualByComparingTo("300");assertThat(stock(b)).isEqualByComparingTo("60");
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=?",BigDecimal.class,tenant,a.product(),expiry)).isEqualByComparingTo("156");});
+    }
     @Test void closePartialRequiresCurrentPreviewAndLocksOriginalReceipts(){
         var f=fixture("INVOICE");receive(f,3);
         assertThatThrownBy(()->work.closeDocument(tenant,actor,f.document(),"Balance cancelled",false,BigDecimal.ZERO,BigDecimal.TEN)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("changed");
