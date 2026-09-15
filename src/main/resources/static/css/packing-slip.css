@@ -12,6 +12,11 @@ body { min-height: 100vh; margin: 0; background: #eef3f9; color: #16253a; font-f
 .packing-controls select,.packing-controls input { height: 44px; border: 1px solid #cbd9e9; border-radius: 10px; background: #fff; color: #17283c; padding: 0 12px; font: 700 .92rem/1 inherit; }
 .packing-control-actions { display: flex; gap: 9px; }.packing-control-actions button { min-height: 42px; flex: 1; }
 .packing-status { min-height: 18px; color: #25845d !important; font-weight: 700; }
+.packing-popup-help{display:grid;gap:10px;padding:14px;border:1px solid #e6be70;border-radius:12px;background:#fff8e9;color:#70470c;font-size:.82rem;line-height:1.5;min-width:0}
+.packing-popup-help>strong{font-size:.95rem}.packing-controls .packing-popup-help p{color:inherit;font-size:.8rem}
+.packing-popup-help a{color:#245faa;font-weight:700}.packing-popup-help .popup-order-link{display:block;padding:9px 12px;background:#fff;border:1px solid #d8bc88;border-radius:8px;text-align:center;text-decoration:none}
+.packing-popup-help summary{cursor:pointer;font-weight:700}.packing-popup-help ol{padding-left:20px;margin:10px 0}.packing-popup-help li+li{margin-top:7px}.packing-popup-help code{overflow-wrap:anywhere;font-size:.78rem}.packing-popup-help details p{margin:10px 0}.packing-popup-help .popup-help-note{font-size:.74rem}
+html[data-theme=dark] .packing-popup-help{background:#30291c;border-color:#86683b;color:#f1d6a6}html[data-theme=dark] .packing-popup-help a{color:#accfff}html[data-theme=dark] .packing-popup-help .popup-order-link{background:#203247;border-color:#52647d}
 .seller-central-shortcut { display: flex; align-items: center; gap: 9px; width: max-content; color: #2769c7; font-size: .82rem; font-weight: 800; text-decoration: none; }.seller-central-shortcut img { width: 25px; height: 25px; border-radius: 6px; }
 
 /* The preview has a dedicated column. The extra grid gap reserves the scale-up height. */

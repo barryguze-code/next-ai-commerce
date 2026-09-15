@@ -3,12 +3,29 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title th:text="${'Packing slip · '+slip.orderId}">Packing slip</title>
-  <link rel="stylesheet" href="/css/packing-slip.css?v=20260914-1">
+  <link rel="stylesheet" href="/css/packing-slip.css?v=20260914-2">
 </head>
 <body>
 <main class="packing-workspace" th:attr="data-order-id=${slip.orderId}">
   <section class="packing-controls" aria-label="Packing-slip settings">
     <nav class="packing-steps" aria-label="Fulfilment steps"><a href="#packing-package" aria-current="page">1 · Packing label</a><a th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer">2 · Seller Central ↗</a></nav>
+    <aside id="packing-popup-help" class="packing-popup-help" aria-labelledby="popup-help-title" hidden>
+      <strong id="popup-help-title">Seller Central didn’t open?</strong>
+      <p>Your browser blocked the second tab. Your packing label is ready. You can open the order separately now.</p>
+      <a class="popup-order-link" th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer">Open Seller Central order ↗</a>
+      <details open>
+        <summary>Allow both tabs next time · Chrome</summary>
+        <ol>
+          <li>Return to the <strong>Orders tab</strong> where you clicked the packing-slip button.</li>
+          <li>Click the <strong>pop-up blocked icon</strong> at the right of the address bar.</li>
+          <li>Choose <strong>Always allow pop-ups and redirects</strong> for <code data-popup-origin></code>, then click <strong>Done</strong>.</li>
+          <li>Reload Orders, then click the packing-slip button again.</li>
+        </ol>
+        <p>No blocked icon? Open Chrome <strong>Settings → Privacy and security → Site settings → Pop-ups and redirects</strong>. Add <code data-popup-origin></code> under <strong>Allowed to send pop-ups and use redirects</strong>.</p>
+        <p class="popup-help-note">Allow only this site—not all websites. Local testing and production need separate permission in each browser profile. Managed browsers may require your administrator.</p>
+        <a href="https://support.google.com/chrome/answer/95472?co=GENIE.Platform%3DDesktop" target="_blank" rel="noopener noreferrer">Chrome’s official instructions ↗</a>
+      </details>
+    </aside>
     <div><span class="eyebrow">Internal fulfilment</span><h1>Packing slip</h1><p>Choose the package, save the decision for this ASIN and quantity combination, then print the 2 × 1 label.</p></div>
     <label><span>Package</span><select id="packing-package"><option value="XSmall">XSmall</option><option value="Pak">Pak</option><option value="UPS OMBox">UPS OMBox</option><option value="Medium">Medium</option><option value="Large">Large</option><option value="XLarge">XLarge</option><option value="__custom">Write a package name…</option></select></label>
     <label id="custom-package-field" hidden><span>Package name</span><input id="custom-package" maxlength="120" placeholder="e.g. Cold box · Large"></label>
@@ -32,5 +49,5 @@
   </section>
 </main>
 <input id="packing-slip-csrf" th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
-<script src="/js/packing-slip-workspace.js?v=20260914-4"></script>
+<script src="/js/packing-slip-workspace.js?v=20260914-5"></script>
 </body></html>

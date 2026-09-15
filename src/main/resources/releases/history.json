@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.1.1",
+    "title": "Help opening Seller Central",
+    "sections": [{"title": "Packing-slip hotfix", "items": ["If your browser blocks the second tab, the packing page now shows step-by-step Chrome instructions for allowing this site and a direct link to open your Seller Central order."]}]
+  },
+  {
     "version": "1.1.0",
     "title": "Easier fulfilment and email invitations",
     "sections": [
