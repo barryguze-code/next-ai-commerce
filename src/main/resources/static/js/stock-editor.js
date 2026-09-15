@@ -61,7 +61,7 @@
       const controller=new AbortController();searchController=controller;
       try{const products=await get('/app/catalog/product-search?q='+encodeURIComponent(query),controller.signal);if(search.value.trim()!==query)return;
         products.forEach(product=>{
-          const button=document.createElement('button');button.type='button';
+          const button=document.createElement('button');button.type='button';button.setAttribute('aria-label',[product.name,product.vendorItemCode].filter(Boolean).join(' '));
           if(product.imageUrl){const img=document.createElement('img');img.src=product.imageUrl;img.alt='';img.loading='lazy';img.onerror=()=>img.hidden=true;button.append(img)}
           const copy=document.createElement('span'),label=document.createElement('strong'),detail=document.createElement('small');label.textContent=product.name;detail.textContent=[product.vendorItemCode,product.brand,product.identifier].filter(Boolean).join(' · ');copy.append(label,detail);button.append(copy);
           button.onclick=()=>{search.value=product.name;results.replaceChildren();load([product.id])};results.append(button);
