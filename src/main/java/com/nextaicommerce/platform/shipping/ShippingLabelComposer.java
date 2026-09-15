@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ShippingLabelComposer {
     private static final PDRectangle FOUR_BY_SIX=new PDRectangle(288,432);
-    private static final DateTimeFormatter DATE=DateTimeFormatter.ofPattern("MMM d, yyyy");
+    private static final DateTimeFormatter DATE=DateTimeFormatter.ofPattern("MM/dd/yy");
     private static final float PAGE_MARGIN=5;
     private static final float PACKING_TOP=106;
     public record Composed(byte[] pdf,int pageCount){}

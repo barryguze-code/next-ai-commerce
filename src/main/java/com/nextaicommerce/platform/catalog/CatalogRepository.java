@@ -118,6 +118,11 @@ public class CatalogRepository {
     }
 
     @Transactional(readOnly = true)
+    public List<UUID> globalProductImageIds(){
+        return jdbc.query("SELECT global_product_id FROM global_catalog_product_images",(rs,row)->rs.getObject(1,UUID.class));
+    }
+
+    @Transactional(readOnly = true)
     public List<GlobalProductView> listGlobalProducts() {
         return jdbc.query("""
             SELECT product.id, product.canonical_name, product.brand,
@@ -795,6 +800,40 @@ public class CatalogRepository {
             SELECT id,code,name,status FROM warehouse_locations
             WHERE tenant_id=? ORDER BY status DESC,upper(code),lower(name)
             """,(rs,row)->new LocationView(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getString(4)),tenantId);
+    }
+
+    @Transactional
+    public void changeLocation(UUID tenantId,UUID id,String code,String name,boolean delete){
+        setTenant(tenantId);
+        var rows=jdbc.query("SELECT code FROM warehouse_locations WHERE tenant_id=? AND id=? FOR UPDATE",
+            (rs,n)->rs.getString(1),tenantId,id);
+        if(rows.isEmpty())throw new IllegalArgumentException("This location is no longer available in this account.");
+        var reasons=new java.util.ArrayList<String>();
+        if("MAIN".equalsIgnoreCase(rows.getFirst()))reasons.add("MAIN is the platform's fallback location for receipts and inventory records");
+        String[][] sources={{"account_catalog_item_locations","location_id","catalogue location assignments"},
+            {"inventory_ledger_entries","location_id","inventory ledger records (including historical movements)"},
+            {"receiving_line_receipts","location_id","receiving records"},
+            {"order_inventory_reservations","location_id","order reservation records (including completed orders)"},
+            {"buy_shipping_shipment_items","inventory_location_id","shipment item records"}};
+        for(var source:sources){
+            Long count=jdbc.queryForObject("SELECT count(*) FROM "+source[0]+" WHERE tenant_id=? AND "+source[1]+"=?",Long.class,tenantId,id);
+            if(count!=null&&count>0)reasons.add(count+" "+source[2]);
+        }
+        Long uploads=jdbc.queryForObject("""
+            SELECT count(DISTINCT i.id) FROM physical_count_imports i
+            JOIN physical_count_import_rows r ON r.tenant_id=i.tenant_id AND r.physical_count_import_id=i.id
+            WHERE i.tenant_id=? AND i.status IN ('STAGED','APPLYING')
+              AND upper(trim(r.source_data->>(i.column_mapping->>'location')))=upper(?)
+            """,Long.class,tenantId,rows.getFirst());
+        if(uploads!=null&&uploads>0)reasons.add(uploads+" physical-count uploads awaiting completion; finish or cancel them first");
+        if(!reasons.isEmpty())throw new IllegalArgumentException("This location cannot be renamed or deleted because it is used by: "+String.join("; ",reasons)+". Historical records must retain their location. Create a new location for future use; changing a product default does not move existing stock.");
+        if(delete){jdbc.update("DELETE FROM warehouse_locations WHERE tenant_id=? AND id=?",tenantId,id);return;}
+        String cleanCode=code==null?"":code.trim().toUpperCase(Locale.ROOT),cleanName=name==null?"":name.trim();
+        if(!cleanCode.matches("[A-Z0-9][A-Z0-9._/-]{0,79}"))throw new IllegalArgumentException("Use a location code of up to 80 letters, numbers, dots, slashes or hyphens.");
+        if(cleanName.isBlank()||cleanName.length()>160)throw new IllegalArgumentException("Enter a location name of up to 160 characters.");
+        if(jdbc.queryForObject("SELECT count(*) FROM warehouse_locations WHERE tenant_id=? AND upper(code)=? AND id<>?",Long.class,tenantId,cleanCode,id)>0)
+            throw new IllegalArgumentException("That location code already exists in this account.");
+        jdbc.update("UPDATE warehouse_locations SET code=?,name=? WHERE tenant_id=? AND id=?",cleanCode,cleanName,tenantId,id);
     }
 
     @Transactional

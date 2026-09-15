@@ -30,6 +30,8 @@ public class OrderRepository {
             case "CANCELLED" -> "Cancelled"; case "ON_HOLD" -> "On hold"; default -> state;
         };}
         public boolean needsMapping(){return "NEEDS_MAPPING".equals(state);}
+        public boolean needsShelfStock(){return !"HISTORICAL".equals(scope)&&statusReservesInventory(amazonStatus)
+            &&!java.util.Set.of("AFN","AMAZON").contains(fulfillmentChannel==null?"":fulfillmentChannel.toUpperCase(java.util.Locale.ROOT));}
         public String amazonStatusLabel(){return amazonStatus==null||amazonStatus.isBlank()?"Status pending":amazonStatus.replaceAll("([a-z])([A-Z])","$1 $2");}
         public String sellerCentralUrl(){return "https://"+sellerCentralDomain(marketplaceId)+"/orders-v3/order/"+amazonOrderId;}
     }
@@ -57,7 +59,7 @@ public class OrderRepository {
             case "UNSHIPPED"->"NOT ("+pickup+") AND ("+status+" IN ('PENDING','PENDINGAVAILABILITY','UNSHIPPED') OR (orders.fulfillment_state='READY_TO_SHIP' AND "+status+" NOT IN ('CANCELLED','CANCELED','PICKEDUP','INTRANSIT','OUTFORDELIVERY','DELIVERED') AND "+status+" NOT LIKE '%SHIPPED%'))";
             case "WAITING_FOR_PICKUP"->pickup;
             case "SHIPPED"->"NOT ("+pickup+") AND ("+status+" LIKE 'SHIPPED%' OR "+status+" IN ('PICKEDUP','INTRANSIT','OUTFORDELIVERY','DELIVERED'))";
-            case "NEEDS_MAPPING","INVENTORY_SHORTAGE","READY_TO_SHIP"->"NOT orders.platform_waiting_for_pickup AND orders.fulfillment_state='"+key.toUpperCase(java.util.Locale.ROOT)+"'";
+            case "NEEDS_MAPPING","INVENTORY_SHORTAGE","READY_TO_SHIP"->"("+tabPredicate("UNSHIPPED")+") AND orders.fulfillment_state='"+key.toUpperCase(java.util.Locale.ROOT)+"'";
             default->"true";
         };
     }
@@ -114,7 +116,7 @@ public class OrderRepository {
               AND connection.tenant_id=orders.tenant_id AND connection.id=orders.marketplace_connection_id
             """,tenantId,connectionId);
         List<Object[]> candidates=jdbc.query("""
-            SELECT orders.amazon_order_id,orders.order_status,orders.fulfillment_state,
+            SELECT orders.amazon_order_id,CASE WHEN orders.platform_waiting_for_pickup THEN 'WaitingForPickup' ELSE orders.order_status END,orders.fulfillment_state,
                    EXISTS (SELECT 1 FROM order_inventory_reservations reservation
                      WHERE reservation.tenant_id=orders.tenant_id
                        AND reservation.marketplace_connection_id=orders.marketplace_connection_id
@@ -125,12 +127,8 @@ public class OrderRepository {
             ORDER BY orders.purchase_date,orders.created_at
             """,(rs,row)->new Object[]{rs.getString(1),rs.getString(2),rs.getString(3),rs.getBoolean(4)},tenantId,connectionId);
         for(Object[] candidate:candidates){
-            if(statusLeavesWarehouse((String)candidate[1]))
-                removeLateShipmentPostings(tenantId,connectionId,(String)candidate[0]);
             if(statusLeavesWarehouse((String)candidate[1])
                     &&(!"SHIPPED".equals(candidate[2])||(boolean)candidate[3])){
-                if((boolean)candidate[3])
-                    postActiveReservations(tenantId,connectionId,(String)candidate[0],null);
                 allocateOrder(tenantId,connectionId,(String)candidate[0]);
             }
         }
@@ -158,9 +156,17 @@ public class OrderRepository {
     }
 
     private void allocateOrder(UUID tenantId,UUID connectionId,String orderId){
-        String amazonStatus=jdbc.queryForObject("SELECT order_status FROM amazon_orders WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",
+        String amazonStatus=jdbc.queryForObject("SELECT CASE WHEN platform_waiting_for_pickup THEN 'WaitingForPickup' ELSE order_status END FROM amazon_orders WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",
             String.class,tenantId,connectionId,orderId);
         boolean leavesWarehouse=statusLeavesWarehouse(amazonStatus);
+        if(leavesWarehouse){
+            // Only stock actually reserved for this order may be posted as a departure.
+            // Never allocate today's shelf count retrospectively to a completed order.
+            postActiveReservations(tenantId,connectionId,orderId,null);
+            recordUnrecordedShipment(tenantId,connectionId,orderId);
+            setState(tenantId,connectionId,orderId,"SHIPPED");
+            return;
+        }
         Integer missing=jdbc.queryForObject("""
             SELECT count(*) FROM amazon_order_items item
             WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id=?
@@ -174,109 +180,27 @@ public class OrderRepository {
         if(missing!=null&&missing>0){setState(tenantId,connectionId,orderId,"NEEDS_MAPPING");return;}
         List<Object[]> needs=jdbc.query("""
             SELECT item.id,component.account_catalog_item_id,
-                   greatest((CASE WHEN ? THEN item.quantity_ordered ELSE item.quantity_shipped END)*component.quantity
-                     -coalesce(allocated.quantity,0),0) ship_required,
-                   greatest((item.quantity_ordered-CASE WHEN ? THEN item.quantity_ordered ELSE item.quantity_shipped END)
-                     *component.quantity,0) reserve_required
+                   greatest(item.quantity_ordered-coalesce(item.quantity_shipped,0),0)*component.quantity reserve_required
             FROM amazon_order_items item
             JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=item.tenant_id
               AND mapping.marketplace_connection_id=item.marketplace_connection_id
               AND mapping.marketplace_sku=item.seller_sku AND mapping.status='ACTIVE'
             JOIN marketplace_sku_mapping_components component ON component.tenant_id=mapping.tenant_id
               AND component.marketplace_sku_mapping_id=mapping.id
-            LEFT JOIN LATERAL (SELECT sum(reservation.quantity) quantity FROM order_inventory_reservations reservation
-              WHERE reservation.tenant_id=item.tenant_id AND reservation.amazon_order_item_id=item.id
-                AND reservation.account_catalog_item_id=component.account_catalog_item_id
-                AND reservation.status IN ('ACTIVE','SHIPPED')) allocated ON true
             WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id=?
             ORDER BY item.created_at,component.sort_order
-            """,(rs,row)->new Object[]{rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getBigDecimal(3),rs.getBigDecimal(4)},
-            leavesWarehouse,leavesWarehouse,tenantId,connectionId,orderId);
+            """,(rs,row)->new Object[]{rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getBigDecimal(3)},
+            tenantId,connectionId,orderId);
         if(needs.isEmpty()){setState(tenantId,connectionId,orderId,"ON_HOLD");return;}
         boolean shortage=false;
         for(Object[] need:needs){
             UUID orderItemId=(UUID)need[0],catalogItemId=(UUID)need[1];
-            // A physical count is an authoritative snapshot of what was actually on the shelf
-            // when it was taken.  Amazon can report an older shipment days later; do not let
-            // that delayed status consume the same stock a second time after the count.
-            if(leavesWarehouse&&physicalCountAlreadyIncludesShipment(tenantId,connectionId,orderId,catalogItemId)){
-                removeLateShipmentPosting(tenantId,connectionId,orderId,catalogItemId);
-                continue;
-            }
-            BigDecimal shipRemaining=allocateQuantity(tenantId,connectionId,orderId,orderItemId,catalogItemId,(BigDecimal)need[2]);
-            if(leavesWarehouse){
-                postActiveReservations(tenantId,connectionId,orderId,orderItemId);
-                if(shipRemaining.signum()>0)shortage=true;
-            }
-            BigDecimal reserveRemaining=allocateQuantity(tenantId,connectionId,orderId,orderItemId,catalogItemId,(BigDecimal)need[3]);
+            BigDecimal reserveRemaining=allocateQuantity(tenantId,connectionId,orderId,orderItemId,catalogItemId,(BigDecimal)need[2]);
             if(reserveRemaining.signum()>0)shortage=true;
         }
-        if(leavesWarehouse&&!shortage)setState(tenantId,connectionId,orderId,"SHIPPED");
-        else setState(tenantId,connectionId,orderId,shortage?"INVENTORY_SHORTAGE":"READY_TO_SHIP");
+        setState(tenantId,connectionId,orderId,shortage?"INVENTORY_SHORTAGE":"READY_TO_SHIP");
     }
 
-    /**
-     * Amazon order reports can arrive after a warehouse count has already established the
-     * current quantity.  A count posted after Amazon's last status timestamp includes that
-     * historical shipment, so it must win over the delayed report.
-     */
-    private boolean physicalCountAlreadyIncludesShipment(UUID tenantId,UUID connectionId,String orderId,UUID catalogItemId){
-        Boolean countedAfterShipment=jdbc.queryForObject("""
-            SELECT EXISTS (
-              SELECT 1
-              FROM amazon_orders orders
-              JOIN inventory_ledger_entries count_entry
-                ON count_entry.tenant_id=orders.tenant_id
-               AND count_entry.account_catalog_item_id=?
-               AND count_entry.source_type='PHYSICAL_COUNT'
-              WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND orders.amazon_order_id=?
-                AND count_entry.occurred_at>=coalesce(orders.last_update_date,orders.purchase_date,orders.created_at)
-            )
-            """,Boolean.class,catalogItemId,tenantId,connectionId,orderId);
-        return Boolean.TRUE.equals(countedAfterShipment);
-    }
-
-    /** Removes a shipment posting that was created from a delayed Amazon status report. */
-    private void removeLateShipmentPosting(UUID tenantId,UUID connectionId,String orderId,UUID catalogItemId){
-        jdbc.update("""
-            DELETE FROM inventory_ledger_entries ledger
-            USING amazon_orders orders
-            WHERE ledger.tenant_id=? AND ledger.marketplace_connection_id=?
-              AND ledger.account_catalog_item_id=? AND ledger.entry_type='SHIPMENT'
-              AND ledger.source_type='AMAZON_ORDER' AND ledger.source_id=orders.id
-              AND orders.tenant_id=ledger.tenant_id
-              AND orders.marketplace_connection_id=ledger.marketplace_connection_id
-              AND orders.amazon_order_id=?
-              AND EXISTS (
-                SELECT 1 FROM inventory_ledger_entries count_entry
-                WHERE count_entry.tenant_id=ledger.tenant_id
-                  AND count_entry.account_catalog_item_id=ledger.account_catalog_item_id
-                  AND count_entry.source_type='PHYSICAL_COUNT'
-                  AND count_entry.occurred_at>=coalesce(orders.last_update_date,orders.purchase_date,orders.created_at)
-              )
-            """,tenantId,connectionId,catalogItemId,orderId);
-    }
-
-    /** Repairs an existing delayed posting during every reconciliation, including already-shipped orders. */
-    private void removeLateShipmentPostings(UUID tenantId,UUID connectionId,String orderId){
-        jdbc.update("""
-            DELETE FROM inventory_ledger_entries ledger
-            USING amazon_orders orders
-            WHERE ledger.tenant_id=? AND ledger.marketplace_connection_id=?
-              AND ledger.entry_type='SHIPMENT' AND ledger.source_type='AMAZON_ORDER'
-              AND ledger.source_id=orders.id
-              AND orders.tenant_id=ledger.tenant_id
-              AND orders.marketplace_connection_id=ledger.marketplace_connection_id
-              AND orders.amazon_order_id=?
-              AND EXISTS (
-                SELECT 1 FROM inventory_ledger_entries count_entry
-                WHERE count_entry.tenant_id=ledger.tenant_id
-                  AND count_entry.account_catalog_item_id=ledger.account_catalog_item_id
-                  AND count_entry.source_type='PHYSICAL_COUNT'
-                  AND count_entry.occurred_at>=coalesce(orders.last_update_date,orders.purchase_date,orders.created_at)
-              )
-            """,tenantId,connectionId,orderId);
-    }
 
     private BigDecimal allocateQuantity(UUID tenantId,UUID connectionId,String orderId,UUID orderItemId,
             UUID catalogItemId,BigDecimal required){
@@ -368,9 +292,39 @@ public class OrderRepository {
     @Transactional
     public boolean setPickupOverride(UUID tenantId,UUID connectionId,String orderId,boolean waiting,String actor){
         setTenant(tenantId);
-        // Explicit assignment is retry-safe. No Amazon status or inventory fields are changed.
-        return jdbc.update("UPDATE amazon_orders orders SET platform_waiting_for_pickup=?,platform_pickup_changed_at=clock_timestamp(),platform_pickup_changed_by=? WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=? AND (?=false OR "+tabPredicate("UNSHIPPED")+" OR platform_waiting_for_pickup)",
+        jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",rs->{},tenantId);
+        if(!waiting)restoreUnpackedReservations(tenantId,connectionId,orderId);
+        boolean changed=jdbc.update("UPDATE amazon_orders orders SET platform_waiting_for_pickup=?,platform_pickup_changed_at=clock_timestamp(),platform_pickup_changed_by=? WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=? AND (?=false OR "+tabPredicate("UNSHIPPED")+" OR platform_waiting_for_pickup)",
             waiting,actor,tenantId,connectionId,orderId,waiting)>0;
+        if(changed&&waiting)allocateOrder(tenantId,connectionId,orderId);
+        if(changed&&!waiting)reconcileConnectionInventory(tenantId,connectionId);
+        return changed;
+    }
+
+    private void restoreUnpackedReservations(UUID tenantId,UUID connectionId,String orderId){
+        // Undo means goods are put back on the shelf. Reverse only recorded packing
+        // movements, never create stock for an unrecorded historical shipment.
+        jdbc.update("""
+            INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,marketplace_connection_id,
+                entry_type,quantity,expiration_date,unit_cost,currency,source_type,source_id,occurred_at,idempotency_key,notes,cost_status)
+            SELECT ledger.tenant_id,ledger.account_catalog_item_id,ledger.location_id,ledger.marketplace_connection_id,
+                'RETURN',-ledger.quantity,ledger.expiration_date,ledger.unit_cost,ledger.currency,'AMAZON_ORDER',ledger.source_id,
+                now(),'unpack:'||ledger.id,'Packing mark undone; recorded packed units returned to the shelf.',ledger.cost_status
+            FROM order_inventory_reservations r
+            JOIN amazon_orders orders ON orders.tenant_id=r.tenant_id AND orders.marketplace_connection_id=r.marketplace_connection_id AND orders.amazon_order_id=r.amazon_order_id
+            JOIN inventory_ledger_entries ledger ON ledger.tenant_id=r.tenant_id AND ledger.idempotency_key='amazon-shipment:'||r.id
+            WHERE r.tenant_id=? AND r.marketplace_connection_id=? AND r.amazon_order_id=? AND r.status='SHIPPED'
+                AND orders.platform_waiting_for_pickup
+                AND regexp_replace(upper(orders.order_status),'[^A-Z]','','g') IN ('PENDING','UNSHIPPED')
+            ON CONFLICT(tenant_id,idempotency_key) DO NOTHING
+            """,tenantId,connectionId,orderId);
+        jdbc.update("""
+            DELETE FROM order_inventory_reservations r USING amazon_orders orders
+            WHERE r.tenant_id=? AND r.marketplace_connection_id=? AND r.amazon_order_id=? AND r.status='SHIPPED'
+                AND orders.tenant_id=r.tenant_id AND orders.marketplace_connection_id=r.marketplace_connection_id
+                AND orders.amazon_order_id=r.amazon_order_id AND orders.platform_waiting_for_pickup
+                AND regexp_replace(upper(orders.order_status),'[^A-Z]','','g') IN ('PENDING','UNSHIPPED')
+            """,tenantId,connectionId,orderId);
     }
 
     @Transactional(readOnly=true)
@@ -587,6 +541,12 @@ public class OrderRepository {
             WHERE reservation.tenant_id=? AND reservation.marketplace_connection_id=?
               AND reservation.amazon_order_id=? AND reservation.status='ACTIVE'
               AND (?::uuid IS NULL OR reservation.amazon_order_item_id=?::uuid)
+              AND NOT EXISTS (SELECT 1 FROM inventory_ledger_entries counted
+                  WHERE counted.tenant_id=reservation.tenant_id AND counted.account_catalog_item_id=reservation.account_catalog_item_id
+                    AND counted.location_id=reservation.location_id AND counted.expiration_date IS NOT DISTINCT FROM reservation.expiration_date
+                    AND counted.source_type='PHYSICAL_COUNT'
+                    AND counted.occurred_at>=CASE WHEN orders.platform_waiting_for_pickup THEN orders.platform_pickup_changed_at
+                        ELSE coalesce(orders.last_update_date,orders.purchase_date,orders.created_at) END)
             ON CONFLICT(tenant_id,idempotency_key) DO NOTHING
             """,tenantId,connectionId,orderId,orderItemId,orderItemId);
         jdbc.update("""
@@ -594,6 +554,32 @@ public class OrderRepository {
             WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=? AND status='ACTIVE'
               AND (?::uuid IS NULL OR amazon_order_item_id=?::uuid)
             """,tenantId,connectionId,orderId,orderItemId,orderItemId);
+    }
+
+    private void recordUnrecordedShipment(UUID tenantId,UUID connectionId,String orderId){
+        jdbc.update("""
+            INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,marketplace_connection_id,
+                entry_type,quantity,currency,source_type,source_id,occurred_at,idempotency_key,notes,cost_status)
+            SELECT item.tenant_id,component.account_catalog_item_id,item.marketplace_connection_id,
+                'SHIPMENT_UNRECORDED',0,coalesce(orders.currency,'USD'),'AMAZON_ORDER',orders.id,now(),
+                'unrecorded-shipment:'||item.id||':'||component.account_catalog_item_id,
+                left('Order '||orders.amazon_order_id||' · SKU '||item.seller_sku||
+                    ' · shipped/packed without a complete inventory record. Missing '||
+                    (item.quantity_ordered*component.quantity-coalesce(posted.quantity,0))::text||
+                    ' each. Shelf stock was not reduced; reconcile against the physical count.',500),'FINAL'
+            FROM amazon_order_items item
+            JOIN amazon_orders orders ON orders.tenant_id=item.tenant_id
+                AND orders.marketplace_connection_id=item.marketplace_connection_id AND orders.amazon_order_id=item.amazon_order_id
+            JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=item.tenant_id
+                AND mapping.marketplace_connection_id=item.marketplace_connection_id AND mapping.marketplace_sku=item.seller_sku AND mapping.status='ACTIVE'
+            JOIN marketplace_sku_mapping_components component ON component.tenant_id=mapping.tenant_id AND component.marketplace_sku_mapping_id=mapping.id
+            LEFT JOIN LATERAL (SELECT sum(quantity) quantity FROM order_inventory_reservations r
+                WHERE r.tenant_id=item.tenant_id AND r.amazon_order_item_id=item.id
+                AND r.account_catalog_item_id=component.account_catalog_item_id AND r.status='SHIPPED') posted ON true
+            WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id=?
+                AND item.quantity_ordered*component.quantity>coalesce(posted.quantity,0)
+            ON CONFLICT(tenant_id,idempotency_key) DO NOTHING
+            """,tenantId,connectionId,orderId);
     }
 
     private void setState(UUID tenantId,UUID connectionId,String orderId,String state){jdbc.update("UPDATE amazon_orders SET fulfillment_state=?,operational_updated_at=now() WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",state,tenantId,connectionId,orderId);}

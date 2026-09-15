@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.2.0",
+    "title": "Inventory that follows your warehouse",
+    "sections": [
+      {"title":"Shelf counts and order reservations","items":["Upload shelf counts excluding packed orders. Open-order reservations are recalculated, and shipped orders no longer appear as actionable stock shortages.","Missing inventory records for shipped orders are explained in the ledger without reducing newly counted stock.","Physical count offers your latest three uploads and supports dates such as 5/16/27."]},
+      {"title":"Easier inventory corrections","items":["Edit expiration dates beside inventory rows. Matching item, location and date positions combine, with correction history preserved and reservations refreshed.","Order inventory adjustments use the expiration date you enter, creating that date’s stock position when needed.","Manage vendors and locations from Available Inventory. Edit or delete unused locations, with detailed explanations when records prevent changes."]},
+      {"title":"Clearer everyday tools","items":["Right-click product pictures to sync Amazon’s main image into Account and Global Catalogue.","Dates display as MM/DD/YY, while native date pickers follow browser settings.","Order action menus remain visible on short tables. Physical-count reviews scroll with accessible approval controls, and inventory dialogs use consistent styling."]}
+    ]
+  },
+  {
     "version": "1.1.1",
     "title": "Help opening Seller Central",
     "sections": [{"title": "Packing-slip hotfix", "items": ["If your browser blocks the second tab, the packing page now shows step-by-step Chrome instructions for allowing this site and a direct link to open your Seller Central order."]}]

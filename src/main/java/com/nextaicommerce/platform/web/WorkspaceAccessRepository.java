@@ -46,7 +46,7 @@ public class WorkspaceAccessRepository {
     public record MemberView(UUID id, String displayName, String email, String role, String status, int stores) {}
     public record InvitationView(UUID id, String email, String role, String status, int stores,
         Instant sentAt, Instant expiresAt, String invitedBy) {
-        private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("MMM d, yyyy · h:mm a")
+        private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a")
             .withZone(ZoneId.systemDefault());
         public boolean expired() { return !expiresAt.isAfter(Instant.now()); }
         public String displayStatus() { return expired() ? "EXPIRED" : status; }

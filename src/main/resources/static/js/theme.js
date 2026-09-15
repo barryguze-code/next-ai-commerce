@@ -1,3 +1,4 @@
+window.formatCalendarDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value.slice(5,7)+'/'+value.slice(8,10)+'/'+value.slice(2,4):(value||'');
 (() => {
   if (window.__nextAiThemeReady) return;
   window.__nextAiThemeReady = true;

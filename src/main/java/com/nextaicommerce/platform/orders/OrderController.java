@@ -67,7 +67,7 @@ public class OrderController {
     }
 
     static DateTimeFormatter orderTime(String marketplaceId){
-        return DateTimeFormatter.ofPattern("MMM d · h:mm a z",java.util.Locale.US)
+        return DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a z",java.util.Locale.US)
             .withZone(com.nextaicommerce.platform.sync.AmazonMarketplaceTime.zone(marketplaceId));
     }
 

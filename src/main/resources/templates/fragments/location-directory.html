@@ -3,11 +3,12 @@
 <body>
 <section th:fragment="directory(locations)" class="location-directory">
   <header><div><strong>Existing locations</strong><span class="location-directory-count" th:text="${locations == null ? '0 in this account' : #lists.size(locations)+' in this account'}">1 in this account</span></div><small>Defaults route future receipts; stock positions show where inventory is physically stored.</small></header>
-  <div class="location-directory-list" id="location-directory-list">
-    <article th:each="location:${locations}" th:classappend="${location.status != 'ACTIVE'} ? ' inactive'">
+  <div class="location-directory-list">
+    <article th:each="location:${locations}" th:attr="data-location-id=${location.id}" th:classappend="${location.status != 'ACTIVE'} ? ' inactive'">
       <span class="location-code" th:text="${location.code}">MAIN</span>
       <div><strong th:text="${location.name}">Main storage</strong><small>Available for receipts, physical counts, and product defaults</small></div>
       <b class="location-status" th:text="${#strings.toLowerCase(location.status)}">active</b>
+      <div class="location-actions"><button type="button" onclick="editManagedLocation(this,false)">Edit</button><button type="button" onclick="editManagedLocation(this,true)">Delete</button></div>
     </article>
     <p class="location-directory-empty" th:if="${locations == null or #lists.isEmpty(locations)}">No storage locations have been created for this account.</p>
   </div>

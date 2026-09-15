@@ -31,16 +31,17 @@ public class PhysicalCountImportService {
     private final CatalogImportService files;
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
+    private final com.nextaicommerce.platform.orders.OrderRepository orders;
 
-    public PhysicalCountImportService(InventoryRepository inventory,CatalogImportService files,JdbcTemplate jdbc,ObjectMapper json){
-        this.inventory=inventory;this.files=files;this.jdbc=jdbc;this.json=json;
+    public PhysicalCountImportService(InventoryRepository inventory,CatalogImportService files,JdbcTemplate jdbc,ObjectMapper json,com.nextaicommerce.platform.orders.OrderRepository orders){
+        this.inventory=inventory;this.files=files;this.jdbc=jdbc;this.json=json;this.orders=orders;
     }
 
     public record ImportView(UUID id,String filename,String status,List<String> headers,Map<String,String> mapping,
             List<Map<String,String>> samples,int totalRows,int appliedRows,UUID vendorId){}
     public record ImportHistory(UUID id,String filename,String state,int totalRows,int appliedRows,String vendor,
             String uploadedBy,Instant uploadedAt,Instant appliedAt,String error){
-        private static final DateTimeFormatter DISPLAY=DateTimeFormatter.ofPattern("MMM d, yyyy · h:mm a");
+        private static final DateTimeFormatter DISPLAY=DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a");
         public String uploadedDisplay(){return DISPLAY.format(uploadedAt.atZone(ZoneId.systemDefault()));}
         public String appliedDisplay(){return appliedAt==null?"Not applied":DISPLAY.format(appliedAt.atZone(ZoneId.systemDefault()));}
     }
@@ -176,7 +177,7 @@ public class PhysicalCountImportService {
                 try{quantity=new BigDecimal(amount.replace(",","").trim());}catch(Exception e){throw new IllegalArgumentException("Row "+source.number()+" has an invalid quantity.");}
                 if(quantity.signum()<0||quantity.stripTrailingZeros().scale()>0)throw new IllegalArgumentException("Row "+source.number()+" needs a whole-number count of zero or more.");
                 LocalDate expiration=null;
-                if(!date.isBlank())try{expiration=parseDate(date);}catch(Exception e){throw new IllegalArgumentException("Row "+source.number()+" has an invalid expiration date. Use YYYY-MM-DD, MM/DD/YYYY, or an Excel date cell.");}
+                if(!date.isBlank())try{expiration=parseDate(date);}catch(Exception e){throw new IllegalArgumentException("Row "+source.number()+" has an invalid expiration date. Use YYYY-MM-DD, M/D/YYYY, M/D/YY (for example 5/16/27 = May 16, 2027), or an Excel date cell. Two-digit years mean 2000–2099.");}
                 counts.add(new InventoryRepository.PhysicalCountRow(source.number(),code,quantity,expiration,location));
             }
         }catch(IllegalArgumentException e){throw e;}
@@ -195,7 +196,8 @@ public class PhysicalCountImportService {
             UPDATE physical_count_imports SET status='APPLIED',vendor_id=?,column_mapping=?::jsonb,
               applied_rows=?,applied_by=?,applied_at=now(),updated_at=now() WHERE tenant_id=? AND id=?
             """,vendorId,json.writeValueAsString(mapping),applied,actorId(actorEmail),tenantId,importId);
-        progress.accept(94,"Finalizing the inventory ledger");
+        progress.accept(94,"Rebuilding open-order reservations against shelf stock");
+        orders.reconcileTenantAfterPhysicalCount(tenantId);
         return applied;
     }
 
@@ -224,11 +226,13 @@ public class PhysicalCountImportService {
         for(String header:headers){String normalized=key(header);for(String alias:aliases)if(normalized.equals(alias)){target.put(field,header);return;}}
     }
     private static String key(String value){return value==null?"":value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");}
-    private static LocalDate parseDate(String value){
+    static LocalDate parseDate(String value){
         String clean=value.trim();
         for(DateTimeFormatter format:List.of(DateTimeFormatter.ISO_LOCAL_DATE,
-                DateTimeFormatter.ofPattern("M/d/uuuu"),DateTimeFormatter.ofPattern("M-d-uuuu"))){
-            try{return LocalDate.parse(clean,format);}catch(DateTimeParseException ignored){}
+                DateTimeFormatter.ofPattern("M/d/uuuu"),DateTimeFormatter.ofPattern("M-d-uuuu"),
+                new java.time.format.DateTimeFormatterBuilder().appendPattern("M/d/")
+                    .appendValueReduced(java.time.temporal.ChronoField.YEAR,2,2,2000).toFormatter(Locale.US))){
+            try{return LocalDate.parse(clean,format.withResolverStyle(java.time.format.ResolverStyle.STRICT));}catch(DateTimeParseException ignored){}
         }
         if(clean.matches("\\d+(\\.0+)?")){
             long serial=(long)Double.parseDouble(clean);

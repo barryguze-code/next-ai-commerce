@@ -5,7 +5,7 @@
   const $$=(selector,scope=document)=>[...scope.querySelectorAll(selector)];
   const escape=value=>{const node=document.createElement('span');node.textContent=value??'';return node.innerHTML};
   const formattedBody=value=>escape(value??'').replace(/(^|\s)(@[A-Za-z0-9._-]+)/g,'$1<strong class="message-mention">$2</strong>').replaceAll('\n','<br>');
-  const formatDate=value=>value?new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(value)):'';
+  const formatDate=value=>value?new Intl.DateTimeFormat('en-US',{month:'2-digit',day:'2-digit',year:'2-digit',hour:'numeric',minute:'2-digit'}).format(new Date(value)):'';
   const formatBytes=value=>Number(value)<1024?value+' B':Number(value)<1048576?Math.ceil(Number(value)/1024)+' KB':(Number(value)/1048576).toFixed(1)+' MB';
   const dialog=()=>$('#contextual-thread-dialog');
   const view=()=>({dialog:dialog(),list:$('#thread-conversation-list'),start:$('#thread-conversation-start'),reply:$('#thread-conversation-reply')});

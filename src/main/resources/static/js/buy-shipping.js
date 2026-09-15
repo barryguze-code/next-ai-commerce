@@ -82,7 +82,7 @@
   function busy(value,text='Loading order shipping details…',detail='Reading the order, saved packages, and purchased labels.'){
     const box=$('[data-shipping-loading]');box.hidden=!value;if(value){$('strong',box).textContent=text;$('small',box).textContent=detail;}$('[data-shipping-content]').hidden=value;
   }
-  function date(value){if(!value)return 'Not supplied by Amazon';return new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(value));}
+  function date(value){if(!value)return 'Not supplied by Amazon';return new Intl.DateTimeFormat('en-US',{month:'2-digit',day:'2-digit',year:'2-digit',hour:'numeric',minute:'2-digit'}).format(new Date(value));}
   function money(amount,currency='USD'){return new Intl.NumberFormat(undefined,{style:'currency',currency:currency||'USD'}).format(Number(amount||0));}
   function sellerCentral(orderId,marketplace){const domain=marketplace==='A1F83G8C2ARO7P'?'sellercentral.amazon.co.uk':'sellercentral.amazon.com';return `https://${domain}/orders-v3/order/${encodeURIComponent(orderId)}`;}
 

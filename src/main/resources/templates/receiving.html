@@ -52,7 +52,7 @@
           <td data-column="selection"><input type="checkbox" data-source-select th:value="${d.id}" th:attr="aria-label=${'Select '+d.label()}" th:disabled="${d.closed or d.outstanding.signum() <= 0}" th:title="${d.closed ? 'Closed document — review only' : d.outstanding.signum() <= 0 ? 'Fully received — review or close this document' : 'Select to receive only the outstanding quantities'}"></td>
           <td data-column="document"><a class="rw-document-title" th:href="@{/app/receiving/work(documents=${d.id})}" th:title="${d.closed ? 'Review closed document' : 'Open document'}"><strong th:text="${d.label()}">Invoice</strong></a><small th:text="${d.filename}">Source file</small></td>
           <td data-column="vendor" th:text="${d.vendor}"></td>
-          <td data-column="date" th:text="${#temporals.format(d.uploadedAt,'MMM d, yyyy')}"></td>
+          <td data-column="date" th:text="${#temporals.format(d.uploadedAt,'MM/dd/yy')}"></td>
           <td data-column="expected" th:text="${#numbers.formatDecimal(d.expected,1,0)+' each'}"></td>
           <td data-column="received" th:text="${#numbers.formatDecimal(d.received,1,0)+' each'}"></td>
           <td data-column="status" th:attr="data-row-warning=${!d.closed and d.received.signum()>0 and d.outstanding.signum()>0 ? 'true' : null}" th:text="${d.progress()}"></td>

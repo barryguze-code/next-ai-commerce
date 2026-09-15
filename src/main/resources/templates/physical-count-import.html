@@ -5,7 +5,7 @@
   <title>Review Physical Count | Next AI Commerce</title>
   <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
   <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1"><link rel="stylesheet" href="/css/access.css">
-  <link rel="stylesheet" href="/css/catalog-import.css"><link rel="stylesheet" href="/css/physical-count-import.css?v=20260905-2"><link rel="stylesheet" href="/css/confirm-dialog.css">
+  <link rel="stylesheet" href="/css/catalog-import.css"><link rel="stylesheet" href="/css/physical-count-import.css?v=20260914-3"><link rel="stylesheet" href="/css/confirm-dialog.css">
   <script defer src="/js/theme.js?v=20260905-1"></script><script defer src="/js/confirm-dialog.js?v=20260904-1"></script>
 <th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block></head>
 <body class="app-page">
@@ -36,6 +36,8 @@
     </section>
     <form th:unless="${physicalCount.status == 'APPLIED' or (physicalCountProgress != null and (physicalCountProgress.state == 'QUEUED' or physicalCountProgress.state == 'PROCESSING'))}" th:classappend="${physicalCountError} ? 'has-error'" method="post" th:action="@{/app/inventory/physical-counts/{id}/apply(id=${physicalCount.id})}" data-confirm-title="Apply physical count" th:attr="data-confirm-message=${physicalCount.mapping['scope']=='REPLACE_PRODUCTS' ? 'For products in this file, ALL omitted locations and expiration batches will be reduced to zero. Products absent from the file are unchanged. Confirm this is a complete count.' : 'Only listed item + location + expiration batches will be updated. Unlisted batches remain unchanged.'}" data-confirm-accept="Apply count">
       <div class="import-dialog-heading"><div><strong>Review detected columns</strong><span th:text="${physicalCount.filename+' · '+#numbers.formatInteger(physicalCount.totalRows,1,'COMMA')+' rows'}">File · rows</span></div><a class="dialog-close" href="/app/inventory" aria-label="Close">×</a></div>
+      <div class="physical-count-review-body" tabindex="0" aria-label="Physical count review details">
+      <p class="notice count-shelf-notice">Count shelf stock only. Exclude packed orders waiting for pickup. Applying this count rebuilds Pending and Unshipped order reservations; it does not change Amazon inventory.</p>
       <div class="notice error actionable-notice" th:if="${physicalCountError}">
         <span th:text="${physicalCountError}">Fix the upload.</span>
       </div>
@@ -70,12 +72,16 @@
         </div>
       </section>
       <section class="physical-count-impact"><strong>Choose the count scope</strong>
+        <p>Your file is the authoritative count for the scope you choose below.</p>
         <label>How should omitted batches be handled?<select name="scope" onchange="this.form.dataset.confirmMessage=this.value==='REPLACE_PRODUCTS'?'For products in this file, ALL omitted locations and expiration batches will be reduced to zero. Products absent from the file are unchanged. Confirm this is a complete count.':'Only listed item + location + expiration batches will be updated. Unlisted batches remain unchanged.'">
           <option value="LISTED_BATCHES">Update listed batches only · recommended</option>
           <option value="REPLACE_PRODUCTS" th:selected="${physicalCount.mapping['scope']=='REPLACE_PRODUCTS'}">Complete product count · zero omitted batches</option>
         </select></label>
-        <p>This is an authoritative count for the selected scope. Ledger corrections record only the difference, never a duplicate receipt. Expired units remain visible as cannot sell. A count cannot remove units committed to active orders.</p>
+        <p><strong>Listed batches only:</strong> update the item, location and expiration combinations in your file. Leave other batches unchanged.</p>
+        <p><strong>Complete product count:</strong> also set missing locations and expiration batches to zero for items included in your file. Choose this only if you counted all shelf stock for those items. Items absent from the file stay unchanged.</p>
+        <p>Open-order reservations are recalculated from the new count. If shelf stock is insufficient, the affected open orders show a shortage. Packed and shipped orders do not consume the count again.</p>
       </section>
+      </div>
       <div class="approval-bar"><div><strong>Ready for your approval</strong><span>Validation and reconciliation run together; a single error rolls back the entire file.</span></div><div class="import-actions"><a class="secondary-button" href="/app/inventory">Cancel</a><button class="primary-button compact-button" type="submit">Validate and apply</button></div></div>
     </form>
   </dialog>

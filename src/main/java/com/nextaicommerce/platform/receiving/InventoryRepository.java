@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class InventoryRepository {
-    private static final DateTimeFormatter LEDGER_TIME = DateTimeFormatter.ofPattern("MMM d, yyyy · h:mm a");
+    private static final DateTimeFormatter LEDGER_TIME = DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a");
     static final String RESERVABLE_ORDER_STATUS_SQL =
         "upper(trim(coalesce(orders.order_status,''))) IN ('PENDING','UNSHIPPED')";
     private final JdbcTemplate jdbc;
@@ -109,13 +109,14 @@ public class InventoryRepository {
         public String occurredDisplay(){return LEDGER_TIME.format(occurredAt.atZone(ZoneId.systemDefault()));}
         public String quantityUnits(){
             String units=quantity.abs().setScale(0,java.math.RoundingMode.HALF_UP).toPlainString();
-            return quantity.signum()>0?"+"+units:"-"+units;
+            return quantity.signum()==0?"0":quantity.signum()>0?"+"+units:"-"+units;
         }
         public String movementLabel(){
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())return "Physical count";
             return switch(entryType){
             case "RECEIPT" -> "Received";
             case "SALE","SHIPMENT" -> "Order shipped";
+            case "SHIPMENT_UNRECORDED" -> "Shipped";
             case "RETURN" -> "Customer return";
             case "ADJUSTMENT" -> "Adjustment";
             case "TRANSFER" -> "Transfer";
@@ -136,6 +137,8 @@ public class InventoryRepository {
             default -> title(sourceType);
         };}
         public String description(){
+            if("SHIPMENT_UNRECORDED".equals(entryType))return "No stock deducted.";
+            if("RETURN".equals(entryType)&&notes!=null&&notes.startsWith("Packing mark undone"))return notes;
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())
                 return quantity.signum()<0?"Physical count reduced the recorded stock.":"Physical count confirmed stock on hand.";
             if("AMAZON_ORDER".equals(sourceType))return "Stock left the warehouse for this Amazon order.";
@@ -631,6 +634,32 @@ public class InventoryRepository {
         if(makeDefault)setDefaultLocation(tenantId,itemId,destination);
     }
 
+    @Transactional
+    public void changeExpiration(UUID tenantId,String actorEmail,UUID itemId,UUID locationId,LocalDate oldDate,
+            LocalDate newDate,BigDecimal expectedQuantity,com.nextaicommerce.platform.orders.OrderRepository orders){
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());lockStockCorrection(tenantId);
+        if(newDate==null||java.util.Objects.equals(oldDate,newDate))throw new IllegalArgumentException("Choose a different expiration date.");
+        if(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=? AND id=?",Long.class,tenantId,itemId)!=1)
+            throw new IllegalArgumentException("This item is unavailable in this account.");
+        if(jdbc.queryForObject("SELECT count(*) FROM inventory_expiration_actions WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date IN (?,?) AND status='PLANNED'",Long.class,tenantId,itemId,oldDate,newDate)>0)
+            throw new IllegalArgumentException("This expiration date has an active sale, hold or removal plan. Clear that plan before correcting the date, then review it again afterward.");
+        BigDecimal quantity=jdbc.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=? AND expiration_date IS NOT DISTINCT FROM ?",BigDecimal.class,tenantId,itemId,locationId,oldDate);
+        if(quantity.signum()<=0)throw new IllegalArgumentException("There is no shelf stock in this batch to correct.");
+        if(expectedQuantity==null||quantity.compareTo(expectedQuantity)!=0)throw new IllegalArgumentException("The quantity changed while you were editing. Refresh and review the batch before saving.");
+        var value=jdbc.query("SELECT unit_cost,currency,cost_status FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=? AND expiration_date IS NOT DISTINCT FROM ? AND quantity>0 ORDER BY occurred_at DESC LIMIT 1",
+            rs->rs.next()?new Object[]{rs.getBigDecimal(1),rs.getString(2),rs.getString(3)}:new Object[]{null,"USD","FINAL"},tenantId,itemId,locationId,oldDate);
+        UUID correction=UUID.randomUUID();String notes="Expiration corrected from "+(oldDate==null?"undated":oldDate)+" to "+newDate+". Shelf quantity unchanged.";
+        UUID actor=jdbc.queryForObject("SELECT id FROM app_users WHERE lower(email)=lower(?)",UUID.class,actorEmail);
+        for(int direction:new int[]{-1,1})jdbc.update("""
+            INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,
+            unit_cost,currency,source_type,source_id,occurred_at,idempotency_key,notes,created_by,cost_status)
+            VALUES (?,?,?,'TRANSFER',?,?,?,?,'EXPIRATION_CORRECTION',?,now(),?,?,?,?)
+            """,tenantId,itemId,locationId,quantity.multiply(BigDecimal.valueOf(direction)),direction<0?oldDate:newDate,
+            value[0],value[1],correction,"expiration-correction:"+correction+":"+direction,notes,actor,value[2]);
+        jdbc.update("DELETE FROM order_inventory_reservations WHERE tenant_id=? AND account_catalog_item_id=? AND status='ACTIVE'",tenantId,itemId);
+        orders.reconcileTenantAfterPhysicalCount(tenantId);
+    }
+
     private void setDefaultLocation(UUID tenantId,UUID itemId,UUID locationId){
         jdbc.update("UPDATE account_catalog_item_locations SET is_default=false WHERE tenant_id=? AND account_catalog_item_id=? AND is_default",tenantId,itemId);
         jdbc.update("""
@@ -760,18 +789,15 @@ public class InventoryRepository {
         var missingDate=jdbc.query("SELECT row_number,code FROM physical_count_resolved WHERE requires_expiration_date AND expiration_date IS NULL ORDER BY row_number LIMIT 1",
             (rs,row)->new Object[]{rs.getInt(1),rs.getString(2)}).stream().findFirst().orElse(null);
         if(missingDate!=null)throw new IllegalArgumentException("Row "+missingDate[0]+" code “"+missingDate[1]+"” requires an expiration date.");
-        var committed=jdbc.query("""
-            SELECT a.account_catalog_item_id,a.location_id,a.expiration_date,sum(a.quantity) reserved,coalesce(max(r.counted),0) counted
-            FROM order_inventory_reservations a
-            LEFT JOIN physical_count_resolved r ON r.item_id=a.account_catalog_item_id AND r.location_id=a.location_id
-              AND r.expiration_date IS NOT DISTINCT FROM a.expiration_date
-            WHERE a.tenant_id=? AND a.status='ACTIVE'
-              AND EXISTS(SELECT 1 FROM physical_count_resolved included WHERE included.item_id=a.account_catalog_item_id)
-              AND (? OR r.item_id IS NOT NULL)
-            GROUP BY a.account_catalog_item_id,a.location_id,a.expiration_date
-            HAVING coalesce(max(r.counted),0)<sum(a.quantity) LIMIT 1
-            """,(rs,n)->new Object[]{rs.getBigDecimal(4),rs.getBigDecimal(5)},tenantId,replaceMissing).stream().findFirst().orElse(null);
-        if(committed!=null)throw new IllegalArgumentException("A counted batch would fall below "+committed[0]+" units committed to active orders. No count was applied. Resolve those order reservations before applying this count.");
+        // Physical reality wins over reservations. Rebuild demand after applying the count;
+        // packed goods are absent from this shelf-only snapshot.
+        jdbc.update("""
+            DELETE FROM order_inventory_reservations reservation WHERE tenant_id=? AND status='ACTIVE'
+              AND EXISTS (SELECT 1 FROM physical_count_resolved counted
+                  WHERE counted.item_id=reservation.account_catalog_item_id
+                    AND (? OR (counted.location_id=reservation.location_id
+                        AND counted.expiration_date IS NOT DISTINCT FROM reservation.expiration_date)))
+            """,tenantId,replaceMissing);
         jdbc.update("""
             INSERT INTO account_catalog_item_locations(tenant_id,account_catalog_item_id,location_id,is_default)
             SELECT DISTINCT ?,item_id,location_id,false FROM physical_count_resolved
@@ -813,7 +839,6 @@ public class InventoryRepository {
               FROM vendor_catalog_offers offer WHERE offer.tenant_id=? AND offer.account_catalog_item_id=delta.item_id
                 AND offer.effective_to IS NULL AND (CAST(? AS uuid) IS NULL OR offer.vendor_id=CAST(? AS uuid))
               ORDER BY offer.is_default DESC,offer.updated_at DESC LIMIT 1) default_offer ON true
-            WHERE delta.quantity<>0
             """,tenantId,replaceMissing,tenantId,importId,importId.toString(),actorEmail,tenantId,tenantId,vendorId,vendorId);
         var mismatch=jdbc.query("""
             SELECT resolved.row_number,resolved.code,resolved.counted,coalesce(actual.on_hand,0)

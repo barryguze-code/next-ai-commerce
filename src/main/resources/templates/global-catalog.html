@@ -76,7 +76,7 @@
 <tr class="catalog-row" th:each="product:${products}" th:attr="data-search=${#strings.toLowerCase(product.name + ' ' + (product.brand ?: '') + ' ' + (product.vendorName ?: '') + ' ' + (product.vendorItemCode ?: '') + ' ' + (product.identifier ?: ''))}">
 <td>
 <div class="product-cell">
-<span class="product-avatar" th:text="${#strings.substring(product.name,0,1)}">P</span>
+<span class="product-avatar"><img th:if="${globalProductImageIds != null and globalProductImageIds.contains(product.id)}" th:src="@{/app/platform/catalog/products/{id}/image(id=${product.id})}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:contain" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><b th:hidden="${globalProductImageIds != null and globalProductImageIds.contains(product.id)}" th:text="${#strings.substring(product.name,0,1)}">P</b></span>
 <div>
 <strong th:text="${product.name}">Product</strong>
 <small th:text="${product.brand ?: 'Brand not specified'}">Brand</small>

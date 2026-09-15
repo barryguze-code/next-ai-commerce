@@ -42,7 +42,7 @@
         <article th:each="line:${page}">
           <b class="quantity" th:text="${line.quantity}">1</b>
           <div><strong th:text="${line.sku}">SKU</strong><span th:text="${line.title}">Product name</span></div>
-          <small><b th:text="${line.expirationDate == null ? 'No expiry' : line.expirationDate}">2026-09-15</b><span th:text="${line.location}">MAIN</span></small>
+          <small><b th:text="${line.expirationDate == null ? 'No expiry' : #temporals.format(line.expirationDate,'MM/dd/yy')}">09/15/26</b><span th:text="${line.location}">MAIN</span></small>
         </article>
       </section>
     </section>

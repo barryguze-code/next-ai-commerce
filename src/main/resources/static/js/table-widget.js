@@ -1,5 +1,21 @@
 (()=>{
 if(window.NextAiTableWidget)return;
+// Keep order warnings in the browser top layer, outside the table's clipping region.
+document.addEventListener('toggle',event=>{
+  const details=event.target;if(!details.matches?.('.order-stage-actions'))return;
+  const panel=details.querySelector('nav');if(!panel)return;
+  if(!details.open){if(panel.matches(':popover-open'))panel.hidePopover();return;}
+  document.querySelectorAll('.order-stage-actions[open]').forEach(other=>{if(other!==details)other.open=false;});
+  panel.setAttribute('popover','manual');
+  panel.style.setProperty('position','fixed','important');panel.style.margin='0';
+  panel.style.setProperty('inset','auto','important');
+  panel.style.maxHeight='calc(100dvh - 24px)';panel.style.overflowY='auto';
+  if(panel.showPopover&&!panel.matches(':popover-open'))panel.showPopover();
+  const anchor=details.querySelector('summary').getBoundingClientRect(),box=panel.getBoundingClientRect();
+  panel.style.setProperty('left',Math.max(12,Math.min(anchor.left,innerWidth-box.width-12))+'px','important');
+  panel.style.setProperty('top',Math.max(12,Math.min(anchor.bottom+8,innerHeight-box.height-12))+'px','important');
+},true);
+window.addEventListener('resize',()=>document.querySelectorAll('.order-stage-actions[open]').forEach(d=>d.open=false));
 document.addEventListener('pointerdown',event=>document.querySelectorAll('.table-row-warning[open],.order-stage-actions[open]').forEach(details=>{if(!details.contains(event.target))details.open=false}));
 document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelectorAll('.order-stage-actions[open]').forEach(details=>{details.open=false;details.querySelector('summary')?.focus()})});
 function read(key){return window.NextAiTablePreferences?.read(key)||null}

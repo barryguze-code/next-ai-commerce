@@ -1,0 +1,21 @@
+/* Shared native button/link/summary treatment for catalogue and inventory controls. */
+.expiration-edit-button{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:5px;padding:3px;border:0;background:transparent;color:var(--muted,#6d7888);box-shadow:none;cursor:pointer}.expiration-edit-button svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.expiration-edit-button:hover{color:var(--blue,#2d6cdf)}.expiration-edit-button:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:3px}
+.inventory-toolbar-actions,.catalog-card .card-toolbar{gap:10px;flex-wrap:wrap}
+:is(.inventory-toolbar-actions,.catalog-card,.dialog-actions) :is(a,button,summary).compact-button{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;
+  padding:9px 14px;border-radius:11px;font:inherit;font-size:13px;font-weight:650;
+  text-decoration:none;white-space:nowrap;box-sizing:border-box;cursor:pointer;
+}
+:is(.inventory-toolbar-actions,.catalog-card,.dialog-actions) button:disabled{opacity:.45;cursor:not-allowed}
+.physical-count-menu{position:relative}
+.physical-count-menu>summary{list-style:none}
+.physical-count-menu>summary::-webkit-details-marker{display:none}
+.physical-count-menu[open]>summary{color:#2364cd;border-color:#8bb5f7;background:#edf4ff}
+.physical-count-menu-panel{position:absolute;right:0;top:calc(100% + 8px);z-index:50;display:grid;gap:7px;width:min(330px,85vw);padding:14px;background:var(--card-bg,#fff);color:var(--text,#23354c);border:1px solid #d7e2f0;border-radius:15px;box-shadow:0 12px 34px #18345124}
+.physical-count-menu-panel>a{display:grid;gap:4px;padding:9px;border-radius:8px;text-decoration:none;color:inherit;overflow-wrap:anywhere}
+.physical-count-menu-panel>a:hover{background:#edf4ff;color:#2364cd}
+.physical-count-menu-panel small{font-size:11px;color:#718198}
+.physical-count-menu-heading{padding:8px 9px 0;text-transform:uppercase;letter-spacing:.08em}
+.physical-count-menu-panel .physical-count-history{border-top:1px solid #e3eaf4;color:#2364cd;font-weight:650;padding-top:12px}
+[data-theme='dark'] .physical-count-menu-panel{background:#172a3e;color:#e4edfa;border-color:#344a62}
+[data-theme='dark'] .physical-count-menu-panel>a:hover{background:#223c59;color:#9dc4ff}

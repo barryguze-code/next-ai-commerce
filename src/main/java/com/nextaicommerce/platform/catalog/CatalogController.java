@@ -47,6 +47,7 @@ public class CatalogController {
         PageController.addTenantModel(session, model);
         PageController.addAccessModel(authentication, model);
         model.addAttribute("products", catalog.listGlobalProducts());
+        model.addAttribute("globalProductImageIds",catalog.globalProductImageIds());
         return "global-catalog";
     }
 
@@ -185,6 +186,18 @@ public class CatalogController {
             return ResponseEntity.ok(Map.of("id",id.toString(),"code",code.trim().toUpperCase(java.util.Locale.ROOT),"name",name.trim()));
         }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
         catch(Exception e){log.error("Inventory location creation failed",e);return ResponseEntity.internalServerError().body(Map.of("error","The location could not be added. Nothing was changed."));}
+    }
+
+    @PostMapping("/app/catalog/location-options/{id}/change") @ResponseBody
+    ResponseEntity<Map<String,Object>> changeLocationOption(HttpSession session,@PathVariable UUID id,
+            @RequestParam(defaultValue="") String code,@RequestParam(defaultValue="") String name,
+            @RequestParam(defaultValue="false") boolean delete){
+        try{
+            catalog.changeLocation(requiredTenantId(session),id,code,name,delete);
+            return ResponseEntity.ok(Map.of("id",id.toString(),"deleted",delete,"code",code.trim().toUpperCase(java.util.Locale.ROOT),"name",name.trim()));
+        }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
+        catch(org.springframework.dao.DataIntegrityViolationException e){return ResponseEntity.badRequest().body(Map.of("error","The location is now referenced by another record, or its code is already in use. Nothing was changed. Refresh and try again."));}
+        catch(Exception e){log.error("Location change failed id={}",id,e);return ResponseEntity.internalServerError().body(Map.of("error","The location could not be changed. Nothing was changed."));}
     }
 
     @PostMapping("/app/catalog/products/{itemId}/default-location")
@@ -347,6 +360,6 @@ public class CatalogController {
     }
     private static String redirectTo(String value) {
         return "redirect:" + (value != null && (value.equals("/app/catalog") || value.equals("/app/vendors")
-            || value.equals("/app/receiving") || value.matches("/app/receiving/[0-9a-fA-F-]{36}")) ? value : "/app/catalog");
+            || value.equals("/app/inventory") || value.equals("/app/receiving") || value.matches("/app/receiving/[0-9a-fA-F-]{36}")) ? value : "/app/catalog");
     }
 }

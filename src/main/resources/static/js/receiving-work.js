@@ -8,7 +8,7 @@ const number=value=>Number(value||0).toLocaleString(undefined,{maximumFractionDi
 const doc=id=>state.documents.find(d=>d.id===id),line=id=>state.lines.find(l=>l.id===id);
 const label=d=>(d.type==='INVOICE'?'Invoice':'Packing list')+' · '+(d.number||d.filename);
 const progress=d=>d.closed?(d.partial?'Closed · Partial':'Closed · Received'):Number(d.received)===0?'Not received':Number(d.outstanding)>0?'Partially received':'Fully received';
-const time=value=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'—';
+const time=value=>value?new Date(value).toLocaleString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit',hour:'numeric',minute:'2-digit'}):'—';
 const money=(amount,currency)=>currency+' '+Number(amount||0).toFixed(2);
 const message=(text,error=false,panel=false)=>{const el=document.getElementById(panel?'rw-panel-feedback':'rw-feedback');el.textContent=text;el.classList.toggle('error',error);el.hidden=false;};
 let viewSequence=0,busy=false;

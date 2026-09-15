@@ -122,7 +122,7 @@
     document.getElementById('quick-action-location-code').value = button.dataset.locationCode;
     document.getElementById('quick-action-expiration').value = button.dataset.expiration;
     document.getElementById('quick-action-product').textContent = button.dataset.product;
-    document.getElementById('quick-action-date').textContent = 'Expiration ' + button.dataset.expiration
+    document.getElementById('quick-action-date').textContent = 'Expiration ' + formatCalendarDate(button.dataset.expiration)
       + (button.dataset.warningText ? ' · ' + button.dataset.warningText : '');
     document.getElementById('quick-action-clear').hidden = !button.dataset.action;
     document.getElementById('quick-action-clear-copy').textContent = button.dataset.actionLabel
@@ -233,7 +233,7 @@
     document.getElementById('sale-price-item').value = itemId;
     document.getElementById('sale-price-expiration').value = form.elements.expirationDate.value;
     document.getElementById('sale-price-title').textContent = 'Plan a sale · ' + menuContext.product;
-    document.getElementById('sale-price-subtitle').textContent = menuContext.locationCode + ' · expires ' + menuContext.expiration;
+    document.getElementById('sale-price-subtitle').textContent = menuContext.locationCode + ' · expires ' + formatCalendarDate(menuContext.expiration);
     document.getElementById('sale-sku-list').innerHTML = '<div class="operation-loading">Loading related SKUs…</div>';
     document.getElementById('sale-target-fields').replaceChildren();
     document.getElementById('sale-plan-submit').disabled = true;
@@ -282,7 +282,7 @@
     document.getElementById('disposition-item').value = itemId;
     document.getElementById('disposition-expiration').value = form.elements.expirationDate.value;
     document.getElementById('disposition-title').textContent = 'Hold or remove · ' + menuContext.product;
-    document.getElementById('disposition-subtitle').textContent = menuContext.locationCode + ' · expires ' + menuContext.expiration + ' · ' + menuContext.onHand + ' each on hand';
+    document.getElementById('disposition-subtitle').textContent = menuContext.locationCode + ' · expires ' + formatCalendarDate(menuContext.expiration) + ' · ' + menuContext.onHand + ' each on hand';
     dialog.querySelector('input[name="availabilityMode"][value="HOLD"]').checked = true;
     window.updateDispositionMode('HOLD');
     document.getElementById('disposition-sku-list').innerHTML = '<div class="operation-loading">Loading related SKUs…</div>';
@@ -392,7 +392,7 @@
     const dialog = document.getElementById('clear-plan-dialog'); if (!dialog) return;
     document.getElementById('clear-plan-item').value = form.elements.itemId.value;
     document.getElementById('clear-plan-expiration').value = form.elements.expirationDate.value;
-    document.getElementById('clear-plan-title').textContent = menuContext.product + ' · expires ' + menuContext.expiration;
+    document.getElementById('clear-plan-title').textContent = menuContext.product + ' · expires ' + formatCalendarDate(menuContext.expiration);
     document.getElementById('clear-plan-current').textContent = menuContext.actionLabel || 'Current plan';
     window.closeInventoryActionMenu(); dialog.showModal();
   };

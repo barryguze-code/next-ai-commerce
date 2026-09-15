@@ -46,7 +46,7 @@ public class ShippingDeskService {
             throw new IllegalStateException("One or more orders are no longer package-ready. Refresh the shipping desk and review them.");
         if(shippingRepository.addresses(tenantId,connectionId).stream().noneMatch(BuyShippingRepository.Address::isDefault))
             throw new IllegalStateException("Save a default ship-from address from an order before creating a batch.");
-        String name=request.name()==null||request.name().isBlank()?"Shipping batch · "+java.time.format.DateTimeFormatter.ofPattern("MMM d · h:mm a")
+        String name=request.name()==null||request.name().isBlank()?"Shipping batch · "+java.time.format.DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a")
             .withZone(java.time.ZoneId.systemDefault()).format(Instant.now()):request.name();
         if(name.trim().length()>160)throw new IllegalArgumentException("Batch name must be 160 characters or fewer.");
         return desk.createBatch(tenantId,connectionId,name,selected,desk.policy(tenantId,connectionId),actor);

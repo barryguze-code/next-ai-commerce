@@ -82,6 +82,66 @@ class ReceivingWorkflowDatabaseTest {
         });
     }
     void setTenant(){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
+    @Test void adjustmentCreatesTheEnteredExpirationWithoutChangingAnotherBatch(){
+        var f=fixture("INVOICE");receive(f,6);LocalDate entered=expiry.plusDays(29);
+        inventory.adjustInventory(tenant,actor,f.product(),entered,f.location(),new BigDecimal("6"),"COUNT_CORRECTION","New date adjustment");
+        tx.executeWithoutResult(s->{setTenant();
+            for(LocalDate date:List.of(expiry,entered))assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=? AND expiration_date=?",BigDecimal.class,tenant,f.product(),f.location(),date)).isEqualByComparingTo("6");
+        });
+        inventory.adjustInventory(tenant,actor,f.product(),entered,f.location(),new BigDecimal("2"),"COUNT_CORRECTION","Same date adjustment");
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=? AND expiration_date=?",BigDecimal.class,tenant,f.product(),f.location(),entered)).isEqualByComparingTo("8");});
+    }
+    @Test void expirationCorrectionPreservesQuantityAndHistory(){
+        var f=fixture("INVOICE");receive(f,10);
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        UUID connection=mappedOrder(f,4,"Unshipped");tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        LocalDate corrected=expiry.plusDays(5);
+        inventory.changeExpiration(tenant,actor,f.product(),f.location(),expiry,corrected,BigDecimal.TEN,repo);
+        tx.executeWithoutResult(s->{setTenant();
+            assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,f.product())).isEqualByComparingTo("10");
+            assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=?",BigDecimal.class,tenant,f.product(),expiry)).isEqualByComparingTo("0");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND source_type='EXPIRATION_CORRECTION'",Long.class,tenant,f.product())).isEqualTo(2);
+            assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM order_inventory_reservations WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=? AND status='ACTIVE'",BigDecimal.class,tenant,f.product(),corrected)).isEqualByComparingTo("4");
+        });
+        assertThatThrownBy(()->inventory.changeExpiration(tenant,actor,f.product(),f.location(),corrected,expiry,BigDecimal.ONE,repo)).hasMessageContaining("quantity changed");
+        assertThatThrownBy(()->inventory.changeExpiration(UUID.randomUUID(),actor,f.product(),f.location(),corrected,expiry,BigDecimal.TEN,repo)).hasMessageContaining("unavailable");
+        LocalDate existing=corrected.plusDays(5);
+        inventory.adjustInventory(tenant,actor,f.product(),existing,f.location(),new BigDecimal("2"),"COUNT_CORRECTION","Merge target");
+        inventory.changeExpiration(tenant,actor,f.product(),f.location(),corrected,existing,BigDecimal.TEN,repo);
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=?",BigDecimal.class,tenant,f.product(),existing)).isEqualByComparingTo("12");});
+    }
+    @Test void imageSyncWithoutAnEligibleMappingKeepsImagesUnchanged(){
+        var client=org.mockito.Mockito.mock(com.nextaicommerce.platform.sync.AmazonSpApiClient.class);
+        var controller=new com.nextaicommerce.platform.sync.CatalogImageSyncController(jdbc,tx,client,context.getBean(CatalogRepository.class));
+        var session=new org.springframework.mock.web.MockHttpSession();session.setAttribute("selectedTenantId",tenant);
+        var response=controller.sync(fixture("INVOICE").product(),session,org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class));
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody().get("error")).contains("No active Amazon SKU");
+        org.mockito.Mockito.verifyNoInteractions(client);
+        assertThat(controller.globalImage(UUID.randomUUID()).getStatusCode().value()).isEqualTo(404);
+    }
+    @Test void locationsCanOnlyBeChangedWhenUnused(){
+        var catalog=context.getBean(CatalogRepository.class);
+        UUID unused=catalog.addLocation(tenant,"QA-EMPTY","Empty shelf");
+        catalog.changeLocation(tenant,unused,"QA-RENAMED","Renamed shelf",false);
+        assertThat(catalog.listLocations(tenant)).anyMatch(l->l.id().equals(unused)&&l.code().equals("QA-RENAMED"));
+        assertThatThrownBy(()->catalog.changeLocation(UUID.randomUUID(),unused,"OTHER","Other",true))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("this account");
+        UUID duplicate=catalog.addLocation(tenant,"QA-DUPLICATE","Duplicate");
+        assertThatThrownBy(()->catalog.changeLocation(tenant,unused,"QA-DUPLICATE","Other",false)).hasMessageContaining("already exists");
+        assertThatThrownBy(()->catalog.changeLocation(tenant,unused,"bad code","Other",false)).hasMessageContaining("location code");
+        var f=fixture("INVOICE");
+        catalog.setDefaultLocation(tenant,f.product(),unused);
+        assertThatThrownBy(()->catalog.changeLocation(tenant,unused,"QA-NEW","Other",false)).hasMessageContaining("1 catalogue location assignments");
+        assertThatThrownBy(()->catalog.changeLocation(tenant,unused,"","",true)).hasMessageContaining("catalogue location assignments");
+        assertThatThrownBy(()->catalog.changeLocation(tenant,f.location(),"","",true)).hasMessageContaining("MAIN");
+        UUID historical=catalog.addLocation(tenant,"QA-HISTORY","Historical shelf");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,entry_type,quantity,source_type,notes,location_id,idempotency_key,occurred_at) VALUES (?,?,'ADJUSTMENT',1,'MANUAL','Location protection test',?,?,now())",tenant,f.product(),historical,"location-test-"+UUID.randomUUID());});
+        assertThatThrownBy(()->catalog.changeLocation(tenant,historical,"NEW","New",false)).hasMessageContaining("1 inventory ledger records");
+        assertThatThrownBy(()->catalog.changeLocation(tenant,historical,"","",true)).hasMessageContaining("Historical records");
+        catalog.changeLocation(tenant,duplicate,"","",true);
+        assertThat(catalog.listLocations(tenant)).noneMatch(l->l.id().equals(duplicate));
+    }
     Fixture fixture(String type){
         return tx.execute(s->{
             setTenant();UUID product=UUID.randomUUID(),global=UUID.randomUUID(),document=UUID.randomUUID(),sourceLine=UUID.randomUUID(),po=UUID.randomUUID(),line=UUID.randomUUID();
@@ -358,9 +418,59 @@ class ReceivingWorkflowDatabaseTest {
         inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows);
         assertThat(stock(f)).isEqualByComparingTo("6");
         reserve(f,2);
-        assertThatThrownBy(()->inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows,true))
-            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("committed");
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows,true);
+        assertThat(stock(f)).isEqualByComparingTo("2");
+    }
+    UUID mappedOrder(Fixture f,int quantity,String status){
+        UUID connection=UUID.randomUUID(),mapping=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'QA','test-only','ACTIVE','Shelf test','America/Los_Angeles',now()-interval '2 days')",connection,tenant,"shelf-"+connection);
+            jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,last_update_date,order_status,fulfillment_channel,fulfillment_state) VALUES (?,?,'QA','SHELF-ORDER',now()-interval '1 day',now()-interval '1 hour',?,'MFN','INVENTORY_SHORTAGE')",tenant,connection,status);
+            jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,'SHELF-ORDER','SHELF-ITEM','SHELF-SKU',?)",tenant,connection,quantity);
+            jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,account_catalog_item_id,marketplace_sku) VALUES (?,?,?,?,'SHELF-SKU')",mapping,tenant,connection,f.product());
+            jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,1)",tenant,mapping,f.product());
+        });
+        return connection;
+    }
+    @Test void completedOrderGetsOneZeroAuditAndNeverConsumesNewShelfStock(){
+        var f=fixture("INVOICE");receive(f,10);UUID connection=mappedOrder(f,4,"Shipped - Delivered to Buyer");
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        assertThat(stock(f)).isEqualByComparingTo("10");
+        tx.executeWithoutResult(s->{setTenant();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND entry_type='SHIPMENT_UNRECORDED' AND quantity=0",Integer.class,tenant)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT fulfillment_state FROM amazon_orders WHERE tenant_id=? AND marketplace_connection_id=?",String.class,tenant,connection)).isEqualTo("SHIPPED");
+        });
+        assertThat(repo.tabs(tenant,connection).stream().filter(t->t.key().equals("INVENTORY_SHORTAGE")).findFirst().orElseThrow().orders()).isZero();
+    }
+    @Test void packingDeductsOnceCountExcludesPackedAndUndoRestoresRecordedStock(){
+        var f=fixture("INVOICE");receive(f,10);UUID connection=mappedOrder(f,4,"Pending");
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        tx.executeWithoutResult(s->assertThat(repo.setPickupOverride(tenant,connection,"SHELF-ORDER",true,actor)).isTrue());
         assertThat(stock(f)).isEqualByComparingTo("6");
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,List.of(new InventoryRepository.PhysicalCountRow(1,"QA-"+f.product(),new BigDecimal("6"),expiry,"MAIN")));
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        tx.executeWithoutResult(s->repo.setPickupOverride(tenant,connection,"SHELF-ORDER",true,actor));
+        assertThat(stock(f)).isEqualByComparingTo("6");
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT count(*) FROM order_inventory_reservations WHERE tenant_id=? AND status='ACTIVE'",Integer.class,tenant)).isZero();});
+        tx.executeWithoutResult(s->repo.setPickupOverride(tenant,connection,"SHELF-ORDER",false,actor));
+        assertThat(stock(f)).isEqualByComparingTo("10");
+        tx.executeWithoutResult(s->repo.setPickupOverride(tenant,connection,"SHELF-ORDER",true,actor));
+        assertThat(stock(f)).isEqualByComparingTo("6");
+    }
+    @Test void lowerShelfCountRebuildsOpenDemandAndKeepsUnchangedCountEvidence(){
+        var f=fixture("INVOICE");receive(f,10);UUID connection=mappedOrder(f,8,"Unshipped");
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        var rows=List.of(new InventoryRepository.PhysicalCountRow(1,"QA-"+f.product(),new BigDecimal("3"),expiry,"MAIN"));
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows);
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        assertThat(stock(f)).isEqualByComparingTo("3");
+        assertThat(repo.tabs(tenant,connection).stream().filter(t->t.key().equals("INVENTORY_SHORTAGE")).findFirst().orElseThrow().orders()).isEqualTo(1);
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows);
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND source_type='PHYSICAL_COUNT' AND quantity=0",Integer.class,tenant)).isEqualTo(1);});
     }
     @Test void packFeesOverageAndShortageStayConsistent(){
         var f=fixture("INVOICE");

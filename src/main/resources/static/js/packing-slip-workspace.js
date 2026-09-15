@@ -8,7 +8,7 @@ if(new URLSearchParams(location.search).get('sellerCentralBlocked')==='true'){
   }
 }
 document.querySelector('#packing-complete')?.addEventListener('click',async event=>{
-  if(!confirm('Mark as shipped? This updates our platform only.'))return;
+  if(!confirm('Mark as shipped? Packed stock leaves the shelf. This updates our platform only.'))return;
   const button=event.currentTarget,status=document.querySelector('#packing-status'),csrf=document.querySelector('#packing-slip-csrf');button.disabled=true;
   try{
     const headers={'Content-Type':'application/x-www-form-urlencoded'};if(csrf)headers[csrf.dataset.header||'X-CSRF-TOKEN']=csrf.value;

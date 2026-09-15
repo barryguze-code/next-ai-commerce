@@ -104,6 +104,7 @@ class SecurityConfigTest {
                 @Override public List<LocationView> listLocations(UUID tenantId){return List.of();}
                 @Override public List<MarketplaceSkuRef> listMarketplaceSkus(UUID tenantId,List<UUID> ids){return List.of();}
                 @Override public List<GlobalProductView> listGlobalProducts() { return List.of(); }
+                @Override public List<UUID> globalProductImageIds() { return List.of(); }
                 @Override public List<AccountItemView> listAccountItems(UUID tenantId) { return List.of(); }
                 @Override public AccountItemPage pageAccountItems(UUID tenantId,String search,int page,int size) { return new AccountItemPage(List.of(),0,0,size); }
                 @Override public List<VendorView> listVendors(UUID tenantId) { return List.of(); }

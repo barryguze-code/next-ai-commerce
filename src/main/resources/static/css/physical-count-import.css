@@ -1,4 +1,15 @@
 .physical-count-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 20px 0}
+/* One scrollable review body; approval controls never fall below the viewport. */
+#physical-count-review:not(.physical-count-result-dialog){height:calc(100dvh - 32px);max-height:calc(100dvh - 32px)}
+#physical-count-review>form{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100%;min-height:0;overflow:hidden}
+#physical-count-review .physical-count-review-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:16px;scrollbar-gutter:stable}
+#physical-count-review .physical-count-review-body .mapping-card{overflow:visible}
+#physical-count-review .count-shelf-notice{margin:14px 20px 0}
+#physical-count-review .approval-bar{flex-shrink:0;margin:0;padding:14px 20px;border-radius:0;border-width:1px 0 0;gap:12px}
+#physical-count-review .approval-bar .import-actions{display:flex;flex-wrap:wrap;gap:10px;flex-shrink:0}
+#physical-count-review .import-actions :is(a,button){display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:10px 16px;border-radius:10px;font:inherit;font-size:.8125rem;font-weight:650;text-decoration:none;white-space:nowrap;cursor:pointer}
+#physical-count-review .import-actions .secondary-button{border:1px solid var(--line);background:var(--white);color:var(--ink);box-shadow:none}
+@media(max-width:620px){#physical-count-review .approval-bar>div:first-child{display:none}#physical-count-review .approval-bar .import-actions{width:100%}#physical-count-review .approval-bar .import-actions>*{flex:1}#physical-count-review .import-dialog-heading{padding:12px}}
 .physical-count-summary article{display:flex;align-items:center;gap:9px;padding:11px;border:1px solid var(--line);border-radius:10px;background:#f8fafc}
 .physical-count-summary article>span{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:#e8f1ff;color:#2866c3;font-size:0.625rem;font-weight:850}
 .physical-count-summary article div{display:grid;gap:2px}.physical-count-summary strong{font-size:0.625rem}.physical-count-summary small{color:var(--muted);font-size:0.53125rem}

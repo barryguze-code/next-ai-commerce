@@ -6,7 +6,7 @@
   const headers=(json=false)=>{const value={Accept:'application/json'};if(json)value['Content-Type']='application/json';if(csrf)value[csrf.dataset.header||'X-CSRF-TOKEN']=csrf.value;return value;};
   async function request(url,options={}){const response=await fetch(url,{cache:'no-store',...options,headers:{...headers(options.body?.startsWith?.('{')),...options.headers}});const type=response.headers.get('content-type')||'';const data=type.includes('json')?await response.json():await response.text();if(!response.ok)throw new Error(data?.message||'The shipping request could not be completed.');return data;}
   const money=(amount,currency='USD')=>new Intl.NumberFormat(undefined,{style:'currency',currency:currency||'USD'}).format(Number(amount||0));
-  const date=value=>value?new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',year:'numeric'}).format(new Date(value)):'Not supplied';
+  const date=value=>value?new Intl.DateTimeFormat('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'}).format(new Date(value)):'Not supplied';
   function chip(text,className=''){const value=document.createElement('span');value.textContent=text;if(className)value.className=className;return value;}
   function message(text,error=false){const box=$('[data-desk-message]');box.textContent=text;box.classList.toggle('error',error);box.hidden=!text;if(text)setTimeout(()=>{if(box.textContent===text)box.hidden=true;},6000);}
   async function load(){try{workspace=await request('/app/shipping/data');labelThreads=await loadLabelThreads(workspace.labels);render();}catch(error){message(error.message,true);}}

@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class MarketplaceSkuRepository {
-    private static final DateTimeFormatter SYNC_TIME=DateTimeFormatter.ofPattern("MMM d · h:mm a");
+    private static final DateTimeFormatter SYNC_TIME=DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a");
     /** Seller-fulfilled availability is derived locally: the least available mapped component limits a bundle. */
     private static final String LOCAL_MAPPING_AVAILABILITY = """
               LEFT JOIN LATERAL (

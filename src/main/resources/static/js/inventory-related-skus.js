@@ -76,7 +76,7 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
       const rows=await response.json();if(controller.signal.aborted)return;feedback.remove();
       for(const m of rows){
         const article=document.createElement("article");article.className="history-movement "+(Number(m.quantity)>0?"incoming":"outgoing");article.dataset.clarified="true";
-        const batch=m.expirationDate?' · Batch '+escapeHistory(m.expirationDate):' · FIFO batch';
+        const batch=m.expirationDate?' · Batch '+escapeHistory(formatCalendarDate(m.expirationDate)):' · FIFO batch';
         const reference=m.sourceReference&&m.sourceType!=="PHYSICAL_COUNT"?' · '+escapeHistory(m.sourceReference):'';
         article.innerHTML='<span>'+escapeHistory(m.movementLabel)+'</span><div><strong>'+escapeHistory(m.description||m.sourceLabel)+'</strong><small>'+formatHistoryDate(m.occurredAt)+batch+reference+'</small></div><b>'+(Number(m.quantity)>0?'+':'')+Math.round(Number(m.quantity))+' each</b><em>'+(m.currency&&m.unitCost!=null?escapeHistory(m.currency)+' '+Number(m.unitCost).toFixed(2):'Not valued')+'</em>';
         target.append(article);

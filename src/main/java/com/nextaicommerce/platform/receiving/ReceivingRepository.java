@@ -31,7 +31,7 @@ public class ReceivingRepository {
         public String invoiceTotalDisplay(){return displayMoney(invoiceTotal);}
         public String invoiceDateDisplay(){
             if(firstInvoiceDate==null)return "Date unavailable";
-            var formatter=DateTimeFormatter.ofPattern("M/d/yyyy");
+            var formatter=DateTimeFormatter.ofPattern("MM/dd/yy");
             if(lastInvoiceDate==null||firstInvoiceDate.equals(lastInvoiceDate))return firstInvoiceDate.format(formatter);
             return firstInvoiceDate.format(formatter)+" – "+lastInvoiceDate.format(formatter);
         }

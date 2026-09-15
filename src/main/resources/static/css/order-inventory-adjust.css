@@ -1,4 +1,6 @@
 .shortage-inventory-action{appearance:none;font-family:inherit;cursor:pointer}
+.order-inventory-adjust-dialog [hidden]{display:none!important}
+.order-inventory-adjust-dialog{font-family:inherit}
 .order-inventory-adjust-dialog{width:min(780px,calc(100vw - 28px));max-width:none;max-height:calc(100dvh - 36px);padding:0;border:1px solid #d9e3ef;border-radius:22px;background:var(--white);color:var(--ink);box-shadow:0 26px 80px rgba(15,34,55,.28)}
 .order-inventory-adjust-dialog::backdrop{background:rgba(20,36,55,.52);backdrop-filter:blur(2px)}
 .order-inline-adjust-shell{display:flex;max-height:calc(100dvh - 36px);flex-direction:column}
@@ -29,15 +31,15 @@
 .order-inline-adjust-product small{color:#6c7c90;font:650 .59375rem/1.35 ui-monospace,SFMono-Regular,Menlo,monospace}
 .order-inline-pack{flex:0 0 auto;padding:4px 7px;border-radius:999px;background:#e8f7f0;color:#167851;font-size:.53125rem;font-weight:800}
 .order-inline-adjust-fields{display:grid;grid-template-columns:minmax(0,1.2fr) 132px 90px 145px;gap:9px;align-items:end}
-.order-inline-adjust-fields label{display:grid;gap:5px;color:#64758a;font-size:.5625rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
-.order-inline-adjust-fields select,.order-inline-adjust-fields input{width:100%;height:39px;padding:0 10px;border:1px solid #cfdae8;border-radius:9px;background:#fff;color:var(--ink);font:650 .6875rem/1 inherit}
+.order-inline-adjust-fields label{display:grid;gap:7px;color:var(--ink);font-family:inherit;font-size:.75rem;font-weight:600;letter-spacing:normal;text-transform:none}
+.order-inline-adjust-fields select,.order-inline-adjust-fields input{width:100%;height:40px;padding:0 10px;border:1px solid #cfdae8;border-radius:9px;background:#fff;color:var(--ink);font-family:inherit;font-size:.75rem;font-weight:500;line-height:1.4;letter-spacing:normal;text-transform:none}
 .order-inline-adjust-fields input{text-align:center}
 .order-inline-adjust-fields select:focus,.order-inline-adjust-fields input:focus{border-color:#6595dd;box-shadow:0 0 0 3px rgba(45,108,223,.13);outline:0}
 .order-inline-adjust-position-note{display:flex;gap:12px;flex-wrap:wrap;color:#708096;font-size:.59375rem}
 .order-inline-adjust-position-note b{color:#24384f}
 .order-inline-adjust-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .order-inline-adjust-actions small{color:#7a899b;font-size:.5625rem;line-height:1.4}
-.order-inline-adjust-save{min-height:38px;padding:0 14px;border:0;border-radius:10px;background:#2d6cdf;color:#fff;font:800 .6875rem/1 inherit;cursor:pointer;box-shadow:0 5px 14px rgba(45,108,223,.18)}
+.order-inline-adjust-save{min-height:40px;padding:9px 14px;border:0;border-radius:10px;background:#2d6cdf;color:#fff;font-family:inherit;font-size:.75rem;font-weight:650;line-height:1.4;cursor:pointer;box-shadow:0 5px 14px rgba(45,108,223,.18)}
 .order-inline-adjust-save:hover{background:#245fc9}.order-inline-adjust-save:disabled{cursor:wait;opacity:.58}
 .order-inline-adjust-empty{padding:20px;border:1px dashed #d2dce8;border-radius:14px;color:#68798e;font-size:.75rem;text-align:center}
 html[data-theme=dark] .order-inventory-adjust-dialog,html[data-theme=dark] .order-inline-adjust-card{border-color:#35465a;background:#142231}

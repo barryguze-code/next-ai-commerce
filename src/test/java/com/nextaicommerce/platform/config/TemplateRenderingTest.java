@@ -185,7 +185,8 @@ class TemplateRenderingTest {
             Instant.parse("2026-08-26T16:15:00Z"),Instant.parse("2026-08-28T16:15:00Z"))));
         assertThat(templateEngine().process("inventory",inventory)).contains("Available Inventory","Inventory on hand",
             "All inventory","Physical available","Marketplace sellable quantity: 0",
-            "Inventory Ledger","Search product, brand, ASIN, SKU, or UPC","Shelf-life rules","Cannot sell","Act soon",
+            "Inventory Ledger","Search product, brand, ASIN, Item Code, or UPC","Shelf-life rules","Cannot sell","Act soon",
+            "Upload Physical Count","Recent files","Uploaded Files","Storage locations","/app/inventory",
             "5 days left","Action","Inventory actions","Plan sale pricing","Adjust inventory",
             "Plan physical removal","Marketplace publishing remains paused",
             "Receive an item not on the invoice",
@@ -199,7 +200,8 @@ class TemplateRenderingTest {
         countReview.setVariable("vendors",List.of(vendor));
         assertThat(templateEngine().process("physical-count-import",countReview)).contains(
             "Review detected columns","warehouse-count.xlsx","Item code, UPC, or SKU","Counted quantity",
-            "authoritative count","Validate and apply","never Amazon")
+            "authoritative count","Validate and apply","never Amazon","physical-count-review-body",
+            "Items absent from the file stay unchanged.","Open-order reservations are recalculated")
             .doesNotContain("Uploaded sample","physical-count-preview");
 
         countReview.setVariable("physicalCountError","Row 12 code “2409060” does not match an active catalogue product.");

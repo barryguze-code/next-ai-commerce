@@ -21,7 +21,7 @@ class PackingSlipTemplateTest {
         assertThat(slip.pages()).hasSize(2).allSatisfy(page->assertThat(page).hasSizeLessThanOrEqualTo(2));
         var html=engine.process("packing-slip",new Context(null,java.util.Map.of("slip",slip)));
         assertThat(html)
-            .contains("Ski Queen","UPS OMBox","53383","12345","67890","Cheese Gjetost","Second product","Third product","2027-06-17","MAIN","Seller Central","Save package","Print 2 × 1 slip")
+            .contains("Ski Queen","UPS OMBox","53383","12345","67890","Cheese Gjetost","Second product","Third product","06/17/27","MAIN","Seller Central","Save package","Print 2 × 1 slip")
             .doesNotContain("IB-MKH-53383-GJETOST-SKIQUEEN-EA","No historical package match","Order 113-1234567-1234567","Internal packing only");
         assertThat(html.substring(html.indexOf("<section class=\"packing-labels\"")))
             .doesNotContain("Seller Central", "<footer", "<a ");

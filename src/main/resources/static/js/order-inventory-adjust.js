@@ -1,10 +1,15 @@
+function orderAdjustmentPayload(position,values){
+  const data=new URLSearchParams({itemId:position.itemId,locationId:position.locationId,quantityChange:values.quantityChange,reason:values.reason});
+  if(values.expirationDate)data.set('expirationDate',values.expirationDate);
+  return data;
+}
 (()=>{
   const dialog=()=>document.getElementById('order-inventory-adjust-dialog');
   const list=()=>document.querySelector('[data-inline-adjust-list]');
   const feedback=()=>document.querySelector('[data-inline-adjust-feedback]');
   const escape=value=>{const node=document.createElement('span');node.textContent=value??'';return node.innerHTML};
   const positionLabel=position=>[position.locationCode+' · '+position.locationName,
-    position.expirationDate?'expires '+position.expirationDate:'FIFO'].join(' · ');
+    position.expirationDate?'expires '+formatCalendarDate(position.expirationDate):'FIFO'].join(' · ');
   const positionOption=position=>JSON.stringify({itemId:position.itemId,locationId:position.locationId,
     expirationDate:position.expirationDate||'',onHand:position.onHand,reserved:position.reserved,available:position.available});
   const showPosition=(card,position)=>{
@@ -12,7 +17,7 @@
     card.querySelector('[data-reserved]').textContent=position.reserved+' reserved';
     card.querySelector('[data-available]').textContent=position.available+' available';
     const expirationField=card.querySelector('[data-expiration-field]'),expirationInput=card.elements.expirationDate;
-    expirationField.hidden=Boolean(position.expirationDate);expirationInput.required=!position.expirationDate;
+    expirationField.hidden=false;expirationInput.required=Boolean(position.expirationDate);
     expirationInput.value=position.expirationDate||'';
   };
   const cardFor=(component,positions)=>{
@@ -28,14 +33,21 @@
     if(positions.length){positions.forEach(position=>select.add(new Option(positionLabel(position),positionOption(position))));showPosition(card,positions[0])}
     else{select.add(new Option('No inventory position found',''));select.disabled=true;card.elements.quantityChange.disabled=true;card.querySelector('button').disabled=true}
     select.addEventListener('change',()=>{if(select.value)showPosition(card,JSON.parse(select.value))});
+    card.elements.expirationDate.addEventListener('input',()=>{
+      if(!select.value)return;
+      const selected=JSON.parse(select.value),date=card.elements.expirationDate.value;
+      const target=positions.find(p=>p.locationId===selected.locationId&&(p.expirationDate||'')===date);
+      card.querySelector('[data-on-hand]').textContent=(target?.onHand||'0')+' each on hand at entered date';
+      card.querySelector('[data-reserved]').textContent=(target?.reserved||'0')+' reserved';
+      card.querySelector('[data-available]').textContent=(target?.available||'0')+' available';
+    });
     card.addEventListener('submit',saveAdjustment);
     return card;
   };
   const saveAdjustment=async event=>{
     event.preventDefault();const form=event.currentTarget,position=JSON.parse(form.elements.position.value),button=form.querySelector('button');
-    const data=new URLSearchParams({itemId:position.itemId,locationId:position.locationId,
-      quantityChange:form.elements.quantityChange.value,reason:form.elements.reason.value});
-    const expirationDate=position.expirationDate||form.elements.expirationDate.value;if(expirationDate)data.set('expirationDate',expirationDate);
+    const data=orderAdjustmentPayload(position,{quantityChange:form.elements.quantityChange.value,
+      reason:form.elements.reason.value,expirationDate:form.elements.expirationDate.value});
     const csrf=document.getElementById('buy-shipping-csrf'),headers={Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'};
     if(csrf?.dataset.header)headers[csrf.dataset.header]=csrf.value;
     button.disabled=true;feedback().hidden=true;

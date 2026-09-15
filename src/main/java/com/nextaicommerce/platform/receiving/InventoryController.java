@@ -43,6 +43,17 @@ public class InventoryController {
             ObjectProvider<PhysicalCountWorker> physicalCountWorker,ObjectProvider<PhysicalCountProgress> physicalCountProgress,ObjectProvider<CollaborationRepository> collaboration,
             ObjectProvider<OrderRepository> orders){this.inventory=inventory;this.physicalCounts=physicalCounts;this.catalog=catalog;this.physicalCountWorker=physicalCountWorker;this.physicalCountProgress=physicalCountProgress;this.collaboration=collaboration;this.orders=orders;}
     public record OutOfStockMatch(String id,String name,String brand,String accountSku,String vendorItemCode,String identifier,boolean expirationRequired){}
+    @PostMapping("/app/inventory/expiration")
+    String changeExpiration(HttpSession session,Authentication auth,@RequestParam UUID itemId,@RequestParam UUID locationId,
+            @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate oldDate,
+            @RequestParam @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate newDate,
+            @RequestParam BigDecimal expectedQuantity,RedirectAttributes redirect){
+        try{inventory.changeExpiration(tenant(session),auth.getName(),itemId,locationId,oldDate,newDate,expectedQuantity,orders.getObject());
+            redirect.addFlashAttribute("inventorySuccess","Expiration corrected. Shelf quantity is unchanged and open-order reservations were recalculated.");
+        }catch(IllegalArgumentException e){redirect.addFlashAttribute("inventoryError",e.getMessage());}
+        catch(Exception e){log.error("Expiration correction failed",e);redirect.addFlashAttribute("inventoryError","The expiration could not be changed. Nothing was saved.");}
+        return "redirect:/app/inventory";
+    }
     public record InlineInventoryPosition(UUID itemId,String productName,String accountSku,String vendorItemCode,
             UUID locationId,String locationCode,String locationName,LocalDate expirationDate,String onHand,String reserved,
             String available,String imageUrl){}
@@ -55,6 +66,8 @@ public class InventoryController {
         var collaborationRepository=collaboration.getIfAvailable();
         model.addAttribute("openReviewsByPosition", collaborationRepository==null?Map.of():collaborationRepository.openSubjectSummaries(tenantId,"INVENTORY",rows.stream().map(row->row.itemId()+"|"+(row.expirationDate()==null?"":row.expirationDate())).toList(),auth.getName()));
         var catalogRepository=catalog.getIfAvailable();
+        var countService=physicalCounts.getIfAvailable();
+        model.addAttribute("recentPhysicalCounts",countService==null?List.of():countService.history(tenantId).stream().limit(3).toList());
         try { model.addAttribute("vendors",catalogRepository==null?List.of():catalogRepository.listVendorChoices(tenantId));
             model.addAttribute("locations",catalogRepository==null?List.of():catalogRepository.listLocations(tenantId)); }
         catch(Exception ignored) { model.addAttribute("vendors",List.of());model.addAttribute("locations",List.of()); }

@@ -8,7 +8,7 @@
   let activeRow,batchRows=[],itemRows=[];
   const units=value=>Number(value||0).toLocaleString(undefined,{maximumFractionDigits:2});
   const total=rows=>rows.reduce((sum,row)=>sum+Number(row.reservedEaches||0),0);
-  const expiration=value=>value?'Inventory expires '+new Intl.DateTimeFormat(undefined,{dateStyle:'medium'}).format(new Date(value+'T00:00:00')):'No expiration date';
+  const expiration=value=>value?'Inventory expires '+new Intl.DateTimeFormat('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'}).format(new Date(value+'T00:00:00')):'No expiration date';
   function draw(rows){
     const target=document.getElementById('reservation-orders');
     target.innerHTML=rows.length?rows.map(row=>{
@@ -24,7 +24,7 @@
   }
   window.openInventoryReservations=async row=>{
     activeRow=row;document.getElementById('reservation-title').textContent=row.dataset.product;
-    document.getElementById('reservation-context').textContent=row.dataset.locationCode+(row.dataset.expiration?' · Expires '+row.dataset.expiration:' · FIFO inventory');
+    document.getElementById('reservation-context').textContent=row.dataset.locationCode+(row.dataset.expiration?' · Expires '+formatCalendarDate(row.dataset.expiration):' · FIFO inventory');
     document.getElementById('reservation-available').textContent=units(row.dataset.available)+' each';
     dialog.querySelectorAll('.reservation-scope button').forEach(button=>button.classList.toggle('active',button.dataset.scope==='batch'));
     document.getElementById('reservation-orders').innerHTML='<p>Loading reserved orders…</p>';dialog.showModal();
