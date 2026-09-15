@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.2.3",
+    "title": "Movement history for sold-out items",
+    "sections": [{"title":"Inventory hotfix","items":["Open the same sliding inventory detail by clicking a sold-out catalogue item’s title in Available Inventory, and review its complete movement history even when no current stock batch remains."]}]
+  },
+  {
     "version": "1.2.2",
     "title": "Faster catalogue inventory actions",
     "sections": [

@@ -54,3 +54,23 @@ test('manual receiving uses catalogue search and requires an explanation',async(
     await page.getByText('Received',{exact:true}).waitFor();assert.equal(submitted.get('quantity'),'24');assert.equal(submitted.get('notes'),'Unexpected delivery');
   }finally{await browser.close()}
 });
+
+test('zero-stock catalogue result opens item movement history from its title',async()=>{
+  const browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})});
+  try{
+    const page=await browser.newPage();
+    await page.route('**/*',async route=>{
+      const url=new URL(route.request().url());
+      if(url.pathname==='/app/catalog/product-search')return route.fulfill({json:[{id:'item-a',name:'Cheese Farmer',vendorItemCode:'789826'}]});
+      return route.fulfill({contentType:'text/html',body:fragment+'<input id="inventory-search"><table class="available-inventory-table"><thead><tr>'+Array(8).fill('<th></th>').join('')+'</tr></thead><tbody></tbody></table>'});
+    });
+    await page.goto('http://stock.test/');
+    await page.addScriptTag({path:path.join(root,'static/js/stock-editor.js')});
+    await page.evaluate(()=>{window.openInventoryHistory=row=>window.__openedItem=row.dataset.item});
+    await page.addScriptTag({path:path.join(root,'static/js/stock-entry-points.js')});
+    await page.locator('#inventory-search').fill('789826');
+    const title=page.getByRole('button',{name:'Open inventory details for Cheese Farmer'});
+    await title.click();
+    assert.equal(await page.evaluate(()=>window.__openedItem),'item-a');
+  }finally{await browser.close()}
+});

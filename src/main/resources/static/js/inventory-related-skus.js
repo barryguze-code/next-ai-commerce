@@ -59,6 +59,11 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
   openInventoryHistory=async function(row,focusLocation=false){
     currentRow=row;
     const opened=originalOpen(row,focusLocation);
+    const hasCurrentPosition=Boolean(row.dataset.location);
+    const batchButton=scope.querySelector('[data-history-scope="batch"]');
+    batchButton.disabled=!hasCurrentPosition;
+    batchButton.title=hasCurrentPosition?'Show movements for this location and expiration batch':'No current inventory batch; showing all item movements';
+    if(!hasCurrentPosition)document.getElementById('history-subtitle').textContent=(row.dataset.sku||'No catalogue code')+' · No inventory currently on hand';
     const source=row.querySelector('.product-image-upload');
     let upload=document.getElementById('history-image-upload');
     if(!upload&&source){
