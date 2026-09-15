@@ -21,6 +21,7 @@
     const url=new URL(location.href);
     const load=async()=>{const response=await fetch(url.href,{cache:'no-store',headers:{'X-Order-Stream':'refresh'}});if(!response.ok)throw new Error('refresh');const stream=new DOMParser().parseFromString(await response.text(),'text/html').querySelector('[data-order-stream]');if(!stream)throw new Error('refresh');return stream;};
     let incoming=await load();
+    if(clearEmpty&&incoming.querySelector('.table-empty'))window.NextAiTableDataTools?.resetFilters('orders');
     // Only completion-triggered refreshes clear an exhausted search, never normal browsing.
     if(clearEmpty&&incoming.querySelector('.table-empty')&&(url.searchParams.has('q')||url.searchParams.has('page'))){
       url.searchParams.delete('q');url.searchParams.delete('page');
