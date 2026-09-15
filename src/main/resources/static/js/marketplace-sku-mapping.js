@@ -65,6 +65,7 @@
           const option = document.createElement('button');
           option.type = 'button';
           option.innerHTML = '<strong></strong><small></small>';
+          if(product.imageUrl){const image=document.createElement('img');image.className='catalog-search-picture';image.src=product.imageUrl;image.alt='';image.loading='lazy';image.onerror=()=>image.hidden=true;option.prepend(image);}
           option.querySelector('strong').textContent = product.name;
           option.querySelector('small').textContent = [product.brand, product.vendorItemCode, product.identifier]
             .filter(Boolean).join(' · ');

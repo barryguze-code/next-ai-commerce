@@ -1,0 +1,26 @@
+#stock-editor{width:min(620px,calc(100vw - 32px));max-height:90dvh;padding:0}
+#stock-editor .dialog-shell{max-height:90dvh;display:flex;flex-direction:column}
+#stock-editor .dialog-body{overflow-y:auto;min-height:0}
+#stock-editor .dialog-header,#stock-editor .dialog-actions{flex-shrink:0}
+.stock-editor-body fieldset{border:0;padding:0;margin:0;display:grid;gap:16px;min-width:0}
+.stock-editor-body label{display:grid;gap:8px;font:inherit;font-weight:600}
+.stock-editor-body input,.stock-editor-body select{font:inherit;width:100%;min-height:44px;box-sizing:border-box}
+.stock-editor-body small,.stock-editor-body p{font-weight:400;color:var(--muted,#6b7c93)}
+.stock-editor-body [hidden]{display:none!important}
+[data-stock-picture]{width:64px;height:64px;object-fit:contain}
+.stock-product-results button{width:100%;text-align:left;display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border,#dce4ed);background:var(--surface,#fff);color:inherit;font:inherit;border-radius:10px;cursor:pointer}
+.stock-product-results img,.catalog-search-picture{width:40px;height:40px;object-fit:contain;float:left;margin-right:10px}
+.stock-product-results small{display:block}
+[data-stock-feedback].error{color:#b52d37}
+.stock-zero-result{padding:16px;display:flex;align-items:center;gap:16px;border-top:1px solid var(--border,#dce4ed)}
+.stock-zero-result img{width:48px;height:48px;object-fit:contain}
+.stock-zero-result small{display:block;color:var(--muted,#6b7c93)}
+.stock-zero-result details{margin-left:auto;position:relative}
+.stock-zero-result summary{cursor:pointer;list-style:none}
+.stock-zero-result details button{margin-top:8px}
+.stock-action-popover{position:fixed;inset:auto;margin:0;padding:12px;border:1px solid var(--line,#dce4ed);border-radius:14px;background:var(--surface,#fff);box-shadow:0 12px 30px #13283a26}
+.history-image-upload-form{position:absolute;inset:0;margin:0}
+.history-image-upload-form button{position:absolute;right:2px;bottom:2px;border:0;background:transparent;color:var(--brand,#2c6be3);font-size:23px;padding:5px;cursor:pointer;opacity:0}
+.position-picture:hover .history-image-upload-form button,.position-picture:focus-within .history-image-upload-form button{opacity:1}
+.position-picture{position:relative}
+@media(hover:none){.history-image-upload-form button{opacity:1}}

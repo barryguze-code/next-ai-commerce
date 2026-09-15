@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.2.2",
+    "title": "Faster catalogue inventory actions",
+    "sections": [
+      {"title":"Inventory hotfix","items":["Adjust inventory from Marketplace SKUs, Account Catalogue, and Available Inventory using one expiration-aware, location-aware action.","Search Available Inventory for catalogue items with no stock and add their first inventory position without leaving the page.","Receive any catalogue item from Invoices & packing lists with a required explanation and a permanent zero-cost receipt in the inventory ledger."]},
+      {"title":"Pictures and speed","items":["Upload or change an item picture from its inventory details using a small picture-overlay action.","Catalogue and mapping pickers show product pictures and use focused item queries that remain fast with large catalogues."]}
+    ]
+  },
+  {
     "version": "1.2.1",
     "title": "Receiving closure and inventory pictures",
     "sections": [{"title":"Inventory hotfix","items":["Close receiving documents containing historical undated receipts that are already recorded in inventory. New stock still requires an expiration date when applicable.","Upload or change a product picture directly from Available Inventory details. Pictures are saved to your Account Catalogue."]}]

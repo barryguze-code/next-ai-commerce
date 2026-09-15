@@ -111,5 +111,7 @@ function prefillVendorDefaults(select){const option=select.options[select.select
 function showSelectedFiles(input){const summary=input.parentElement.querySelector('.selected-file-summary');const count=input.files.length;summary.textContent=count===0?'Choose at least one document.':count===1?input.files[0].name:count+' documents selected · one receiving workspace'}
 </script>
 <script th:if="${vendorCreated}">window.addEventListener('DOMContentLoaded',()=>document.getElementById('session-dialog').showModal())</script>
+<div th:replace="~{fragments/stock-editor :: editor}"></div>
+<script src="/js/stock-entry-points.js?v=1.2.2"></script>
 </body>
 </html>

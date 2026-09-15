@@ -425,5 +425,7 @@
 <script>function openCost(button){document.getElementById('cost-item-id').value=button.dataset.itemId;document.getElementById('cost-product-name').textContent=button.dataset.itemName;document.getElementById('cost-dialog').showModal();}</script>
 <script th:if="${openPanel == 'locations'}">window.addEventListener('DOMContentLoaded',()=>document.getElementById('location-dialog')?.showModal())</script>
 <script>if(new URLSearchParams(location.search).get('addProduct')==='true'){const productDialog=document.getElementById('product-dialog');if(productDialog){productDialog.showModal();productDialog.querySelector('[name=name]')?.focus();}}</script>
+<div th:replace="~{fragments/stock-editor :: editor}"></div>
+<script src="/js/stock-entry-points.js?v=1.2.2"></script>
 </body>
 </html>

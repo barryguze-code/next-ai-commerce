@@ -37,6 +37,13 @@ class InventoryControllerSafetyTest {
     }
 
     @Test
+    void manualReceiptRequiresExplanationBeforeWriting(){
+        var response=controller.inlineReceipt(authentication,session,UUID.randomUUID(),BigDecimal.ONE,UUID.randomUUID(),LocalDate.now()," ");
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        verify(inventory,never()).receiveUninvoicedItem(any(),anyString(),any(),any(),any(),any(),any());
+    }
+
+    @Test
     void holdIsSavedLocallyWithoutQueuingAnAmazonQuantityChange(){
         var redirect=new RedirectAttributesModelMap();
         controller.action(authentication,session,UUID.randomUUID(),LocalDate.of(2026,9,15),

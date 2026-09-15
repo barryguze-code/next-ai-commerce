@@ -82,6 +82,26 @@ class ReceivingWorkflowDatabaseTest {
         });
     }
     void setTenant(){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
+    @Test void emptyStockItemsCanBeAdjustedAndOptionsAreTenantScoped(){
+        var f=fixture("INVOICE");
+        var options=inventory.adjustmentItems(tenant,List.of(f.product()));
+        assertThat(options).hasSize(1);assertThat(options.getFirst().expirationRequired()).isTrue();
+        assertThat(inventory.adjustmentItems(UUID.randomUUID(),List.of(f.product()))).isEmpty();
+        assertThatThrownBy(()->inventory.adjustInventory(tenant,actor,f.product(),null,f.location(),BigDecimal.ONE,"COUNT_CORRECTION","Found stock"))
+            .hasMessageContaining("expiration");
+        inventory.adjustInventory(tenant,actor,f.product(),expiry,f.location(),new BigDecimal("24"),"COUNT_CORRECTION","Found stock");
+        assertThat(stock(f)).isEqualByComparingTo("24");
+        assertThat(inventory.inventory(tenant,List.of(f.product()))).hasSize(1);
+        assertThat(inventory.inventory(tenant,List.of(UUID.randomUUID()))).isEmpty();
+        assertThat(inventory.inventory(tenant)).hasSize(1);
+    }
+    @Test void manualReceiptRecordsItemDateLocationAndExplanation(){
+        var f=fixture("INVOICE");
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),new BigDecimal("5"),expiry,f.location(),"Received extra delivery without invoice");
+        assertThat(stock(f)).isEqualByComparingTo("5");
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT notes FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",String.class,tenant,f.product())).contains("extra delivery");});
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().received()).isEqualByComparingTo("0");
+    }
     @Test void adjustmentCreatesTheEnteredExpirationWithoutChangingAnotherBatch(){
         var f=fixture("INVOICE");receive(f,6);LocalDate entered=expiry.plusDays(29);
         inventory.adjustInventory(tenant,actor,f.product(),entered,f.location(),new BigDecimal("6"),"COUNT_CORRECTION","New date adjustment");
@@ -367,6 +387,10 @@ class ReceivingWorkflowDatabaseTest {
         assertThat(all.page().total()).isEqualTo(20000);assertThat(all.page().rows()).hasSize(25);
         assertThat(search.page().total()).isEqualTo(80);assertThat(search.page().rows()).hasSize(25);
         assertThat(firstMs).isLessThan(1000);assertThat(searchMs).isLessThan(1000);
+        var catalog=context.getBean(CatalogRepository.class);
+        start=System.nanoTime();var picker=catalog.searchAccountItems(tenant,"Egglife",20);catalog.pickerImages(tenant,picker.stream().map(CatalogRepository.AccountItemView::id).toList());long pickerMs=(System.nanoTime()-start)/1_000_000;
+        System.out.printf("CATALOGUE_PICKER_BENCHMARK products=20000 search_ms=%d%n",pickerMs);
+        assertThat(picker).hasSize(20);assertThat(pickerMs).isLessThan(1000);
     }
     @Test void closeAllowsAlreadyPostedHistoricalUndatedReceiptWithoutAddingStock(){
         var f=fixture("INVOICE");receive(f,3);

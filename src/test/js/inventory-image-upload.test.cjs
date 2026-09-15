@@ -7,7 +7,7 @@ test('inventory details expose an item-scoped image picker and preserve CSRF',as
   try{
     const page=await browser.newPage();
     await page.setContent(`<div class="history-summary"></div><div class="position-section-title"></div>
-      <dialog id="inventory-history-dialog"><p id="history-subtitle"></p></dialog>
+      <dialog id="inventory-history-dialog"><div id="history-picture" class="position-picture"></div><p id="history-subtitle"></p></dialog>
       <div class="inventory-row" data-item="first" data-available="3"><form class="product-image-upload" method="post" action="/app/catalog/products/first/image" enctype="multipart/form-data">
       <input type="hidden" name="_csrf" value="test-csrf"><input name="returnTo" value="/app/inventory" type="hidden">
       <label><span>Picture</span><input type="file" name="image" accept="image/png,image/jpeg,image/webp" onchange="this.form.requestSubmit()"></label></form></div>

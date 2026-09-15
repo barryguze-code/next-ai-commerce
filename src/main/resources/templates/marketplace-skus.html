@@ -154,5 +154,7 @@
 </dialog>
 <template id="mapping-product-template"><div class="mapping-product-line"><label><span>Account catalogue product</span><input type="search" placeholder="Search product, UPC, or vendor item code" autocomplete="off" oninput="searchMappingProduct(this)" required><input type="hidden" name="productId" value=""><div class="sku-product-results"></div></label><label class="mapping-quantity"><span>Quantity</span><input type="number" name="quantity" min="1" max="10000" step="1" value="1" required></label><button class="mapping-remove-line" type="button" title="Remove product" aria-label="Remove product" onclick="removeMappingLine(this)">−</button></div></template>
 <script src="/js/marketplace-sku-mapping.js?v=20260910-1"></script>
+<div th:replace="~{fragments/stock-editor :: editor}"></div>
+<script src="/js/stock-entry-points.js?v=1.2.2"></script>
 </body>
 </html>

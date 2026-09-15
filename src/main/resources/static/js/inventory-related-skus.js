@@ -58,11 +58,12 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
   const originalOpen=openInventoryHistory;
   openInventoryHistory=async function(row,focusLocation=false){
     currentRow=row;
+    const opened=originalOpen(row,focusLocation);
     const source=row.querySelector('.product-image-upload');
     let upload=document.getElementById('history-image-upload');
     if(!upload&&source){
       upload=document.createElement('div');upload.id='history-image-upload';
-      document.getElementById('history-subtitle').after(upload);
+      document.getElementById('history-picture').append(upload);
     }
     if(upload){
       upload.replaceChildren();upload.hidden=!source;
@@ -70,17 +71,18 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
         const form=source.cloneNode(true);form.className='history-image-upload-form';form.removeAttribute('onclick');
         const input=form.querySelector('input[type="file"]');
         const label=form.querySelector('label');label.replaceChildren();
-        const button=document.createElement('button');button.type='button';button.className='secondary-button compact-button';
-        button.textContent=row.dataset.image?'Change picture':'Upload picture';
+        const button=document.createElement('button');button.type='button';
+        button.textContent=row.dataset.image?'✎':'+';
+        button.setAttribute('aria-label',row.dataset.image?'Change picture':'Upload picture');
+        button.title=row.dataset.image?'Change picture':'Upload picture';
         button.onclick=()=>input.click();
         input.setAttribute('aria-label','Choose product picture');
         label.append(input);form.append(button);
-        const help=document.createElement('small');help.textContent='PNG, JPEG or WebP · up to 4 MB · saved to Account Catalogue';
-        upload.append(form,help);
+        upload.append(form);
       }
     }
     document.getElementById("history-total-available").textContent=[...document.querySelectorAll('.inventory-row')].filter(x=>x.dataset.item===row.dataset.item).reduce((sum,x)=>sum+(Number(x.dataset.available)||0),0).toLocaleString()+" each";
-    return originalOpen(row,focusLocation);
+    return opened;
   };
   window.loadInventoryMovements=async function(row,mode="item",page=0){
     request?.abort();request=new AbortController();const controller=request;

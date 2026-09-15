@@ -109,9 +109,11 @@ public class MarketplaceSkuController {
     @ResponseBody
     List<CatalogProductOption> productSearch(@RequestParam(defaultValue="") String q,HttpSession session){
         UUID tenantId=requiredTenant(session);
-        return catalog.searchAccountItems(tenantId,q,20).stream()
+        var items=catalog.searchAccountItems(tenantId,q,20);
+        var images=catalog.pickerImages(tenantId,items.stream().map(CatalogRepository.AccountItemView::id).toList());
+        return items.stream()
             .map(item->new CatalogProductOption(item.id(),item.name(),item.brand(),item.vendorItemCode(),
-                item.identifier(),item.accountSku(),item.imageUrl(),item.expirationRequired()))
+                item.identifier(),item.accountSku(),images.get(item.id()),item.expirationRequired()))
             .toList();
     }
 

@@ -3,6 +3,7 @@ package com.nextaicommerce.platform.catalog;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -348,10 +349,12 @@ public class CatalogRepository {
                 OR EXISTS (SELECT 1 FROM global_product_identifiers search_identifier
                     WHERE search_identifier.global_product_id=product.id
                       AND search_identifier.identifier_value ILIKE ?)
-                OR EXISTS (SELECT 1 FROM marketplace_sku_mappings mapping
-                    WHERE mapping.tenant_id=item.tenant_id AND mapping.status='ACTIVE'
-                      AND (mapping.account_catalog_item_id=item.id OR EXISTS (SELECT 1 FROM marketplace_sku_mapping_components component
-                        WHERE component.tenant_id=item.tenant_id AND component.marketplace_sku_mapping_id=mapping.id AND component.account_catalog_item_id=item.id))
+                OR item.id IN (
+                    SELECT coalesce(component.account_catalog_item_id,mapping.account_catalog_item_id)
+                    FROM marketplace_sku_mappings mapping
+                    LEFT JOIN marketplace_sku_mapping_components component ON component.tenant_id=mapping.tenant_id
+                      AND component.marketplace_sku_mapping_id=mapping.id
+                    WHERE mapping.tenant_id=? AND mapping.status='ACTIVE'
                       AND coalesce(mapping.asin,'') ILIKE ?))
             ORDER BY CASE
                 WHEN lower(coalesce(item.account_sku,''))=lower(?) THEN 0
@@ -367,7 +370,35 @@ public class CatalogRepository {
                 rs.getInt("vendor_count"),rs.getBigDecimal("buying_cost"),rs.getString("currency"),
                 rs.getBoolean("requires_expiration_date"),rs.getString("status"),rs.getString("completion_status"),
                 rs.getObject("location_id",UUID.class),rs.getString("location_code"),rs.getString("location_name"),rs.getString("image_url")),
-            tenantId,pattern,pattern,pattern,pattern,pattern,pattern,query,query,query,query,size);
+            tenantId,pattern,pattern,pattern,pattern,pattern,tenantId,pattern,query,query,query,query,size);
+    }
+
+    /** Only fetch imagery for the small visible picker result, never for the entire catalogue. */
+    @Transactional(readOnly=true)
+    public Map<UUID,String> pickerImages(UUID tenantId,List<UUID> ids){
+        setTenant(tenantId);if(ids.isEmpty())return Map.of();
+        var args=new java.util.ArrayList<Object>();args.add(tenantId);args.addAll(ids);
+        Map<UUID,String> images=new java.util.HashMap<>();
+        jdbc.query("""
+            SELECT item.id,CASE WHEN uploaded.account_catalog_item_id IS NOT NULL
+              THEN '/app/catalog/products/'||item.id||'/image' ELSE image.image_url END image_url
+            FROM account_catalog_items item
+            LEFT JOIN account_catalog_product_images uploaded ON uploaded.tenant_id=item.tenant_id AND uploaded.account_catalog_item_id=item.id
+            LEFT JOIN LATERAL (
+              SELECT listing.image_url FROM marketplace_sku_mappings mapping
+              JOIN marketplace_sku_mapping_components component ON component.tenant_id=mapping.tenant_id AND component.marketplace_sku_mapping_id=mapping.id
+              JOIN amazon_listings listing ON listing.tenant_id=mapping.tenant_id AND listing.marketplace_connection_id=mapping.marketplace_connection_id
+                AND upper(listing.seller_sku)=upper(mapping.marketplace_sku)
+              WHERE mapping.tenant_id=item.tenant_id AND mapping.status='ACTIVE' AND component.account_catalog_item_id=item.id
+                AND listing.image_url IS NOT NULL AND (SELECT count(*) FROM marketplace_sku_mapping_components all_components
+                  WHERE all_components.tenant_id=mapping.tenant_id AND all_components.marketplace_sku_mapping_id=mapping.id)=1
+              ORDER BY listing.last_seen_at DESC LIMIT 1
+            ) image ON true
+            WHERE item.tenant_id=? AND item.id IN (%s)
+            """.formatted(String.join(",",java.util.Collections.nCopies(ids.size(),"?"))),rs->{
+                if(rs.getString("image_url")!=null)images.put(rs.getObject("id",UUID.class),rs.getString("image_url"));
+            },args.toArray());
+        return images;
     }
 
     @Transactional(readOnly = true)

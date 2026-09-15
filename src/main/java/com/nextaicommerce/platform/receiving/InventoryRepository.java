@@ -180,8 +180,34 @@ public class InventoryRepository {
         public long firstItem(){return total==0?0:(long)page*pageSize+1;}
         public long lastItem(){return Math.min(total,(long)(page+1)*pageSize);}
     }
+    public record AdjustmentItem(UUID id,String name,String itemCode,boolean expirationRequired,UUID defaultLocationId,String imageUrl){}
     @Transactional(readOnly=true)
-    public List<InventoryView> inventory(UUID tenantId){
+    public List<AdjustmentItem> adjustmentItems(UUID tenantId,List<UUID> ids){
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        if(ids.isEmpty()||ids.size()>20)throw new IllegalArgumentException("Choose between one and twenty catalogue items.");
+        var args=new java.util.ArrayList<Object>();args.add(tenantId);args.addAll(ids);
+        return jdbc.query("""
+            SELECT item.id,coalesce(item.display_name,product.canonical_name) name,item.account_sku,
+                   product.requires_expiration_date,assignment.location_id,
+                   CASE WHEN EXISTS(SELECT 1 FROM account_catalog_product_images image
+                       WHERE image.tenant_id=item.tenant_id AND image.account_catalog_item_id=item.id)
+                     THEN '/app/catalog/products/'||item.id||'/image' END image_url
+            FROM account_catalog_items item JOIN global_catalog_products product ON product.id=item.global_product_id
+            LEFT JOIN account_catalog_item_locations assignment ON assignment.tenant_id=item.tenant_id
+                AND assignment.account_catalog_item_id=item.id AND assignment.is_default
+            WHERE item.tenant_id=? AND item.status='ACTIVE' AND item.id IN (%s)
+            ORDER BY name,item.id
+            """.formatted(String.join(",",java.util.Collections.nCopies(ids.size(),"?"))),
+            (rs,n)->new AdjustmentItem(rs.getObject("id",UUID.class),rs.getString("name"),rs.getString("account_sku"),
+                rs.getBoolean("requires_expiration_date"),rs.getObject("location_id",UUID.class),rs.getString("image_url")),args.toArray());
+    }
+
+    @Transactional(readOnly=true)
+    public List<InventoryView> inventory(UUID tenantId){return inventory(tenantId,null);}
+
+    @Transactional(readOnly=true)
+    public List<InventoryView> inventory(UUID tenantId,List<UUID> itemIds){
+        String filter=itemIds==null?null:"{"+String.join(",",itemIds.stream().map(UUID::toString).toList())+"}";
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
         return jdbc.query("""
             WITH positions AS MATERIALIZED (
@@ -192,7 +218,7 @@ public class InventoryRepository {
                        min(ledger.occurred_at) FILTER (WHERE ledger.entry_type='RECEIPT' AND ledger.quantity>0) first_received,
                        max(ledger.occurred_at) last_movement,0::numeric uncovered_demand
                 FROM inventory_ledger_entries ledger
-                WHERE ledger.tenant_id=?
+                WHERE ledger.tenant_id=? AND (?::uuid[] IS NULL OR ledger.account_catalog_item_id=ANY(?::uuid[]))
                 GROUP BY ledger.tenant_id,ledger.account_catalog_item_id,ledger.location_id,ledger.expiration_date
                 HAVING sum(ledger.quantity)>0
             ), active_reservations AS MATERIALIZED (
@@ -202,7 +228,7 @@ public class InventoryRepository {
                 JOIN amazon_orders orders ON orders.tenant_id=reservation.tenant_id
                   AND orders.marketplace_connection_id=reservation.marketplace_connection_id
                   AND orders.amazon_order_id=reservation.amazon_order_id
-                WHERE reservation.tenant_id=? AND reservation.status='ACTIVE'
+                WHERE reservation.tenant_id=? AND (?::uuid[] IS NULL OR reservation.account_catalog_item_id=ANY(?::uuid[])) AND reservation.status='ACTIVE'
                   AND %s
                 GROUP BY reservation.tenant_id,reservation.account_catalog_item_id,reservation.location_id,reservation.expiration_date
             ), uncovered_order_demand AS MATERIALIZED (
@@ -229,7 +255,7 @@ public class InventoryRepository {
                     WHERE reservation.tenant_id=item.tenant_id AND reservation.amazon_order_item_id=item.id
                       AND reservation.account_catalog_item_id=component.account_catalog_item_id AND reservation.status='ACTIVE'
                 ) allocated ON true
-                WHERE orders.tenant_id=? AND %s
+                WHERE orders.tenant_id=? AND (?::uuid[] IS NULL OR component.account_catalog_item_id=ANY(?::uuid[])) AND %s
                 GROUP BY orders.tenant_id,component.account_catalog_item_id,location.id
                 HAVING sum(greatest((item.quantity_ordered-item.quantity_shipped)*component.quantity
                     -coalesce(allocated.quantity,0),0))>0
@@ -304,7 +330,7 @@ public class InventoryRepository {
                 rs.getString(11),rs.getString(12),rs.getString(13),rs.getBigDecimal(14),
                 rs.getTimestamp(15)==null?null:rs.getTimestamp(15).toInstant(),rs.getTimestamp(16)==null?null:rs.getTimestamp(16).toInstant(),
                 rs.getObject(17,UUID.class),rs.getString(18),rs.getString(19),rs.getString(20),rs.getString(21),
-                rs.getBigDecimal(22),rs.getBigDecimal(23),rs.getInt(24),rs.getString(25),rs.getString(26)),tenantId,tenantId,tenantId);
+                rs.getBigDecimal(22),rs.getBigDecimal(23),rs.getInt(24),rs.getString(25),rs.getString(26)),tenantId,filter,filter,tenantId,filter,filter,tenantId,filter,filter);
     }
 
     @Transactional(readOnly=true)
@@ -483,6 +509,7 @@ public class InventoryRepository {
     public void receiveUninvoicedItem(UUID tenantId,String actorEmail,UUID itemId,BigDecimal quantity,
             LocalDate expirationDate,UUID locationId,String notes){
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        lockStockCorrection(tenantId);
         if(itemId==null)throw new IllegalArgumentException("Choose a product from the account catalogue.");
         if(quantity==null||quantity.signum()<=0||quantity.stripTrailingZeros().scale()>0)
             throw new IllegalArgumentException("Enter a positive whole number of eaches received.");
@@ -517,6 +544,20 @@ public class InventoryRepository {
 
     public void receiveUninvoicedItem(UUID tenantId,String actorEmail,UUID itemId,BigDecimal quantity,
             LocalDate expirationDate,String notes){receiveUninvoicedItem(tenantId,actorEmail,itemId,quantity,expirationDate,null,notes);}
+
+    @Transactional
+    public void receiveAndReconcile(UUID tenantId,String actor,UUID itemId,BigDecimal quantity,LocalDate expirationDate,
+            UUID locationId,String notes,com.nextaicommerce.platform.orders.OrderRepository orders){
+        receiveUninvoicedItem(tenantId,actor,itemId,quantity,expirationDate,locationId,notes);
+        if(orders!=null)orders.reconcileTenantAfterPhysicalCount(tenantId);
+    }
+
+    @Transactional
+    public void adjustAndReconcile(UUID tenantId,String actor,UUID itemId,LocalDate expirationDate,UUID locationId,
+            BigDecimal quantity,String reason,String notes,com.nextaicommerce.platform.orders.OrderRepository orders){
+        adjustInventory(tenantId,actor,itemId,expirationDate,locationId,quantity,reason,notes);
+        if(orders!=null)orders.reconcileTenantAfterPhysicalCount(tenantId);
+    }
 
     /** Adds a traceable count correction without ever letting a position go below its reserved quantity. */
     @Transactional

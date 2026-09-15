@@ -1,0 +1,29 @@
+<!DOCTYPE html><html xmlns:th="http://www.thymeleaf.org"><body>
+<th:block th:fragment="editor" th:if="${canEditCatalog}">
+<link rel="stylesheet" href="/css/stock-editor.css?v=1.2.2">
+<dialog id="stock-editor" class="invite-dialog" aria-labelledby="stock-editor-title">
+  <form class="dialog-shell" method="post" th:action="@{/app/inventory/adjustments/inline}">
+    <div class="dialog-header"><div><span class="eyebrow dark">Inventory</span><h2 id="stock-editor-title">Adjust Inventory</h2></div><button type="button" class="dialog-close" aria-label="Close inventory editor" data-stock-close>×</button></div>
+    <div class="dialog-body stock-editor-body">
+      <label data-stock-search-label hidden>Account Catalogue<input type="search" data-stock-search placeholder="Search Item Code, name, or barcode" autocomplete="off"><div data-stock-results class="stock-product-results"></div></label>
+      <p data-stock-loading role="status" hidden>Loading inventory…</p>
+      <fieldset data-stock-fields disabled>
+        <label>Item<select name="itemId" required></select></label>
+        <img data-stock-picture alt="" hidden>
+        <p data-stock-unit-note>Quantities are individual item units, not marketplace packs.</p>
+        <label>Storage location<select name="locationId" required></select></label>
+        <label>Expiration date<input type="date" name="expirationDate"><small data-stock-expiration-help></small></label>
+        <p data-stock-balance></p>
+        <label data-stock-direction-label>Change<select name="direction"><option value="1">Increase</option><option value="-1">Decrease</option></select></label>
+        <label>Quantity · eaches<input type="number" name="amount" min="1" step="1" required inputmode="numeric"></label>
+        <label data-stock-reason-label>Reason<select name="reason"><option value="COUNT_CORRECTION">Count correction</option><option value="DAMAGE">Damaged</option><option value="LOSS">Lost or missing</option><option value="RETURN_TO_VENDOR">Returned to vendor</option><option value="OTHER">Other</option></select></label>
+        <label>Explanation<input name="notes" maxlength="500" placeholder="What happened?"></label>
+      </fieldset>
+      <p data-stock-note>Changes are recorded in the inventory ledger. Reserved stock cannot be removed.</p>
+      <p data-stock-feedback role="status" hidden></p>
+    </div>
+    <div class="dialog-actions"><button type="button" class="secondary-button" data-stock-close>Cancel</button><button type="submit" class="primary-button" data-stock-save disabled>Save adjustment</button></div>
+  </form>
+</dialog>
+<script src="/js/stock-editor.js?v=1.2.2"></script>
+</th:block></body></html>

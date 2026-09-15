@@ -58,6 +58,30 @@ public class InventoryController {
             UUID locationId,String locationCode,String locationName,LocalDate expirationDate,String onHand,String reserved,
             String available,String imageUrl){}
     public record InlineAdjustmentResponse(String message){}
+    public record AdjustmentOptions(List<InventoryRepository.AdjustmentItem> items,List<CatalogRepository.LocationView> locations){}
+    @GetMapping("/app/inventory/adjustment-options") @ResponseBody
+    ResponseEntity<AdjustmentOptions> adjustmentOptions(@RequestParam(name="itemId") List<UUID> itemIds,HttpSession session){
+        if(itemIds.isEmpty()||itemIds.size()>20)return ResponseEntity.badRequest().build();
+        UUID tenantId=tenant(session);
+        var repository=catalog.getObject();var images=repository.pickerImages(tenantId,itemIds);
+        var items=inventory.adjustmentItems(tenantId,itemIds).stream().map(item->new InventoryRepository.AdjustmentItem(
+            item.id(),item.name(),item.itemCode(),item.expirationRequired(),item.defaultLocationId(),images.get(item.id()))).toList();
+        return ResponseEntity.ok(new AdjustmentOptions(items,repository.listLocations(tenantId)));
+    }
+    @PostMapping("/app/inventory/receipts/inline") @ResponseBody
+    ResponseEntity<InlineAdjustmentResponse> inlineReceipt(Authentication auth,HttpSession session,@RequestParam UUID itemId,
+            @RequestParam BigDecimal quantity,@RequestParam(required=false) UUID locationId,
+            @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate expirationDate,
+            @RequestParam String notes){
+        try{
+            if(notes==null||notes.isBlank())throw new IllegalArgumentException("Explain why this item is being received without an invoice.");
+            UUID tenantId=tenant(session);
+            inventory.receiveAndReconcile(tenantId,auth.getName(),itemId,quantity,expirationDate,locationId,notes,orders.getIfAvailable());
+            return ResponseEntity.ok(new InlineAdjustmentResponse("Item received at zero cost. Open-order reservations refreshed."));
+        }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(new InlineAdjustmentResponse(e.getMessage()));}
+        catch(Exception e){log.error("Manual receipt failed itemId={}",itemId,e);return ResponseEntity.internalServerError()
+            .body(new InlineAdjustmentResponse("The receipt could not be completed. Check the inventory ledger before retrying."));}
+    }
     @GetMapping("/app/inventory") String inventory(Authentication auth,HttpSession session,Model model){
         Object value=session.getAttribute("selectedTenantId");if(!(value instanceof UUID tenantId))return "redirect:/app/select-account";
         PageController.addTenantModel(session,model);PageController.addAccessModel(auth,model);
@@ -107,7 +131,7 @@ public class InventoryController {
     ResponseEntity<List<InlineInventoryPosition>> adjustmentPositions(@RequestParam(name="itemId") List<UUID> itemIds,HttpSession session){
         if(itemIds==null||itemIds.isEmpty()||itemIds.size()>20)return ResponseEntity.badRequest().build();
         var requested=new java.util.LinkedHashSet<>(itemIds);
-        return ResponseEntity.ok(inventory.inventory(tenant(session)).stream().filter(row->requested.contains(row.itemId()))
+        return ResponseEntity.ok(inventory.inventory(tenant(session),itemIds).stream().filter(row->requested.contains(row.itemId()))
             .map(row->new InlineInventoryPosition(row.itemId(),row.productName(),row.accountSku(),row.vendorItemCode(),
                 row.locationId(),row.locationCode(),row.locationName(),row.expirationDate(),row.quantityUnits(),
                 row.reservedUnits(),row.availableUnits(),row.imageUrl())).toList());
@@ -120,9 +144,7 @@ public class InventoryController {
             @RequestParam String reason,@RequestParam(required=false) String notes){
         try{
             UUID tenantId=tenant(session);
-            inventory.adjustInventory(tenantId,auth.getName(),itemId,expirationDate,locationId,quantityChange,reason,notes);
-            var orderRepository=orders.getIfAvailable();
-            if(orderRepository!=null)orderRepository.reconcileTenantAfterPhysicalCount(tenantId);
+            inventory.adjustAndReconcile(tenantId,auth.getName(),itemId,expirationDate,locationId,quantityChange,reason,notes,orders.getIfAvailable());
             return ResponseEntity.ok(new InlineAdjustmentResponse("Inventory adjusted and open-order reservations refreshed."));
         }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(new InlineAdjustmentResponse(e.getMessage()));}
         catch(Exception e){log.error("Inline inventory adjustment failed itemId={}",itemId,e);return ResponseEntity.internalServerError()
