@@ -14,10 +14,29 @@ test -s "$runtime_config"
 grep -Eq 'SPRING_PROFILES_ACTIVE=prod([[:space:]]|$)' "$runtime_config"
 systemctl is-active --quiet next-ai-commerce
 
+# Leave room for the package, rollback copy, database backup and live writes.
+# Refuse early instead of exhausting the filesystem beside a running database.
+database_bytes=$(sudo -u postgres psql -XAtqc "SELECT pg_database_size('next_ai_commerce')")
+[[ "$database_bytes" =~ ^[0-9]+$ ]]
+current_jar_bytes=$(stat -Lc %s /opt/next-ai-commerce/next-ai-commerce.jar)
+required_bytes=$((database_bytes * 2 + current_jar_bytes * 3 + 1073741824))
+for directory in /opt/next-ai-commerce/releases /opt/next-ai-commerce/backups; do
+  available_bytes=$(df -B1 --output=avail "$directory" | tail -n 1 | tr -d ' ')
+  if (( available_bytes < required_bytes )); then
+    echo "Insufficient deployment disk space: need $required_bytes bytes free; have $available_bytes. Live application unchanged." >&2
+    exit 1
+  fi
+done
+
 # Install the exact CI-tested artifact without compiling beside the live application.
 umask 077
 package_dir=$(mktemp -d /opt/next-ai-commerce/releases/.download-XXXXXX)
 package_file="$package_dir/application.jar"
+cleanup_package() {
+  rm -f -- "$package_file"
+  rmdir -- "$package_dir" 2>/dev/null || true
+}
+trap cleanup_package EXIT
 curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' \
   --connect-timeout 15 --max-time 300 \
   "https://github.com/barryguze-code/next-ai-commerce/releases/download/build-${revision}/next-ai-commerce-${version}-${revision}.jar" \
@@ -25,6 +44,7 @@ curl --fail --location --silent --show-error --proto '=https' --proto-redir '=ht
 printf '%s  %s\n' "$package_sha" "$package_file" | sha256sum --check --status
 release_jar="/opt/next-ai-commerce/releases/next-ai-commerce-${version}-${revision:0:12}.jar"
 install -o nextaicommerce -g nextaicommerce -m 0640 "$package_file" "$release_jar"
+cleanup_package
 
 # Keep the full database and rollback artifact on the server, never in CI output.
 backup_dir=$(mktemp -d "/opt/next-ai-commerce/backups/v${version}-${revision:0:12}-XXXXXX")
