@@ -33,9 +33,10 @@
         const labelUrl='/app/orders/'+encodeURIComponent(orderId)+'/packing-slip';
         const sellerUrl=orderRow.querySelector('.order-number')?.href;
         const label=window.open('about:blank','_blank');
-        if(label){label.opener=null;label.location.href=labelUrl;}
+        if(label)label.opener=null;
         const seller=sellerUrl?window.open('about:blank','_blank'):null;
         if(seller){seller.opener=null;seller.location.href=sellerUrl;seller.focus();}
+        if(label)label.location.href=labelUrl+(!seller&&sellerUrl?'?sellerCentralBlocked=true':'');
         if(!label||!seller){
           let notice=document.querySelector('[data-packing-tabs-notice]');
           if(!notice){notice=document.createElement('div');notice.className='stream-toast show';notice.dataset.packingTabsNotice='';notice.setAttribute('role','status');document.body.append(notice);}

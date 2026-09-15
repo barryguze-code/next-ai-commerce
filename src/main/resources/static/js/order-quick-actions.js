@@ -17,15 +17,36 @@
   document.addEventListener('mouseout',()=>tip.hidden=true);document.addEventListener('focusout',()=>tip.hidden=true);window.addEventListener('scroll',()=>tip.hidden=true,true);
   window.addEventListener('blur',()=>tip.hidden=true);document.addEventListener('click',()=>tip.hidden=true);
   let refreshOnReturn=false;
+  async function refreshedOrders(clearEmpty=true){
+    const url=new URL(location.href);
+    const load=async()=>{const response=await fetch(url.href,{cache:'no-store',headers:{'X-Order-Stream':'refresh'}});if(!response.ok)throw new Error('refresh');const stream=new DOMParser().parseFromString(await response.text(),'text/html').querySelector('[data-order-stream]');if(!stream)throw new Error('refresh');return stream;};
+    let incoming=await load();
+    // Only completion-triggered refreshes clear an exhausted search, never normal browsing.
+    if(clearEmpty&&incoming.querySelector('.table-empty')&&(url.searchParams.has('q')||url.searchParams.has('page'))){
+      url.searchParams.delete('q');url.searchParams.delete('page');
+      incoming=await load();
+      window.NextAiTableDataTools?.resetFilters('orders');
+      history.replaceState(history.state,'',url.href);
+      notify('All matching orders completed — filters cleared');
+    }
+    return incoming;
+  }
+  function clearExhaustedColumnFilters(stream){
+    const items=[...stream.querySelectorAll('.order-item')];
+    if(items.length&&items.every(item=>item.classList.contains('table-data-hidden'))){
+      window.NextAiTableDataTools?.resetFilters('orders');
+      stream.querySelector('[data-table-widget="orders"]')?.dispatchEvent(new Event('table:reset-filters'));
+      notify('All matching orders completed — column filters cleared');
+    }
+  }
   window.addEventListener('storage',event=>{if(event.key==='nextai-order-updated')refreshOnReturn=true;});
   window.addEventListener('focus',async()=>{
     if(!refreshOnReturn||window.NextAiOrderActionPending)return;
     window.NextAiOrderActionPending=true;
     try{
-      const response=await fetch(location.href,{cache:'no-store',headers:{'X-Order-Stream':'refresh'}});if(!response.ok)throw new Error();
-      const incoming=new DOMParser().parseFromString(await response.text(),'text/html').querySelector('[data-order-stream]'),current=document.querySelector('[data-order-stream]');if(!incoming||!current)throw new Error();
+      const incoming=await refreshedOrders(),current=document.querySelector('[data-order-stream]');if(!current)throw new Error();
       const positions=['.orders-workspace','.order-list.table-widget-scroll'].map(selector=>{const el=document.querySelector(selector);return {selector,top:el?.scrollTop||0,left:el?.scrollLeft||0};});const x=scrollX,y=scrollY;
-      current.replaceWith(incoming);window.NextAiTableWidget?.refresh();
+      current.replaceWith(incoming);window.NextAiTableWidget?.refresh();clearExhaustedColumnFilters(incoming);
       const restore=()=>{positions.forEach(p=>{const el=document.querySelector(p.selector);if(el){el.scrollTop=p.top;el.scrollLeft=p.left;}});window.scrollTo(x,y);};restore();requestAnimationFrame(restore);refreshOnReturn=false;
     }catch(_){notify('Order saved. Refresh Orders to see the latest status.');}finally{window.NextAiOrderActionPending=false;}
   });
@@ -43,9 +64,7 @@
       const result=await fetch(form.action,{method:'POST',body,credentials:'same-origin'});
       if(!result.ok||new URL(result.url).pathname==='/login')throw new Error('save');
       saved=true;
-      const response=await fetch(location.href,{cache:'no-store',headers:{'X-Order-Stream':'refresh'}});
-      if(!response.ok)throw new Error('refresh');
-      const incoming=new DOMParser().parseFromString(await response.text(),'text/html').querySelector('[data-order-stream]');
+      const incoming=await refreshedOrders(waiting);
       const current=document.querySelector('[data-order-stream]');
       if(!incoming||!current)throw new Error('refresh');
       // Capture immediately before replacement so scrolling during the request is preserved.
@@ -54,6 +73,7 @@
       const x=window.scrollX,y=window.scrollY;
       current.replaceWith(incoming);
       window.NextAiTableWidget?.refresh();
+      if(waiting)clearExhaustedColumnFilters(incoming);
       const restore=()=>{positions.forEach(({selector,top,left})=>{const el=document.querySelector(selector);if(el){el.scrollTop=top;el.scrollLeft=left;}});window.scrollTo(x,y);};
       restore();
       requestAnimationFrame(restore);

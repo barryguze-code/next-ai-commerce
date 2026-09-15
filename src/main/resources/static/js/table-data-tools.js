@@ -174,9 +174,10 @@ function init(root){
   observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','style']});
   search.addEventListener('input',()=>{saved.page=1;updateActiveFilterState();queueMicrotask(render)});
   root.addEventListener('table:filter',()=>{saved.page=1;render()});
+  root.addEventListener('table:reset-filters',()=>{saved.filters={};saved.query='';saved.page=1;panel.querySelectorAll('input').forEach(input=>input.value='');render()});
   render();
 }
 function refresh(){document.querySelectorAll('[data-table-widget-ready]').forEach(init)}
-window.NextAiTableDataTools={refresh,csvCell};
+window.NextAiTableDataTools={refresh,csvCell,resetFilters:key=>{const saved=states.get(key);if(saved){saved.filters={};saved.query='';saved.page=1;}}};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{window.NextAiTableWidget?.refresh();refresh()});else{window.NextAiTableWidget?.refresh();refresh()}
 })();

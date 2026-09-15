@@ -3,6 +3,33 @@ const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const path=require('node:path');
 let browser;
+for(const trigger of ['completion','return'])test('exhausted order search clears after '+trigger+' and keeps Unshipped',async()=>{
+  const page=await browser.newPage();let saved=false;
+  const form='<form class="platform-pickup-action" action="/app/orders/test/pickup-override" method="post"><input name="waiting" value="true"><button type="submit">Mark as shipped</button></form>';
+  await page.route('http://orders.test/**',async route=>{
+    if(route.request().method()==='POST'){saved=true;return route.fulfill({body:'Saved'});}
+    const filtered=new URL(route.request().url()).searchParams.has('q');
+    await route.fulfill({contentType:'text/html',body:'<div data-order-stream>'+(saved&&filtered?'<div class="table-empty">No orders match</div>':filtered?form:'<p id="remaining">Other unshipped orders</p>')+'</div>'});
+  });
+  await page.goto('http://orders.test/app/orders?status=UNSHIPPED&q=B07HLHY9MM&size=25&page=2');
+  await page.addScriptTag({path:path.resolve('src/main/resources/static/js/order-quick-actions.js')});
+  if(trigger==='completion')await page.getByRole('button',{name:'Mark as shipped'}).click();
+  else{saved=true;await page.evaluate(()=>{dispatchEvent(new StorageEvent('storage',{key:'nextai-order-updated'}));dispatchEvent(new Event('focus'));});}
+  await page.locator('#remaining').waitFor();
+  const url=new URL(page.url());assert.equal(url.searchParams.get('status'),'UNSHIPPED');assert.equal(url.searchParams.get('size'),'25');assert.equal(url.searchParams.has('q'),false);assert.equal(url.searchParams.has('page'),false);
+  await page.close();
+});
+test('blocked second tab displays recovery guidance on packing page',async()=>{
+  const page=await browser.newPage();
+  await page.setContent('<article class="order-row"><a class="order-number" href="https://sellercentral.amazon.com/orders-v3/order/123">123</a><div class="item-actions"><span><button class="order-icon-action shipping" data-order-id="123">Shipping</button></span></div></article>');
+  await page.evaluate(()=>{window.openedLabel={location:{},opener:{}};let calls=0;window.open=()=>++calls===1?window.openedLabel:null;});
+  await page.addScriptTag({path:path.resolve('src/main/resources/static/js/buy-shipping.js')});
+  await page.getByRole('button',{name:'Open packing slip and Seller Central order'}).click();
+  assert.equal(await page.evaluate(()=>window.openedLabel.location.href),'/app/orders/123/packing-slip?sellerCentralBlocked=true');
+  assert.equal(await page.evaluate(()=>window.openedLabel.opener),null);
+  assert.equal(await page.getByRole('link',{name:'Open Seller Central'}).getAttribute('href'),'https://sellercentral.amazon.com/orders-v3/order/123');
+  await page.close();
+});
 test('marking an order refreshes counts without navigating or losing scroll',async()=>{
   const page=await browser.newPage();
   let saved=false;
