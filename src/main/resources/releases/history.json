@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.2.4",
+    "title": "Smoother receiving and exception handling",
+    "sections": [
+      {"title":"Receiving workspace","items":["Receive all open documents when none are selected, or receive multiple selected documents together.","Document and receipt colors distinguish open, partial, closed, short-shipped and damaged stock. Received expiration dates follow your configured shelf-life warning rules.","Review and undo eligible receipt decisions, including shortages, with audit history preserved. Closed documents remain read-only."]},
+      {"title":"Faster receipt entry","items":["Use a compact form with cases, units per case, total units, location and expiration. Case size and expiration requirements are saved to the catalogue for future receiving.","Add an unmatched item to the catalogue from receiving. Use the standard collaboration icon instead of a separate Notes field."]}
+    ]
+  },
+  {
     "version": "1.2.3",
     "title": "Movement history for sold-out items",
     "sections": [{"title":"Inventory hotfix","items":["Open the same sliding inventory detail by clicking a sold-out catalogue item’s title in Available Inventory, and review its complete movement history even when no current stock batch remains."]}]

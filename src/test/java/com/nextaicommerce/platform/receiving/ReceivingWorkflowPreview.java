@@ -52,12 +52,12 @@ public class ReceivingWorkflowPreview {
                     long began=System.nanoTime();var result=controller.change(parts[4],UUID.fromString(parts[5]),command,auth,session);
                     System.out.println("BROWSER_"+parts[4]+"_MS="+((System.nanoTime()-began)/1_000_000));
                     status=result.getStatusCode().value();content=json.writeValueAsBytes(result.getBody());type="application/json";
-                }else if(path.equals("/app/receiving")||path.equals("/app/receiving/work")){
+                }else if(path.equals("/app/receiving")||path.equals("/app/receiving/work")||path.equals("/app/receiving/work/all")){
                     Map<String,String> query=new HashMap<>();
                     for(String part:Optional.ofNullable(exchange.getRequestURI().getRawQuery()).orElse("").split("&")){
                         String[] pair=part.split("=",2);if(pair.length==2)query.put(pair[0],URLDecoder.decode(pair[1],StandardCharsets.UTF_8));
                     }
-                    var model=new ExtendedModelMap();String template=path.endsWith("/work")?controller.work(selected,auth,session,model,new RedirectAttributesModelMap()):home.index(auth,session,model,query.getOrDefault("q",""),Integer.parseInt(query.getOrDefault("page","0")),Integer.parseInt(query.getOrDefault("size","25")));
+                    var model=new ExtendedModelMap();String template=path.endsWith("/all")?controller.all(auth,session,model,new RedirectAttributesModelMap()):path.endsWith("/work")?controller.work(selected,auth,session,model,new RedirectAttributesModelMap()):home.index(auth,session,model,query.getOrDefault("q",""),Integer.parseInt(query.getOrDefault("page","0")),Integer.parseInt(query.getOrDefault("size","25")));
                     model.addAttribute("canEditCatalog",true);model.addAttribute("canViewOperations",true);model.addAttribute("isSuperAdmin",false);
                     model.addAttribute("canManageUsers",false);model.addAttribute("canManageConnections",false);
                     model.addAttribute("signedInEmail",fixture.actor);model.addAttribute("roleLabel","QA owner");model.addAttribute("selectedAccountName","Receiving QA only");

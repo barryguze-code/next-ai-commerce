@@ -38,14 +38,29 @@ public class ReceivingWorkflowController {
             model.addAttribute("workDocuments",docs);
             model.addAttribute("workLines",workflow.lines(tenant(session),ids));
             model.addAttribute("locations",catalog.listLocations(tenant(session)));
+            model.addAttribute("lineDetails",workflow.lineDetails(tenant(session),ids));
+            model.addAttribute("shelfPolicy",workflow.shelfLifePolicy(tenant(session)));
             return "receiving-work";
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("catalogError",e.getMessage());return "redirect:/app/receiving";}
+    }
+    @GetMapping("/app/receiving/work/all")
+    String all(Authentication auth,HttpSession session,Model model,RedirectAttributes redirect){
+        if(!(session.getAttribute("selectedTenantId") instanceof UUID))return "redirect:/app/select-account";
+        var docs=workflow.documents(tenant(session)).stream().filter(d->!d.closed()&&d.outstanding().signum()>0).toList();
+        if(docs.isEmpty()){redirect.addFlashAttribute("catalogSuccess","There are no open documents with quantities left to receive.");return "redirect:/app/receiving";}
+        PageController.addTenantModel(session,model);PageController.addAccessModel(auth,model);
+        var ids=docs.stream().map(ReceivingWorkflowRepository.Document::id).toList();
+        model.addAttribute("workDocuments",docs);model.addAttribute("workLines",workflow.lines(tenant(session),ids));
+        model.addAttribute("locations",catalog.listLocations(tenant(session)));model.addAttribute("lineDetails",workflow.lineDetails(tenant(session),ids));
+        model.addAttribute("shelfPolicy",workflow.shelfLifePolicy(tenant(session)));model.addAttribute("allOpen",true);
+        return "receiving-work";
     }
     @GetMapping("/app/receiving/work/state")
     @ResponseBody
     Object state(@RequestParam List<UUID> documents,HttpSession session){
-        var ids=selection(documents);
-        return Map.of("documents",workflow.documents(tenant(session),ids),"lines",workflow.lines(tenant(session),ids));
+        if(documents==null||documents.isEmpty()||documents.stream().anyMatch(Objects::isNull))throw new IllegalArgumentException("Choose receiving documents.");
+        var ids=documents.stream().distinct().toList();
+        return Map.of("documents",workflow.documents(tenant(session),ids),"lines",workflow.lines(tenant(session),ids),"details",workflow.lineDetails(tenant(session),ids));
     }
     @GetMapping("/app/receiving/work/lines/{line}/receipts")
     @ResponseBody
@@ -54,10 +69,10 @@ public class ReceivingWorkflowController {
     public record Command(UUID requestId,BigDecimal quantity,LocalDate expiration,String disposition,UUID location,
             UUID receipt,String direction,String reason,String notes,Boolean creditExpected,
             BigDecimal previewReceived,BigDecimal previewOutstanding,
-            BigDecimal unitsPerCase,BigDecimal depositFee,BigDecimal otherFee){
+            BigDecimal unitsPerCase,BigDecimal depositFee,BigDecimal otherFee,Boolean expirationRequired){
         public Command(UUID requestId,BigDecimal quantity,LocalDate expiration,String disposition,UUID location,
                 UUID receipt,String direction,String reason,String notes,Boolean creditExpected,BigDecimal previewReceived,BigDecimal previewOutstanding){
-            this(requestId,quantity,expiration,disposition,location,receipt,direction,reason,notes,creditExpected,previewReceived,previewOutstanding,null,null,null);
+            this(requestId,quantity,expiration,disposition,location,receipt,direction,reason,notes,creditExpected,previewReceived,previewOutstanding,null,null,null,null);
         }
     }
 
@@ -69,9 +84,12 @@ public class ReceivingWorkflowController {
             if(command.notes()!=null&&command.notes().length()>500)throw new IllegalArgumentException("Keep notes within 500 characters.");
             UUID tenant=tenant(session);String actor=auth.getName();
             Runnable mutation=switch(operation){
+                case "catalogue" -> ()->workflow.addCatalogueItem(tenant,actor,target,catalog,command.unitsPerCase(),command.expirationRequired());
                 case "prepare" -> ()->workflow.prepare(tenant,actor,target,command.unitsPerCase(),command.depositFee(),command.otherFee());
-                case "receive" -> ()->workflow.receive(tenant,actor,target,command.quantity(),command.expiration(),
-                    command.disposition(),command.location(),command.notes());
+                case "receive" -> ()->{
+                    if(command.unitsPerCase()!=null||command.expirationRequired()!=null)workflow.saveCatalogueSettings(tenant,actor,target,command.unitsPerCase(),command.expirationRequired());
+                    workflow.receive(tenant,actor,target,command.quantity(),command.expiration(),command.disposition(),command.location(),command.notes());
+                };
                 case "undo" -> ()->workflow.undo(tenant,actor,target,command.receipt(),command.reason());
                 case "adjust" -> ()->workflow.adjust(tenant,actor,target,command.receipt(),command.quantity(),
                     command.direction(),command.reason(),command.notes());
@@ -84,6 +102,7 @@ public class ReceivingWorkflowController {
                 .digest(command.toString().getBytes(StandardCharsets.UTF_8)));
             boolean changed=workflow.execute(tenant,command.requestId(),operation,target,fingerprint,mutation);
             String message=changed?switch(operation){
+                case "catalogue" -> "Item added to the catalogue. You can now receive it.";
                 case "prepare" -> "Pack and item fees saved. No stock has been added.";
                 case "receive" -> "Receipt saved. This document remains open until you close it.";
                 case "undo" -> "Receipt undone. The original receipt and reversal remain in history.";

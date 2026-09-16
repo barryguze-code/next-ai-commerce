@@ -337,6 +337,10 @@ public class ReceivingRepository {
             if(vendorCode.isBlank()&&identifier.isBlank()) throw new IllegalArgumentException("Row "+sourceRowNumber+" needs a vendor item code or UPC/EAN before it can enter the catalogue.");
             MatchedItem matched=matchOrCreateItem(tenantId,vendorId,actorEmail,description,brand,vendorCode,identifier,cost,
                 cleanCurrency,documentType,documentNumber);
+            if(packSize.isBlank()){
+                BigDecimal savedPack=jdbc.queryForObject("SELECT g.units_per_case FROM account_catalog_items a JOIN global_catalog_products g ON g.id=a.global_product_id WHERE a.tenant_id=? AND a.id=?",BigDecimal.class,tenantId,matched.itemId());
+                if(savedPack!=null&&savedPack.signum()>0){unitsPerCase=savedPack;cost=casePrice?invoicePrice.divide(unitsPerCase,4,java.math.RoundingMode.HALF_UP):invoicePrice;}
+            }
             if(matched.created()&&identifier.isBlank()) jdbc.update("""
                 UPDATE account_catalog_items SET completion_status='NEEDS_COMPLETION',missing_fields=ARRAY['UPC/EAN'],updated_at=now()
                 WHERE tenant_id=? AND id=?
@@ -702,7 +706,7 @@ public class ReceivingRepository {
         ReceiveTarget target=jdbc.query("""
             SELECT item.receiving_line_id,item.account_catalog_item_id,po.vendor_id,item.unit_cost,item.currency,
                    item.ordered_quantity*CASE WHEN item.invoice_unit='CASE' THEN item.units_per_case ELSE 1 END,
-                   coalesce((SELECT sum(total_each_quantity) FROM receiving_line_receipts r WHERE r.voided_at IS NULL AND r.tenant_id=item.tenant_id AND r.purchase_order_item_id=item.id),0),
+                   coalesce((SELECT sum(total_each_quantity) FROM receiving_line_receipts r WHERE r.voided_at IS NULL AND r.disposition<>'SHORT_SHIPPED' AND r.tenant_id=item.tenant_id AND r.purchase_order_item_id=item.id),0),
                    item.discrepancy_quantity,product.requires_expiration_date
             FROM purchase_order_items item JOIN purchase_orders po ON po.tenant_id=item.tenant_id AND po.id=item.purchase_order_id
             JOIN receiving_sessions session ON session.tenant_id=po.tenant_id AND session.id=po.receiving_session_id

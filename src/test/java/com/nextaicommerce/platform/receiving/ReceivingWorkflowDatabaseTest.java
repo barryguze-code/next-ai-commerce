@@ -590,4 +590,48 @@ class ReceivingWorkflowDatabaseTest {
         BigDecimal claim=tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT quantity FROM vendor_credit_requests WHERE tenant_id=? AND purchase_order_item_id=? AND status='OPEN'",BigDecimal.class,tenant,damaged.line());});
         assertThat(claim).isEqualByComparingTo("3");
     }
+    @Test void shortageHistoryAndUndoRestoreOnlyMissingBalance(){
+        var f=fixture("INVOICE");receive(f,2);
+        work.receive(tenant,actor,f.line(),new BigDecimal("4"),null,"SHORT_SHIPPED",f.location(),null);
+        var missing=work.receipts(tenant,f.line()).stream().filter(r->r.disposition().equals("SHORT_SHIPPED")).findFirst().orElseThrow();
+        assertThat(missing.canUndo()).isTrue();
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isEqualByComparingTo("4");
+        assertThat(work.lineDetails(tenant,List.of(f.document())).getFirst().get("batches").toString()).contains("SHORT_SHIPPED");
+        work.undo(tenant,actor,f.line(),missing.id(),"Delivery arrived later");
+        var updated=work.lines(tenant,List.of(f.document())).getFirst();
+        assertThat(updated.received()).isEqualByComparingTo("2");assertThat(updated.remaining()).isEqualByComparingTo("8");
+        assertThat(stock(f)).isEqualByComparingTo("2");
+    }
+    @Test void legacyShortageCanBeUndoneWithoutRewritingStock(){
+        var f=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET discrepancy_quantity=6,discrepancy_status='SHORT_SHIPPED' WHERE tenant_id=? AND id=?",tenant,f.line());});
+        assertThat(work.receipts(tenant,f.line())).hasSize(1);
+        work.undo(tenant,actor,f.line(),f.line(),"Correct old shortage");
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isEqualByComparingTo("10");
+        assertThat(work.receipts(tenant,f.line())).isEmpty();assertThat(stock(f)).isEqualByComparingTo("0");
+    }
+    @Test void catalogueReceivingPreferencesAreAtomicWithReceipt(){
+        var f=fixture("INVOICE");
+        work.execute(tenant,UUID.randomUUID(),"receive",f.line(),"preferences",()->{
+            work.saveCatalogueSettings(tenant,actor,f.line(),new BigDecimal("6"),false);
+            work.receive(tenant,actor,f.line(),new BigDecimal("6"),null,"SELLABLE",f.location(),null);
+        });
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().requiresExpiration()).isFalse();
+        assertThat(work.lineDetails(tenant,List.of(f.document())).getFirst().get("catalogPack").toString()).startsWith("6");
+        assertThatThrownBy(()->work.execute(tenant,UUID.randomUUID(),"receive",f.line(),"bad",()->{
+            work.saveCatalogueSettings(tenant,actor,f.line(),new BigDecimal("12"),true);
+            work.receive(tenant,actor,f.line(),BigDecimal.ONE,null,"SELLABLE",f.location(),null);
+        })).hasMessageContaining("expiration");
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().requiresExpiration()).isFalse();
+        assertThat(stock(f)).isEqualByComparingTo("6");
+    }
+    @Test void unmatchedReceivingItemCanJoinCatalogueBeforeReceipt(){
+        var f=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET account_catalog_item_id=null,vendor_item_code='NEW-RECEIVING' WHERE tenant_id=? AND id=?",tenant,f.line());});
+        work.addCatalogueItem(tenant,actor,f.line(),context.getBean(CatalogRepository.class),new BigDecimal("6"),true);
+        var l=work.lines(tenant,List.of(f.document())).getFirst();
+        assertThat(l.productId()).isNotNull();assertThat(l.requiresExpiration()).isTrue();
+        work.receive(tenant,actor,f.line(),new BigDecimal("6"),expiry,"SELLABLE",f.location(),null);
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().received()).isEqualByComparingTo("6");
+    }
 }

@@ -5,13 +5,13 @@ const key='receiving-selection:'+(document.querySelector('.rw-selection-bar')?.d
 let selected;try{selected=new Set(JSON.parse(sessionStorage.getItem(key)||'[]'));}catch(_){selected=new Set();}
 document.querySelectorAll('[data-source-select]').forEach(input=>{if(input.disabled)selected.delete(input.value);input.checked=!input.disabled&&selected.has(input.value);});
 function update(){
-  button.disabled=selected.size===0;
-  button.textContent=selected.size>1?'Receive '+selected.size+' selected together':'Receive selected document';
+  button.disabled=false;
+  button.textContent=selected.size>1?'Receive '+selected.size+' selected together':selected.size===1?'Receive selected document':'Receive all open documents';
   document.querySelector('[data-clear-selected]').disabled=selected.size===0;
   document.querySelector('.rw-selection-bar').classList.toggle('has-selection',selected.size>0);
   count.textContent=selected.size?selected.size+' document'+(selected.size===1?'':'s')+' selected across pages · ready to count outstanding quantities':'Select open documents to receive together';
   document.querySelectorAll('[data-source-select]').forEach(input=>input.closest('tr').classList.toggle('is-selected',input.checked));
-  document.querySelectorAll('[data-open-selection]').forEach(action=>{action.hidden=!selected.size;action.disabled=!selected.size;const label=action.querySelector('strong');if(label)label.textContent=button.textContent;else action.textContent=button.textContent;});
+  document.querySelectorAll('[data-open-selection]').forEach(action=>{action.hidden=selected.size===1;action.disabled=false;action.dataset.actionDescription=selected.size?'Open your checked documents in one workspace':'Open every unclosed document with quantities remaining';const label=action.querySelector('strong');if(label){label.textContent=button.textContent;const help=action.querySelector('small');if(help)help.textContent=action.dataset.actionDescription;}else action.textContent=button.textContent;});
   document.querySelectorAll('[data-single-selection-hint]').forEach(hint=>hint.hidden=!selected.size);
   try{sessionStorage.setItem(key,JSON.stringify([...selected]));}catch(_){}
 }
@@ -23,6 +23,6 @@ document.addEventListener('change',event=>{
   if(input.checked)selected.add(input.value);else selected.delete(input.value);
   update();
 });
-button.onclick=()=>{if(selected.size)window.location.assign('/app/receiving/work?'+new URLSearchParams({documents:[...selected].join(',')}));};
+button.onclick=()=>window.location.assign(selected.size?'/app/receiving/work?'+new URLSearchParams({documents:[...selected].join(',')}):'/app/receiving/work/all');
 document.addEventListener('click',event=>{if(event.target.closest('[data-open-selection]'))button.click();});
 })();

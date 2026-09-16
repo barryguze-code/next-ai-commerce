@@ -4,8 +4,8 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Receive documents | Next AI Commerce</title>
   <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1">
-  <link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/receiving-work.css?v=20260913-4">
-  <script defer src="/js/receiving-work.js?v=20260913-4"></script>
+  <link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/receiving-work.css?v=20260916-4">
+  <script defer src="/js/receiving-work.js?v=20260916-4"></script>
   <th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block>
 </head>
 <body class="app-page">
@@ -20,7 +20,7 @@
   <p class="notice error" th:if="${catalogError}" th:text="${catalogError}"></p>
   <p id="rw-feedback" class="notice" role="status" hidden></p>
   <section class="rw-documents" aria-label="Selected source documents">
-    <article class="rw-document" th:each="d:${workDocuments}" th:attr="data-document=${d.id}">
+    <article class="rw-document" th:each="d:${workDocuments}" th:attr="data-document=${d.id},data-receiving-status=${d.statusTone()}">
       <span class="rw-document-icon" aria-hidden="true">▤</span><div><strong th:text="${d.label()}">Invoice</strong><small th:text="${d.vendor}">Vendor</small><span class="rw-progress" th:text="${d.progress()}">Partial</span></div>
       <button class="secondary-button compact-button" type="button" th:attr="data-review-document=${d.id}">Review</button>
     </article>
@@ -28,7 +28,7 @@
   <section class="data-card" id="rw-lines-card">
     <div class="card-toolbar"><div><h2>Receiving checklist</h2><p>Count what arrived. Save each expiration batch separately; come back for the rest anytime.</p></div><span class="rw-saved-hint">✓ Every receipt saves immediately</span></div>
     <div class="table-wrap"><table data-table-widget="receiving-work" class="rw-table">
-      <thead><tr><th data-column="product">Product</th><th data-column="source">Source document</th><th data-column="expected">Expected</th><th data-column="received">Received</th><th data-column="remaining">Remaining</th><th data-column="actions">Actions</th></tr></thead>
+      <thead><tr><th data-column="product" data-column-required="true" data-column-weight="2.5">Product</th><th data-column="source">Source document</th><th data-column="expected">Expected</th><th data-column="received">Received</th><th data-column="remaining">Remaining</th><th data-column="expiration">Expiration</th><th data-column="condition">Status</th><th data-column="actions">Actions</th></tr></thead>
       <tbody>
         <tr th:each="l:${workLines}" th:attr="data-line=${l.id},data-document=${l.documentId}">
           <td data-column="product"><strong th:text="${l.product}">Product</strong><small th:text="${l.code}">Code</small></td>
@@ -36,7 +36,10 @@
           <td data-column="expected" th:text="${#numbers.formatDecimal(l.expected,1,0)+' each'}"></td>
           <td data-column="received" th:text="${#numbers.formatDecimal(l.received,1,0)+' each'}"></td>
           <td data-column="remaining"><span th:if="${l.closed}" class="rw-locked">Closed</span><span th:unless="${l.closed}" th:text="${#numbers.formatDecimal(l.remaining,1,0)+' each'}"></span></td>
+          <td data-column="expiration">—</td>
+          <td data-column="condition">Not received</td>
           <td data-column="actions"><div class="rw-row-actions">
+            <button class="collaboration-row-button" type="button" th:attr="data-entity-type='SHIPMENT',data-entity-id=${l.sessionId},data-title=${l.product},data-identifier=${l.code},data-parent-url=|/app/receiving/work?documents=${l.documentId}|,data-can-collaborate=${canEditCatalog}" onclick="openRecordCollaboration(this)" aria-label="Open receiving collaboration"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/><path class="conversation-lines" d="M9 9h6M9 12h4"/></svg></button>
             <button th:if="${canEditCatalog and !l.closed and l.remaining.signum()>0}" class="primary-button compact-button" type="button" th:attr="data-receive=${l.id}">Receive</button>
             <button th:if="${l.receipts>0}" class="secondary-button compact-button" type="button" th:attr="data-review-line=${l.id}">Review receipts</button>
             <span th:if="${l.closed and l.receipts==0}" class="rw-locked">No receipts</span>
@@ -56,7 +59,7 @@
   </div>
 </dialog>
 <script th:inline="javascript">
-window.receivingWork = {documents:/*[[${workDocuments}]]*/[],lines:/*[[${workLines}]]*/[],locations:/*[[${locations}]]*/[]};
+window.receivingWork = {documents:/*[[${workDocuments}]]*/[],lines:/*[[${workLines}]]*/[],locations:/*[[${locations}]]*/[],details:/*[[${lineDetails}]]*/[],policy:/*[[${shelfPolicy}]]*/null};
 </script>
 <th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block>
 </body>

@@ -24,12 +24,33 @@ public class ReceivingWorkflowRepository {
             BigDecimal outstanding,boolean closed,boolean partial,boolean hasHistory,String closeReason){
         public String label(){return ("INVOICE".equals(type)?"Invoice":"Packing list")+" · "+(number==null||number.isBlank()?filename:number);}
         public String progress(){return closed?(partial?"Closed · Partial":"Closed · Received"):
-            received.signum()==0?"Not received":outstanding.signum()>0?"Partially received":"Fully received";}
+            outstanding.signum()==0?(received.compareTo(expected)<0?"Resolved · exceptions":"Fully received"):
+            received.signum()>0||outstanding.compareTo(expected)<0?"Partially received":"Not received";}
+        public String statusTone(){return closed?"closed":outstanding.signum()==0?"complete":received.signum()>0||outstanding.compareTo(expected)<0?"partial":"open";}
     }
     public record WorkLine(UUID id,UUID documentId,UUID sessionId,UUID productId,String product,String code,
             BigDecimal expected,BigDecimal received,BigDecimal remaining,BigDecimal unitsPerCase,
             BigDecimal unitCost,String currency,boolean requiresExpiration,boolean closed,int receipts,
             BigDecimal depositFee,BigDecimal otherFee,UUID locationId){}
+    @Transactional(readOnly=true)
+    public InventoryRepository.ShelfLifePolicy shelfLifePolicy(UUID tenant){return inventory.shelfLifePolicy(tenant);}
+
+    @Transactional(readOnly=true)
+    public List<Map<String,Object>> lineDetails(UUID tenant,List<UUID> documents){
+        tenant(tenant);if(documents.isEmpty())return List.of();
+        return sql.queryForList("""
+            SELECT i.id::text AS id, i.discrepancy_quantity AS shortage,
+              coalesce(g.units_per_case,i.units_per_case) AS "catalogPack",
+              i.invoice_unit AS "invoiceUnit",i.ordered_quantity AS "orderedQuantity",
+              coalesce((SELECT jsonb_agg(jsonb_build_object('expiration',r.expiration_date,'condition',r.disposition,
+                'quantity',r.total_each_quantity) ORDER BY r.expiration_date NULLS LAST)
+                FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.voided_at IS NULL),'[]'::jsonb)::text AS batches
+            FROM purchase_order_items i JOIN purchase_orders p ON p.tenant_id=i.tenant_id AND p.id=i.purchase_order_id
+            LEFT JOIN account_catalog_items a ON a.tenant_id=i.tenant_id AND a.id=i.account_catalog_item_id
+            LEFT JOIN global_catalog_products g ON g.id=a.global_product_id
+            WHERE i.tenant_id=:tenant AND p.receiving_document_id IN (:documents)
+            """,Map.of("tenant",tenant,"documents",documents));
+    }
     public record Receipt(UUID id,BigDecimal quantity,LocalDate expiration,UUID locationId,String location,
             String disposition,Instant receivedAt,boolean undone,String blockedReason,BigDecimal onHand,BigDecimal reserved){
         public boolean canUndo(){return !undone&&blockedReason==null;}
@@ -133,7 +154,7 @@ public class ReceivingWorkflowRepository {
     @Transactional(readOnly=true)
     public List<Receipt> receipts(UUID tenant,UUID line){
         tenant(tenant);Identity identity=identity(tenant,line);
-        return jdbc.query("""
+        var result=new ArrayList<>(jdbc.query("""
             SELECT r.id,r.total_each_quantity,r.expiration_date,r.location_id,l.code,r.disposition,r.received_at,r.voided_at,
               coalesce(stock.on_hand,0),coalesce(reserved.quantity,0),
               EXISTS(SELECT 1 FROM inventory_ledger_entries used WHERE used.tenant_id=r.tenant_id
@@ -164,7 +185,18 @@ public class ReceivingWorkflowRepository {
                     physical&&onHand.compareTo(quantity)<0?"The original quantity is no longer on hand. Use an adjustment instead.":null;
                 return new Receipt(rs.getObject(1,UUID.class),quantity,rs.getObject(3,LocalDate.class),rs.getObject(4,UUID.class),rs.getString(5),
                     rs.getString(6),rs.getTimestamp(7).toInstant(),rs.getTimestamp(8)!=null,blocked,onHand,reserved);
-            },identity.product(),identity.product(),identity.product(),identity.product(),tenant,line);
+            },identity.product(),identity.product(),identity.product(),identity.product(),tenant,line));
+        // Older shortages recorded only a claim and balance; expose their remaining quantity for an audited undo.
+        jdbc.query("""
+            SELECT greatest(i.discrepancy_quantity-coalesce((SELECT sum(r.total_each_quantity) FROM receiving_line_receipts r
+              WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='SHORT_SHIPPED' AND r.voided_at IS NULL),0),0),
+              i.updated_at,coalesce(c.status,'OPEN') FROM purchase_order_items i
+            LEFT JOIN vendor_credit_requests c ON c.tenant_id=i.tenant_id AND c.purchase_order_item_id=i.id AND c.reason='SHORT_SHIPPED'
+            WHERE i.tenant_id=? AND i.id=?
+            """,rs->{if(rs.next()&&rs.getBigDecimal(1).signum()>0)result.add(new Receipt(line,rs.getBigDecimal(1),null,null,null,
+                "SHORT_SHIPPED",rs.getTimestamp(2).toInstant(),false,identity.closed()?"This document is closed; its shortage history is locked.":
+                !List.of("OPEN","CANCELLED").contains(rs.getString(3))?"Vendor follow-up has already been submitted or settled.":null,BigDecimal.ZERO,BigDecimal.ZERO));return null;},tenant,line);
+        return result;
     }
     @Transactional
     public void undo(UUID tenant,String actor,UUID line,UUID receiptId,String reason){
@@ -183,11 +215,12 @@ public class ReceivingWorkflowRepository {
             ON CONFLICT(tenant_id,idempotency_key) DO NOTHING
             ""","Undo receipt · "+reason,actor,tenant,receiptId);
         jdbc.update("UPDATE receiving_line_receipts SET voided_at=now(),voided_by=(SELECT id FROM app_users WHERE lower(email)=lower(?)),void_reason=? WHERE tenant_id=? AND id=? AND voided_at IS NULL",actor,reason,tenant,receiptId);
+        boolean shortage="SHORT_SHIPPED".equals(receipt.disposition());
         jdbc.update("""
             UPDATE purchase_order_items SET received_quantity=greatest(received_quantity-?,0),
-              status=CASE WHEN received_quantity-?<=0 THEN 'OPEN' ELSE 'PARTIALLY_RECEIVED' END
+              discrepancy_quantity=greatest(discrepancy_quantity-?,0),status='PARTIALLY_RECEIVED',updated_at=now()
             WHERE tenant_id=? AND id=?
-            """,receipt.quantity(),receipt.quantity(),tenant,line);
+            """,shortage?BigDecimal.ZERO:receipt.quantity(),shortage?receipt.quantity():BigDecimal.ZERO,tenant,line);
         jdbc.update("""
             UPDATE receiving_document_lines l SET received_quantity=i.received_quantity
             FROM purchase_order_items i WHERE i.tenant_id=? AND i.id=? AND l.tenant_id=i.tenant_id AND l.id=i.receiving_line_id
@@ -201,7 +234,7 @@ public class ReceivingWorkflowRepository {
             WHERE tenant_id=? AND purchase_order_item_id=? AND reason=? AND status='OPEN'
             """,receipt.quantity(),receipt.quantity(),receipt.quantity(),tenant,line,receipt.disposition());
         jdbc.update("UPDATE receiving_sessions SET status='MATCHING' WHERE tenant_id=? AND id=? AND status<>'POSTED'",tenant,id.session());
-        audit(tenant,id.document(),receiptId,"UNDO_RECEIPT",reason,actor);
+        audit(tenant,id.document(),receiptId.equals(line)?null:receiptId,"UNDO_RECEIPT",receipt.disposition()+" · "+receipt.quantity()+" · "+reason,actor);
     }
     @Transactional
     public void adjust(UUID tenant,String actor,UUID line,UUID receiptId,BigDecimal quantity,String direction,String reason,String notes){
@@ -306,6 +339,38 @@ public class ReceivingWorkflowRepository {
     private record ReceiveTarget(UUID document,UUID session,UUID product,UUID sourceLine,UUID vendor,
             BigDecimal remaining,boolean dateRequired,boolean closed,UUID location,String claimStatus){}
     @Transactional
+    public void addCatalogueItem(UUID tenant,String actor,UUID line,com.nextaicommerce.platform.catalog.CatalogRepository catalog,BigDecimal pack,Boolean expirationRequired){
+        lock(tenant);Identity id=identity(tenant,line);
+        if(id.closed())throw new IllegalArgumentException("This document is closed.");
+        if(id.product()!=null)throw new IllegalArgumentException("This line is already linked to the catalogue. Refresh the checklist.");
+        var source=jdbc.queryForMap("SELECT i.description,i.vendor_item_code,p.vendor_id FROM purchase_order_items i JOIN purchase_orders p ON p.tenant_id=i.tenant_id AND p.id=i.purchase_order_id WHERE i.tenant_id=? AND i.id=?",tenant,line);
+        UUID product=catalog.addImportedVendorProduct(tenant,actor,(UUID)source.get("vendor_id"),(String)source.get("vendor_item_code"),
+            (String)source.get("description"),null,"UPC","",(String)source.get("vendor_item_code"),Boolean.TRUE.equals(expirationRequired));
+        jdbc.update("UPDATE purchase_order_items SET account_catalog_item_id=? WHERE tenant_id=? AND id=?",product,tenant,line);
+        jdbc.update("UPDATE receiving_document_lines SET account_catalog_item_id=?,match_status='MATCHED' WHERE tenant_id=? AND id=(SELECT receiving_line_id FROM purchase_order_items WHERE tenant_id=? AND id=?)",product,tenant,tenant,line);
+        saveCatalogueSettings(tenant,actor,line,pack,expirationRequired);
+        audit(tenant,id.document(),null,"ADD_CATALOGUE_ITEM","Added catalogue item "+product,actor);
+    }
+    @Transactional
+    public void saveCatalogueSettings(UUID tenant,String actor,UUID line,BigDecimal pack,Boolean expirationRequired){
+        lock(tenant);Identity id=identity(tenant,line);
+        if(id.closed())throw new IllegalArgumentException("This document is closed; catalogue settings cannot be changed from it.");
+        if(id.product()==null)throw new IllegalArgumentException("Add this item to the catalogue before receiving.");
+        if(pack!=null&&(pack.signum()<=0||pack.stripTrailingZeros().scale()>0||pack.compareTo(new BigDecimal("100000"))>0))
+            throw new IllegalArgumentException("Enter a whole case size between 1 and 100,000.");
+        if(pack!=null){
+            var current=lines(tenant,List.of(id.document())).stream().filter(l->l.id().equals(line)).findFirst().orElseThrow();
+            if(current.receipts()==0&&current.received().signum()==0&&current.unitsPerCase().compareTo(pack)!=0)
+                prepare(tenant,actor,line,pack,current.depositFee(),current.otherFee());
+        }
+        jdbc.update("""
+            UPDATE global_catalog_products SET units_per_case=coalesce(?,units_per_case),
+              requires_expiration_date=coalesce(?,requires_expiration_date),updated_at=now()
+            WHERE id=(SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?)
+            """,pack,expirationRequired,tenant,id.product());
+        audit(tenant,id.document(),null,"CATALOGUE_SETTINGS","Case units "+pack+" · expiration required "+expirationRequired,actor);
+    }
+    @Transactional
     public void receive(UUID tenant,String actor,UUID line,BigDecimal quantity,LocalDate expiration,String disposition,UUID location,String notes){
         if(quantity==null||quantity.signum()<=0||quantity.stripTrailingZeros().scale()>0)
             throw new IllegalArgumentException("Enter a positive whole-number quantity.");
@@ -350,7 +415,7 @@ public class ReceivingWorkflowRepository {
         args.put("tenant",tenant);args.put("line",line);args.put("document",target.document());args.put("session",target.session());
         args.put("product",target.product());args.put("sourceLine",target.sourceLine());args.put("vendor",target.vendor());
         args.put("location",target.location());args.put("quantity",quantity);args.put("expiration",expiration);args.put("condition",disposition);
-        args.put("mainCondition",overage?"SELLABLE":disposition);args.put("mainQuantity",shortage?BigDecimal.ZERO:overage?target.remaining():quantity);
+        args.put("mainCondition",overage?"SELLABLE":disposition);args.put("mainQuantity",overage?target.remaining():quantity);
         args.put("overQuantity",overage?quantity.subtract(target.remaining()):BigDecimal.ZERO);
         args.put("received",shortage?BigDecimal.ZERO:quantity);args.put("missing",shortage?quantity:BigDecimal.ZERO);
         args.put("claim",claim);args.put("notes",notes==null?"":notes);args.put("actor",actor);
