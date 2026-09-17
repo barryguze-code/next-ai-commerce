@@ -23,6 +23,9 @@ public class ReceivingWorkflowController {
     private static final Logger log=LoggerFactory.getLogger(ReceivingWorkflowController.class);
     private final ReceivingWorkflowRepository workflow;
     private final CatalogRepository catalog;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.nextaicommerce.platform.web.WorkspaceAccessRepository access;
+    void configureAccess(com.nextaicommerce.platform.web.WorkspaceAccessRepository access){this.access=access;}
     public ReceivingWorkflowController(ReceivingWorkflowRepository workflow,CatalogRepository catalog){
         this.workflow=workflow;this.catalog=catalog;
     }
@@ -40,6 +43,7 @@ public class ReceivingWorkflowController {
             model.addAttribute("locations",catalog.listLocations(tenant(session)));
             model.addAttribute("lineDetails",workflow.lineDetails(tenant(session),ids));
             model.addAttribute("shelfPolicy",workflow.shelfLifePolicy(tenant(session)));
+            receiptOptions(auth,session,model);
             return "receiving-work";
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("catalogError",e.getMessage());return "redirect:/app/receiving";}
     }
@@ -53,7 +57,30 @@ public class ReceivingWorkflowController {
         model.addAttribute("workDocuments",docs);model.addAttribute("workLines",workflow.lines(tenant(session),ids));
         model.addAttribute("locations",catalog.listLocations(tenant(session)));model.addAttribute("lineDetails",workflow.lineDetails(tenant(session),ids));
         model.addAttribute("shelfPolicy",workflow.shelfLifePolicy(tenant(session)));model.addAttribute("allOpen",true);
+        receiptOptions(auth,session,model);
         return "receiving-work";
+    }
+    private void receiptOptions(Authentication auth,HttpSession session,Model model){
+        model.addAttribute("canAddReceivingLocation",access!=null&&access.canOperateAccount(tenant(session),auth.getName()));
+    }
+    @GetMapping("/app/receiving/work/lines/{line}/identity") @ResponseBody
+    Object productIdentity(@PathVariable UUID line,HttpSession session){
+        var receipts=workflow.lineProduct(tenant(session),line);
+        return Map.of("imageUrl",receipts==null?"":catalog.pickerImages(tenant(session),List.of(receipts)).getOrDefault(receipts,""));
+    }
+    @GetMapping("/app/receiving/work/expiration-status") @ResponseBody
+    Object expirationStatus(@RequestParam(required=false) LocalDate expiration,HttpSession session){
+        return workflow.expirationStatus(tenant(session),expiration);
+    }
+    @PostMapping("/app/receiving/work/locations") @ResponseBody
+    ResponseEntity<?> addLocation(@RequestParam String code,@RequestParam String name,Authentication auth,HttpSession session){
+        UUID tenant=tenant(session);
+        if(access==null||!access.canOperateAccount(tenant,auth.getName()))
+            return ResponseEntity.status(403).body(Map.of("message","Your role in this account does not allow adding locations."));
+        try{
+            UUID id=catalog.addLocation(tenant,code,name);
+            return ResponseEntity.ok(Map.of("id",id,"locations",catalog.listLocations(tenant)));
+        }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("message",e.getMessage()));}
     }
     @GetMapping("/app/receiving/work/state")
     @ResponseBody
@@ -66,13 +93,26 @@ public class ReceivingWorkflowController {
     @ResponseBody
     Object receipts(@PathVariable UUID line,HttpSession session){return workflow.receipts(tenant(session),line);}
 
+    public record BatchCommand(UUID requestId,List<ReceivingWorkflowRepository.ReceiptBatch> batches,
+            BigDecimal damaged,BigDecimal shortShipped,BigDecimal wrongItem,UUID location,Boolean expirationRequired,BigDecimal confirmedOverage){}
+    @PostMapping("/app/receiving/work/batches/{target}") @ResponseBody
+    ResponseEntity<?> batches(@PathVariable UUID target,@RequestBody BatchCommand command,Authentication auth,HttpSession session){
+        try{
+            UUID tenant=tenant(session);
+            String fingerprint=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(command.toString().getBytes(StandardCharsets.UTF_8)));
+            workflow.execute(tenant,command.requestId(),"batches",target,fingerprint,()->workflow.receiveBatches(tenant,auth.getName(),target,command.batches(),command.damaged(),command.shortShipped(),command.wrongItem(),command.location(),command.expirationRequired(),command.confirmedOverage()));
+            return ResponseEntity.ok(Map.of("message","Receipt saved."));
+        }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("message",e.getMessage()));}
+        catch(Exception e){log.error("Receiving batches failed target={}",target,e);return ResponseEntity.internalServerError().body(Map.of("message","This action could not be confirmed. Retry the same action safely."));}
+    }
     public record Command(UUID requestId,BigDecimal quantity,LocalDate expiration,String disposition,UUID location,
             UUID receipt,String direction,String reason,String notes,Boolean creditExpected,
             BigDecimal previewReceived,BigDecimal previewOutstanding,
-            BigDecimal unitsPerCase,BigDecimal depositFee,BigDecimal otherFee,Boolean expirationRequired){
+            BigDecimal unitsPerCase,BigDecimal depositFee,BigDecimal otherFee,Boolean expirationRequired,
+            BigDecimal damaged,BigDecimal shortShipped,BigDecimal wrongItem){
         public Command(UUID requestId,BigDecimal quantity,LocalDate expiration,String disposition,UUID location,
                 UUID receipt,String direction,String reason,String notes,Boolean creditExpected,BigDecimal previewReceived,BigDecimal previewOutstanding){
-            this(requestId,quantity,expiration,disposition,location,receipt,direction,reason,notes,creditExpected,previewReceived,previewOutstanding,null,null,null,null);
+            this(requestId,quantity,expiration,disposition,location,receipt,direction,reason,notes,creditExpected,previewReceived,previewOutstanding,null,null,null,null,null,null,null);
         }
     }
 
@@ -84,6 +124,9 @@ public class ReceivingWorkflowController {
             if(command.notes()!=null&&command.notes().length()>500)throw new IllegalArgumentException("Keep notes within 500 characters.");
             UUID tenant=tenant(session);String actor=auth.getName();
             Runnable mutation=switch(operation){
+                case "outcomes" -> ()->workflow.receiveOutcomes(tenant,actor,target,command.quantity(),command.damaged(),command.shortShipped(),command.wrongItem(),command.expiration(),command.location(),command.expirationRequired());
+                case "case-pack" -> ()->workflow.updateCasePack(tenant,actor,target,command.unitsPerCase());
+                case "delivery" -> ()->workflow.receiveDelivery(tenant,actor,target,command.quantity(),command.damaged(),command.shortShipped(),command.wrongItem(),command.expiration(),command.location(),command.unitsPerCase(),command.expirationRequired());
                 case "catalogue" -> ()->workflow.addCatalogueItem(tenant,actor,target,catalog,command.unitsPerCase(),command.expirationRequired());
                 case "prepare" -> ()->workflow.prepare(tenant,actor,target,command.unitsPerCase(),command.depositFee(),command.otherFee());
                 case "receive" -> ()->{
@@ -104,7 +147,8 @@ public class ReceivingWorkflowController {
             String message=changed?switch(operation){
                 case "catalogue" -> "Item added to the catalogue. You can now receive it.";
                 case "prepare" -> "Pack and item fees saved. No stock has been added.";
-                case "receive" -> "Receipt saved. This document remains open until you close it.";
+                case "receive","delivery","outcomes" -> "Receipt saved. This document remains open until you close it.";
+                case "case-pack" -> "Shared catalogue case pack updated. Receipt quantities and invoice quantities are unchanged.";
                 case "undo" -> "Receipt undone. The original receipt and reversal remain in history.";
                 case "adjust" -> "Inventory adjusted. The original receipt is unchanged.";
                 case "close" -> "Document closed. Received stock remains in inventory; its receipts are now locked.";

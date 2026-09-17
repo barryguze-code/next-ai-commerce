@@ -134,6 +134,19 @@ public class WorkspaceAccessRepository {
     }
     public record LogoData(byte[] bytes,String contentType) {}
 
+    /** Resolve authority in the selected account, never from unioned login roles. */
+    @Transactional(readOnly = true)
+    public boolean canOperateAccount(UUID tenantId,String email) {
+        setTenant(tenantId);
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM tenants t CROSS JOIN app_users u
+              WHERE t.id=? AND t.status='ACTIVE' AND lower(u.email)=lower(?) AND u.status='ACTIVE'
+                AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)
+                  OR EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=t.id AND m.user_id=u.id
+                    AND m.role IN ('OWNER','ADMIN','OPERATOR'))))
+            """,Boolean.class,tenantId,email));
+    }
+
     private List<ConnectionView> visibleConnections(AccountView account, String email, boolean superAdmin) {
         List<ConnectionView> all = listConnections(account.id(), account.name());
         if (superAdmin) return all;

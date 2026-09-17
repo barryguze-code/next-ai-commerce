@@ -55,6 +55,11 @@ class TemplateRenderingTest {
         assertThat(templateEngine().process("receiving-work",c)).contains("Receive together","INV-101","Partially received",
             "Yogurt &amp; cream","Review receipts","receiving-drawer","Back to checklist","data-table-widget=\"receiving-work\"")
             .doesNotContain("Reopen invoice line");
+        // Exercise the populated parent page too: empty-list fixtures never evaluate d.statusTone().
+        c.setVariable("sessions",List.of());c.setVariable("vendors",List.of());c.setVariable("query","");
+        assertThat(templateEngine().process("receiving",c))
+            .contains("Invoices &amp; packing lists","INV-101","data-receiving-status=\"partial\"","Partially received")
+            .doesNotContain("src=\"/js/receiving-work.js");
     }
     @Test
     void ordersRenderAsPagedReadableOperationalQueue() {

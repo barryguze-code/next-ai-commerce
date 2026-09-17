@@ -7,6 +7,16 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import com.nextaicommerce.platform.catalog.CatalogRepository;
 class ReceivingWorkflowControllerTest {
+    @Test void quickLocationChecksCurrentAccountAndReturnsChoices(){
+        var catalog=mock(CatalogRepository.class);var access=mock(com.nextaicommerce.platform.web.WorkspaceAccessRepository.class);
+        var controller=new ReceivingWorkflowController(mock(ReceivingWorkflowRepository.class),catalog);controller.configureAccess(access);
+        UUID tenant=UUID.randomUUID(),location=UUID.randomUUID();var session=new MockHttpSession();session.setAttribute("selectedTenantId",tenant);
+        var auth=new UsernamePasswordAuthenticationToken("qa@example.test","unused",List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_OWNER")));
+        assertThat(controller.addLocation("OVERFLOW-A","Overflow",auth,session).getStatusCode().value()).isEqualTo(403);verifyNoInteractions(catalog);
+        when(access.canOperateAccount(tenant,auth.getName())).thenReturn(true);when(catalog.addLocation(tenant,"OVERFLOW-A","Overflow")).thenReturn(location);when(catalog.listLocations(tenant)).thenReturn(List.of());
+        assertThat(controller.addLocation("OVERFLOW-A","Overflow",auth,session).getStatusCode().value()).isEqualTo(200);
+        verify(catalog).addLocation(tenant,"OVERFLOW-A","Overflow");
+    }
     @Test void completedDocumentsCannotEnterMultiDocumentReceiving(){
         for(boolean closed:List.of(true,false)){
             var repository=mock(ReceivingWorkflowRepository.class);

@@ -35,6 +35,97 @@ public class ReceivingWorkflowRepository {
     @Transactional(readOnly=true)
     public InventoryRepository.ShelfLifePolicy shelfLifePolicy(UUID tenant){return inventory.shelfLifePolicy(tenant);}
 
+    public record ShelfStatus(String disposition,String tone,String message){}
+    public record ReceiptBatch(BigDecimal quantity,LocalDate expiration){}
+    /** All expiration portions and exceptions commit under one command and inventory lock. */
+    @Transactional
+    public void receiveBatches(UUID tenant,String actor,UUID line,List<ReceiptBatch> batches,
+            BigDecimal damaged,BigDecimal missing,BigDecimal mispick,UUID location,Boolean dateRequired,
+            BigDecimal confirmedOverage){
+        lock(tenant);
+        if(batches==null||batches.isEmpty()||batches.size()>100)throw new IllegalArgumentException("Enter between 1 and 100 expiration batches.");
+        BigDecimal total=BigDecimal.ZERO;
+        for(var batch:batches){
+            if(batch==null||batch.quantity()==null||batch.quantity().signum()<0||batch.quantity().stripTrailingZeros().scale()>0)
+                throw new IllegalArgumentException("Use non-negative whole units for each batch.");
+            total=total.add(batch.quantity());
+        }
+        damaged=damaged==null?BigDecimal.ZERO:damaged;missing=missing==null?BigDecimal.ZERO:missing;mispick=mispick==null?BigDecimal.ZERO:mispick;
+        for(var q:List.of(damaged,missing,mispick))if(q.signum()<0||q.stripTrailingZeros().scale()>0)throw new IllegalArgumentException("Use non-negative whole exception quantities.");
+        var id=identity(tenant,line);
+        var current=lines(tenant,List.of(id.document())).stream().filter(l->l.id().equals(line)).findFirst().orElseThrow();
+        if(current.closed())throw new IllegalArgumentException("This document is closed.");
+        var accounted=total.add(damaged).add(missing).add(mispick);
+        if(accounted.signum()==0)throw new IllegalArgumentException("Enter a quantity to receive.");
+        if(damaged.add(mispick).add(missing).compareTo(current.remaining())>0||missing.signum()>0&&accounted.compareTo(current.remaining())>0)
+            throw new IllegalArgumentException("Exceptions exceed the remaining expected quantity; a receipt cannot be both short shipped and overage.");
+        var extra=accounted.subtract(current.remaining()).max(BigDecimal.ZERO);
+        if(extra.signum()>0&&(confirmedOverage==null||confirmedOverage.compareTo(extra)!=0))
+            throw new IllegalArgumentException("The remaining quantity changed or an overage needs confirmation. Refresh the checklist and confirm the extra units before saving.");
+        saveCatalogueSettings(tenant,actor,line,null,dateRequired,true);
+        if(damaged.add(missing).add(mispick).signum()>0)
+            receiveOutcomes(tenant,actor,line,BigDecimal.ZERO,damaged,missing,mispick,null,location,dateRequired);
+        for(var batch:batches)if(batch.quantity().signum()>0)
+            receiveOutcomes(tenant,actor,line,batch.quantity(),BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,batch.expiration(),location,dateRequired);
+    }
+    /** Additive warehouse observations; the legacy delivery command keeps its original payload meaning. */
+    @Transactional
+    public void receiveOutcomes(UUID tenant,String actor,UUID line,BigDecimal sellable,BigDecimal damaged,
+            BigDecimal missing,BigDecimal mispick,LocalDate expiration,UUID location,Boolean dateRequired){
+        if(sellable==null||sellable.signum()<0||sellable.stripTrailingZeros().scale()>0)
+            throw new IllegalArgumentException("Enter a non-negative whole sellable quantity.");
+        var damage=damaged==null?BigDecimal.ZERO:damaged;
+        var wrong=mispick==null?BigDecimal.ZERO:mispick;
+        receiveDelivery(tenant,actor,line,sellable.add(damage).add(wrong),damage,missing,wrong,expiration,location,null,dateRequired);
+    }
+    @Transactional
+    public void updateCasePack(UUID tenant,String actor,UUID line,BigDecimal pack){
+        if(pack==null)throw new IllegalArgumentException("Enter a case pack.");
+        saveCatalogueSettings(tenant,actor,line,pack,null,true);
+    }
+    @Transactional(readOnly=true)
+    public ShelfStatus expirationStatus(UUID tenant,LocalDate expiration){
+        var policy=shelfLifePolicy(tenant);
+        if(expiration==null)return new ShelfStatus("SELLABLE","neutral","No expiration date entered");
+        long days=java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(),expiration);
+        if(days<0)return new ShelfStatus("EXPIRED","danger","Expired · cannot sell");
+        if(days<=policy.minimumSellableDays())return new ShelfStatus("SOON_EXPIRED","danger","Short shelf life · "+days+" days remaining · cannot sell");
+        if(days<=policy.warningDays())return new ShelfStatus("SOON_EXPIRED","warning","Short shelf life · "+days+" days remaining");
+        return new ShelfStatus("SELLABLE","success","Expiration OK · "+days+" days remaining");
+    }
+
+    /** One command/transaction; receipt portions retain the existing history and undo identities. */
+    @Transactional
+    public void receiveDelivery(UUID tenant,String actor,UUID line,BigDecimal delivered,BigDecimal damaged,
+            BigDecimal missing,BigDecimal wrong,LocalDate expiration,UUID location,BigDecimal pack,Boolean dateRequired){
+        lock(tenant);
+        for(var q:List.of(delivered==null?BigDecimal.valueOf(-1):delivered,
+                damaged==null?BigDecimal.ZERO:damaged,missing==null?BigDecimal.ZERO:missing,wrong==null?BigDecimal.ZERO:wrong))
+            if(q.signum()<0||q.stripTrailingZeros().scale()>0)throw new IllegalArgumentException("Use non-negative whole units for delivered and exception quantities.");
+        damaged=damaged==null?BigDecimal.ZERO:damaged;missing=missing==null?BigDecimal.ZERO:missing;wrong=wrong==null?BigDecimal.ZERO:wrong;
+        if(delivered.add(missing).signum()==0)throw new IllegalArgumentException("Enter delivered units or an explicit short shipment.");
+        if(damaged.add(wrong).compareTo(delivered)>0)throw new IllegalArgumentException("Damaged and wrong-item units together cannot exceed the quantity delivered.");
+        Identity id=identity(tenant,line);
+        var current=lines(tenant,List.of(id.document())).stream().filter(l->l.id().equals(line)).findFirst().orElseThrow();
+        BigDecimal remaining=current.remaining();
+        if(missing.signum()>0&&delivered.add(missing).compareTo(remaining)>0)
+            throw new IllegalArgumentException("Delivered plus short-shipped units cannot exceed the current remaining expected quantity. Extra deliveries cannot also be short shipped.");
+        if(damaged.add(wrong).compareTo(remaining)>0)
+            throw new IllegalArgumentException("Damaged and wrong-item units exceed the current expected balance. Record the expected exceptions here; handle additional rejected goods separately.");
+        saveCatalogueSettings(tenant,actor,line,pack,dateRequired,true);
+        ShelfStatus status=expirationStatus(tenant,expiration);
+        // Charge exception portions to expected units first; only excess good physical units become zero-cost overage.
+        if(damaged.signum()>0)receive(tenant,actor,line,damaged,expiration,"DAMAGED",location,null);
+        if(wrong.signum()>0)receive(tenant,actor,line,wrong,expiration,"MISPICKED",location,null);
+        if(missing.signum()>0)receive(tenant,actor,line,missing,null,"SHORT_SHIPPED",location,null);
+        BigDecimal physical=delivered.subtract(damaged).subtract(wrong);
+        BigDecimal expected=remaining.subtract(damaged).subtract(wrong).subtract(missing).max(BigDecimal.ZERO).min(physical);
+        if(expected.signum()>0)receive(tenant,actor,line,expected,expiration,status.disposition(),location,null);
+        BigDecimal extra=physical.subtract(expected);
+        if(extra.signum()>0)receive(tenant,actor,line,extra,expiration,"OVER_SHIPPED",location,null);
+        audit(tenant,id.document(),null,"RECEIVE_DELIVERY","Delivered "+delivered+" · damaged "+damaged+" · wrong item "+wrong+" · short shipped "+missing+" · extra "+extra,actor);
+    }
+
     @Transactional(readOnly=true)
     public List<Map<String,Object>> lineDetails(UUID tenant,List<UUID> documents){
         tenant(tenant);if(documents.isEmpty())return List.of();
@@ -84,7 +175,7 @@ public class ReceivingWorkflowRepository {
         JOIN vendors v ON v.tenant_id=d.tenant_id AND v.id=d.vendor_id
         LEFT JOIN LATERAL (SELECT sum(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END) expected,
           sum(i.received_quantity) received,sum(greatest(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END
-            -i.received_quantity-i.discrepancy_quantity,0)) outstanding
+            -i.received_quantity-i.discrepancy_quantity+(SELECT coalesce(sum(r.total_each_quantity),0) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='OVER_SHIPPED' AND r.voided_at IS NULL),0)) outstanding
           FROM purchase_orders p JOIN purchase_order_items i ON i.tenant_id=p.tenant_id AND i.purchase_order_id=p.id
           WHERE p.tenant_id=d.tenant_id AND p.receiving_document_id=d.id) t ON true
         WHERE d.tenant_id=:tenant AND d.removed_at IS NULL AND s.status<>'CANCELLED'
@@ -122,7 +213,7 @@ public class ReceivingWorkflowRepository {
             SELECT i.id,d.id,d.receiving_session_id,i.account_catalog_item_id,i.description,i.vendor_item_code,
               i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END expected,
               i.received_quantity,greatest(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END
-                -i.received_quantity-i.discrepancy_quantity,0),i.units_per_case,i.unit_cost,i.currency,coalesce(g.requires_expiration_date,false),
+                -i.received_quantity-i.discrepancy_quantity+(SELECT coalesce(sum(r.total_each_quantity),0) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='OVER_SHIPPED' AND r.voided_at IS NULL),0),i.units_per_case,i.unit_cost,i.currency,coalesce(g.requires_expiration_date,false),
               d.closed_at IS NOT NULL OR s.status='POSTED',
               (SELECT count(*) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id),
               i.deposit_fee_per_unit,i.other_fee_per_unit,
@@ -141,6 +232,8 @@ public class ReceivingWorkflowRepository {
             rs.getInt(15),rs.getBigDecimal(16),rs.getBigDecimal(17),rs.getObject(18,UUID.class)));
     }
     private record Identity(UUID document,UUID session,UUID product,boolean closed){}
+    @Transactional(readOnly=true)
+    public UUID lineProduct(UUID tenant,UUID line){tenant(tenant);return identity(tenant,line).product();}
     private Identity identity(UUID tenant,UUID line){
         Identity result=jdbc.query("""
             SELECT d.id,d.receiving_session_id,i.account_catalog_item_id,d.closed_at IS NOT NULL OR s.status='POSTED'
@@ -284,16 +377,16 @@ public class ReceivingWorkflowRepository {
                 INSERT INTO vendor_credit_requests(tenant_id,receiving_session_id,purchase_order_item_id,vendor_id,reason,
                   quantity,unit_cost,currency,notes,created_by)
                 SELECT i.tenant_id,p.receiving_session_id,i.id,p.vendor_id,'SHORT_SHIPPED',
-                  greatest(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END-i.received_quantity-i.discrepancy_quantity,0),
+                  greatest(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END-i.received_quantity-i.discrepancy_quantity+(SELECT coalesce(sum(r.total_each_quantity),0) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='OVER_SHIPPED' AND r.voided_at IS NULL),0),
                   i.unit_cost,i.currency,?,(SELECT id FROM app_users WHERE lower(email)=lower(?))
                 FROM purchase_orders p JOIN purchase_order_items i ON i.tenant_id=p.tenant_id AND i.purchase_order_id=p.id
-                WHERE p.tenant_id=? AND p.receiving_document_id=? AND i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END>i.received_quantity+i.discrepancy_quantity
+                WHERE p.tenant_id=? AND p.receiving_document_id=? AND i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END>i.received_quantity+i.discrepancy_quantity-(SELECT coalesce(sum(r.total_each_quantity),0) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='OVER_SHIPPED' AND r.voided_at IS NULL)
                 ON CONFLICT(tenant_id,purchase_order_item_id,reason) DO UPDATE SET
                   quantity=CASE WHEN vendor_credit_requests.status='CANCELLED' THEN EXCLUDED.quantity ELSE vendor_credit_requests.quantity+EXCLUDED.quantity END,
                   status='OPEN'
                 """,note,actor,tenant,document);
             jdbc.update("""
-                UPDATE purchase_order_items i SET discrepancy_quantity=greatest(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END-i.received_quantity,i.discrepancy_quantity),
+                UPDATE purchase_order_items i SET discrepancy_quantity=greatest(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END-i.received_quantity+(SELECT coalesce(sum(r.total_each_quantity),0) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='OVER_SHIPPED' AND r.voided_at IS NULL),i.discrepancy_quantity),
                   discrepancy_status=CASE WHEN discrepancy_status='NONE' THEN 'OTHER' ELSE discrepancy_status END,
                   discrepancy_notes=left(concat_ws(' · ',discrepancy_notes,?),500),status='RECEIVED'
                 FROM purchase_orders p WHERE p.tenant_id=? AND p.receiving_document_id=? AND i.tenant_id=p.tenant_id AND i.purchase_order_id=p.id
@@ -353,12 +446,15 @@ public class ReceivingWorkflowRepository {
     }
     @Transactional
     public void saveCatalogueSettings(UUID tenant,String actor,UUID line,BigDecimal pack,Boolean expirationRequired){
+        saveCatalogueSettings(tenant,actor,line,pack,expirationRequired,false);
+    }
+    private void saveCatalogueSettings(UUID tenant,String actor,UUID line,BigDecimal pack,Boolean expirationRequired,boolean preserveInvoice){
         lock(tenant);Identity id=identity(tenant,line);
         if(id.closed())throw new IllegalArgumentException("This document is closed; catalogue settings cannot be changed from it.");
         if(id.product()==null)throw new IllegalArgumentException("Add this item to the catalogue before receiving.");
         if(pack!=null&&(pack.signum()<=0||pack.stripTrailingZeros().scale()>0||pack.compareTo(new BigDecimal("100000"))>0))
             throw new IllegalArgumentException("Enter a whole case size between 1 and 100,000.");
-        if(pack!=null){
+        if(pack!=null&&!preserveInvoice){
             var current=lines(tenant,List.of(id.document())).stream().filter(l->l.id().equals(line)).findFirst().orElseThrow();
             if(current.receipts()==0&&current.received().signum()==0&&current.unitsPerCase().compareTo(pack)!=0)
                 prepare(tenant,actor,line,pack,current.depositFee(),current.otherFee());
@@ -380,7 +476,7 @@ public class ReceivingWorkflowRepository {
         lock(tenant);
         ReceiveTarget target=jdbc.query("""
             SELECT d.id,d.receiving_session_id,i.account_catalog_item_id,i.receiving_line_id,p.vendor_id,
-              greatest(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END-i.received_quantity-i.discrepancy_quantity,0),
+              greatest(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END-i.received_quantity-i.discrepancy_quantity+(SELECT coalesce(sum(r.total_each_quantity),0) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='OVER_SHIPPED' AND r.voided_at IS NULL),0),
               g.requires_expiration_date,d.closed_at IS NOT NULL OR s.status='POSTED',loc.id,claim.status
             FROM purchase_order_items i JOIN purchase_orders p ON p.tenant_id=i.tenant_id AND p.id=i.purchase_order_id
             JOIN receiving_documents d ON d.tenant_id=p.tenant_id AND d.id=p.receiving_document_id
@@ -444,11 +540,11 @@ public class ReceivingWorkflowRepository {
                 CASE WHEN r.disposition='OVER_SHIPPED' THEN 'FINAL' ELSE 'PROVISIONAL' END
               FROM receipts r CROSS JOIN base WHERE r.disposition IN ('SELLABLE','SOON_EXPIRED','EXPIRED','OVER_SHIPPED')
             ), item_update AS (
-              UPDATE purchase_order_items SET received_quantity=received_quantity+:received,
+              UPDATE purchase_order_items i SET received_quantity=received_quantity+:received,
                 discrepancy_quantity=discrepancy_quantity+:missing,
                 discrepancy_status=CASE WHEN :condition='SELLABLE' THEN discrepancy_status ELSE :condition END,
                 discrepancy_notes=CASE WHEN :condition='SELLABLE' THEN discrepancy_notes ELSE :notes END,
-                status=CASE WHEN received_quantity+discrepancy_quantity+:quantity>=ordered_quantity*
+                status=CASE WHEN received_quantity+discrepancy_quantity-(SELECT coalesce(sum(r.total_each_quantity),0) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='OVER_SHIPPED' AND r.voided_at IS NULL)+:mainQuantity>=ordered_quantity*
                   CASE WHEN invoice_unit='CASE' THEN units_per_case ELSE 1 END THEN 'RECEIVED' ELSE 'PARTIALLY_RECEIVED' END
               WHERE tenant_id=:tenant AND id=:line
             ), source_update AS (
@@ -469,7 +565,7 @@ public class ReceivingWorkflowRepository {
               SELECT 1 FROM purchase_order_items i JOIN purchase_orders p ON p.tenant_id=i.tenant_id AND p.id=i.purchase_order_id
               JOIN receiving_documents d ON d.tenant_id=p.tenant_id AND d.id=p.receiving_document_id AND d.removed_at IS NULL
               WHERE i.tenant_id=:tenant AND p.receiving_session_id=:session
-                AND i.received_quantity+i.discrepancy_quantity+CASE WHEN i.id=:line THEN :quantity ELSE 0 END
+                AND i.received_quantity+i.discrepancy_quantity-(SELECT coalesce(sum(r.total_each_quantity),0) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='OVER_SHIPPED' AND r.voided_at IS NULL)+CASE WHEN i.id=:line THEN :mainQuantity ELSE 0 END
                   <i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END
             ) THEN 'MATCHING' ELSE 'READY' END
             WHERE s.tenant_id=:tenant AND s.id=:session AND s.status NOT IN ('POSTED','CANCELLED')

@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.2.5",
+    "title": "Clearer receiving quantities and expiration batches",
+    "sections": [
+      {"title":"Receiving improvements","items":["Receive multiple expiration batches and independent damaged, short-shipped and mispick quantities in one save.","Compact quantity summaries, progress colors and standard warning dialogs make receiving easier to review.","Item fees return to the receiving draft, and location creation uses the shared storage-location dialog."]},
+      {"title":"Accurate inventory and catalogue updates","items":["Overage requires confirmation and remains separate at zero acquisition cost. Undo preserves history and correctly restores expected quantities.","Case-pack changes now require an explicit catalogue update; editing receipt quantities does not change the shared product case pack."]}
+    ]
+  },
+  {
     "version": "1.2.4",
     "title": "Smoother receiving and exception handling",
     "sections": [

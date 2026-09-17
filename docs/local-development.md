@@ -1,5 +1,21 @@
 # Local development and UAT — 1.0.0
 
+## Required Eclipse startup workflow
+
+Use the repository's `Local PostgreSQL - Start.launch` and then
+`Local UAT - Start Application.launch` through Eclipse External Tools. Keep
+startup and runtime logs visible in Eclipse. Do not start replacement local
+application/database services in hidden terminal sessions. If GUI launch is
+unavailable, ask the user to start these configurations and wait for confirmation.
+Check existing listeners first; stop only identified obsolete services, not
+unrelated Java or PostgreSQL processes. Restart the application after Java/model
+changes: refreshing templates alone can mix new views with old loaded classes.
+
+The 2026-09-16 blank Receiving page was caused by a v1.2.1 background process
+reading newer templates that called `Document.statusTone()`. Current source
+already contained that method; restarting with current compiled classes is the
+repair, not removing the template's status styling.
+
 Local UAT, automated tests and production are separate databases. Flyway versions
 the schema; it is not a test database or an environment-isolation mechanism.
 

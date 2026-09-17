@@ -4,8 +4,8 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Receive documents | Next AI Commerce</title>
   <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1">
-  <link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/receiving-work.css?v=20260916-4">
-  <script defer src="/js/receiving-work.js?v=20260916-4"></script>
+  <link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/locations.css"><link rel="stylesheet" href="/css/receiving-work.css?v=20260916-11">
+  <script defer src="/js/location-manager.js?v=20260916-1"></script><script defer src="/js/receiving-work.js?v=20260916-11"></script>
   <th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block>
 </head>
 <body class="app-page">
@@ -13,7 +13,7 @@
   <a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
   <div th:replace="~{fragments/sidebar-nav :: nav('receiving')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div>
 </aside>
-<main class="workspace receive-work" th:attr="data-can-edit=${canEditCatalog}">
+<main class="workspace receive-work" th:attr="data-can-edit=${canEditCatalog},data-can-add-location=${canAddReceivingLocation}">
   <input id="receiving-csrf" type="hidden" th:if="${_csrf}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
   <header class="workspace-header"><div><a class="rw-back" href="/app/receiving">← Receiving documents</a><h1>Receive together</h1><p class="page-intro">One working view. Separate documents, quantities, and audit histories.</p></div><div th:replace="~{fragments/context-switcher :: switcher}"></div></header>
   <p class="notice" th:if="${catalogSuccess}" th:text="${catalogSuccess}"></p>
@@ -56,6 +56,14 @@
     <div class="dialog-body" id="rw-drawer-body"></div>
     <p class="notice error rw-panel-feedback" id="rw-panel-feedback" role="alert" hidden></p>
     <div class="dialog-actions"><button class="secondary-button" type="button" data-rw-close>Back to checklist</button></div>
+  </div>
+</dialog>
+<div th:replace="~{account-catalog :: locationDialog}"></div>
+<dialog id="rw-warning-dialog" class="invite-dialog" aria-labelledby="rw-warning-title" aria-describedby="rw-warning-description">
+  <div class="dialog-shell">
+    <div class="dialog-header"><div><span class="eyebrow dark">Review before continuing</span><h2 id="rw-warning-title">Unsaved changes</h2></div><button type="button" class="dialog-close" data-warning-cancel aria-label="Keep editing">×</button></div>
+    <div class="dialog-body"><div class="rw-note warning"><strong>Please confirm</strong><p id="rw-warning-description"></p></div></div>
+    <div class="dialog-actions"><button type="button" class="secondary-button" data-warning-cancel autofocus>Keep editing</button><button type="button" class="primary-button" data-warning-confirm>Continue</button></div>
   </div>
 </dialog>
 <script th:inline="javascript">

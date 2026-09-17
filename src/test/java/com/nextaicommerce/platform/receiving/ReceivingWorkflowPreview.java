@@ -26,13 +26,19 @@ public class ReceivingWorkflowPreview {
         var first=fixture.fixture("INVOICE");fixture.fixture("PACKING_LIST");fixture.receive(first,3);
         var catalog=ReceivingWorkflowDatabaseTest.context.getBean(CatalogRepository.class);
         var controller=new ReceivingWorkflowController(ReceivingWorkflowDatabaseTest.work,catalog);
+        controller.configureAccess(new com.nextaicommerce.platform.web.WorkspaceAccessRepository(ReceivingWorkflowDatabaseTest.jdbc){
+            @Override public boolean canOperateAccount(UUID tenant,String email){return tenant.equals(fixture.tenant)&&email.equals(fixture.actor);}
+        });
         var home=new ReceivingController(ReceivingWorkflowDatabaseTest.receiving,catalog,null,null);home.configureWorkflow(ReceivingWorkflowDatabaseTest.work);
         var session=new MockHttpSession();session.setAttribute("selectedTenantId",fixture.tenant);session.setAttribute("selectedTenantName","Receiving QA only");
         var auth=new UsernamePasswordAuthenticationToken(fixture.actor,"unused",List.of(new SimpleGrantedAuthority("ROLE_OWNER")));
         var engine=new SpringTemplateEngine();var resolver=new ClassLoaderTemplateResolver();
         resolver.setPrefix("templates/");resolver.setSuffix(".html");resolver.setTemplateMode("HTML");resolver.setCacheable(false);engine.setTemplateResolver(resolver);
         var json=JsonMapper.builder().findAndAddModules().build();
-        var server=HttpServer.create(new InetSocketAddress("127.0.0.1",18082),0);
+        int port=Integer.getInteger("receivingPreviewPort",18082);
+        HttpServer server;
+        try{server=HttpServer.create(new InetSocketAddress("127.0.0.1",port),0);}
+        catch(Exception e){ReceivingWorkflowDatabaseTest.cleanup();throw e;}
         server.createContext("/",exchange->{
             try{
                 String path=exchange.getRequestURI().getPath();byte[] content;String type="text/html; charset=utf-8";int status=200;
@@ -43,6 +49,17 @@ public class ReceivingWorkflowPreview {
                     Path root=Path.of("src/main/resources/static").toAbsolutePath(),file=root.resolve(path.substring(1)).normalize();
                     if(!file.startsWith(root)||!Files.isRegularFile(file)){exchange.sendResponseHeaders(404,-1);exchange.close();return;}
                     content=Files.readAllBytes(file);type=path.endsWith(".css")?"text/css":path.endsWith(".js")?"text/javascript":Optional.ofNullable(Files.probeContentType(file)).orElse("application/octet-stream");
+                }else if(path.equals("/app/receiving/work/locations")&&exchange.getRequestMethod().equals("POST")){
+                    var values=new HashMap<String,String>();
+                    for(String part:new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8).split("&")){
+                        var pair=part.split("=",2);if(pair.length==2)values.put(URLDecoder.decode(pair[0],StandardCharsets.UTF_8),URLDecoder.decode(pair[1],StandardCharsets.UTF_8));
+                    }
+                    var result=controller.addLocation(values.get("code"),values.get("name"),auth,session);status=result.getStatusCode().value();content=json.writeValueAsBytes(result.getBody());type="application/json";
+                }else if(path.equals("/app/receiving/work/expiration-status")){
+                    String raw=exchange.getRequestURI().getRawQuery();
+                    content=json.writeValueAsBytes(controller.expirationStatus(raw==null||raw.isBlank()?null:java.time.LocalDate.parse(URLDecoder.decode(raw.split("=",2)[1],StandardCharsets.UTF_8)),session));type="application/json";
+                }else if(path.matches("/app/receiving/work/lines/[^/]+/identity")){
+                    content=json.writeValueAsBytes(controller.productIdentity(UUID.fromString(path.split("/")[5]),session));type="application/json";
                 }else if(path.equals("/app/receiving/work/state")){
                     content=json.writeValueAsBytes(controller.state(selected,session));type="application/json";
                 }else if(path.matches("/app/receiving/work/lines/[^/]+/receipts")){
@@ -73,7 +90,7 @@ public class ReceivingWorkflowPreview {
         });
         server.start();
         Runtime.getRuntime().addShutdownHook(new Thread(()->{server.stop(0);ReceivingWorkflowDatabaseTest.cleanup();}));
-        System.out.println("RECEIVING_PREVIEW_READY http://127.0.0.1:18082/app/receiving");
+        System.out.println("RECEIVING_PREVIEW_READY http://127.0.0.1:"+port+"/app/receiving");
         new java.util.concurrent.CountDownLatch(1).await();
     }
 }

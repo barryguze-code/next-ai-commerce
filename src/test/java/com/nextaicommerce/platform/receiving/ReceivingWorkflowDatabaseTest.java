@@ -82,6 +82,106 @@ class ReceivingWorkflowDatabaseTest {
         });
     }
     void setTenant(){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
+    Fixture twelve(){
+        var f=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET ordered_quantity=12 WHERE tenant_id=? AND id=?",tenant,f.line());});
+        return f;
+    }
+    void outcomes(Fixture f,int good,int damage,int missing,int mispick){
+        work.receiveOutcomes(tenant,actor,f.line(),BigDecimal.valueOf(good),BigDecimal.valueOf(damage),BigDecimal.valueOf(missing),BigDecimal.valueOf(mispick),expiry,f.location(),true);
+    }
+    @Test void additiveOutcomesAndIndependentUndoReconcileWithActiveHistory(){
+        for(int[] values:List.of(new int[]{12,0,0,0},new int[]{8,0,0,0},new int[]{8,4,0,0},new int[]{8,0,4,0},new int[]{8,0,0,4},new int[]{6,2,2,2},new int[]{14,0,0,0})){
+            var f=twelve();outcomes(f,values[0],values[1],values[2],values[3]);
+            assertThat(stock(f)).isEqualByComparingTo(String.valueOf(values[0]));
+            var active=work.receipts(tenant,f.line());
+            for(var receipt:active){
+                work.undo(tenant,actor,f.line(),receipt.id(),"Independent QA undo");
+                var history=work.receipts(tenant,f.line());
+                assertThat(history).anyMatch(r->r.id().equals(receipt.id())&&r.undone());
+                var effective=history.stream().filter(r->!r.undone()).toList();
+                BigDecimal received=effective.stream().filter(r->!r.disposition().equals("SHORT_SHIPPED")).map(ReceivingWorkflowRepository.Receipt::quantity).reduce(BigDecimal.ZERO,BigDecimal::add);
+                BigDecimal accounted=effective.stream().filter(r->!r.disposition().equals("OVER_SHIPPED")).map(ReceivingWorkflowRepository.Receipt::quantity).reduce(BigDecimal.ZERO,BigDecimal::add);
+                var current=work.lines(tenant,List.of(f.document())).getFirst();
+                assertThat(current.received()).isEqualByComparingTo(received);
+                assertThat(current.remaining()).isEqualByComparingTo(new BigDecimal("12").subtract(accounted).max(BigDecimal.ZERO));
+                assertThat(work.documents(tenant,List.of(f.document())).getFirst().outstanding()).isEqualByComparingTo(current.remaining());
+                String batches=work.lineDetails(tenant,List.of(f.document())).getFirst().get("batches").toString();
+                if(effective.stream().noneMatch(r->r.disposition().equals(receipt.disposition())))assertThat(batches).doesNotContain(receipt.disposition());
+            }
+            assertThat(stock(f)).isZero();outcomes(f,3,0,0,0);outcomes(f,4,0,0,0);
+            assertThat(stock(f)).isEqualByComparingTo("7");assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isEqualByComparingTo("5");
+        }
+    }
+    @Test void screenshotSequenceExcludesBothUndoneReceipts(){
+        var f=twelve();tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET ordered_quantity=24 WHERE tenant_id=? AND id=?",tenant,f.line());});
+        outcomes(f,24,0,0,0);work.undo(tenant,actor,f.line(),receipt(f),"First receipt undone");
+        outcomes(f,3,6,3,3);
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().received()).isEqualByComparingTo("12");
+        var good=work.receipts(tenant,f.line()).stream().filter(r->!r.undone()&&r.disposition().equals("SELLABLE")).findFirst().orElseThrow();
+        work.undo(tenant,actor,f.line(),good.id(),"Sellable undone");
+        var current=work.lines(tenant,List.of(f.document())).getFirst();
+        assertThat(current.received()).isEqualByComparingTo("9");assertThat(current.remaining()).isEqualByComparingTo("12");assertThat(stock(f)).isZero();
+        assertThat(work.lineDetails(tenant,List.of(f.document())).getFirst().get("batches").toString()).doesNotContain("SELLABLE");
+    }
+    @Test void casePackRequiresExplicitCommandAndNeverRewritesInvoice(){
+        var f=twelve();work.updateCasePack(tenant,actor,f.line(),new BigDecimal("6"));outcomes(f,8,0,0,0);
+        assertThat(new BigDecimal(work.lineDetails(tenant,List.of(f.document())).getFirst().get("catalogPack").toString())).isEqualByComparingTo("6");
+        work.updateCasePack(tenant,actor,f.line(),new BigDecimal("8"));
+        assertThat(new BigDecimal(work.lineDetails(tenant,List.of(f.document())).getFirst().get("catalogPack").toString())).isEqualByComparingTo("8");
+        var current=work.lines(tenant,List.of(f.document())).getFirst();assertThat(current.expected()).isEqualByComparingTo("12");assertThat(current.unitsPerCase()).isEqualByComparingTo("1");assertThat(stock(f)).isEqualByComparingTo("8");
+    }
+    void delivery(Fixture f,int delivered,int damage,int missing,int wrong,LocalDate date){
+        work.receiveDelivery(tenant,actor,f.line(),BigDecimal.valueOf(delivered),BigDecimal.valueOf(damage),BigDecimal.valueOf(missing),BigDecimal.valueOf(wrong),date,f.location(),new BigDecimal("6"),true);
+    }
+    @Test void deliveryAcceptanceQuantitiesAndIndependentExceptions(){
+        for(int[] example:List.of(new int[]{12,0,0,12,0},new int[]{8,0,0,8,4},new int[]{10,0,2,10,0},new int[]{10,2,2,8,0},new int[]{14,0,0,14,0})){
+            var f=twelve();delivery(f,example[0],example[1],example[2],0,expiry);
+            assertThat(stock(f)).isEqualByComparingTo(String.valueOf(example[3]));
+            assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isEqualByComparingTo(String.valueOf(example[4]));
+            assertThat(work.lines(tenant,List.of(f.document())).getFirst().expected()).isEqualByComparingTo("12");
+            if(example[0]==14)tx.executeWithoutResult(s->{setTenant();
+                assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND unit_cost=0",BigDecimal.class,tenant,f.product())).isEqualByComparingTo("2");
+                assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND unit_cost=2",BigDecimal.class,tenant,f.product())).isEqualByComparingTo("12");
+            });
+        }
+        var wrong=twelve();delivery(wrong,10,2,2,1,expiry);assertThat(stock(wrong)).isEqualByComparingTo("7");
+    }
+    @Test void deliveryIsAtomicRetrySafeAndUsesCurrentBalance(){
+        var f=twelve();UUID request=UUID.randomUUID();
+        assertThat(work.execute(tenant,request,"delivery",f.line(),"same",()->delivery(f,8,0,0,0,expiry))).isTrue();
+        assertThat(work.execute(tenant,request,"delivery",f.line(),"same",()->delivery(f,8,0,0,0,expiry))).isFalse();
+        delivery(f,6,0,0,0,expiry);assertThat(stock(f)).isEqualByComparingTo("14");
+        assertThat(work.receipts(tenant,f.line())).anyMatch(r->r.disposition().equals("OVER_SHIPPED")&&r.quantity().intValueExact()==2);
+        var failed=twelve();
+        assertThatThrownBy(()->delivery(failed,10,2,2,0,null)).hasMessageContaining("expiration");
+        assertThat(work.receipts(tenant,failed.line())).isEmpty();assertThat(stock(failed)).isZero();
+        for(int[] invalid:List.of(new int[]{2,3,0},new int[]{10,0,3},new int[]{0,0,0}))
+            assertThatThrownBy(()->delivery(failed,invalid[0],invalid[1],invalid[2],0,expiry)).isInstanceOf(IllegalArgumentException.class);
+        var undo=twelve();delivery(undo,10,2,2,0,expiry);
+        for(var r:work.receipts(tenant,undo.line()))work.undo(tenant,actor,undo.line(),r.id(),"QA correction");
+        assertThat(stock(undo)).isZero();assertThat(work.lines(tenant,List.of(undo.document())).getFirst().remaining()).isEqualByComparingTo("12");
+    }
+    @Test void deliveryDerivesExpirationFromAccountPolicy(){
+        inventory.saveShelfLifePolicy(tenant,actor,4,18);
+        assertThat(work.expirationStatus(tenant,LocalDate.now().plusDays(19)).disposition()).isEqualTo("SELLABLE");
+        assertThat(work.expirationStatus(tenant,LocalDate.now().plusDays(18)).tone()).isEqualTo("warning");
+        assertThat(work.expirationStatus(tenant,LocalDate.now().plusDays(4)).tone()).isEqualTo("danger");
+        for(var date:List.of(LocalDate.now().minusDays(1),LocalDate.now().plusDays(15))){
+            var f=twelve();delivery(f,12,0,0,0,date);assertThat(stock(f)).isEqualByComparingTo("12");
+            assertThat(work.receipts(tenant,f.line()).getFirst().disposition()).isEqualTo(date.isBefore(LocalDate.now())?"EXPIRED":"SOON_EXPIRED");
+        }
+    }
+    @Test void locationPermissionUsesSelectedMembershipNotAnotherAccount(){
+        var access=new com.nextaicommerce.platform.web.WorkspaceAccessRepository(jdbc);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'VIEWER')",tenant,user);
+            assertThat(access.canOperateAccount(tenant,actor)).isFalse();
+            jdbc.update("UPDATE tenant_memberships SET role='OPERATOR' WHERE tenant_id=? AND user_id=?",tenant,user);
+            assertThat(access.canOperateAccount(tenant,actor)).isTrue();
+            assertThat(access.canOperateAccount(UUID.randomUUID(),actor)).isFalse();
+        });
+    }
     @Test void emptyStockItemsCanBeAdjustedAndOptionsAreTenantScoped(){
         var f=fixture("INVOICE");
         var options=inventory.adjustmentItems(tenant,List.of(f.product()));
@@ -624,6 +724,30 @@ class ReceivingWorkflowDatabaseTest {
         })).hasMessageContaining("expiration");
         assertThat(work.lines(tenant,List.of(f.document())).getFirst().requiresExpiration()).isFalse();
         assertThat(stock(f)).isEqualByComparingTo("6");
+    }
+    @Test void expirationBatchesCommitTogetherWithExceptionsAndIdempotency(){
+        var f=twelve();var request=UUID.randomUUID();
+        var batches=List.of(new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("4"),expiry),new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("5"),expiry.plusDays(10)));
+        Runnable action=()->work.receiveBatches(tenant,actor,f.line(),batches,BigDecimal.ONE,BigDecimal.ONE,BigDecimal.ONE,f.location(),true,BigDecimal.ZERO);
+        assertThat(work.execute(tenant,request,"batches",f.line(),"same",action)).isTrue();
+        assertThat(work.execute(tenant,request,"batches",f.line(),"same",action)).isFalse();
+        assertThat(stock(f)).isEqualByComparingTo("9");assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isZero();
+        assertThat(work.receipts(tenant,f.line())).hasSize(5);
+        assertThat(work.receipts(tenant,f.line()).stream().filter(r->r.disposition().equals("SELLABLE")).map(r->r.expiration())).containsExactlyInAnyOrder(expiry,expiry.plusDays(10));
+    }
+    @Test void invalidLaterExpirationRollsBackAllBatchesAndExceptions(){
+        var f=twelve();var batches=List.of(new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("4"),expiry),new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("5"),null));
+        assertThatThrownBy(()->work.receiveBatches(tenant,actor,f.line(),batches,BigDecimal.ONE,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,BigDecimal.ZERO)).hasMessageContaining("expiration");
+        assertThat(work.receipts(tenant,f.line())).isEmpty();assertThat(stock(f)).isZero();
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isEqualByComparingTo("12");
+    }
+    @Test void batchOverageRequiresExactConfirmationAgainstCurrentRemaining(){
+        var f=twelve();var batches=List.of(new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("8"),expiry),new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("6"),expiry.plusDays(1)));
+        assertThatThrownBy(()->work.receiveBatches(tenant,actor,f.line(),batches,BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,null)).hasMessageContaining("confirmation");
+        assertThat(stock(f)).isZero();
+        work.receiveBatches(tenant,actor,f.line(),batches,BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,new BigDecimal("2"));
+        assertThat(stock(f)).isEqualByComparingTo("14");
+        assertThat(work.receipts(tenant,f.line()).stream().filter(r->r.disposition().equals("OVER_SHIPPED")).map(r->r.quantity())).containsExactly(new BigDecimal("2.0000"));
     }
     @Test void unmatchedReceivingItemCanJoinCatalogueBeforeReceipt(){
         var f=fixture("INVOICE");

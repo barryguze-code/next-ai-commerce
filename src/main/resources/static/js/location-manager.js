@@ -32,6 +32,7 @@ async function createManagedLocation(event,form){
     if(destination&&form.closest('#inventory-location-dialog')){destination.value=result.id;destination.dispatchEvent(new Event('change',{bubbles:true}));const safety=document.getElementById('location-safety');if(safety)safety.textContent=label+' was added to this account and selected for this batch.'}
     form.reset();feedback.textContent=label+' added. You can add another location or choose Done.';feedback.hidden=false;
     list.scrollTo({top:list.scrollHeight,behavior:'smooth'});form.elements.code.focus();
+    form.dispatchEvent(new CustomEvent('location:created',{bubbles:true,detail:result}));
   }catch(problem){feedback.textContent=problem.message;feedback.classList.add('error');feedback.hidden=false}
   finally{submit.disabled=false;submit.textContent=originalLabel}
   return false;
