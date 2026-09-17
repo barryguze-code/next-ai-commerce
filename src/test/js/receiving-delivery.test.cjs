@@ -34,6 +34,8 @@ test('receiving tabs, expiration batches, fee navigation and overage confirmatio
   await page.getByRole('tab',{name:'Damaged',exact:true}).click();await page.locator('#rw-warning-dialog').getByRole('button',{name:'Keep editing',exact:true}).last().click();
   assert.equal(await page.locator('[name=damaged]').inputValue(),'6');
   await page.getByRole('tab',{name:'Damaged',exact:true}).click();await page.getByRole('button',{name:'Clear quantity',exact:true}).click();
+  // Native dialog close events are queued; wait for the confirmed action to finish.
+  await page.waitForFunction(()=>document.querySelector('[name=damaged]').value==='0');
   assert.equal(await page.locator('[name=damaged]').inputValue(),'0');
   assert.equal(await page.getByRole('tab',{name:'Damaged',exact:true}).getAttribute('data-enabled'),'false');
   await page.locator('[name=quantity]').fill('8');assert.equal(await page.locator('[name=cases]').inputValue(),'1');
