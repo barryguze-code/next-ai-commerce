@@ -77,7 +77,7 @@ class CollaborationTemplateTest {
             "mountFloatingHuddle","field.id==='huddle-message-input'",
             "$('#huddle-finish-button')?.addEventListener","Number(button.dataset.totalCount||0)>1",
             ".sort((left,right)=>Date.parse(right.createdAt)-Date.parse(left.createdAt))",
-            "window.prepareRecordCollaboration=decorateRecordConversationButton",
+            "window.prepareRecordCollaboration=button=>",
             "(forcePicker||threads.length>1)&&threads.length", "threads.length===1");
         assertThat(styles).contains(".record-collaboration-actions{display:inline-flex", ".collaboration-row-button.has-conversation", "border-color:#9dbdef", "background:#edf4ff", "#2169d6")
             .doesNotContain(".thread-overflow-button");

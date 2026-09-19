@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" color="#475569" role="img" aria-labelledby="title desc">
+  <title id="title">SKU mapping</title>
+  <desc id="desc">An orange SKU carton followed by three branching mapping arrows.</desc>
+
+  <!-- Compact SKU carton -->
+  <path d="M3 15.5 15 10l12 5.5v17L15 38 3 32.5v-17Z" fill="#F97316" stroke="#7C2D12" stroke-width="2" stroke-linejoin="round"/>
+  <path d="m3 15.5 12 5.6 12-5.6M15 21.1V38" stroke="#9A3412" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="m9 12.75 12 5.55" stroke="#FDBA74" stroke-width="1.4" stroke-linecap="round"/>
+
+  <!-- Readable barcode motif; no tiny text -->
+  <rect x="6" y="22" width="7" height="9" rx="1" fill="#FFF7ED"/>
+  <path d="M8 24v5m1.6-5v5m1.4-5v5" stroke="#7C2D12" stroke-width=".85"/>
+
+  <!-- One-to-many mapping arrows -->
+  <g stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M29 24h3"/>
+    <path d="M32 24c4.5 0 4.5-8 9-8h3"/>
+    <path d="M32 24h12"/>
+    <path d="M32 24c4.5 0 4.5 8 9 8h3"/>
+    <path d="m41 13 3 3-3 3"/>
+    <path d="m41 21 3 3-3 3"/>
+    <path d="m41 29 3 3-3 3"/>
+  </g>
+</svg>

@@ -27,7 +27,7 @@ public class CollaborationRepository {
     public record Message(UUID id,UUID senderId,String senderName,String authorEmail,String messageType,String body,
             Instant createdAt,List<Attachment> attachments) {}
     public record SubjectSummary(UUID reviewId,int activeCount,int activeMessageCount,int totalCount,
-            int closedCount,Instant latestActivityAt) {}
+            int closedCount,Instant latestActivityAt,int originCount,int relatedCount,int mineCount) {}
     public record PostedMessage(UUID reviewId,UUID messageId) {}
     public record HuddleTranscriptMessage(UUID senderId,String senderName,String senderEmail,String body,Instant createdAt) {}
     public record PendingMention(UUID id,UUID reviewId,String recipientName,String recipientEmail,String accountName,
@@ -110,11 +110,30 @@ public class CollaborationRepository {
             (rs,row)->review(rs),values.toArray());
     }
 
+    // Related records reference the same conversation, retaining its original subject and URL.
+    // Every join stays tenant- and store-scoped; private-note visibility is applied by callers.
+    private static String subjectMatch(String type,String key) {
+        return "(review.subject_type="+type+" AND review.subject_key="+key+") OR "
+            +"(review.subject_type='ORDER' AND EXISTS (SELECT 1 FROM amazon_order_items linked_item "
+            +"LEFT JOIN marketplace_sku_mappings linked_map ON linked_map.tenant_id=linked_item.tenant_id "
+            +"AND linked_map.marketplace_connection_id=linked_item.marketplace_connection_id "
+            +"AND linked_map.marketplace_sku=linked_item.seller_sku AND linked_map.status='ACTIVE' "
+            +"LEFT JOIN marketplace_sku_mapping_components linked_component ON linked_component.tenant_id=linked_map.tenant_id "
+            +"AND linked_component.marketplace_sku_mapping_id=linked_map.id "
+            +"WHERE linked_item.tenant_id=review.tenant_id AND linked_item.amazon_order_id=review.subject_key "
+            +"AND (("+type+"='MARKETPLACE_SKU' AND linked_item.seller_sku="+key+") "
+            +"OR ("+type+"='CATALOG' AND linked_component.account_catalog_item_id::text="+key+") "
+            +"OR ("+type+"='INVENTORY' AND linked_component.account_catalog_item_id::text=split_part("+key+",'|',1)))))";
+    }
+
     @Transactional(readOnly=true)
     public List<Review> subjectReviews(UUID tenantId,String subjectType,String subjectKey,boolean includeClosed,String viewerEmail){
         setContext(tenantId,viewerEmail);
-        return jdbc.query("SELECT "+REVIEW_COLUMNS+" FROM collaboration_reviews review LEFT JOIN app_users assignee ON assignee.id=review.assigned_to WHERE review.tenant_id=? AND review.subject_type=? AND review.subject_key=? AND ("+VISIBLE_THREAD+") "+(includeClosed?"":"AND review.status='ACTIVE'")+" ORDER BY CASE WHEN review.status='CLOSED' THEN 1 ELSE 0 END,review.updated_at DESC LIMIT 50",
-            (rs,row)->review(rs),tenantId,subjectType.toUpperCase(Locale.ROOT),subjectKey);
+        return jdbc.query("WITH requested AS (SELECT ?::text AS kind,?::text AS key) SELECT "+REVIEW_COLUMNS
+            +" FROM collaboration_reviews review CROSS JOIN requested LEFT JOIN app_users assignee ON assignee.id=review.assigned_to"
+            +" WHERE review.tenant_id=? AND ("+subjectMatch("requested.kind","requested.key")+") AND ("+VISIBLE_THREAD+") "
+            +(includeClosed?"":"AND review.status='ACTIVE'")+" ORDER BY review.updated_at DESC LIMIT 50",
+            (rs,row)->review(rs),subjectType.toUpperCase(Locale.ROOT),subjectKey,tenantId);
     }
 
     @Transactional(readOnly=true)
@@ -130,31 +149,27 @@ public class CollaborationRepository {
         if(subjectKeys.isEmpty())return Map.of();
         setContext(tenantId,viewerEmail);
         List<String> unique=subjectKeys.stream().distinct().toList();
-        String placeholders=String.join(",",Collections.nCopies(unique.size(),"?"));
-        List<Object> values=new ArrayList<>();values.add(tenantId);values.add(subjectType.toUpperCase(Locale.ROOT));values.addAll(unique);
+        String placeholders=String.join(",",Collections.nCopies(unique.size(),"(?)"));
+        List<Object> values=new ArrayList<>();values.addAll(unique);values.add(subjectType.toUpperCase(Locale.ROOT));values.add(tenantId);
         Map<String,SubjectSummary> result=new LinkedHashMap<>();
-        jdbc.query("""
-            WITH candidate_threads AS (
-              SELECT review.id,review.subject_key,review.status,review.updated_at
-              FROM collaboration_reviews review
-              WHERE review.tenant_id=? AND review.subject_type=? AND review.subject_key IN (%s)
-            ), visible_threads AS (
-              SELECT candidate.id,candidate.subject_key,candidate.status,candidate.updated_at,
-                count(message.id) FILTER (WHERE message.message_type='TEAM_CHAT' OR
-                  (message.message_type='PRIVATE_NOTE' AND lower(message.author_email)=lower(%s))) AS visible_messages
-              FROM candidate_threads candidate
-              JOIN collaboration_messages message ON message.tenant_id=? AND message.review_id=candidate.id
-              GROUP BY candidate.id,candidate.subject_key,candidate.status,candidate.updated_at
-              HAVING bool_or(message.message_type='TEAM_CHAT' OR
-                (message.message_type='PRIVATE_NOTE' AND lower(message.author_email)=lower(%s)))
-            )
-            SELECT subject_key,(array_agg(id ORDER BY updated_at DESC) FILTER (WHERE status='ACTIVE'))[1],
-              count(*) FILTER (WHERE status='ACTIVE'),coalesce(sum(visible_messages) FILTER (WHERE status='ACTIVE'),0),
-              count(*),count(*) FILTER (WHERE status='CLOSED'),max(updated_at)
-            FROM visible_threads GROUP BY subject_key
-            """.formatted(placeholders,VIEWER,VIEWER),(org.springframework.jdbc.core.ResultSetExtractor<Void>)rs->{
-                while(rs.next())result.put(rs.getString(1),new SubjectSummary(rs.getObject(2,UUID.class),rs.getInt(3),rs.getInt(4),rs.getInt(5),rs.getInt(6),instant(rs,7)));return null;
-            },append(values,tenantId));
+        String sql="WITH requested(key) AS (VALUES "+placeholders+"), kind AS (SELECT ?::text AS value), visible AS ("
+            +" SELECT requested.key,review.id,review.status,review.updated_at,"
+            +" (review.subject_type=kind.value AND review.subject_key=requested.key) AS origin,"
+            +" (lower(review.requested_by)=lower("+VIEWER+") OR lower(assignee.email)=lower("+VIEWER+") OR EXISTS "
+            +" (SELECT 1 FROM collaboration_mentions mention JOIN app_users mentioned ON mentioned.id=mention.mentioned_user_id"
+            +" WHERE mention.review_id=review.id AND lower(mentioned.email)=lower("+VIEWER+"))) AS mine,"
+            +" (SELECT count(*) FROM collaboration_messages message WHERE message.review_id=review.id AND "
+            +" (message.message_type='TEAM_CHAT' OR (message.message_type='PRIVATE_NOTE' AND lower(message.author_email)=lower("+VIEWER+")))) AS messages"
+            +" FROM requested CROSS JOIN kind JOIN collaboration_reviews review ON ("+subjectMatch("kind.value","requested.key")+")"
+            +" LEFT JOIN app_users assignee ON assignee.id=review.assigned_to WHERE review.tenant_id=? AND ("+VISIBLE_THREAD+"))"
+            +" SELECT key,(array_agg(id ORDER BY updated_at DESC) FILTER (WHERE status='ACTIVE'))[1],"
+            +" count(*) FILTER (WHERE status='ACTIVE'),coalesce(sum(messages) FILTER (WHERE status='ACTIVE'),0),"
+            +" count(*),count(*) FILTER (WHERE status='CLOSED'),max(updated_at),"
+            +" count(*) FILTER (WHERE status='ACTIVE' AND origin),count(*) FILTER (WHERE status='ACTIVE' AND NOT origin),"
+            +" count(*) FILTER (WHERE status='ACTIVE' AND origin AND mine) FROM visible GROUP BY key";
+        jdbc.query(sql,(org.springframework.jdbc.core.ResultSetExtractor<Void>)rs->{
+            while(rs.next())result.put(rs.getString(1),new SubjectSummary(rs.getObject(2,UUID.class),rs.getInt(3),rs.getInt(4),rs.getInt(5),rs.getInt(6),instant(rs,7),rs.getInt(8),rs.getInt(9),rs.getInt(10)));return null;
+        },values.toArray());
         return result;
     }
 

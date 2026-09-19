@@ -1,6 +1,7 @@
-<!doctype html><html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Orders | Next AI Commerce</title><link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png"><link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260913-2"><link rel="stylesheet" href="/css/table-widget.css?v=20260914-2"><link rel="stylesheet" href="/css/orders.css"><link rel="stylesheet" href="/css/order-stream.css?v=20260914-3"><link rel="stylesheet" href="/css/order-inventory-adjust.css?v=20260914-5"><link rel="stylesheet" href="/css/buy-shipping.css?v=20260905-4"><link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7"><link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2"><link rel="stylesheet" href="/css/collaboration-thread.css?v=20260911-8"><script defer src="/js/theme.js?v=20260905-1"></script><script defer src="/js/table-preferences.js?v=20260911-2"></script><script defer src="/js/table-widget.js?v=20260914-4"></script><script defer src="/js/buy-shipping.js?v=20260914-3"></script><script defer src="/js/collaboration.js?v=20260911-8"></script></head>
+<!doctype html><html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Orders | Next AI Commerce</title><link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png"><link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260913-2"><link rel="stylesheet" href="/css/table-widget.css?v=20260914-2"><link rel="stylesheet" href="/css/orders.css"><link rel="stylesheet" href="/css/order-stream.css?v=20260914-3"><link rel="stylesheet" href="/css/order-inventory-adjust.css?v=20260914-5"><link rel="stylesheet" href="/css/buy-shipping.css?v=20260905-4"><link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7"><link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2"><link rel="stylesheet" href="/css/collaboration-thread.css?v=20260911-8"><script defer src="/js/theme.js?v=20260905-1"></script><script defer src="/js/table-preferences.js?v=20260911-2"></script><script defer src="/js/table-widget.js?v=20260918-5"></script><script defer src="/js/buy-shipping.js?v=20260918-5"></script><script defer src="/js/collaboration.js?v=20260918-6"></script></head>
 <body class="app-page"><aside class="sidebar"><a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a><div th:replace="~{fragments/sidebar-nav :: nav('orders')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
 <main class="workspace orders-workspace"><header class="workspace-header"><div><span class="eyebrow dark">Sales</span><h1>Orders</h1><p class="page-intro">Marketplace orders, inventory readiness, and fulfillment in one clear queue.</p></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
+<link rel="stylesheet" href="/css/order-pictures.css?v=20260918-5"><link rel="stylesheet" href="/css/order-design.css?v=20260918-6"><script defer src="/js/order-design.js?v=20260918-6"></script><script defer src="/js/order-pictures.js?v=20260918-5"></script>
 <p class="notice" th:if="${orderSuccess}" th:text="${orderSuccess}"></p><p class="notice error" th:if="${orderError}" th:text="${orderError}"></p>
 <section class="empty-state" th:if="${storeSelectionRequired}"><span class="store-required-icon">⌄</span><h2>Choose an Amazon store</h2><p>Orders are operated one store at a time so inventory and fulfillment stay correctly scoped.</p><button class="primary-button store-picker-action" type="button" onclick="document.querySelector('.context-menu').setAttribute('open','')">Choose store</button></section>
 <section class="empty-state" th:if="${unsupportedChannel}"><span class="store-required-icon">W</span><h2>Walmart order operations are coming next</h2><p>No Amazon data is shown under a Walmart store.</p></section>
@@ -13,11 +14,11 @@
    <a th:each="tab : ${orderTabs}" th:classappend="${(selectedStatus==tab.key?'active ':'')+(tab.readiness?'order-alert-tab ':'')+(tab.readiness and tab.orders>0?'has-issues ':'')+(tab.key=='INVENTORY_SHORTAGE'?'alert-group-start':'')}" th:href="@{/app/orders(status=${tab.key},q=${query},size=${orderPage.size})}" th:attr="aria-current=${selectedStatus==tab.key?'page':null},aria-label=${tab.label+': '+tab.orders+' orders, '+tab.units+' units'},title=${tab.orders+' orders / '+tab.units+' units'}"><span th:text="${tab.label}">Unshipped</span><span class="order-tab-count"><b th:text="${#numbers.formatInteger(tab.orders,1,'COMMA')}">0</b><i aria-hidden="true">/</i><span th:text="${#numbers.formatInteger(tab.units,1,'COMMA')}">0</span></span></a>
   </nav><div data-column-control="orders"></div>
  </div>
- <div class="order-list table-widget-scroll" data-table-widget="orders"><div class="table-grid-header order-item-grid-header"><span data-column="product" data-title="Product" data-column-required="true">Product</span><span data-column="order" data-title="Order" data-column-required="true">Order</span><span data-column="quantity" data-title="Quantity">Qty</span><span data-column="sales" data-title="Item sales">Item sales</span><span data-column="buy-box" data-title="Current Buy Box">Buy Box</span><span data-column="four-week-sales" data-title="4w SKU units">4w SKU units</span><span data-column="shipping" data-title="Customer shipping">Shipping</span><span data-column="available" data-title="Available">Available</span><span data-column="catalogue" data-title="SKU mapping">SKU mapping <i class="column-help" title="Shows each catalogue item code and the quantity used for one sold marketplace SKU." aria-label="About SKU mapping">i</i></span><span data-column="action" data-title="Action" data-column-required="true">Action</span></div><article class="order-row open" th:each="order:${orders}" th:classappend="| state-${#strings.toLowerCase(order.state)} ${order.itemCount>1?'multi-order':'single-order'}|">
+ <div class="order-list table-widget-scroll" data-table-widget="orders" data-layout-version="20260918-5"><div class="table-grid-header order-item-grid-header"><span data-column="product" data-title="Product details" data-column-required="true">Product details</span><span data-column="order" data-title="Order ID &amp; status" data-column-required="true">Order ID &amp; status</span><span data-column="quantity" data-title="Quantity">Qty</span><span data-column="sales" data-title="Item Sales">Item Sales</span><span data-column="buy-box" data-title="Current Buy Box">Buy Box</span><span data-column="available" data-default-hidden="true" data-title="Available">Available</span><span data-column="four-week-sales" data-default-hidden="true" data-title="4 WEEK SALES">4 WEEK SALES</span><span data-column="action" data-title="Actions" data-column-required="true"></span></div><article class="order-row open" th:each="order:${orders}" th:classappend="| state-${#strings.toLowerCase(order.state)} ${order.itemCount>1?'multi-order':'single-order'}|">
    <div class="order-items">
 <div class="order-item" th:each="item,itemStat:${itemsByOrder.get(order.amazonOrderId)}">
 <div class="item-product">
-<div class="item-image order-product-stage" data-picture-actions="true" th:with="conversation=${threadsByOrder == null ? null : threadsByOrder.get(order.amazonOrderId)}">
+<div class="item-image order-product-stage" data-picture-actions="true" th:attr="data-item-id=${item.id},data-seller-sku=${item.sellerSku},data-product-title=${item.title ?: item.sellerSku},data-can-edit=${canEditCatalog},data-mapping=${item.mapping},data-product-url=${item.amazonUrl(order.marketplaceId)}" th:with="conversation=${threadsByOrder == null ? null : threadsByOrder.get(order.amazonOrderId)}">
 <img th:if="${item.imageUrl!=null}" th:src="${item.imageUrl}" alt="">
 <span th:unless="${item.imageUrl!=null}">□</span>
 <button th:if="${itemStat.first}" class="collaboration-row-button order-stage-chat" th:classappend="${conversation != null and conversation.totalCount > 0 ? 'has-conversation' : ''}" type="button" th:attr="data-entity-type='ORDER',data-entity-id=${order.amazonOrderId},data-title=${'Amazon order '+order.amazonOrderId},data-identifier=${order.amazonOrderId},data-status=${order.amazonStatusLabel},data-marketplace='Amazon',data-parent-url=${'/app/orders?q='+order.amazonOrderId},data-can-collaborate=${canEditCatalog},data-active-count=${conversation == null ? 0 : conversation.activeCount},data-total-count=${conversation == null ? 0 : conversation.totalCount},data-closed-count=${conversation == null ? 0 : conversation.closedCount}" onclick="openRecordCollaboration(this)" title="Start or open order collaboration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v9H9l-4 4v-13Z"/><path class="conversation-lines" d="M9 9h6M9 12h4"/></svg><b th:if="${conversation != null and conversation.totalCount > 0}" th:text="${conversation.totalCount}">1</b></button>
@@ -36,10 +37,10 @@
 </div>
 <span class="marketplace-links listing-shortcuts order-marketplace-links">
 <a th:if="${item.inventoryUrl(order.marketplaceId) != null}" th:href="${item.inventoryUrl(order.marketplaceId)}" target="_blank" rel="noopener noreferrer" title="Manage this ASIN in Seller Central inventory" th:aria-label="${'Manage '+item.asin+' in Seller Central inventory'}">
-<img src="/images/channels/amazon-seller.png" alt="">
+<img src="/images/platform/seller-central.png" alt="">
 </a>
 <a th:if="${item.amazonUrl(order.marketplaceId) != null}" th:href="${item.amazonUrl(order.marketplaceId)}" target="_blank" rel="noopener noreferrer" title="Open the Amazon product page" th:aria-label="${'Open '+item.asin+' on Amazon'}">
-<img src="/images/channels/amazon-product.svg" alt="">
+<img src="/images/platform/amazon.com-logo.png" alt="">
 </a>
 </span>
 </div>
@@ -56,16 +57,17 @@
 <strong th:text="${#numbers.formatInteger(item.ordered,1,'COMMA')}">1</strong>
 </div>
 <div class="item-number">
-<small>Item sales</small>
+<small>Item Sales</small>
 <strong th:text="${(item.currency ?: 'USD')+' '+#numbers.formatDecimal(item.safeItemPrice,1,'COMMA',2,'POINT')}">USD 0.00</strong>
+<span class="order-customer-shipping" th:if="${item.safeShippingPrice.signum() > 0}" th:text="${'+ '+(item.currency ?: 'USD')+' '+#numbers.formatDecimal(item.safeShippingPrice,1,'COMMA',2,'POINT')+' Shipping'}">+ USD 0.00 Shipping</span>
 </div>
 <div class="item-number item-buy-box">
 <small>Buy Box</small>
 <strong th:if="${item.buyBoxPrice!=null}" th:title="${item.buyBoxUpdatedAt==null ? 'Current Amazon Buy Box' : 'Amazon Buy Box refreshed '+item.buyBoxUpdatedAt}" th:text="${(item.buyBoxCurrency ?: item.currency ?: 'USD')+' '+#numbers.formatDecimal(item.buyBoxPrice,1,'COMMA',2,'POINT')}">USD 0.00</strong>
 <strong th:unless="${item.buyBoxPrice!=null}" class="buy-box-missing" title="Waiting for Amazon pricing">—</strong>
 </div>
-<div class="item-weekly-sales" data-column="four-week-sales" data-title="4w SKU units"><strong class="weekly-sales" th:text="${fourWeekSales.getOrDefault(item.sellerSku,'0 | 0 | 0 | 0')}" title="Units sold per rolling seven-day period, oldest to newest; excludes cancelled orders">0 | 0 | 0 | 0</strong></div>
-<div class="item-number">
+<div class="item-weekly-sales" data-column="four-week-sales" data-title="4 WEEK SALES"><strong class="weekly-sales" th:text="${fourWeekSales.getOrDefault(item.sellerSku,'0 | 0 | 0 | 0')}" title="Units sold per rolling seven-day period, oldest to newest; excludes cancelled orders">0 | 0 | 0 | 0</strong></div>
+<div class="order-legacy-shipping" hidden>
 <small>Shipping</small>
 <strong th:text="${(item.currency ?: 'USD')+' '+#numbers.formatDecimal(item.safeShippingPrice,1,'COMMA',2,'POINT')}">USD 0.00</strong>
 </div>
@@ -73,12 +75,10 @@
 <small>Available</small>
 <strong th:text="${item.mapping=='MAPPED' ? #numbers.formatInteger(item.available,1,'COMMA') : '—'}">0</strong>
 </div>
-<div class="item-map" th:classappend="${item.mapping=='MAPPED'?' mapped':' unmapped'}">
+<div hidden class="item-map" th:classappend="${item.mapping=='MAPPED'?' mapped':' unmapped'}">
 <button th:if="${canEditCatalog}" type="button" class="mapping-summary-button table-mapping-control" th:classappend="${item.mapping=='MAPPED'?' is-mapped':' needs-mapping'}" th:attr="data-seller-sku=${item.sellerSku},data-product-title=${item.title ?: item.sellerSku},aria-label=${item.mapping=='MAPPED' ? 'Review SKU mapping for '+item.sellerSku : 'Map marketplace SKU '+item.sellerSku}" onclick="openOrderMapping(this)">
 <span class="table-mapping-icon" aria-hidden="true">
-<svg viewBox="0 0 24 24">
-<path d="M3 6h4v4H3zM3 14h4v4H3z"/><rect x="17" y="3" width="4" height="4" rx="1"/><rect x="17" y="10" width="4" height="4" rx="1"/><rect x="17" y="17" width="4" height="4" rx="1"/><path d="M7 8h4l6-3M7 8h4l6 4M7 16h4l6-4M7 16h4l6 3"/>
-</svg>
+<img src="/images/platform/sku-product-mapping.svg" alt="" class="platform-mapping-icon">
 </span>
 <span class="table-mapping-copy">
 <strong th:text="${item.mapping=='MAPPED' ? 'Mapped SKU' : 'Map SKU'}">Map SKU</strong>

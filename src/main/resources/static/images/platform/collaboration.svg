@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 48 48" fill="none">
+  <title>Record collaboration</title>
+  <g stroke="#8A9FB8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M37 18H38.5C40.7 18 42.5 19.8 42.5 22V33C42.5 35.2 40.7 37 38.5 37H37.5V42L30.5 37H23C20.8 37 19 35.2 19 33" opacity=".55"/>
+    <path d="M10 7H30C32.8 7 35 9.2 35 12V25C35 27.8 32.8 30 30 30H18L9 37V30C6.8 29.5 5.5 27.5 5.5 25V12C5.5 9.2 7.5 7 10 7Z"/>
+    <path d="M13 15H27M13 21H22"/>
+  </g>
+</svg>

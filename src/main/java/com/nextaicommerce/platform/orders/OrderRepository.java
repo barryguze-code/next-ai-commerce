@@ -469,10 +469,12 @@ public class OrderRepository {
                        coalesce(catalog.display_name,product.canonical_name))||' × '
                        ||to_char(component.quantity,'FM999999990.####'),E'\n'
                        ORDER BY component.sort_order,component.created_at),'Mapped') END,
-                   coalesce(reserved.quantity,0),listing.image_url,coalesce(available.quantity,0),
+                   coalesce(reserved.quantity,0),CASE WHEN picture.seller_sku IS NOT NULL THEN '/app/orders/items/'||item.id||'/picture' ELSE listing.image_url END,coalesce(available.quantity,0),
                    item.item_price,greatest(coalesce(item.shipping_price,0)-coalesce(item.shipping_discount,0),0),item.currency,
                    listing.buy_box_price,listing.buy_box_currency,listing.buy_box_updated_at
             FROM amazon_order_items item
+            LEFT JOIN order_sku_pictures picture ON picture.tenant_id=item.tenant_id
+              AND picture.marketplace_connection_id=item.marketplace_connection_id AND picture.seller_sku=item.seller_sku
             LEFT JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=item.tenant_id
               AND mapping.marketplace_connection_id=item.marketplace_connection_id
               AND mapping.marketplace_sku=item.seller_sku AND mapping.status='ACTIVE'
@@ -512,7 +514,7 @@ public class OrderRepository {
               WHERE mapped_component.tenant_id=mapping.tenant_id
                 AND mapped_component.marketplace_sku_mapping_id=mapping.id) available ON true
             WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id IN (%s)
-            GROUP BY item.id,mapping.id,reserved.quantity,listing.image_url,listing.buy_box_price,
+            GROUP BY item.id,mapping.id,reserved.quantity,picture.seller_sku,listing.image_url,listing.buy_box_price,
                 listing.buy_box_currency,listing.buy_box_updated_at,available.quantity
             ORDER BY item.amazon_order_id,item.created_at
             """.formatted(placeholders),rs->{String orderId=rs.getString(1);result.computeIfAbsent(orderId,key->new ArrayList<>()).add(

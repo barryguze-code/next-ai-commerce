@@ -345,6 +345,31 @@ class ReceivingWorkflowDatabaseTest {
         org.mockito.Mockito.verifyNoInteractions(amazon);
     }
 
+    @Test void orderPicturesAreScopedToStoreSkuAndNeverChangeCatalogueImages() throws Exception {
+        UUID connection=UUID.randomUUID(),item=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Picture test','America/Los_Angeles',now())",connection,tenant,"picture-"+connection);
+            jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status) VALUES (?,?,'ATVPDKIKX0DER','PICTURE',now(),'Pending')",tenant,connection);
+            jdbc.update("INSERT INTO amazon_order_items(id,tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,'PICTURE','PICTURE-ITEM','BUNDLE',1)",item,tenant,connection);
+        });
+        var access=org.mockito.Mockito.mock(com.nextaicommerce.platform.web.WorkspaceAccessRepository.class);
+        var controller=new com.nextaicommerce.platform.orders.OrderPictureController(jdbc,tx,access,null);
+        var session=new org.springframework.mock.web.MockHttpSession();session.setAttribute("selectedTenantId",tenant);session.setAttribute(com.nextaicommerce.platform.web.AccountSelectionController.STORE_ID,connection);
+        var auth=new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"unused");
+        var out=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2,2,java.awt.image.BufferedImage.TYPE_INT_RGB),"png",out);
+        var file=new org.springframework.mock.web.MockMultipartFile("image","product.png","image/png",out.toByteArray());
+        assertThatThrownBy(()->controller.upload(item,file,session,auth)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        org.mockito.Mockito.when(access.canOperateAccount(tenant,actor)).thenReturn(true);
+        assertThat(controller.upload(item,file,session,auth).getStatusCode().value()).isEqualTo(200);
+        assertThat(controller.picture(item,session,auth).getBody()).isEqualTo(out.toByteArray());
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        var image=tx.execute(s->{setTenant();return repo.itemsForOrders(tenant,connection,List.of("PICTURE")).get("PICTURE").getFirst().imageUrl();});
+        assertThat(image).isEqualTo("/app/orders/items/"+item+"/picture");
+        Integer cataloguePictures=tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT count(*) FROM account_catalog_product_images WHERE tenant_id=?",Integer.class,tenant);});
+        assertThat(cataloguePictures).isZero();
+        session.setAttribute(com.nextaicommerce.platform.web.AccountSelectionController.STORE_ID,UUID.randomUUID());
+        assertThatThrownBy(()->controller.picture(item,session,auth)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
     @Test void orderTabsCountUnitsAndCombinePendingWithoutIncludingShippedOrders(){
         UUID connection=UUID.randomUUID();
         tx.executeWithoutResult(s->{setTenant();
@@ -576,6 +601,25 @@ class ReceivingWorkflowDatabaseTest {
         inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows,true);
         assertThat(stock(f)).isEqualByComparingTo("2");
     }
+    @Test void orderConversationsFollowMappedAssetsWithoutLeakingPrivateNotes(){
+        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");
+        var repo=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc);
+        tx.executeWithoutResult(s->{
+            var publicNote=repo.create(tenant,"ORDER","SHELF-ORDER","Synthetic order","Amazon","NOTE","QA","Public note","TEAM_CHAT","{}","/app/orders?q=SHELF-ORDER",actor,null,null,List.of());
+            repo.create(tenant,"ORDER","SHELF-ORDER","Synthetic order","Amazon","NOTE","QA","Private note","PRIVATE_NOTE","{}","/app/orders?q=SHELF-ORDER",actor,null,null,List.of());
+            var origin=repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),actor).get("SHELF-ORDER");
+            assertThat(origin.originCount()).isEqualTo(2);assertThat(origin.mineCount()).isEqualTo(2);
+            var related=repo.openSubjectSummaries(tenant,"CATALOG",List.of(f.product().toString()),actor).get(f.product().toString());
+            assertThat(related.relatedCount()).isEqualTo(2);assertThat(related.originCount()).isZero();assertThat(related.mineCount()).isZero();
+            assertThat(repo.subjectReviews(tenant,"MARKETPLACE_SKU","SHELF-SKU",false,"other@example.test")).hasSize(1);
+            assertThat(repo.subjectReviews(tenant,"CATALOG",f.product().toString(),false,actor)).allSatisfy(review->assertThat(review.parentUrl()).isEqualTo("/app/orders?q=SHELF-ORDER"));
+            assertThat(repo.openSubjectSummaries(tenant,"INVENTORY",List.of(f.product()+"|"),"other@example.test").get(f.product()+"|").activeCount()).isEqualTo(1);
+            assertThat(repo.openSubjectSummaries(UUID.randomUUID(),"ORDER",List.of("SHELF-ORDER"),actor)).isEmpty();
+            setTenant();jdbc.update("UPDATE collaboration_reviews SET status='CLOSED',closed_at=now() WHERE id=?",publicNote.reviewId());
+            assertThat(repo.openSubjectSummaries(tenant,"MARKETPLACE_SKU",List.of("SHELF-SKU"),"other@example.test").get("SHELF-SKU").activeCount()).isZero();
+        });
+    }
+
     UUID mappedOrder(Fixture f,int quantity,String status){
         UUID connection=UUID.randomUUID(),mapping=UUID.randomUUID();
         tx.executeWithoutResult(s->{setTenant();

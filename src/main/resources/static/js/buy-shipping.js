@@ -50,7 +50,8 @@
     });
   }
   addPackingSlipActions();addOrderSearchShortcuts();
-  new MutationObserver(()=>queueMicrotask(()=>{addPackingSlipActions();addOrderSearchShortcuts();})).observe(document.body,{childList:true,subtree:true});
+  // Rebuild shortcuts only for incoming order rows, not every tooltip/text update.
+  new MutationObserver(records=>{if(records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1&&(node.matches('.order-item,.order-row,[data-order-stream]')||node.querySelector('.order-item'))))){addPackingSlipActions();addOrderSearchShortcuts();}}).observe(document.body,{childList:true,subtree:true});
   const dialog=document.getElementById('buy-shipping-drawer');
   if(!dialog)return;
   const template=document.getElementById('shipping-package-template');

@@ -9,7 +9,7 @@ class SellerCentralBrandingTest {
         for(String page:java.util.List.of("orders","marketplace-skus","packing-slip")){
             try(var input=getClass().getResourceAsStream("/templates/"+page+".html")){
                 assertThat(new String(input.readAllBytes(),StandardCharsets.UTF_8))
-                    .contains("/images/channels/amazon-seller.png")
+                    .contains(page.equals("orders")?"/images/platform/seller-central.png":"/images/channels/amazon-seller.png")
                     .doesNotContain("/images/channels/amazon.svg");
             }
         }

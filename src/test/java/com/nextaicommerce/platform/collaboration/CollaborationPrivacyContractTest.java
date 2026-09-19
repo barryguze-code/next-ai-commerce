@@ -13,8 +13,8 @@ class CollaborationPrivacyContractTest {
         assertThat(source).contains("private_message.message_type='PRIVATE_NOTE'",
             "lower(private_message.author_email)=lower", "lower(message.author_email)=lower",
             "message.message_type='TEAM_CHAT' OR lower(message.author_email)=lower(?)", "app.user_email",
-            "count(message.id) FILTER", "HAVING bool_or(message.message_type='TEAM_CHAT'",
-            "message.message_type='PRIVATE_NOTE' AND lower(message.author_email)=lower(%s)");
+            "SELECT count(*) FROM collaboration_messages message", "AND (\"+VISIBLE_THREAD+",
+            "message.message_type='PRIVATE_NOTE' AND lower(message.author_email)=lower(");
     }
 
     @Test

@@ -95,10 +95,10 @@ class TemplateRenderingTest {
         assertThat(templateEngine().process("orders",context)).contains("Today’s orders","Today’s sales","Sales · 30 days","Live",
             "113-1234567-1234567","Unshipped","Catalogue mapping","Save mapping","Buy shipping label","Profit · margin · markup",
             "https://images.example.test/product.jpg","sellercentral.amazon.com/orders-v3/order/","Available",
-            "Item sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
+            "Item Sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
             "Showing 1–1 of 1","data-order-stream","Sync now","Last Amazon order check",
             "New Amazon orders just arrived","Open this order in Seller Central","Open the Amazon product page",
-            "amazon-product.svg","amazon.com/dp/B012345678","Orders/Units","Unmapped","Waiting for pickup",
+            "/images/platform/amazon.com-logo.png","amazon.com/dp/B012345678","Orders/Units","Unmapped","Waiting for pickup",
             "data-copy-sku=","has-issues","aria-current=\"page\"","12 orders / 15 units","status=UNSHIPPED").doesNotContain("order-day",">Historical<","Reporting only","status=PENDING","Stock readiness");
         context.setVariable("selectedStatus","WAITING_FOR_PICKUP");
         context.setVariable("pickupOverrides",java.util.Set.of(order.amazonOrderId()));

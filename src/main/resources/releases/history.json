@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.2.6",
+    "title": "Clearer order icons and connected conversations",
+    "sections": [
+      {"title":"Orders workspace","items":["Recognize order status faster with larger consistent icons and orange Pending and Unshipped badges.","Open SKU mapping through a clearer button beside item codes, with separate mapped and unmapped artwork.","Use product-picture actions, Amazon shortcuts and a more visible packing-slip action while retaining the existing row colors and image layout."]},
+      {"title":"Connected collaboration","items":["Conversation icons distinguish empty, active and personally related conversations, with counts for open conversations.","Order conversations remain linked to their origin and appear in gray on related SKU, catalogue and inventory records."]}
+    ]
+  },
+  {
     "version": "1.2.5",
     "title": "Clearer receiving quantities and expiration batches",
     "sections": [

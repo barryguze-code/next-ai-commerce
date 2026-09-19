@@ -38,8 +38,8 @@ function gridColumns(root){
   if(root.dataset.tableWidget==='orders')root.querySelectorAll('.order-item').forEach(row=>{
     const set=(el,id)=>{if(el){el.dataset.column=id;el.dataset.title=id}};
     set(row.querySelector('.item-product'),'product');set(row.querySelector('.item-order-reference'),'order');
-    const numbers=row.querySelectorAll('.item-number');['quantity','sales','buy-box','shipping','available'].forEach((id,index)=>set(numbers[index],id));
-    set(row.querySelector('.item-map'),'catalogue');set(row.querySelector('.item-actions'),'action');
+    const numbers=row.querySelectorAll('.item-number');['quantity','sales','buy-box','available'].forEach((id,index)=>set(numbers[index],id));
+    set(row.querySelector('.item-actions'),'action');
   });
   const seen=new Map();root.querySelectorAll('.table-grid-header [data-column]').forEach((el,index)=>seen.set(el.dataset.column,metadata(el,index)));
   root.querySelectorAll('[data-column]').forEach((el,index)=>{if(!seen.has(el.dataset.column))seen.set(el.dataset.column,metadata(el,index))});
@@ -183,7 +183,7 @@ function init(root){
   prepareSalesBars(root);
   root.classList.add('table-widget');
   const isTable=root.matches('table'),defaults=isTable?tableColumns(root):gridColumns(root);if(!defaults.length)return;
-  const stored=read(key)||{},saved=stored.schema===2?stored:{},valid=id=>defaults.some(c=>c.id===id);
+  const stored=read(key)||{},saved=stored.schema===2&&(!root.dataset.layoutVersion||stored.layoutVersion===root.dataset.layoutVersion)?stored:{},valid=id=>defaults.some(c=>c.id===id);
   let order=[...(saved.order||[])].filter(valid);defaults.forEach(c=>{if(!order.includes(c.id))order.push(c.id)});
   if(order.includes('record-context'))order=['record-context',...order.filter(id=>id!=='record-context')];
   const visibility=Object.fromEntries(defaults.map(c=>[c.id,c.required?true:(saved.visibility?.[c.id]??c.defaultVisible)]));
@@ -205,7 +205,7 @@ function init(root){
       root.querySelectorAll('[data-column]').forEach(el=>{el.hidden=!visibility[el.dataset.column];el.style.order=String(order.indexOf(el.dataset.column))});
       root.style.setProperty('--visible-columns',order.filter(id=>visibility[id]).length);
     }
-    write(key,{schema:2,order,visibility});
+    write(key,{schema:2,order,visibility,...(root.dataset.layoutVersion?{layoutVersion:root.dataset.layoutVersion}:{})});
   }
   const eye=open=>open?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.6"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 6.2A10.8 10.8 0 0 1 12 6c6.1 0 9.5 6 9.5 6a16.3 16.3 0 0 1-3 3.8M6.2 6.2C3.9 8.1 2.5 12 2.5 12s3.4 6 9.5 6c1.4 0 2.7-.3 3.8-.8"/><path d="M9.8 9.8a3.1 3.1 0 0 0 4.4 4.4"/></svg>';
   function panelOrder(){return [...order.filter(id=>column(id)?.required),...order.filter(id=>!column(id)?.required)]}
