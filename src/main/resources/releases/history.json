@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.2.7",
+    "title": "Approved Orders table and action design",
+    "sections": [
+      {"title":"Orders table","items":["Keep product pictures and collaboration/actions together in the Overview column, with the approved status and SKU mapping artwork.","Reorder columns with a clear drop indicator and read centered, larger numeric values and currency symbols.","Use clearer empty states and compact Orders/Units counts."]},
+      {"title":"Actions and attention","items":["Stock Shortage and Unmapped use attention colors and short reason tags. Buy Box Lost remains a regular review tab without alerts or priority sorting.","Use consistent optimized action artwork and platform confirmation dialogs. Amazon product links remain shortcuts outside the Actions menu.","Hide the platform-only awaiting-pickup notice once Amazon confirms shipment."]}
+    ]
+  },
+  {
     "version": "1.2.6",
     "title": "Clearer order icons and connected conversations",
     "sections": [

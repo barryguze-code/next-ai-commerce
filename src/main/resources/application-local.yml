@@ -13,6 +13,7 @@ server:
 app:
   # Local pages read the real checkout branch; the version follows application.yml.
   local-development: true
+  build-version: 1.2.7-local.20260919.16
   build-branch: local
   public-url: http://localhost:8080
   scheduling:

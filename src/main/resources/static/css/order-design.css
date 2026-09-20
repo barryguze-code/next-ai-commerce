@@ -1,4 +1,30 @@
 /* Shared SVG assets keep their authored colors and aspect ratios. */
+.order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=picture]{flex:0 0 132px;min-width:132px}
+.orders-workspace .order-list .order-item>.order-picture-cell{display:flex;flex-flow:row nowrap;align-items:center;justify-content:flex-start;gap:10px}
+.order-picture-cell>.order-engagement{flex:0 0 34px}
+.order-list.table-widget .order-item-grid-header>[data-column]{text-align:center;white-space:normal;padding-inline:6px;box-sizing:border-box;line-height:1.5}
+.order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=available]{min-width:80px}
+.table-record-initials{display:grid;place-items:center;width:100%;height:100%;font-size:1.4rem;font-weight:650;color:#58749a;background:#edf4fc;border-radius:inherit}
+.orders-workspace .order-picture-cell .order-product-stage{margin:4px 0!important}
+.order-engagement{position:relative;isolation:isolate;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.orders-workspace .order-list .order-engagement>:is(.order-stage-chat,.order-picture-more){position:relative!important;inset:auto!important;display:grid;place-items:center;width:34px!important;height:34px!important;padding:0!important;margin:0!important;box-sizing:border-box;background:transparent!important;border:1px solid #b7c8de!important;border-radius:10px!important;box-shadow:none!important;backdrop-filter:none!important;opacity:1}
+.orders-workspace .order-list .order-picture-cell:has([data-action-required=true]) .order-engagement>.order-picture-more{border-color:#e7a34a!important;background:rgba(255,165,0,.12)!important}
+.orders-workspace .order-list .order-picture-cell:has([data-action-required=true]) .order-engagement>.order-picture-more:hover{background:rgba(255,165,0,.22)!important}
+.orders-workspace .order-engagement>:is(.order-stage-chat,.order-picture-more)>.platform-icon{position:absolute;left:50%;top:50%;width:30px!important;height:30px!important;max-width:30px;transform:translate(-50%,-50%)!important;object-fit:contain;pointer-events:none}
+.order-action-summary{margin:10px;padding:10px 12px;border-radius:10px;background:#fff3df;color:#99500d;font-size:.8rem;line-height:1.5}
+.orders-workspace .order-empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:240px;box-sizing:border-box;padding:40px 24px;text-align:center;color:var(--ink);width:100%}
+.orders-workspace .order-empty-state[hidden],.orders-workspace .order-pagination[hidden]{display:none!important}
+.order-empty-symbol{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:var(--pale,#edf4ff);color:#7895b8;margin-bottom:4px}
+.order-empty-symbol svg{width:28px;height:28px}
+.orders-workspace .order-empty-state h3{margin:0;font-size:1rem;font-weight:650;line-height:1.5}
+.orders-workspace .order-empty-state p{margin:0;max-width:360px;font-size:.8rem;line-height:1.6;color:var(--muted)}
+.orders-workspace .order-empty-state a{margin-top:8px;text-decoration:none}
+.orders-is-empty .table-grid-header{display:none!important}
+.orders-workspace .order-list.table-widget .order-product-stage>.order-stage-chat,
+.orders-workspace .order-list.table-widget .order-product-stage>.order-picture-more{display:grid;place-items:center;box-sizing:border-box;width:34px!important;height:34px!important;padding:0!important;background:transparent!important;border:1px solid #b7c8de!important;border-radius:10px!important;box-shadow:none!important;backdrop-filter:none!important}
+/* Contain overlay stacking within the photo so sticky table headings stay above it. */
+.order-list.table-widget .order-product-stage{isolation:isolate;z-index:0}
+.order-list.table-widget .order-product-stage>:is(.order-stage-chat,.order-picture-more)>.platform-icon{position:absolute;left:50%;top:50%;width:30px!important;height:30px!important;max-width:30px!important;margin:0;padding:0;object-fit:contain;transform:translate(-50%,-50%)!important;pointer-events:none}
 .orders-workspace .order-identifier-line{width:max-content;max-width:100%;gap:5px}.orders-workspace .order-identifier-line .order-sku-copy,.orders-workspace .order-identifier-line .order-copy-value{flex:0 1 auto;max-width:290px}.orders-workspace .order-mapping-values{flex:0 1 auto}.order-identifier-market,.order-inline-mapping-trigger{width:25px!important;height:25px!important}.order-identifier-market img{width:25px!important;height:25px!important}
 .order-product-stage:hover .order-picture-edit,.order-product-stage:focus-within .order-picture-edit{opacity:0}.order-product-stage .order-picture-edit:hover,.order-product-stage .order-picture-edit:focus-visible{opacity:.7}.order-picture-edit{background:#ffffff55;border-color:#ffffff66;box-shadow:none}.order-picture-edit .platform-icon{width:38px;height:38px;transform:scale(1.7);pointer-events:none}
 .item-actions .packing-slip .platform-icon{width:44px;height:44px;object-fit:contain}.orders-workspace .order-stage-chat>.platform-icon{width:30px;height:30px;object-fit:contain}.orders-workspace .collaboration-row-button[data-context-tone=related] b{background:#8894a5!important}.orders-workspace .collaboration-row-button[data-context-tone=mine] b{background:#d6424d!important}
@@ -42,15 +68,44 @@
 .order-status-art[data-asset=pending-final] .platform-icon{width:72px;height:72px}
 .order-status-art[data-asset=waiting-for-pickup-final] .platform-icon{width:68px;height:68px;top:44%}
 .order-status-art[data-asset=unshipped-final] .platform-icon{width:68px;height:68px;top:47%}
-.orders-workspace .order-stage-chat img[data-collaboration-icon]{width:36px!important;height:36px!important;max-width:none;flex:none;pointer-events:none}
-.orders-workspace .order-stage-chat[data-context-tone=origin] img[data-collaboration-icon]{transform:scale(1.35)}
-.orders-workspace .order-stage-chat[data-context-tone=mine] img[data-collaboration-icon]{transform:scale(1.02)}
 .order-design-tooltip{position:fixed;z-index:12000;max-width:min(560px,calc(100vw - 16px));padding:12px 15px;border-radius:9px;background:#182432;color:white;box-shadow:0 5px 18px #0003;white-space:normal;overflow-wrap:anywhere;font-size:.8rem;line-height:1.5;pointer-events:none}.order-design-tooltip[hidden]{display:none}
 .order-compact-actions summary{list-style:none;border:0;background:transparent;font-size:20px;letter-spacing:2px;cursor:pointer;padding:10px;color:var(--text,#22344b)}.order-compact-actions summary::-webkit-details-marker{display:none}
 .order-compact-action-panel{position:fixed;inset:auto;margin:0;min-width:230px;padding:9px;border:1px solid var(--line);border-radius:14px;background:var(--white);color:var(--text);box-shadow:0 10px 30px #172c4326;max-height:calc(100vh - 24px);overflow:auto}
 .order-compact-action-panel:not(:popover-open){display:none}.order-compact-action-panel .order-icon-action{display:flex!important;justify-content:flex-start;width:100%!important;height:auto;padding:10px!important;border:0!important;background:transparent!important;box-shadow:none!important;gap:10px}
 .order-compact-action-panel .order-action-tip,.order-compact-action-panel form{display:block;width:100%}.order-compact-action-panel .order-action-tip:after{display:none}.order-action-name{font-size:.8rem}.order-compact-action-panel .order-icon-action:hover{background:#edf4ff!important}
 .platform-mapping-icon{width:38px;height:38px;object-fit:contain}.order-compact-action-panel>span{font-size:.8rem;padding:8px}
+/* Compact, aligned identifiers and transparent image-overlay actions. */
+.orders-workspace .order-list.table-widget .order-product-stage{width:80px;height:88px;flex-basis:80px;margin:8px 42px 8px 0}
+.orders-workspace .order-list.table-widget .order-product-stage>.order-stage-chat{left:calc(100% + 8px)!important;right:auto!important;top:4px!important;bottom:auto!important}
+.orders-workspace .order-list.table-widget .order-product-stage>.order-picture-more{left:calc(100% + 8px)!important;right:auto!important;top:auto!important;bottom:4px!important}
+.orders-workspace .order-identifier-market,.orders-workspace .order-inline-mapping-trigger{width:22px!important;height:22px!important;flex:0 0 22px}
+.orders-workspace .order-identifier-market img{width:22px!important;height:22px!important}
+.orders-workspace .order-inline-mapping-trigger img{width:26px;height:26px}
+.orders-workspace .order-mapping-inline{max-width:none;align-items:flex-start;gap:5px}
+.orders-workspace .order-mapping-values{display:flex;flex-wrap:wrap;gap:2px 10px;flex:1;min-width:0}
+.orders-workspace .order-mapping-values .order-identifier-line{max-width:100%;width:auto;gap:5px;flex:none}
+.orders-workspace .order-mapping-values .order-copy-value{max-width:none;flex:none}
+.orders-workspace .amazon-order-status{position:relative;margin-left:32px;min-height:28px;box-sizing:border-box}
+.orders-workspace .amazon-order-status>.order-status-art{position:absolute;left:-34px;top:50%;transform:translateY(-50%) scale(.72);transform-origin:center;overflow:hidden}
 html[data-theme=dark] .amazon-order-status{filter:brightness(.85)}
+/* Attention changes color only: retain the approved table geometry. */
+/* Final readability adjustments, scoped to the requested numeric columns. */
+.orders-workspace .order-list.table-widget .order-item>[data-column]:is([data-column=quantity],[data-column=sales],[data-column=available],[data-column=buy-box],[data-column=four-week-sales],[data-column=action]){text-align:center;justify-content:center;align-items:center;justify-items:center}
+.orders-workspace .order-list.table-widget .item-number>strong{font-size:1rem;font-weight:750;font-variant-numeric:tabular-nums}
+.orders-workspace .order-list.table-widget .weekly-sales{margin-inline:auto}
+.orders-workspace .order-list.table-widget .weekly-sales>span{font-size:.8rem;font-weight:700}
+.orders-workspace .order-list.table-widget .order-item-grid-header>[data-column]{font-weight:800;text-align:center}
+.orders-workspace .order-tab-count{display:inline-flex!important;align-items:baseline;gap:2px!important;white-space:nowrap;flex-wrap:nowrap;font-variant-numeric:tabular-nums}
+.orders-workspace .order-tab-caption{white-space:nowrap}
+.orders-workspace .order-list.table-widget .order-row .order-item.order-needs-attention{background:#fff8f8!important}
+.orders-workspace .order-list.table-widget .order-row.order-has-attention{border-left-color:#d84b4b!important}
+.orders-workspace .order-reason-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.orders-workspace .order-reason-tags>span{display:inline-flex;border-radius:999px;padding:3px 7px;background:#fde9e9;color:#ae3737;font-size:.65rem;font-weight:700;line-height:1.3}
+.order-picture-symbol>.platform-icon{width:32px;height:32px;object-fit:contain}
+html[data-theme=dark] .orders-workspace .order-list.table-widget .order-row .order-item.order-needs-attention{background:#241c20!important}
+html[data-theme=dark] .orders-workspace .order-list.table-widget .order-row.order-has-attention{border-left-color:#b8555b!important}
+html[data-theme=dark] .orders-workspace .order-reason-tags>span{background:#40272c;color:#ef9ca2}
+html[data-theme=dark] .order-picture-entry:hover,html[data-theme=dark] .order-picture-entry:focus-visible{background:#263346}
+html[data-theme=dark] .order-action-summary{background:#3d2e1e;color:#ffd398}
 @media(max-width:1100px){.order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=product]{min-width:265px}.order-list.table-widget .order-item,.order-list.table-widget .order-item-grid-header{gap:10px}}
 @media(max-width:760px){.order-list.table-widget .order-item{flex-wrap:wrap}.order-list.table-widget .order-item>[data-column=product]{flex:1 0 100%;min-width:0}.order-list.table-widget .order-item>[data-column=order]{flex:1 0 55%}.order-list.table-widget .order-item>[data-column]{min-width:0}.order-list.table-widget .order-item>[data-column=sales]{min-width:130px}.order-list.table-widget .order-item-grid-header{display:none}}

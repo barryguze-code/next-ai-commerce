@@ -41,7 +41,7 @@ app:
     enabled: ${APP_READ_CACHE_ENABLED:true}
     ttl: ${APP_READ_CACHE_TTL:10s}
     maximum-entries: ${APP_READ_CACHE_MAXIMUM_ENTRIES:256}
-  build-version: ${APP_BUILD_VERSION:1.2.6}
+  build-version: ${APP_BUILD_VERSION:1.2.7}
   public-url: ${APP_PUBLIC_URL:http://localhost:8080}
   mail:
     enabled: ${MAIL_ENABLED:false}

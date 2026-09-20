@@ -3,17 +3,18 @@
 <body>
 <div class="sidebar-user" th:fragment="user">
   <script src="/js/theme.js?v=20260905-1"></script>
+  <script src="/js/platform-icons.js?v=20260919-12"></script>
   <link rel="stylesheet" href="/css/table-widget.css?v=20260914-2">
   <script defer src="/js/table-preferences.js?v=20260911-2"></script>
   <script defer src="/js/table-widget.js?v=20260914-1"></script>
-  <script defer src="/js/table-data-tools.js?v=20260914-2"></script>
+  <script defer src="/js/table-data-tools.js?v=20260919-4"></script>
   <link rel="stylesheet" href="/css/background-jobs.css?v=1.0.0">
   <script defer src="/js/background-jobs.js?v=1.0.0"></script>
   <span class="sidebar-user-avatar" th:text="${#strings.toUpperCase(#strings.substring(signedInEmail,0,1))}">B</span>
   <span class="sidebar-user-copy"><strong th:text="${signedInEmail}" th:title="${signedInEmail}">Signed-in user</strong></span>
   <link rel="stylesheet" href="/css/release-panel.css?v=1.0.3">
   <script defer src="/js/release-panel.js?v=1.0.3"></script>
-  <a class="sidebar-build-info release-trigger" href="/app/releases" aria-haspopup="dialog" th:attr="data-release-version=${buildVersion},data-release-user=${signedInEmail},data-release-notification=${#strings.isEmpty(buildBranch)}" th:title="${'What’s new · Running '+buildVersion}"><span th:text="${#strings.isEmpty(buildBranch) ? 'v'+displayVersion : buildBranch}">v1.0.3</span><span class="release-unread-dot" hidden aria-label="New release notes"></span><span aria-hidden="true">›</span></a>
+  <a class="sidebar-build-info release-trigger" href="/app/releases" aria-haspopup="dialog" th:attr="data-release-version=${buildVersion},data-release-user=${signedInEmail},data-release-notification=${#strings.isEmpty(buildBranch)}" th:title="${'What’s new · Running '+buildVersion}"><span style="display:flex;flex-direction:column;gap:3px;min-width:0;white-space:normal;overflow-wrap:anywhere"><span th:text="${#strings.isEmpty(buildBranch) ? 'v'+displayVersion : 'v'+buildVersion}">Version</span><small th:unless="${#strings.isEmpty(buildBranch)}" th:text="${buildBranch}">Branch</small></span><span class="release-unread-dot" hidden aria-label="New release notes"></span><span aria-hidden="true">›</span></a>
   <div class="text-size-control">
     <button class="text-size-trigger" data-text-size-toggle type="button" aria-label="Adjust text size" title="Adjust text size" aria-expanded="false" onclick="toggleTextSizeMenu(this,event)">Aa</button>
     <section class="text-size-popover" data-text-size-menu hidden aria-label="Text size settings">

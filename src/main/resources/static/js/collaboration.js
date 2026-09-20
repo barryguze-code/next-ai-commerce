@@ -168,7 +168,7 @@
     button.dataset.contextTone=tone;button.classList.toggle('has-conversation',active>0);button.classList.remove('closed-history');
     let image=button.querySelector('img[data-collaboration-icon]');
     if(!image){button.querySelector('svg')?.remove();image=document.createElement('img');image.dataset.collaborationIcon='';image.className='platform-icon';image.alt='';image.style.cssText='width:28px;height:28px;object-fit:contain';button.prepend(image);}
-    const src='/images/platform/'+file+'.png';if(image.getAttribute('src')!==src)image.setAttribute('src',src);
+    const src=window.NextAiIcons?window.NextAiIcons.source(file):'/images/platform/table/'+file+'.png';if(image.getAttribute('src')!==src)image.setAttribute('src',src);
     let badge=button.querySelector('b');if(active>0){if(!badge){badge=document.createElement('b');button.append(badge)}if(badge.textContent!==String(active))badge.textContent=String(active);}else badge?.remove();
     button.title=active?active+' active conversation'+(active===1?'':'s')+(tone==='related'?' · related record':''):'Start collaboration';
     button.setAttribute('aria-label',button.title+' for '+(button.dataset.title||button.dataset.identifier||'this record'));

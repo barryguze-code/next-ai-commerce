@@ -130,7 +130,9 @@ function init(root){
     all.forEach(row=>row.classList.toggle('table-data-hidden',!shown.has(row)));
     if(!root.matches('table'))root.querySelectorAll('.order-row').forEach(row=>row.classList.toggle('table-data-hidden',![...row.querySelectorAll('.order-item')].some(item=>!item.classList.contains('table-data-hidden'))));
     const count=Object.values(saved.filters).filter(Boolean).length;updateActiveFilterState();
-    if(!exportButton.disabled)status.textContent=!filtered.length?'No matching rows. Try changing your search or filters.':count&&isServer?filtered.length+' matching rows on this page.':'';
+    const orderEmpty=root.querySelector('.order-empty-state');
+    if(orderEmpty){const hide=filtered.length>0;if(orderEmpty.hidden!==hide)orderEmpty.hidden=hide;root.classList.toggle('orders-is-empty',!hide);if(serverPager&&serverPager.hidden===hide)serverPager.hidden=!hide;}
+    if(!exportButton.disabled)status.textContent=!filtered.length?(orderEmpty?'':'Nothing found. Try another search or change your filters.'):count&&isServer?filtered.length+' matches on this page.':'';
     if(footer){footer.dataset.pages=String(pages);updatePager(saved.page,pages,saved.size);pageLabel.textContent=filtered.length?'Showing '+((saved.page-1)*saved.size+1)+'–'+Math.min(saved.page*saved.size,filtered.length)+' of '+filtered.length+' · Page '+saved.page+' of '+pages:'0 rows'}
   }
   exportButton.onclick=async()=>{

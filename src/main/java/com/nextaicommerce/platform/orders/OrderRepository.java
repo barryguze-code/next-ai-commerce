@@ -50,11 +50,13 @@ public class OrderRepository {
     public record OrderSummary(long todayOrders,BigDecimal todaySales,BigDecimal sales30Days,long live,long historical,
             Instant lastSyncedAt){}
     public record OrderTab(String key,String label,boolean readiness,long orders,long units){}
-    static final List<String> TAB_KEYS=List.of("ALL","UNSHIPPED","WAITING_FOR_PICKUP","SHIPPED","INVENTORY_SHORTAGE","NEEDS_MAPPING");
+    static final List<String> TAB_KEYS=List.of("ALL","UNSHIPPED","WAITING_FOR_PICKUP","SHIPPED","INVENTORY_SHORTAGE","NEEDS_MAPPING","BUY_BOX_LOST");
+    private static final String PRICE_MISMATCH="listing.price IS NOT NULL AND listing.buy_box_price IS NOT NULL AND coalesce(listing.currency,'USD')=coalesce(listing.buy_box_currency,listing.currency,'USD') AND listing.price<>listing.buy_box_price";
     static String tabPredicate(String key){
         String status="regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g')";
         String pickup="(orders.platform_waiting_for_pickup OR "+status+" IN ('WAITINGFORPICKUP','READYFORPICKUP','PICKUPREADY','AWAITINGPICKUP','AWAITINGCARRIERPICKUP','SHIPPEDWAITINGFORPICKUP'))";
         return switch(key.toUpperCase(java.util.Locale.ROOT)){
+            case "BUY_BOX_LOST" -> "EXISTS (SELECT 1 FROM amazon_order_items priced_item JOIN amazon_listings listing ON listing.tenant_id=priced_item.tenant_id AND listing.marketplace_connection_id=priced_item.marketplace_connection_id AND listing.seller_sku=priced_item.seller_sku AND listing.marketplace_id=orders.marketplace_id WHERE priced_item.tenant_id=orders.tenant_id AND priced_item.marketplace_connection_id=orders.marketplace_connection_id AND priced_item.amazon_order_id=orders.amazon_order_id AND "+PRICE_MISMATCH+")";
             case "PENDING"->status+" IN ('PENDING','PENDINGAVAILABILITY')";
             case "UNSHIPPED"->"NOT ("+pickup+") AND ("+status+" IN ('PENDING','PENDINGAVAILABILITY','UNSHIPPED') OR (orders.fulfillment_state='READY_TO_SHIP' AND "+status+" NOT IN ('CANCELLED','CANCELED','PICKEDUP','INTRANSIT','OUTFORDELIVERY','DELIVERED') AND "+status+" NOT LIKE '%SHIPPED%'))";
             case "WAITING_FOR_PICKUP"->pickup;
@@ -70,8 +72,8 @@ public class OrderRepository {
         return jdbc.queryForObject("SELECT "+columns+" FROM amazon_orders orders JOIN amazon_order_items item ON item.tenant_id=orders.tenant_id AND item.marketplace_connection_id=orders.marketplace_connection_id AND item.amazon_order_id=orders.amazon_order_id WHERE orders.tenant_id=? AND orders.marketplace_connection_id=?",
             (rs,row)->{
                 var result=new java.util.ArrayList<OrderTab>();
-                var labels=List.of("All","Unshipped","Waiting for pickup","Shipped","Stock shortage","Unmapped");
-                for(int i=0;i<TAB_KEYS.size();i++)result.add(new OrderTab(TAB_KEYS.get(i),labels.get(i),i>=4,rs.getLong(i*2+1),rs.getLong(i*2+2)));
+                var labels=List.of("All","Unshipped","Waiting for pickup","Shipped","Stock shortage","Unmapped","Buy Box Lost");
+                for(int i=0;i<TAB_KEYS.size();i++)result.add(new OrderTab(TAB_KEYS.get(i),labels.get(i),i==4||i==5,rs.getLong(i*2+1),rs.getLong(i*2+2)));
                 return result;
             },tenantId,connectionId);
     }
@@ -415,7 +417,9 @@ public class OrderRepository {
                      JOIN global_catalog_products product ON product.id=catalog_item.global_product_id
                      WHERE component.tenant_id=mapping.tenant_id AND component.marketplace_sku_mapping_id=mapping.id
                        AND lower(coalesce(product.brand,'')) LIKE ?))
-            GROUP BY orders.id,reserved.quantity ORDER BY orders.purchase_date DESC NULLS LAST
+            GROUP BY orders.id,reserved.quantity ORDER BY CASE WHEN
+            """+"("+tabPredicate("NEEDS_MAPPING")+" OR "+tabPredicate("INVENTORY_SHORTAGE")+")"+"""
+            THEN 0 ELSE 1 END,orders.purchase_date DESC NULLS LAST,orders.id
             LIMIT ? OFFSET ?
             """,(rs,row)->new Object[]{new OrderView(rs.getObject(1,UUID.class),rs.getString(2),
                 rs.getTimestamp(3)==null?null:rs.getTimestamp(3).toInstant(),rs.getObject(4,LocalDate.class),
@@ -452,6 +456,15 @@ public class OrderRepository {
                 result.put(rs.getString(1),rs.getLong(2)+" | "+rs.getLong(3)+" | "+rs.getLong(4)+" | "+rs.getLong(5));
             },params.toArray());
         return result;
+    }
+
+    @Transactional(readOnly=true)
+    public java.util.Set<UUID> buyBoxLostItems(UUID tenantId,UUID connectionId,List<String> orderIds){
+        setTenant(tenantId);
+        if(orderIds.isEmpty())return java.util.Set.of();
+        var parameters=new java.util.ArrayList<Object>();parameters.add(tenantId);parameters.add(connectionId);parameters.addAll(orderIds);
+        String slots=String.join(",",java.util.Collections.nCopies(orderIds.size(),"?"));
+        return new java.util.HashSet<>(jdbc.query("SELECT DISTINCT item.id FROM amazon_order_items item JOIN amazon_orders orders ON orders.tenant_id=item.tenant_id AND orders.marketplace_connection_id=item.marketplace_connection_id AND orders.amazon_order_id=item.amazon_order_id JOIN amazon_listings listing ON listing.tenant_id=item.tenant_id AND listing.marketplace_connection_id=item.marketplace_connection_id AND listing.seller_sku=item.seller_sku AND listing.marketplace_id=orders.marketplace_id WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id IN ("+slots+") AND "+PRICE_MISMATCH,(rs,row)->rs.getObject(1,UUID.class),parameters.toArray()));
     }
 
     @Transactional(readOnly=true)

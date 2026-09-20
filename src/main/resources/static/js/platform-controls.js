@@ -16,7 +16,7 @@
         const image=document.createElement('img');image.src=asset==='amazon'?'/images/channels/amazon-seller.png':'/images/channels/'+asset+'.svg';image.alt='';
         link.append(image);host.append(link);
       };
-      if(sku)add('https://sellercentral.'+domain+'/myinventory/inventory?searchTerm='+encodeURIComponent(sku),'Open '+sku+' in Seller Central','amazon');
+      if(asin||sku)add('https://sellercentral.'+domain+'/myinventory/inventory?searchTerm='+encodeURIComponent(asin||sku),'Open '+(asin||sku)+' in Seller Central','amazon');
       if(asin)add('https://www.'+domain+'/dp/'+encodeURIComponent(asin),'Open '+asin+' on Amazon','amazon-product');
     });
   }
