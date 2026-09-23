@@ -62,6 +62,16 @@ class InventoryPublicationDatabaseTest {
   assertThat(inventory.ledgerPage(tenant,"",0,25,item).rows()).hasSize(1).allMatch(r->r.itemId().equals(item));
   assertThat(inventory.ledgerPage(tenant,"",0,25,UUID.randomUUID()).rows()).isEmpty();
  });}
+ @Test void saleQueuePersistsIdleIntentConfirmationAndRetryStates(){tx.executeWithoutResult(s->{
+  var sales=saleFixture();var row=saleRow("SINGLE");
+  sales.result(row,"IDLE",null,null,60,null);
+  sales.result(row,"READY",null,"[]",1,null);
+  sales.result(row,"CONFIRMED","[]",null,60,null);
+  sales.result(row,"RETRY","[]",null,60,"Unconfirmed");
+  assertThat(jdbc.queryForObject("SELECT attempts FROM shelf_sale_publications WHERE tenant_id=? AND seller_sku='SINGLE'",Integer.class,tenant)).isEqualTo(1);
+  sales.result(row,"REMOVED",null,null,60,null);
+  assertThat(jdbc.queryForObject("SELECT attempts FROM shelf_sale_publications WHERE tenant_id=? AND seller_sku='SINGLE'",Integer.class,tenant)).isZero();
+ });}
  int quantity(String sku){return jdbc.queryForObject("SELECT desired_quantity FROM inventory_publications WHERE tenant_id=? AND seller_sku=?",Integer.class,tenant,sku);}
  @Test void sharesStockAndUsesLimitingBundleComponentExcludingFba(){tx.executeWithoutResult(s->{repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(12);assertThat(quantity("PACK")).isEqualTo(3);assertThat(quantity("BUNDLE")).isEqualTo(3);assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_publications WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(3);assertThat(repo.plan(tenant)).isZero();});}
  @Test void adjustmentsFanOutOnlyChangedQuantitiesAndNeverDuplicate(){tx.executeWithoutResult(s->{repo.plan(tenant);stock(item,-9,40);assertThat(repo.plan(tenant)).isEqualTo(3);assertThat(quantity("SINGLE")).isEqualTo(3);assertThat(quantity("PACK")).isZero();assertThat(quantity("BUNDLE")).isEqualTo(1);assertThat(repo.plan(tenant)).isZero();stock(item,9,40);repo.plan(tenant);assertThat(quantity("PACK")).isEqualTo(3);});}

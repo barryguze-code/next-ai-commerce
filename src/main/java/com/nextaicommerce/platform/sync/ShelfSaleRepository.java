@@ -78,7 +78,7 @@ public class ShelfSaleRepository {
    """,(r,n)->new Plan(r.getBigDecimal(1),r.getTimestamp(2).toInstant()),l.tenant(),l.connection(),l.sku(),l.marketplace(),l.tenant(),l.tenant(),l.tenant(),l.tenant(),l.tenant(),l.sku(),l.tenant(),l.tenant(),l.tenant(),l.connection(),l.marketplace(),l.sku()).stream().findFirst();
  }
  public void result(Listing l,String status,String owned,String pending,int delay,String error){
-  scope(l.tenant());jdbc.update("UPDATE shelf_sale_publications SET status=?,owned_discount=?::jsonb,pending_discount=?::jsonb,next_attempt_at=now()+make_interval(secs=>?),last_error=?,attempts=CASE WHEN ? IS NULL THEN 0 ELSE attempts+1 END,updated_at=now() WHERE tenant_id=? AND connection_id=? AND marketplace_id=? AND seller_sku=?",status,owned,pending,delay,error,error,l.tenant(),l.connection(),l.marketplace(),l.sku());
+  scope(l.tenant());jdbc.update("UPDATE shelf_sale_publications SET status=?,owned_discount=?::jsonb,pending_discount=?::jsonb,next_attempt_at=now()+make_interval(secs=>?),last_error=?,attempts=CASE WHEN ?::text IS NULL THEN 0 ELSE attempts+1 END,updated_at=now() WHERE tenant_id=? AND connection_id=? AND marketplace_id=? AND seller_sku=?",status,owned,pending,delay,error,error,l.tenant(),l.connection(),l.marketplace(),l.sku());
   if(!status.equals(l.status())||error!=null)jdbc.update("INSERT INTO shelf_sale_events(tenant_id,connection_id,seller_sku,event,detail) VALUES (?,?,?,?,?)",l.tenant(),l.connection(),l.sku(),status,error);
  }
  @Transactional(readOnly=true) public List<Map<String,Object>> summary(UUID tenant){scope(tenant);return jdbc.queryForList("SELECT status,count(*) count FROM shelf_sale_publications WHERE tenant_id=? GROUP BY status ORDER BY status",tenant);}

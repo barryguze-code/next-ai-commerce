@@ -1,5 +1,18 @@
 [
 {
+  "version": "1.3.4",
+  "title": "Shelf-life publication queue correction",
+  "sections": [
+    {
+      "title": "Production rollout safety",
+      "items": [
+        "Correct nullable error-state persistence in the sale publication queue. Add a database regression test covering idle, intent, confirmation, retry and removal transitions.",
+        "The initial sale rollout was paused after verification detected the queue error. Inventory quantity publishing and Orders ledger links remain separate. Production-only connection restrictions and promotion ownership protections are unchanged."
+      ]
+    }
+  ]
+},
+{
   "version": "1.3.3",
   "title": "Production shelf-life discounts and item ledger links",
   "sections": [
