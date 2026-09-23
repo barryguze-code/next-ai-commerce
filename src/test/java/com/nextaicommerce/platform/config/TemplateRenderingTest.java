@@ -57,7 +57,8 @@ class TemplateRenderingTest {
             Map.entry("canManageUsers",true),Map.entry("canEditCatalog",true),Map.entry("isSuperAdmin",true),
             Map.entry("selectedAccountName","QA only"),Map.entry("signedInEmail","qa@example.test"),Map.entry("roleLabel","Owner"),
             Map.entry("workDocuments",List.of(d)),Map.entry("workLines",List.of(l)),Map.entry("locations",List.of())));
-        assertThat(templateEngine().process("receiving-work",c)).contains("Receive together","INV-101","Partially received",
+        c.setVariable("workImages",Map.of(l.productId(),"/app/catalog/products/"+l.productId()+"/image"));
+        assertThat(templateEngine().process("receiving-work",c)).contains("Receive together","INV-101","Partially received","data-picture-item=","data-image=","Receive overshipped items",
             "Yogurt &amp; cream","Review receipts","receiving-drawer","Back to checklist","data-table-widget=\"receiving-work\"")
             .doesNotContain("Reopen invoice line");
         // Exercise the populated parent page too: empty-list fixtures never evaluate d.statusTone().
