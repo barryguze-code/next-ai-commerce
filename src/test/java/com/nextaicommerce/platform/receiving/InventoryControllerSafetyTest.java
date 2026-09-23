@@ -67,6 +67,6 @@ class InventoryControllerSafetyTest {
 
         verify(inventory,never()).queueSalePrice(any(),anyString(),any(),any(),any(Instant.class),any(Instant.class));
         assertThat(redirect.getFlashAttributes().get("inventorySuccess").toString())
-            .contains("Local sale plan saved for 2 Marketplace SKUs","Amazon pricing remains unchanged");
+            .contains("Sale plan saved for 2 Marketplace SKUs","only when production sale publishing is enabled for this account");
     }
 }
