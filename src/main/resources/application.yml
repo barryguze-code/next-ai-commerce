@@ -60,6 +60,7 @@ app:
   amazon:
     sync-enabled: ${AMAZON_SYNC_ENABLED:true}
     write-enabled: ${AMAZON_WRITE_ENABLED:true}
+    buy-shipping-enabled: ${AMAZON_BUY_SHIPPING_ENABLED:false}
     listing-actions-enabled: ${AMAZON_LISTING_ACTIONS_ENABLED:false}
     inventory-publication-enabled: ${AMAZON_INVENTORY_PUBLICATION_ENABLED:false}
     inventory-publication-mode: ${AMAZON_INVENTORY_PUBLICATION_MODE:DRY_RUN}

@@ -21,7 +21,7 @@ for(const trigger of ['completion','return'])test('exhausted order search clears
 });
 test('blocked second tab displays recovery guidance on packing page',async()=>{
   const page=await browser.newPage();
-  await page.setContent('<article class="order-row"><a class="order-number" href="https://sellercentral.amazon.com/orders-v3/order/123">123</a><div class="item-actions"><span><button class="order-icon-action shipping" data-order-id="123">Shipping</button></span></div></article>');
+  await page.setContent('<article class="order-row"><a class="order-number" href="https://sellercentral.amazon.com/orders-v3/order/123">123</a><div class="item-actions"><span><button class="order-icon-action shipping" data-order-id="123" data-packing-slip-order="123">Shipping</button></span></div></article>');
   await page.evaluate(()=>{window.openedLabel={location:{},opener:{}};let calls=0;window.open=()=>++calls===1?window.openedLabel:null;});
   await page.addScriptTag({path:path.resolve('src/main/resources/static/js/buy-shipping.js')});
   await page.getByRole('button',{name:'Open packing slip and Seller Central order'}).click();
@@ -33,7 +33,7 @@ test('blocked second tab displays recovery guidance on packing page',async()=>{
 test('marking an order refreshes counts without navigating or losing scroll',async()=>{
   const page=await browser.newPage();
   let saved=false;
-  const content=()=>'<main class="orders-workspace" style="height:500px;overflow:auto"><div data-order-stream><p id="count">'+(saved?'9':'10')+'</p><div class="order-list table-widget-scroll" style="height:300px;overflow:auto"><div style="height:300px"></div><form class="platform-pickup-action" action="/app/orders/test/pickup-override" method="post"><input name="waiting" value="true" type="hidden"><input name="_csrf" value="test-token" type="hidden"><button type="submit">Mark as shipped</button></form><div style="height:900px"></div></div><div style="height:900px"></div></div></main>';
+  const content=()=>'<main class="orders-workspace" style="height:500px;overflow:auto"><div data-order-stream><p id="count">'+(saved?'9':'10')+'</p><div class="order-list table-widget-scroll" style="height:300px;overflow:auto"><div style="height:300px"></div><article class="order-row"><div class="order-item"><form class="platform-pickup-action" action="/app/orders/test/pickup-override" method="post"><input name="waiting" value="true" type="hidden"><input name="_csrf" value="test-token" type="hidden"><button type="submit">Mark as shipped</button></form></div></article><div style="height:900px"></div></div><div style="height:900px"></div></div></main>';
   await page.route('http://orders.test/**',async route=>{
     if(route.request().method()==='POST'){
       assert.match(route.request().postData(),/test-token/);saved=true;
@@ -121,7 +121,10 @@ test('context column is pinned without consuming textual Conversation data',asyn
   await page.setContent('<section class="data-card"><div class="table-wrap"><table data-table-widget="context-test"><thead><tr><th>Product</th><th data-column="conversation">Conversation</th><th>Action</th></tr></thead><tbody><tr><td>Product A</td><td>Keep this text in exports</td><td><button class="collaboration-row-button" aria-label="Open chat">Chat</button></td></tr></tbody></table></div></section>');
   for(const file of ['table-preferences.js','table-widget.js','table-data-tools.js'])await page.addScriptTag({path:path.resolve('src/main/resources/static/js',file)});
   assert.equal(await page.locator('thead th').first().getAttribute('data-column'),'record-context');
-  assert.equal(await page.locator('tbody td').first().locator('button').count(),1);
+  const overview=page.locator('tbody td').first();
+  assert.equal(await overview.getByRole('button',{name:'Open chat',exact:true}).count(),1);
+  assert.equal(await overview.getByTitle('No actions available',{exact:true}).isDisabled(),true);
+  assert.equal(await overview.locator('.table-overview-picture').count(),1);
   assert.equal(await page.locator('[data-column=conversation]').last().innerText(),'Keep this text in exports');
   await page.locator('.table-filter-control summary').click();
   assert.equal(await page.getByRole('searchbox',{name:'Filter Conversation',exact:true}).count(),1);

@@ -13,7 +13,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Component
-@ConditionalOnProperty(prefix="app.amazon",name="write-enabled",havingValue="true",matchIfMissing=true)
+@ConditionalOnProperty(prefix="app.amazon",name={"write-enabled","buy-shipping-enabled"},havingValue="true")
 public class BuyShippingWorker {
     private static final Logger log=LoggerFactory.getLogger(BuyShippingWorker.class);
     private final JdbcTemplate jdbc;private final TransactionTemplate transactions;private final BuyShippingRepository repository;
