@@ -154,6 +154,11 @@ public class ReceivingWorkflowRepository {
             String disposition,Instant receivedAt,boolean undone,String blockedReason,BigDecimal onHand,BigDecimal reserved){
         public boolean canUndo(){return !undone&&blockedReason==null;}
     }
+    @Transactional(readOnly=true)
+    public List<Map<String,Object>> unshippedInformation(UUID tenant,List<UUID> documents){
+        tenant(tenant);if(documents.isEmpty())return List.of();
+        return sql.queryForList("SELECT id::text AS id,unshipped_rows::text AS rows FROM receiving_documents WHERE tenant_id=:tenant AND id IN (:documents)",Map.of("tenant",tenant,"documents",documents));
+    }
     public record DocumentPage(List<Document> items,long total,int page,int size){
         public int pages(){return Math.max(1,(int)((total+size-1)/size));}
         public boolean hasPrevious(){return page>0;}

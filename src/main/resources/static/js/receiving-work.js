@@ -9,6 +9,14 @@ const doc=id=>state.documents.find(d=>d.id===id),line=id=>state.lines.find(l=>l.
 const label=d=>(d.type==='INVOICE'?'Invoice':'Packing list')+' · '+(d.number||d.filename);
 const progress=d=>d.closed?(d.partial?'Closed · Partial':'Closed · Received'):Number(d.outstanding)===0?(Number(d.received)<Number(d.expected)?'Resolved · exceptions':'Fully received'):Number(d.received)>0||Number(d.outstanding)<Number(d.expected)?'Partially received':'Not received';
 const detail=id=>(state.details||[]).find(d=>d.id===id)||{};
+function unshippedInformation(documentId){
+ return (state.unshipped||[]).filter(info=>!documentId||info.id===documentId).map(info=>{
+  const source=doc(info.id);let rows=[];try{rows=JSON.parse(info.rows||'[]');}catch(_){}
+  return '<div class="card-toolbar"><div><h3>'+escape(source?label(source):'Invoice')+' · Not shipped by vendor</h3><p>Information only · not added to expected receipts, costs, or inventory.</p></div></div>'+
+   (info.rows==null?'<p class="rw-footnote">This older import did not retain unshipped source rows. Missing history is not a zero balance; consult the original invoice.</p>':!rows.length?'<p class="rw-footnote">No unshipped quantities reported in the imported source data.</p>':'<div class="table-wrap"><table class="rw-table"><thead><tr><th>Product / code</th><th>Ordered</th><th>Shipped</th><th>Not shipped</th><th>Vendor reason</th></tr></thead><tbody>'+rows.map(r=>'<tr><td><strong>'+escape(r.product)+'</strong><small>'+escape(r.code)+'</small></td><td>'+number(r.ordered)+'</td><td>'+number(r.shipped)+'</td><td>'+number(r.unshipped)+'</td><td>'+escape(r.reason||'—')+'</td></tr>').join('')+'</tbody></table></div>');
+ }).join('');
+}
+const unshippedHost=document.getElementById('rw-unshipped-information');if(unshippedHost)unshippedHost.innerHTML=unshippedInformation();
 const conditionNames={SELLABLE:'Received',SOON_EXPIRED:'Short shelf life',EXPIRED:'Expired',SHORT_SHIPPED:'Short shipped',DAMAGED:'Damaged',MISPICKED:'Mispick',OVER_SHIPPED:'Overage'};
 const date=value=>value?value.split('-').slice(1).concat(value.slice(2,4)).join('/'):'No expiration';
 const shelf=value=>{if(!value||!state.policy)return 'neutral';const days=Math.round((new Date(value+'T00:00:00')-new Date(new Date().toDateString()))/86400000);return days<=Number(state.policy.minimumSellableDays)?'danger':days<=Number(state.policy.warningDays)?'warning':'success'};
@@ -141,7 +149,7 @@ function receive(id,overage=false){
   const summary=body.querySelector('.rw-receive-summary');
   const locations=state.locations.filter(v=>v.status==='ACTIVE').map(v=>'<option value="'+escape(v.id)+'"'+(v.id===l.locationId?' selected':'')+'>'+escape(v.code+' · '+v.name)+'</option>').join('');
   const exceptions=[['damaged','Damaged'],['shortShipped','Short shipped'],['wrongItem','Mispick']];
-  const initial=Number(l.remaining);let savedPack=Number(facts.catalogPack||pack);
+  const initial=Number(l.received)>0||overage?0:Number(l.remaining);let savedPack=Number(facts.catalogPack||pack);
   const f=form('<fieldset class="rw-exception-fields rw-sellable"><legend>Sellable</legend><div class="rw-quantity-grid"><label>Cases<input name="cases" type="number" min="0" step="1" value="'+Math.floor(initial/pack)+'"></label><label>Units / case<input name="pack" type="number" min="1" max="100000" step="1" required value="'+pack+'"></label><label>Total units<input name="quantity" type="number" min="0" step="1" required value="'+initial+'"></label></div><small class="rw-muted" data-remainder="quantity"></small></fieldset>'+
     '<div><button class="rw-text-action" type="button" data-update-pack disabled>Update catalogue case size</button><small class="rw-muted" data-pack-feedback role="status">Explicit update only · shared catalogue product, including other accounts. Invoice quantities stay unchanged.</small></div>'+
     '<div class="rw-pair"><label>Expiration date<input name="expiration" type="date"></label><div class="rw-location-field"><label>Location<select name="locationId" required><option value="">Choose a location</option>'+locations+'</select></label>'+(document.querySelector('.receive-work').dataset.canAddLocation==='true'?'<button type="button" class="rw-add-location secondary-button" data-add-location aria-label="Add location" title="Add location">+</button>':'')+'</div></div>'+
@@ -158,9 +166,11 @@ function receive(id,overage=false){
     },receiptDrafts.get(id)?.requestId);
   // Each entry owns its case size. Only the calculated total is read-only.
   f.elements.quantity.readOnly=true;
+  f.elements.pack.min='0';
   if(initial%pack){f.elements.cases.value='1';f.elements.pack.value=initial;}
   function editablePack(input,name){input.readOnly=false;input.type='number';input.name=name;input.min='1';input.max='100000';input.step='1';input.required=true;}
-  exceptions.forEach(([key])=>{f.elements[key].readOnly=true;editablePack(f.elements[key].closest('.rw-quantity-grid').querySelector('[data-exception-pack]'),key+'Pack');});
+  exceptions.forEach(([key])=>{f.elements[key].readOnly=true;editablePack(f.elements[key].closest('.rw-quantity-grid').querySelector('[data-exception-pack]'),key+'Pack');f.elements[key+'Pack'].value='0';f.elements[key+'Pack'].min='0';});
+  if(initial===0){f.elements.pack.value='0';f.elements.pack.min='0';}
   const extraBatches=[];let batchSequence=0;
   const sellable=f.querySelector('.rw-sellable');
   // Tab names already label their panels; avoid repeating visible headings.
@@ -185,6 +195,7 @@ function receive(id,overage=false){
   }
   const amount=key=>f.elements[key].matches(':disabled')?0:Number(f.elements[key].value);
   const preview=()=>{
+    f.querySelectorAll('[role=tab]').forEach(b=>{const key=b.dataset.exception;b.dataset.enabled=String(key==='sellable'?Number(f.elements.quantity.value)>0||extraBatches.some(row=>Number(row.querySelector('[data-batch-quantity]').value)>0):amount(key)>0);});
     const physical=Number(f.elements.quantity.value)+extraBatches.reduce((sum,row)=>sum+Number(row.querySelector('[data-batch-quantity]').value),0),damaged=amount('damaged'),wrong=amount('wrongItem'),missing=amount('shortShipped'),delivered=physical+damaged+wrong;
     f.elements.expiration.required=f.elements.requiresExpiration.checked&&Number(f.elements.quantity.value)>0;
     f.elements.locationId.required=physical>0;
@@ -237,11 +248,22 @@ function receive(id,overage=false){
   tabs.querySelectorAll('button').forEach(b=>{b.id='rw-tab-'+b.dataset.exception;b.setAttribute('aria-label',b.textContent);b.setAttribute('aria-controls','rw-'+b.dataset.exception);});
   const selectTab=key=>{
     selectedTab=key;sellable.hidden=key!=='sellable';
-    exceptions.forEach(([name])=>{const section=f.querySelector('[data-exception-fields="'+name+'"]');section.hidden=key!==name;if(key===name&&section.disabled){section.disabled=false;f.elements[name+'Cases'].value='1';syncCases(name,name+'Cases');}});
+    exceptions.forEach(([name])=>{const section=f.querySelector('[data-exception-fields="'+name+'"]');section.hidden=key!==name;if(key===name&&section.disabled){section.disabled=false;syncCases(name,name+'Cases');}});
     tabs.querySelectorAll('button').forEach(b=>{const active=b.dataset.exception===key,enabled=b.dataset.exception==='sellable'||!f.querySelector('[data-exception-fields="'+b.dataset.exception+'"]').disabled;b.dataset.enabled=String(enabled);b.setAttribute('aria-selected',String(active));b.tabIndex=active?0:-1;});preview();
     const input=key==='sellable'?f.elements.expiration:f.elements[key+'Cases'];input.focus();if(input.type!=='date')input.select();
   };
-  tabs.querySelectorAll('button').forEach((b,index)=>{b.setAttribute('role','tab');b.removeAttribute('aria-expanded');b.onclick=async()=>{const key=b.dataset.exception,section=f.querySelector('[data-exception-fields="'+key+'"]');if(section&&!section.disabled&&selectedTab===key){if(Number(f.elements[key].value)>0&&!await confirmReceiving('Clear '+b.textContent+' quantity?',number(f.elements[key].value)+' unsaved units will be cleared and this section will become inactive. Other receipt entries will stay unchanged. No saved inventory or receipt history will be changed.','Clear quantity'))return;section.disabled=true;f.elements[key+'Cases'].value='0';syncCases(key,key+'Cases');selectTab('sellable');}else selectTab(key);receiptDirty=true;remember();};b.onkeydown=event=>{const buttons=[...tabs.querySelectorAll('button')];let next=event.key==='ArrowRight'?(index+1)%buttons.length:event.key==='ArrowLeft'?(index+buttons.length-1)%buttons.length:event.key==='Home'?0:event.key==='End'?buttons.length-1:-1;if(next>=0){event.preventDefault();buttons[next].click();}};});
+  tabs.querySelectorAll('button').forEach((b,index)=>{b.setAttribute('role','tab');b.removeAttribute('aria-expanded');b.onclick=async()=>{
+    const key=b.dataset.exception,section=f.querySelector('[data-exception-fields="'+key+'"]');
+    if(key==='sellable'&&selectedTab===key&&b.dataset.enabled==='true'){
+      if(!await confirmReceiving('Clear Sellable quantity?','Clear unsaved sellable case and unit quantities? Saved receipts and other outcomes stay unchanged.','Clear quantity'))return;
+      f.elements.cases.value='0';f.elements.pack.value='0';syncCases('quantity','cases');
+      extraBatches.forEach(row=>{row.querySelector('[data-batch-cases]').value='0';row.querySelector('[data-exception-pack]').value='0';row.querySelector('[data-exception-pack]').min='0';row.sync();});preview();
+    }else if(section&&selectedTab===key&&amount(key)>0){
+      if(!await confirmReceiving('Clear '+b.textContent+' quantity?',number(f.elements[key].value)+' unsaved units will be cleared. Other entries and saved receipts stay unchanged.','Clear quantity'))return;
+      f.elements[key+'Cases'].value='0';f.elements[key+'Pack'].value='0';syncCases(key,key+'Cases');preview();
+    }else selectTab(key);
+    receiptDirty=true;remember();
+  };b.onkeydown=event=>{const buttons=[...tabs.querySelectorAll('button')];let next=event.key==='ArrowRight'?(index+1)%buttons.length:event.key==='ArrowLeft'?(index+buttons.length-1)%buttons.length:event.key==='Home'?0:event.key==='End'?buttons.length-1:-1;if(next>=0){event.preventDefault();buttons[next].click();}};});
   const remember=()=>receiptDrafts.set(id,{overage,requestId:f.dataset.requestId,tab:selectedTab,batches:extraBatches.map(row=>({cases:row.querySelector('[data-batch-cases]').value,pack:row.querySelector('[data-exception-pack]').value,quantity:row.querySelector('[data-batch-quantity]').value,expiration:row.querySelector('[data-batch-date]').value})),values:Object.fromEntries([...f.elements].filter(el=>el.name&&!el.closest('.rw-expiration-batch')).map(el=>[el.name,el.type==='checkbox'?el.checked:el.value])),active:exceptions.filter(([key])=>!f.querySelector('[data-exception-fields="'+key+'"]').disabled).map(([key])=>key)});
   const draft=receiptDrafts.get(id);
   if(draft?.batches)draft.batches.forEach(insertBatch);
@@ -322,6 +344,7 @@ function adjust(id,r){
 function reviewDocument(id){
   const d=doc(id);if(!d)return;open(label(d),d.vendor,'Source document');
   body.innerHTML='<dl class="rw-detail"><dt>Document date</dt><dd>'+escape(d.date||'Not provided')+'</dd><dt>Uploaded</dt><dd>'+escape(time(d.uploadedAt))+'</dd><dt>Expected</dt><dd>'+number(d.expected)+' each</dd><dt>Received</dt><dd>'+number(d.received)+' each</dd><dt>Still expected</dt><dd>'+number(d.outstanding)+' each</dd><dt>Status</dt><dd>'+escape(progress(d))+'</dd></dl>';
+  body.innerHTML+=unshippedInformation(id);
   if(d.closed){
     body.innerHTML+=note('Closed documents are locked',d.closeReason||'All quantities resolved')+'<p class="rw-muted">Use Available Inventory to adjust remaining stock. The original receipt and this document cannot be edited or deleted.</p>';return;
   }

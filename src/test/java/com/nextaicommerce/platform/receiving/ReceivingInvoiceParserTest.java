@@ -12,6 +12,17 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
 
 class ReceivingInvoiceParserTest {
+    @Test void retainsVendorUnshippedRowsAsInformationOnly(){
+        var rows=ReceivingRepository.unshippedRows(java.util.List.of(
+            java.util.Map.of("ShipItem","000123","Description","Missing item","OrderQuantity","12","ShipQuantity","0","QuantityNotShipped","12","InvalidReason","Out of stock"),
+            java.util.Map.of("ShipItem","456","Description","Partial item","OrderQuantity","10","ShipQuantity","6"),
+            java.util.Map.of("Description","Delivered","OrderQuantity","5","ShipQuantity","5"),
+            java.util.Map.of("Description","No shipping breakdown","quantity","9")));
+        assertThat(rows).hasSize(2);
+        assertThat(rows.getFirst().code()).isEqualTo("123");
+        assertThat(rows.getFirst().shipped()).isZero();assertThat(rows.getFirst().unshipped()).isEqualByComparingTo("12");
+        assertThat(rows.get(1).unshipped()).isEqualByComparingTo("4");
+    }
     @Test
     void readsKeheInvoiceColumnsWithoutChangingCodesOrPrices() throws Exception {
         String csv="Line,Status,OrderQuantity,ShipQuantity,QuantityNotShipped,InvalidReason,ShipItem,PackSize,Brand,Description,Upc,Retail,SuggestedRetail,WholeSale,AdjustedWholeSale,DiscountPercentage,Discount,NetEach,NetBillable,Upcharges,BottleTax,InvoiceNumber,InvoiceDate,StoreNumber\n"

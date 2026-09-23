@@ -315,6 +315,8 @@ public class ReceivingRepository {
             """,UUID.class,tenantId,sessionId,vendorId,documentType,blank(documentNumber),documentDate,filename,hash,cleanCurrency);
         if(!documentNumber.isBlank()) jdbc.update("UPDATE receiving_sessions SET reference=coalesce(reference,?) WHERE tenant_id=? AND id=?",
             documentType.equals("INVOICE")?"Invoice "+documentNumber:documentNumber,tenantId,sessionId);
+        jdbc.update("UPDATE receiving_documents SET unshipped_rows=?::jsonb WHERE tenant_id=? AND id=?",
+            new tools.jackson.databind.ObjectMapper().writeValueAsString(unshippedRows(rows)),tenantId,documentId);
         BigDecimal total=BigDecimal.ZERO; int rowNumber=2;
         List<Object[]> lineWrites=new java.util.ArrayList<>();
         for (Map<String,String> row:rows) {
@@ -822,7 +824,22 @@ public class ReceivingRepository {
     private static BigDecimal zero(BigDecimal n){return n==null?BigDecimal.ZERO:n;}
     private static boolean whole(BigDecimal value){return value.stripTrailingZeros().scale()<=0;}
     private static String blank(String s){return s==null||s.isBlank()?null:s.trim();}
-    private static String find(Map<String,String> row,String... names){for(var e:row.entrySet()){String n=e.getKey().toLowerCase().replaceAll("[^a-z0-9]","");for(String wanted:names)if(n.equals(wanted))return e.getValue()==null?"":e.getValue().trim();}return "";}
+    public record UnshippedRow(String code,String product,BigDecimal ordered,BigDecimal shipped,BigDecimal unshipped,String reason){}
+    public static List<UnshippedRow> unshippedRows(List<Map<String,String>> rows){
+        var result=new java.util.ArrayList<UnshippedRow>();
+        for(var row:rows){
+            String shippedText=find(row,"shipquantity","shippedquantity","shippedqty");
+            String missingText=find(row,"quantitynotshipped","notshippedquantity","unshippedquantity");
+            if(shippedText.isBlank()&&missingText.isBlank())continue;
+            BigDecimal shipped=number(shippedText),ordered=number(find(row,"orderquantity","orderedquantity","orderqty"));
+            BigDecimal missing=missingText.isBlank()?ordered.subtract(shipped).max(BigDecimal.ZERO):number(missingText);
+            if(missing.signum()<=0)continue;
+            result.add(new UnshippedRow(cleanCode(find(row,"vendoritemcode","vendorsku","itemnumber","itemno","sku","shipitem")),
+                find(row,"description","productname","itemdescription","title","product"),ordered,shipped,missing,find(row,"invalidreason","reason","status")));
+        }
+        return List.copyOf(result);
+    }
+    private static String find(Map<String,String> row,String... names){for(String wanted:names)for(var e:row.entrySet()){String n=e.getKey().toLowerCase().replaceAll("[^a-z0-9]","");if(n.equals(wanted))return e.getValue()==null?"":e.getValue().trim();}return "";}
     private static boolean hasHeading(Map<String,String> row,String name){return row.keySet().stream().map(key->key.toLowerCase().replaceAll("[^a-z0-9]","")).anyMatch(name::equals);}
     private static BigDecimal number(String value){try{return new BigDecimal(value.replace("$","").replace(",","").trim());}catch(Exception e){return BigDecimal.ZERO;}}
     static BigDecimal packUnits(String value){

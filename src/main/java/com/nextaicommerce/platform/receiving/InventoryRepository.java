@@ -338,6 +338,17 @@ public class InventoryRepository {
     }
 
     @Transactional(readOnly=true)
+    public int shelfPolicySkuCount(UUID tenantId){
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        return jdbc.queryForObject("""
+            SELECT count(*) FROM amazon_listings l WHERE l.tenant_id=?
+             AND upper(coalesce(l.fulfillment_channel,'')) IN ('MFN','FBM','DEFAULT','MERCHANT')
+             AND EXISTS(SELECT 1 FROM marketplace_sku_mappings m WHERE m.tenant_id=l.tenant_id
+              AND m.marketplace_connection_id=l.marketplace_connection_id AND m.marketplace_sku=l.seller_sku AND m.status='ACTIVE')
+            """,Integer.class,tenantId);
+    }
+
+    @Transactional(readOnly=true)
     public ShelfLifePolicy shelfLifePolicy(UUID tenantId){
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
         return jdbc.query("""

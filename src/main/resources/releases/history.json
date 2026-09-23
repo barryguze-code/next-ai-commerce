@@ -1,5 +1,13 @@
 [
 {
+  "version": "1.3.5",
+  "title": "Receiving defaults and prompt shelf-life updates",
+  "sections": [
+    {"title":"Receiving safeguards","items":["Exception tabs start at zero and show a plus until a positive quantity is entered. Clearing resets cases and units per case. Previously received items start with zero sellable quantity; Save requires a positive total.","Show vendor-reported unshipped source rows below the receiving invoice, informational only. New imports retain these rows without adding inventory or expected receipts. Older imports explicitly identify unavailable unshipped history."]},
+    {"title":"Shelf-life automation","items":["Confirm the number of mapped SKUs to re-evaluate before saving global shelf-life rules. Matching automatic sales follow saved defaults; explicit product/SKU exceptions remain in place.","Stock, reservations, policy and mapping changes promptly queue related sale reviews, prioritizing managed discounts. Remove discounts when eligible batches sell out or become reserved; end dates remain bounded by the stop-selling cutoff. Amazon acceptance and propagation can take longer than one minute.","Production-only pricing, The Keto Storehouse connection scope, regular-price protection and existing-promotion ownership safeguards remain unchanged."]}
+  ]
+},
+{
   "version": "1.3.4",
   "title": "Shelf-life publication queue correction",
   "sections": [

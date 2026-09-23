@@ -37,8 +37,21 @@ public class ShelfSaleRepository {
   return jdbc.query("""
    SELECT p.*,c.seller_identifier FROM shelf_sale_publications p JOIN marketplace_connections c ON c.tenant_id=p.tenant_id AND c.id=p.connection_id
    WHERE p.tenant_id=? AND p.connection_id=? AND c.status='ACTIVE' AND p.next_attempt_at<=now()
-   ORDER BY p.next_attempt_at,p.seller_sku FOR UPDATE OF p SKIP LOCKED LIMIT 1
+   ORDER BY p.urgent DESC,(p.owned_discount IS NOT NULL) DESC,p.next_attempt_at,p.seller_sku FOR UPDATE OF p SKIP LOCKED LIMIT 1
    """,(r,n)->new Listing(tenant,connection,r.getString("marketplace_id"),r.getString("seller_sku"),r.getString("seller_identifier"),r.getString("owned_discount"),r.getString("pending_discount"),r.getString("status"),r.getInt("attempts")),tenant,connection).stream().findFirst();
+ }
+ public void reconcileDirty(UUID tenant){
+  scope(tenant);
+  jdbc.update("""
+   WITH changed AS (DELETE FROM shelf_sale_dirty WHERE tenant_id=? RETURNING item_id)
+   UPDATE shelf_sale_publications p SET urgent=true,next_attempt_at=least(p.next_attempt_at,now())
+   WHERE p.tenant_id=? AND EXISTS (
+    SELECT 1 FROM changed d WHERE d.item_id='00000000-0000-0000-0000-000000000000'::uuid OR EXISTS (
+     SELECT 1 FROM marketplace_sku_mappings m LEFT JOIN marketplace_sku_mapping_components c
+      ON c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id
+     WHERE m.tenant_id=p.tenant_id AND m.marketplace_connection_id=p.connection_id AND m.marketplace_sku=p.seller_sku
+      AND (m.account_catalog_item_id=d.item_id OR c.account_catalog_item_id=d.item_id)))
+   """,tenant,tenant);
  }
  /** Re-evaluated before every request: old queued work never recreates a discount for exhausted stock. */
  public Optional<Plan> plan(Listing l){
@@ -78,6 +91,8 @@ public class ShelfSaleRepository {
    """,(r,n)->new Plan(r.getBigDecimal(1),r.getTimestamp(2).toInstant()),l.tenant(),l.connection(),l.sku(),l.marketplace(),l.tenant(),l.tenant(),l.tenant(),l.tenant(),l.tenant(),l.sku(),l.tenant(),l.tenant(),l.tenant(),l.connection(),l.marketplace(),l.sku()).stream().findFirst();
  }
  public void result(Listing l,String status,String owned,String pending,int delay,String error){
+  scope(l.tenant());
+  jdbc.update("UPDATE shelf_sale_publications SET urgent=false WHERE tenant_id=? AND connection_id=? AND marketplace_id=? AND seller_sku=?",l.tenant(),l.connection(),l.marketplace(),l.sku());
   scope(l.tenant());jdbc.update("UPDATE shelf_sale_publications SET status=?,owned_discount=?::jsonb,pending_discount=?::jsonb,next_attempt_at=now()+make_interval(secs=>?),last_error=?,attempts=CASE WHEN ?::text IS NULL THEN 0 ELSE attempts+1 END,updated_at=now() WHERE tenant_id=? AND connection_id=? AND marketplace_id=? AND seller_sku=?",status,owned,pending,delay,error,error,l.tenant(),l.connection(),l.marketplace(),l.sku());
   if(!status.equals(l.status())||error!=null)jdbc.update("INSERT INTO shelf_sale_events(tenant_id,connection_id,seller_sku,event,detail) VALUES (?,?,?,?,?)",l.tenant(),l.connection(),l.sku(),status,error);
  }

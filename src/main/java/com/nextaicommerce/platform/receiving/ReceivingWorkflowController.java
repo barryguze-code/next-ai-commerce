@@ -61,6 +61,8 @@ public class ReceivingWorkflowController {
         return "receiving-work";
     }
     private void receiptOptions(Authentication auth,HttpSession session,Model model){
+        @SuppressWarnings("unchecked") var documents=(List<ReceivingWorkflowRepository.Document>)model.getAttribute("workDocuments");
+        model.addAttribute("unshippedInformation",workflow.unshippedInformation(tenant(session),documents.stream().map(ReceivingWorkflowRepository.Document::id).toList()));
         model.addAttribute("canAddReceivingLocation",access!=null&&access.canOperateAccount(tenant(session),auth.getName()));
         @SuppressWarnings("unchecked") var lines=(List<ReceivingWorkflowRepository.WorkLine>)model.getAttribute("workLines");
         model.addAttribute("workImages",catalog.pickerImages(tenant(session),lines.stream().map(ReceivingWorkflowRepository.WorkLine::productId).filter(Objects::nonNull).distinct().toList()));

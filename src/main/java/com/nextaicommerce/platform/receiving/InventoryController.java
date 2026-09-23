@@ -150,6 +150,9 @@ public class InventoryController {
         catch(Exception e){log.error("Inline inventory adjustment failed itemId={}",itemId,e);return ResponseEntity.internalServerError()
             .body(new InlineAdjustmentResponse("The inventory adjustment could not be saved. Nothing was changed."));}
     }
+    @GetMapping("/app/inventory/policy/impact") @ResponseBody
+    Object policyImpact(HttpSession session){return Map.of("skuCount",inventory.shelfPolicySkuCount(tenant(session)));}
+
     @PostMapping("/app/inventory/policy") String policy(Authentication auth,HttpSession session,
             @RequestParam int minimumSellableDays,@RequestParam int warningDays,
             @RequestParam(defaultValue="false") boolean autoZeroMarketplaceSellable,

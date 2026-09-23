@@ -32,6 +32,7 @@ public class ShelfSaleWorker {
   for(var tenant:repo.tenants())for(var connection:connections)try{tx.executeWithoutResult(s->repo.discover(tenant,connection));}catch(Exception e){log.warn("Sale discovery failed for tenant {}",tenant,e);}
  }
  @Scheduled(fixedDelay=2000,initialDelay=90000) public void tick(){
+  for(var tenant:repo.tenants())try{tx.executeWithoutResult(s->repo.reconcileDirty(tenant));}catch(Exception e){log.warn("Sale invalidation failed for tenant {}",tenant,e);}
   for(var tenant:repo.tenants())for(var connection:connections)for(int scan=0;scan<100;scan++){
    try{Integer processed=tx.execute(s->{var row=repo.next(tenant,connection);if(row.isEmpty())return -1;var l=row.get();if(l.owned()==null&&l.pending()==null&&repo.plan(l).isEmpty()){repo.result(l,"IDLE",null,null,60,null);return 0;}process(l);return 1;});if(Integer.valueOf(1).equals(processed))return;if(Integer.valueOf(-1).equals(processed))break;}
    catch(Exception e){log.warn("Sale price queue check failed for tenant {}",tenant,e);break;}

@@ -72,6 +72,19 @@ class InventoryPublicationDatabaseTest {
   sales.result(row,"REMOVED",null,null,60,null);
   assertThat(jdbc.queryForObject("SELECT attempts FROM shelf_sale_publications WHERE tenant_id=? AND seller_sku='SINGLE'",Integer.class,tenant)).isZero();
  });}
+ @Test void saleChangesFanOutImmediatelyAndPolicyCutoffBoundsEndDate(){tx.executeWithoutResult(s->{
+  var sales=saleFixture();sales.reconcileDirty(tenant);
+  jdbc.update("UPDATE shelf_sale_publications SET urgent=false,next_attempt_at=now()+interval '15 minutes' WHERE tenant_id=?",tenant);
+  stock(item,-4,15);sales.reconcileDirty(tenant);
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shelf_sale_publications WHERE tenant_id=? AND urgent AND next_attempt_at<=now()",Integer.class,tenant)).isEqualTo(3);
+  assertThat(sales.next(tenant,connection)).isPresent();assertThat(sales.plan(saleRow("SINGLE"))).isEmpty();
+  stock(item,4,15);
+  jdbc.update("UPDATE inventory_shelf_life_policies SET minimum_sellable_days=14 WHERE tenant_id=?",tenant);
+  sales.reconcileDirty(tenant);
+  assertThat(sales.plan(saleRow("SINGLE")).orElseThrow().end()).isEqualTo(jdbc.queryForObject("SELECT (current_date+1)::timestamptz",java.sql.Timestamp.class).toInstant());
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);
+  assertThat(inventory.shelfPolicySkuCount(tenant)).isEqualTo(3);
+ });}
  int quantity(String sku){return jdbc.queryForObject("SELECT desired_quantity FROM inventory_publications WHERE tenant_id=? AND seller_sku=?",Integer.class,tenant,sku);}
  @Test void sharesStockAndUsesLimitingBundleComponentExcludingFba(){tx.executeWithoutResult(s->{repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(12);assertThat(quantity("PACK")).isEqualTo(3);assertThat(quantity("BUNDLE")).isEqualTo(3);assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_publications WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(3);assertThat(repo.plan(tenant)).isZero();});}
  @Test void adjustmentsFanOutOnlyChangedQuantitiesAndNeverDuplicate(){tx.executeWithoutResult(s->{repo.plan(tenant);stock(item,-9,40);assertThat(repo.plan(tenant)).isEqualTo(3);assertThat(quantity("SINGLE")).isEqualTo(3);assertThat(quantity("PACK")).isZero();assertThat(quantity("BUNDLE")).isEqualTo(1);assertThat(repo.plan(tenant)).isZero();stock(item,9,40);repo.plan(tenant);assertThat(quantity("PACK")).isEqualTo(3);});}
