@@ -1,4 +1,24 @@
 [
+{
+  "version": "1.3.3",
+  "title": "Production shelf-life discounts and item ledger links",
+  "sections": [
+    {
+      "title": "Amazon shelf-life discounts",
+      "items": [
+        "Publish temporary sale prices for eligible near-expiry stock on the explicitly approved production connection. Default discount follows the shelf-life policy (10% initially). Local never publishes prices.",
+        "Switch account-wide publishing on or off from the sale-plan dialog. Remove only managed discounts when stock is exhausted or reserved, the sale window ends, or the shelf-life cutoff is reached.",
+        "Keep regular prices and unrelated Amazon promotions unchanged. Use durable ownership, finite schedules, retries and read-back verification."
+      ]
+    },
+    {
+      "title": "Orders inventory history",
+      "items": [
+        "Click a mapped item code on Orders to open the inventory ledger scoped to that exact catalogue item. SKU mapping and order-filter controls remain separate."
+      ]
+    }
+  ]
+},
   {
   "version": "1.3.2",
   "title": "Editable case sizes with explicit catalogue updates",

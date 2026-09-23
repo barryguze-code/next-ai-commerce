@@ -125,6 +125,14 @@ public class MarketplaceSkuController {
         return skus.mappingComponents(tenantId,connectionId,List.of(sku)).getOrDefault(sku,List.of());
     }
 
+    @GetMapping("/app/marketplace-skus/mappings/ledger")
+    String mappingLedger(@RequestParam String sku,@RequestParam String code,HttpSession session){
+        var matches=mappingComponents(sku,session).stream()
+            .filter(c->code.equals(c.vendorItemCode())||code.equals(c.accountSku())).map(c->c.itemId()).distinct().toList();
+        if(matches.size()!=1)throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND,"The mapped item changed. Refresh Orders and try again.");
+        return "redirect:/app/inventory/ledger?itemId="+matches.getFirst();
+    }
+
     record CatalogProductOption(UUID id,String name,String brand,String vendorItemCode,String identifier,
             String accountSku,String imageUrl,boolean expirationRequired){}
 

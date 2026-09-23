@@ -444,7 +444,7 @@ public class InventoryRepository {
                 action_type,discount_percent,starts_at,ends_at,notes,created_by)
             VALUES (?,?,?,?,'DISCOUNT',?,?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?)))
             """,actionId,tenantId,itemId,expirationDate,discountPercent,java.sql.Timestamp.from(start),
-                java.sql.Timestamp.from(end),"Local sale plan · Amazon sync paused",actorEmail);
+                java.sql.Timestamp.from(end),"Shelf-life sale plan · production publishing follows account settings",actorEmail);
         requested.forEach((sku,percent)->jdbc.update("""
             INSERT INTO inventory_expiration_action_targets (tenant_id,action_id,seller_sku,discount_percent)
             VALUES (?,?,?,?)
@@ -973,6 +973,10 @@ public class InventoryRepository {
     /** Returns one bounded ledger page. Search is performed in the database so the browser never loads the full audit history. */
     @Transactional(readOnly=true)
     public LedgerPage ledgerPage(UUID tenantId,String search,int requestedPage,int requestedPageSize){
+        return ledgerPage(tenantId,search,requestedPage,requestedPageSize,null);
+    }
+    @Transactional(readOnly=true)
+    public LedgerPage ledgerPage(UUID tenantId,String search,int requestedPage,int requestedPageSize,UUID itemId){
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
         String query=search==null?"":search.trim();
         String pattern="%"+query+"%";
@@ -995,7 +999,7 @@ public class InventoryRepository {
             LEFT JOIN physical_count_imports physical_count ON ledger.source_type='PHYSICAL_COUNT'
                 AND physical_count.tenant_id=ledger.tenant_id AND physical_count.id=ledger.source_id
             LEFT JOIN app_users actor ON actor.id=ledger.created_by
-            WHERE ledger.tenant_id=? AND (?='' OR
+            WHERE ledger.tenant_id=? AND (?::uuid IS NULL OR item.id=?::uuid) AND (?='' OR
                 coalesce(item.display_name,product.canonical_name) ILIKE ? OR coalesce(product.brand,'') ILIKE ? OR
                 coalesce(item.account_sku,'') ILIKE ? OR
                 coalesce(identifier.identifier_value,'') ILIKE ? OR coalesce(ledger.entry_type,'') ILIKE ? OR
@@ -1006,7 +1010,7 @@ public class InventoryRepository {
                 EXISTS (SELECT 1 FROM marketplace_sku_mappings mapping WHERE mapping.tenant_id=item.tenant_id
                   AND mapping.status='ACTIVE' AND coalesce(mapping.asin,'') ILIKE ?))
             """;
-        Object[] filterArguments={tenantId,query,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern};
+        Object[] filterArguments={tenantId,itemId,itemId,query,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern,pattern};
         Long counted=jdbc.queryForObject("SELECT count(*) "+joins,Long.class,filterArguments);
         long total=counted==null?0:counted;
         int page=Math.max(0,requestedPage);

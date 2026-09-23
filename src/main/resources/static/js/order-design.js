@@ -69,7 +69,7 @@
      const details=row.querySelector('.mapping-codes')?.textContent||'';
      if(source.classList.contains('is-mapped'))details.split(/\n+/).filter(Boolean).forEach(detail=>{
       const line=document.createElement('div');line.className='order-identifier-line';
-      const code=detail.split(/\s*[×x]\s*/)[0].trim();const value=copyButton(code);value.textContent=detail;line.append(value,filterButton(code));lines.append(line);
+      const code=detail.split(/\s*[×x]\s*/)[0].trim();const value=document.createElement('a');value.className='order-copy-value';value.href='/app/marketplace-skus/mappings/ledger?sku='+encodeURIComponent(source.dataset.sellerSku)+'&code='+encodeURIComponent(code);value.textContent=detail;value.title='Open inventory ledger for '+code;value.setAttribute('aria-label',value.title);line.append(value,filterButton(code));lines.append(line);
      });else {const note=document.createElement('span');note.textContent='Needs mapping';lines.append(note);}
      mapping.append(lines);product.append(mapping);
     }

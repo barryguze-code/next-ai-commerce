@@ -33,6 +33,35 @@ class InventoryPublicationDatabaseTest {
  UUID product(){UUID p=UUID.randomUUID(),g=UUID.randomUUID();jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Test product')",g);jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES (?,?,?,?)",p,tenant,g,p.toString());return p;}
  UUID stock(UUID p,int qty,int days){UUID id=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,entry_type,quantity,expiration_date,source_type,occurred_at,idempotency_key) VALUES (?,?,?,'ADJUSTMENT',?,current_date+?,'MANUAL',now(),?)",id,tenant,p,qty,days,id.toString());return id;}
  UUID mapping(String sku,UUID p,int qty){UUID m=UUID.randomUUID();jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,account_catalog_item_id,marketplace_sku,quantity_per_marketplace_unit) VALUES (?,?,?,?,?,?)",m,tenant,connection,p,sku,qty);jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,?)",tenant,m,p,qty);jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_channel,listing_status) VALUES (?,?,'ATVPDKIKX0DER',?,'MFN','Active')",tenant,connection,sku);return m;}
+ ShelfSaleRepository.Listing saleRow(String sku){return new ShelfSaleRepository.Listing(tenant,connection,"ATVPDKIKX0DER",sku,"seller",null,null,"CHECK",0);}
+ ShelfSaleRepository saleFixture(){
+  var sales=new ShelfSaleRepository(jdbc);sales.configure(tenant,true,"test");
+  jdbc.update("INSERT INTO inventory_shelf_life_policies(tenant_id,minimum_sellable_days,warning_days,sale_start_days_before_expiration,sale_duration_days) VALUES (?,10,30,20,10)",tenant);
+  stock(item,4,15);repo.plan(tenant);jdbc.update("UPDATE inventory_publications SET status='CONFIRMED' WHERE tenant_id=?",tenant);sales.discover(tenant,connection);return sales;
+ }
+ @Test void salesExcludeExpiredFbaAndExhaustedBatchesAndRespectAccountOff(){tx.executeWithoutResult(s->{
+  var sales=saleFixture();assertThat(sales.plan(saleRow("SINGLE"))).isPresent();assertThat(sales.plan(saleRow("PACK"))).isPresent();
+  assertThat(sales.plan(saleRow("FBA"))).isEmpty();assertThat(sales.next(tenant,connection)).isPresent();
+  sales.configure(tenant,false,"test");assertThat(sales.plan(saleRow("SINGLE"))).isEmpty();sales.configure(tenant,true,"test");
+  stock(item,-4,15);stock(item,100,5);assertThat(sales.plan(saleRow("SINGLE"))).isEmpty();
+ });}
+ @Test void reservationsRemoveDiscountAndConfirmedCancellationRestoresIt(){tx.executeWithoutResult(s->{
+  var sales=saleFixture();order("reserve-discount","SINGLE",4);var orders=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);orders.reconcile(tenant,connection);
+  assertThat(sales.plan(saleRow("SINGLE"))).isEmpty();
+  jdbc.update("UPDATE amazon_orders SET order_status='Canceled' WHERE tenant_id=?",tenant);orders.reconcile(tenant,connection);
+  assertThat(sales.plan(saleRow("SINGLE"))).isPresent();
+ });}
+ @Test void saleHoldsUnmappingAndUnconfirmedStockBlockPublishing(){tx.executeWithoutResult(s->{
+  var sales=saleFixture();jdbc.update("UPDATE inventory_publications SET status='PENDING' WHERE tenant_id=?",tenant);assertThat(sales.plan(saleRow("SINGLE"))).isEmpty();
+  jdbc.update("UPDATE inventory_publications SET status='CONFIRMED' WHERE tenant_id=?",tenant);
+  jdbc.update("INSERT INTO inventory_expiration_actions(tenant_id,account_catalog_item_id,expiration_date,action_type,created_by) VALUES (?,?,current_date+15,'HOLD',?)",tenant,item,user);
+  assertThat(sales.plan(saleRow("SINGLE"))).isEmpty();jdbc.update("DELETE FROM marketplace_sku_mappings WHERE tenant_id=? AND marketplace_sku='PACK'",tenant);assertThat(sales.plan(saleRow("PACK"))).isEmpty();
+ });}
+ @Test void itemLedgerScopeExcludesOtherProductsAndTenants(){tx.executeWithoutResult(s->{
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);
+  assertThat(inventory.ledgerPage(tenant,"",0,25,item).rows()).hasSize(1).allMatch(r->r.itemId().equals(item));
+  assertThat(inventory.ledgerPage(tenant,"",0,25,UUID.randomUUID()).rows()).isEmpty();
+ });}
  int quantity(String sku){return jdbc.queryForObject("SELECT desired_quantity FROM inventory_publications WHERE tenant_id=? AND seller_sku=?",Integer.class,tenant,sku);}
  @Test void sharesStockAndUsesLimitingBundleComponentExcludingFba(){tx.executeWithoutResult(s->{repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(12);assertThat(quantity("PACK")).isEqualTo(3);assertThat(quantity("BUNDLE")).isEqualTo(3);assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_publications WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(3);assertThat(repo.plan(tenant)).isZero();});}
  @Test void adjustmentsFanOutOnlyChangedQuantitiesAndNeverDuplicate(){tx.executeWithoutResult(s->{repo.plan(tenant);stock(item,-9,40);assertThat(repo.plan(tenant)).isEqualTo(3);assertThat(quantity("SINGLE")).isEqualTo(3);assertThat(quantity("PACK")).isZero();assertThat(quantity("BUNDLE")).isEqualTo(1);assertThat(repo.plan(tenant)).isZero();stock(item,9,40);repo.plan(tenant);assertThat(quantity("PACK")).isEqualTo(3);});}

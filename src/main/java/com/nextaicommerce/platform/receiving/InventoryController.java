@@ -194,8 +194,8 @@ public class InventoryController {
         try{
             int planned=inventory.saveSalePlan(tenant(session),auth.getName(),itemId,expirationDate,
                 discountPercent,startDays,durationDays,rememberForProduct,skuTarget);
-            redirect.addFlashAttribute("inventorySuccess","Local sale plan saved for "+planned+" Marketplace SKU"+
-                (planned==1?".":"s.")+" Amazon pricing remains unchanged until marketplace publishing is enabled.");
+            redirect.addFlashAttribute("inventorySuccess","Sale plan saved for "+planned+" Marketplace SKU"+
+                (planned==1?".":"s.")+" Eligible plans are published only when production sale publishing is enabled for this account.");
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("inventoryError",e.getMessage());}
         catch(Exception e){log.error("Sale plan failed",e);redirect.addFlashAttribute("inventoryError","The sale plan could not be saved. Nothing was sent to Amazon.");}
         return "redirect:/app/inventory";
@@ -331,13 +331,15 @@ public class InventoryController {
         else if(target instanceof RedirectAttributes redirect){redirect.addFlashAttribute("physicalCountRepairType",type);redirect.addFlashAttribute("physicalCountRepairValue",value);}
     }
     @GetMapping("/app/inventory/ledger") String ledger(@RequestParam(defaultValue="") String q,
+            @RequestParam(required=false) UUID itemId,
             @RequestParam(defaultValue="0") int page,@RequestParam(required=false) Integer goToPage,
             @RequestParam(defaultValue=com.nextaicommerce.platform.web.TablePaging.DEFAULT_PARAMETER) int size,
             Authentication auth,HttpSession session,Model model){
         Object value=session.getAttribute("selectedTenantId");if(!(value instanceof UUID tenantId))return "redirect:/app/select-account";
         PageController.addTenantModel(session,model);PageController.addAccessModel(auth,model);
         int requestedPage=goToPage==null?page:Math.max(0,goToPage-1);
-        var ledgerPage=inventory.ledgerPage(tenantId,q,requestedPage,com.nextaicommerce.platform.web.TablePaging.size(size));
+        var ledgerPage=itemId==null?inventory.ledgerPage(tenantId,q,requestedPage,com.nextaicommerce.platform.web.TablePaging.size(size)):inventory.ledgerPage(tenantId,q,requestedPage,com.nextaicommerce.platform.web.TablePaging.size(size),itemId);
+        model.addAttribute("itemId",itemId);
         var summary=inventory.ledgerSummary(tenantId);
         model.addAttribute("ledger",ledgerPage.rows());model.addAttribute("ledgerPage",ledgerPage);
         model.addAttribute("query",q);model.addAttribute("movementCount",summary.movements());

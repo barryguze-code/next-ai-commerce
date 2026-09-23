@@ -200,7 +200,7 @@ class TemplateRenderingTest {
             "Inventory Ledger","Search product, brand, ASIN, Item Code, or UPC","Shelf-life rules","Cannot sell","Act soon",
             "Upload Physical Count","Recent files","Uploaded Files","Storage locations","/app/inventory",
             "5 days left","Action","Inventory actions","Plan sale pricing","Adjust inventory",
-            "Plan physical removal","Marketplace publishing remains paused",
+            "Plan physical removal","Amazon shelf-life discounts",
             "Receive an item not on the invoice",
             "Received at zero cost","24 each","Ski Queen Gjetost","FEFO").doesNotContain("inventory-action-dialog");
 

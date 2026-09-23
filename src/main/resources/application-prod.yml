@@ -14,6 +14,9 @@ server:
         same-site: strict
       timeout: 8h
 app:
+  amazon:
+    shelf-sale-enabled: ${AMAZON_SHELF_SALE_ENABLED:true}
+    shelf-sale-connections: ${AMAZON_SHELF_SALE_CONNECTIONS:6c4d4dae-d69c-4794-91bd-b3173fa56c52}
   public-url: ${APP_PUBLIC_URL}
   mail:
     enabled: ${MAIL_ENABLED:true}
