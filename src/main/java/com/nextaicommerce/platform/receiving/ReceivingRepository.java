@@ -826,7 +826,7 @@ public class ReceivingRepository {
     private static String blank(String s){return s==null||s.isBlank()?null:s.trim();}
     public record UnshippedRow(String code,String product,BigDecimal ordered,BigDecimal shipped,BigDecimal unshipped,String reason){}
     public static List<UnshippedRow> unshippedRows(List<Map<String,String>> rows){
-        var result=new java.util.ArrayList<UnshippedRow>();
+        var result=new java.util.LinkedHashMap<String,UnshippedRow>();int rowIndex=0;
         for(var row:rows){
             String shippedText=find(row,"shipquantity","shippedquantity","shippedqty");
             String missingText=find(row,"quantitynotshipped","notshippedquantity","unshippedquantity");
@@ -834,10 +834,16 @@ public class ReceivingRepository {
             BigDecimal shipped=number(shippedText),ordered=number(find(row,"orderquantity","orderedquantity","orderqty"));
             BigDecimal missing=missingText.isBlank()?ordered.subtract(shipped).max(BigDecimal.ZERO):number(missingText);
             if(missing.signum()<=0)continue;
-            result.add(new UnshippedRow(cleanCode(find(row,"vendoritemcode","vendorsku","itemnumber","itemno","sku","shipitem")),
-                find(row,"description","productname","itemdescription","title","product"),ordered,shipped,missing,find(row,"invalidreason","reason","status")));
+            String code=cleanCode(find(row,"vendoritemcode","vendorsku","itemnumber","itemno","sku","shipitem"));
+            String sourceLine=find(row,"line","linenumber","lineno");
+            String reason=find(row,"invalidreason","reason");if(reason.isBlank())reason=find(row,"status");
+            var value=new UnshippedRow(code,find(row,"description","productname","itemdescription","title","product"),ordered,shipped,missing,reason);
+            // KEHE repeats the same source line as OutOfStock and Shipped. These are not two shortages.
+            String key=(sourceLine.isBlank()?"row-"+(rowIndex++):"line-"+sourceLine)+"|"+code+"|"+ordered.stripTrailingZeros()+"|"+missing.stripTrailingZeros();
+            result.merge(key,value,(a,b)->new UnshippedRow(a.code(),a.product(),a.ordered(),a.shipped().max(b.shipped()),a.unshipped(),
+                a.shipped().signum()==0?a.reason():b.shipped().signum()==0?b.reason():a.reason()));
         }
-        return List.copyOf(result);
+        return List.copyOf(result.values());
     }
     private static String find(Map<String,String> row,String... names){for(String wanted:names)for(var e:row.entrySet()){String n=e.getKey().toLowerCase().replaceAll("[^a-z0-9]","");if(n.equals(wanted))return e.getValue()==null?"":e.getValue().trim();}return "";}
     private static boolean hasHeading(Map<String,String> row,String name){return row.keySet().stream().map(key->key.toLowerCase().replaceAll("[^a-z0-9]","")).anyMatch(name::equals);}

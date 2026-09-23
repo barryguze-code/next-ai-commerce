@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.3.6",
+ "title":"Unshipped invoice line consolidation",
+ "sections":[{"title":"Vendor invoice accuracy","items":["Combine paired vendor status rows for the same invoice line so a partially shipped item shows one shortage, not two. Distinct invoice line numbers remain separate.","Includes v1.3.5 receiving zero-default safeguards, SKU-count confirmation and prompt shelf-life sale reconciliation. No receipt or stock quantities are changed by this informational summary."]}]
+},
+{
   "version": "1.3.5",
   "title": "Receiving defaults and prompt shelf-life updates",
   "sections": [

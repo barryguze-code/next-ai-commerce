@@ -12,6 +12,14 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
 
 class ReceivingInvoiceParserTest {
+    @Test void repeatedKeheStatusRowsAreOneUnshippedInvoiceLine(){
+        var rows=ReceivingRepository.unshippedRows(java.util.List.of(
+            java.util.Map.of("Line","1","ShipItem","123","Description","Partial","OrderQuantity","30","ShipQuantity","0","QuantityNotShipped","24","Status","OutOfStock"),
+            java.util.Map.of("Line","1","ShipItem","123","Description","Partial","OrderQuantity","30","ShipQuantity","6","QuantityNotShipped","24","Status","Shipped"),
+            java.util.Map.of("Line","2","ShipItem","123","Description","Separate line","OrderQuantity","30","ShipQuantity","0","QuantityNotShipped","24","Status","OutOfStock")));
+        assertThat(rows).hasSize(2);assertThat(rows.getFirst().shipped()).isEqualByComparingTo("6");
+        assertThat(rows.getFirst().unshipped()).isEqualByComparingTo("24");assertThat(rows.getFirst().reason()).isEqualTo("OutOfStock");
+    }
     @Test void retainsVendorUnshippedRowsAsInformationOnly(){
         var rows=ReceivingRepository.unshippedRows(java.util.List.of(
             java.util.Map.of("ShipItem","000123","Description","Missing item","OrderQuantity","12","ShipQuantity","0","QuantityNotShipped","12","InvalidReason","Out of stock"),
