@@ -62,6 +62,8 @@ public class ReceivingWorkflowController {
     }
     private void receiptOptions(Authentication auth,HttpSession session,Model model){
         model.addAttribute("canAddReceivingLocation",access!=null&&access.canOperateAccount(tenant(session),auth.getName()));
+        @SuppressWarnings("unchecked") var lines=(List<ReceivingWorkflowRepository.WorkLine>)model.getAttribute("workLines");
+        model.addAttribute("workImages",catalog.pickerImages(tenant(session),lines.stream().map(ReceivingWorkflowRepository.WorkLine::productId).filter(Objects::nonNull).distinct().toList()));
     }
     @GetMapping("/app/receiving/work/lines/{line}/identity") @ResponseBody
     Object productIdentity(@PathVariable UUID line,HttpSession session){
@@ -95,12 +97,16 @@ public class ReceivingWorkflowController {
 
     public record BatchCommand(UUID requestId,List<ReceivingWorkflowRepository.ReceiptBatch> batches,
             BigDecimal damaged,BigDecimal shortShipped,BigDecimal wrongItem,UUID location,Boolean expirationRequired,BigDecimal confirmedOverage){}
-    @PostMapping("/app/receiving/work/batches/{target}") @ResponseBody
-    ResponseEntity<?> batches(@PathVariable UUID target,@RequestBody BatchCommand command,Authentication auth,HttpSession session){
+    @PostMapping({"/app/receiving/work/batches/{target}","/app/receiving/work/overage/{target}"}) @ResponseBody
+    ResponseEntity<?> batches(@PathVariable UUID target,@RequestBody BatchCommand command,Authentication auth,HttpSession session,jakarta.servlet.http.HttpServletRequest request){
         try{
             UUID tenant=tenant(session);
             String fingerprint=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(command.toString().getBytes(StandardCharsets.UTF_8)));
-            workflow.execute(tenant,command.requestId(),"batches",target,fingerprint,()->workflow.receiveBatches(tenant,auth.getName(),target,command.batches(),command.damaged(),command.shortShipped(),command.wrongItem(),command.location(),command.expirationRequired(),command.confirmedOverage()));
+            boolean overage=request.getRequestURI().contains("/overage/");
+            workflow.execute(tenant,command.requestId(),overage?"overage":"batches",target,fingerprint,()->{
+                if(overage)workflow.requireOverageReady(tenant,target);
+                workflow.receiveBatches(tenant,auth.getName(),target,command.batches(),command.damaged(),command.shortShipped(),command.wrongItem(),command.location(),command.expirationRequired(),command.confirmedOverage());
+            });
             return ResponseEntity.ok(Map.of("message","Receipt saved."));
         }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("message",e.getMessage()));}
         catch(Exception e){log.error("Receiving batches failed target={}",target,e);return ResponseEntity.internalServerError().body(Map.of("message","This action could not be confirmed. Retry the same action safely."));}

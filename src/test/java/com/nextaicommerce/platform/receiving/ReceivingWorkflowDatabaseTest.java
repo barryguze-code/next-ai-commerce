@@ -793,6 +793,23 @@ class ReceivingWorkflowDatabaseTest {
         assertThat(stock(f)).isEqualByComparingTo("14");
         assertThat(work.receipts(tenant,f.line()).stream().filter(r->r.disposition().equals("OVER_SHIPPED")).map(r->r.quantity())).containsExactly(new BigDecimal("2.0000"));
     }
+    @Test void dedicatedOverageRejectsExpectedUnitsAndKeepsExtraStockZeroCost(){
+        var f=twelve();
+        assertThatThrownBy(()->work.execute(tenant,UUID.randomUUID(),"overage",f.line(),"pending",()->work.requireOverageReady(tenant,f.line())))
+            .hasMessageContaining("expected units first");
+        assertThat(stock(f)).isZero();
+        work.receiveBatches(tenant,actor,f.line(),List.of(new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("12"),expiry)),BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,BigDecimal.ZERO);
+        UUID request=UUID.randomUUID();
+        Runnable extra=()->{
+            work.requireOverageReady(tenant,f.line());
+            work.receiveBatches(tenant,actor,f.line(),List.of(new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("2"),expiry)),BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,new BigDecimal("2"));
+        };
+        assertThat(work.execute(tenant,request,"overage",f.line(),"extra",extra)).isTrue();
+        assertThat(work.execute(tenant,request,"overage",f.line(),"extra",extra)).isFalse();
+        assertThat(stock(f)).isEqualByComparingTo("14");
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isZero();
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT sum(e.unit_cost*e.quantity) FROM inventory_ledger_entries e JOIN receiving_line_receipts r ON r.id=e.source_id AND r.tenant_id=e.tenant_id WHERE e.tenant_id=? AND r.purchase_order_item_id=? AND r.disposition='OVER_SHIPPED'",BigDecimal.class,tenant,f.line())).isZero();});
+    }
     @Test void unmatchedReceivingItemCanJoinCatalogueBeforeReceipt(){
         var f=fixture("INVOICE");
         tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET account_catalog_item_id=null,vendor_item_code='NEW-RECEIVING' WHERE tenant_id=? AND id=?",tenant,f.line());});

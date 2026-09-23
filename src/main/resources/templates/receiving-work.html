@@ -4,17 +4,18 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Receive documents | Next AI Commerce</title>
   <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1">
-  <link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/locations.css"><link rel="stylesheet" href="/css/receiving-work.css?v=20260916-11">
-  <script defer src="/js/location-manager.js?v=20260916-1"></script><script defer src="/js/receiving-work.js?v=20260916-11"></script>
+  <link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/locations.css"><link rel="stylesheet" href="/css/receiving-work.css?v=20260923-1">
+  <link rel="stylesheet" href="/css/standard-record-tables.css?v=20260922-32"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31">
+  <script defer src="/js/location-manager.js?v=20260916-1"></script><script defer src="/js/receiving-work.js?v=20260923-1"></script><script defer src="/js/standard-record-tables.js?v=20260923-1"></script>
   <th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block>
 </head>
-<body class="app-page">
+<body class="app-page platform-standard-tables">
 <aside class="sidebar">
   <a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
   <div th:replace="~{fragments/sidebar-nav :: nav('receiving')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div>
 </aside>
 <main class="workspace receive-work" th:attr="data-can-edit=${canEditCatalog},data-can-add-location=${canAddReceivingLocation}">
-  <input id="receiving-csrf" type="hidden" th:if="${_csrf}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
+  <input id="receiving-csrf" name="_csrf" type="hidden" th:if="${_csrf}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
   <header class="workspace-header"><div><a class="rw-back" href="/app/receiving">← Receiving documents</a><h1>Receive together</h1><p class="page-intro">One working view. Separate documents, quantities, and audit histories.</p></div><div th:replace="~{fragments/context-switcher :: switcher}"></div></header>
   <p class="notice" th:if="${catalogSuccess}" th:text="${catalogSuccess}"></p>
   <p class="notice error" th:if="${catalogError}" th:text="${catalogError}"></p>
@@ -30,8 +31,8 @@
     <div class="table-wrap"><table data-table-widget="receiving-work" class="rw-table">
       <thead><tr><th data-column="product" data-column-required="true" data-column-weight="2.5">Product</th><th data-column="source">Source document</th><th data-column="expected">Expected</th><th data-column="received">Received</th><th data-column="remaining">Remaining</th><th data-column="expiration">Expiration</th><th data-column="condition">Status</th><th data-column="actions">Actions</th></tr></thead>
       <tbody>
-        <tr th:each="l:${workLines}" th:attr="data-line=${l.id},data-document=${l.documentId}">
-          <td data-column="product"><strong th:text="${l.product}">Product</strong><small th:text="${l.code}">Code</small></td>
+        <tr th:each="l:${workLines}" th:attr="data-line=${l.id},data-document=${l.documentId},data-picture-item=${l.productId},data-image=${workImages[l.productId]},data-can-edit-picture=${canEditCatalog}">
+          <td data-column="product"><strong th:text="${l.product}">Product</strong><small th:text="${l.code}">Code</small><div data-context-menu th:attr="data-title=${l.product}" th:if="${canEditCatalog and l.productId != null}"><button type="button" th:attr="data-adjust-line=${l.id}" data-action-description="Choose a received batch and correct its stock">Adjust stock</button><button type="button" th:attr="data-overage-line=${l.id}" data-action-description="Receive extra units at zero acquisition cost">Receive overshipped items</button></div></td>
           <td data-column="source"><span th:each="d:${workDocuments}" th:if="${d.id==l.documentId}" th:text="${d.label()}">Invoice</span></td>
           <td data-column="expected" th:text="${#numbers.formatDecimal(l.expected,1,0)+' each'}"></td>
           <td data-column="received" th:text="${#numbers.formatDecimal(l.received,1,0)+' each'}"></td>
@@ -47,7 +48,7 @@
         </tr>
       </tbody>
     </table></div>
-    <p class="rw-footnote">Past-expiration stock stays visible in inventory as cannot sell. No Amazon inventory is published by this workflow.</p>
+    <p class="rw-footnote">Past-expiration stock stays visible as cannot sell. Saved stock changes are queued for eligible SKUs when inventory publishing is enabled.</p>
   </section>
 </main>
 <dialog id="receiving-drawer" class="invite-dialog rw-drawer" aria-labelledby="rw-drawer-title">

@@ -31,7 +31,7 @@ function renderLine(row,l){
   delete row.dataset.receiptPreview;
 }
 const time=value=>value?new Date(value).toLocaleString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit',hour:'numeric',minute:'2-digit'}):'—';
-const money=(amount,currency)=>currency+' '+Number(amount||0).toFixed(2);
+const money=(amount,currency)=>new Intl.NumberFormat('en-US',{style:'currency',currency:currency||'USD'}).format(Number(amount||0));
 const message=(text,error=false,panel=false)=>{const el=document.getElementById(panel?'rw-panel-feedback':'rw-feedback');el.textContent=text;el.classList.toggle('error',error);el.hidden=false;};
 let viewSequence=0,busy=false,returnToReceipt=null,receiptDirty=false;
 const receiptDrafts=new Map();
@@ -113,8 +113,8 @@ async function run(operation,target,data,el,after){
     const response=await fetch('/app/receiving/work/'+operation+'/'+encodeURIComponent(target),{method:'POST',headers,body:JSON.stringify({creditExpected:false,...data})});
     let result;try{result=await response.json();}catch(_){throw new Error('The server response could not be confirmed. Retry this same action safely; do not create a second receipt.');}
     if(!response.ok)throw new Error(result.message||'Nothing was saved. Please try again.');
-    saved=true;if(['outcomes','batches'].includes(operation)){receiptDrafts.delete(target);receiptDirty=false;}await refresh();busy=false;
-    if(after)await after();if(operation!=='batches'){message(result.message,false,true);message(result.message);}else document.getElementById('rw-feedback').hidden=true;
+    saved=true;if(['outcomes','batches','overage'].includes(operation)){receiptDrafts.delete(target);receiptDirty=false;}await refresh();busy=false;
+    if(after)await after();if(!['batches','overage'].includes(operation)){message(result.message,false,true);message(result.message);}else document.getElementById('rw-feedback').hidden=true;
   }catch(error){
     message(error.message,true,true);
     if(saved){el.querySelectorAll('input,select,textarea,button').forEach(field=>field.disabled=true);el.dataset.saved='true';}
@@ -122,19 +122,22 @@ async function run(operation,target,data,el,after){
     busy=false;buttons.filter(b=>b.isConnected&&!b.closest('[data-saved]')).forEach(b=>b.disabled=false);
   }
 }
-function receive(id){
+function receive(id,overage=false){
   const l=line(id);if(!l||l.closed||!canEdit)return;
+  if(receiptDrafts.has(id)&&Boolean(receiptDrafts.get(id).overage)!==overage){message('Finish or close the existing receipt draft before switching receiving mode.');return;}
   if(!l.productId)return addCatalogue(id);
-  const d=doc(l.documentId);open('Receive stock',l.product,label(d));
+  if(overage&&Number(l.remaining)>0){open('Receive overshipped items',l.product,label(doc(l.documentId)));body.innerHTML=note('Account for expected units first','Receive or resolve the remaining '+number(l.remaining)+' expected units before recording a separate zero-cost overage. Normal receiving also separates confirmed extra units at zero cost.');body.append(button('Receive expected units',()=>receive(id),'primary-button'));return;}
+  const d=doc(l.documentId);open(overage?'Receive overshipped items':'Receive stock',l.product,label(d));
   const identity=document.getElementById('rw-drawer-subtitle');identity.className='rw-product-identity';
-  identity.innerHTML='<span class="rw-product-picture">'+escape((l.product||'?').slice(0,1))+'</span><span><small>'+escape(l.code||'')+'</small>'+escape(l.product)+'</span>';
+  identity.innerHTML='<span class="rw-product-picture table-overview-picture" data-standard-picture-url="/app/catalog/products/'+escape(l.productId)+'/image"><b>'+escape((l.product||'?').slice(0,1))+'</b><button type="button" class="standard-picture-edit" aria-label="Edit product picture" title="Edit product picture"><svg viewBox="0 0 24 24"><path d="m5 16-1 4 4-1L20 7l-3-3Z M14 7l3 3"/></svg></button></span><span><small>'+escape(l.code||'')+'</small>'+escape(l.product)+'</span>';
+  const picture=identity.querySelector('.rw-product-picture'),edit=picture.querySelector('button');edit.onclick=()=>window.NextAiStandardTables?.editPicture(edit,picture,picture.dataset.standardPictureUrl);
   const sequence=viewSequence;
   fetch('/app/receiving/work/lines/'+id+'/identity').then(r=>r.ok?r.json():{}).then(result=>{
     if(sequence!==viewSequence||!result.imageUrl)return;
-    const image=document.createElement('img');image.src=result.imageUrl;image.alt='';image.onerror=()=>image.remove();identity.querySelector('.rw-product-picture').append(image);
+    const image=document.createElement('img');image.src=result.imageUrl;image.alt='';image.onerror=()=>image.remove();image.onload=()=>picture.querySelector('b').hidden=true;picture.prepend(image);
   }).catch(()=>{});
   const facts=detail(id),pack=Number(l.receipts?facts.catalogPack||l.unitsPerCase:l.unitsPerCase||facts.catalogPack||1);
-  body.innerHTML='<div class="rw-receive-summary" aria-live="polite"><span data-summary-remaining><strong>'+number(l.remaining)+'</strong> each remaining</span><span data-summary-received>'+number(l.received)+' received</span><span>'+escape(money(l.unitCost,l.currency))+' / each</span></div>';
+  body.innerHTML=(overage?note('Zero-cost extra stock','Only extra units are recorded here. The original invoice cost and expected quantity stay unchanged.'):'')+'<div class="rw-receive-summary" aria-live="polite"><span data-summary-remaining><strong>'+number(l.remaining)+'</strong> each remaining</span><span data-summary-received>'+number(l.received)+' received</span><span>'+escape(money(overage?0:l.unitCost,l.currency))+' / each</span></div>';
   const summary=body.querySelector('.rw-receive-summary');
   const locations=state.locations.filter(v=>v.status==='ACTIVE').map(v=>'<option value="'+escape(v.id)+'"'+(v.id===l.locationId?' selected':'')+'>'+escape(v.code+' · '+v.name)+'</option>').join('');
   const exceptions=[['damaged','Damaged'],['shortShipped','Short shipped'],['wrongItem','Mispick']];
@@ -151,8 +154,12 @@ function receive(id){
       const batches=[{quantity:Number(f.elements.quantity.value),expiration:f.elements.expiration.value||null},...extraBatches.map(row=>({quantity:Number(row.querySelector('[data-batch-quantity]').value),expiration:row.querySelector('[data-batch-date]').value||null}))];
       const extra=Math.max(0,batches.reduce((sum,b)=>sum+b.quantity,0)+amount('damaged')+amount('wrongItem')-Number(l.remaining));
       if(extra&&!await confirmReceiving('Receive extra units?',number(extra)+' units exceed the remaining expected quantity. These extra units will be added to inventory as overage with zero item acquisition cost.','Receive with overage'))return;
-      run('batches',id,{requestId,batches,confirmedOverage:extra,expirationRequired:f.elements.requiresExpiration.checked,location:f.elements.locationId.value,...Object.fromEntries(exceptions.map(([key])=>[key,amount(key)]))},f,()=>{receiptDrafts.delete(id);drawer.close();});
+      run(overage?'overage':'batches',id,{requestId,batches,confirmedOverage:extra,expirationRequired:f.elements.requiresExpiration.checked,location:f.elements.locationId.value,...Object.fromEntries(exceptions.map(([key])=>[key,amount(key)]))},f,()=>{receiptDrafts.delete(id);drawer.close();requestAnimationFrame(()=>document.querySelector('#rw-lines-card .table-standard-search input')?.focus());});
     },receiptDrafts.get(id)?.requestId);
+  // Cases and loose units are inputs; totals never drive the case count while editing.
+  function looseInput(grid,name,value){const label=document.createElement('label');label.textContent='Loose units';const input=document.createElement('input');input.name=name;input.type='number';input.min='0';input.step='1';input.required=true;input.value=value;label.append(input);grid.insertBefore(label,grid.lastElementChild);return input;}
+  f.elements.quantity.readOnly=true;looseInput(f.elements.quantity.closest('.rw-quantity-grid'),'loose',initial%pack);
+  exceptions.forEach(([key])=>{f.elements[key].readOnly=true;looseInput(f.elements[key].closest('.rw-quantity-grid'),key+'Loose',0);});
   const extraBatches=[];let batchSequence=0;
   const sellable=f.querySelector('.rw-sellable');
   // Tab names already label their panels; avoid repeating visible headings.
@@ -165,10 +172,12 @@ function receive(id){
     const key=++batchSequence,row=document.createElement('div');row.className='rw-expiration-batch';
     row.innerHTML='<div class="rw-quantity-grid"><label>Cases<input data-batch-cases type="number" min="0" step="1" value="0"></label><label>Units / case<input data-exception-pack readonly value="'+escape(f.elements.pack.value)+'"></label><label>Total units<input name="batchQuantity'+key+'" data-batch-quantity type="number" min="0" step="1" required value="0"></label></div><small data-batch-remainder></small><label>Expiration date<input name="batchDate'+key+'" data-batch-date type="date"></label>';
     row.querySelector('[data-batch-quantity]').value=values.quantity??0;row.querySelector('[data-batch-date]').value=values.expiration||'';
-    const sync=()=>{const n=Number(row.querySelector('[data-batch-quantity]').value),size=Number(f.elements.pack.value)||1;row.querySelector('[data-batch-cases]').value=Math.floor(n/size);row.querySelector('[data-batch-remainder]').textContent=Math.floor(n/size)+' full cases + '+number(n%size)+' each';};
+    const total=row.querySelector('[data-batch-quantity]'),cases=row.querySelector('[data-batch-cases]');total.readOnly=true;cases.value=values.cases??Math.floor(Number(values.quantity||0)/Number(f.elements.pack.value));
+    const loose=looseInput(row.querySelector('.rw-quantity-grid'),'batchLoose'+key,values.loose??Number(values.quantity||0)%Number(f.elements.pack.value));loose.dataset.batchLoose='';
+    const sync=()=>{total.value=Number(cases.value)*Number(f.elements.pack.value)+Number(loose.value);row.querySelector('[data-batch-remainder]').textContent=number(cases.value)+' full cases + '+number(loose.value)+' each';};
     row.sync=sync;row.querySelector('[data-batch-cases]').oninput=()=>{row.querySelector('[data-batch-quantity]').value=Number(row.querySelector('[data-batch-cases]').value)*Number(f.elements.pack.value);};
     const remove=button('−',async()=>{if(Number(row.querySelector('[data-batch-quantity]').value)>0&&!await confirmReceiving('Remove this expiration entry?','This unsaved quantity and expiration date will be removed. Other entries will stay unchanged.','Remove entry'))return;extraBatches.splice(extraBatches.indexOf(row),1);row.remove();receiptDirty=true;preview();remember();},'rw-remove-batch');remove.setAttribute('aria-label','Remove expiration date');remove.title='Remove expiration date';row.addEventListener('input',sync);row.append(remove);
-    extraBatches.push(row);batchList.append(row);sync();row.querySelector('[data-batch-quantity]').focus();row.querySelector('[data-batch-quantity]').select();
+    extraBatches.push(row);batchList.append(row);sync();row.querySelector('[data-batch-date]').focus();
   }
   const amount=key=>f.elements[key].matches(':disabled')?0:Number(f.elements[key].value);
   const preview=()=>{
@@ -183,6 +192,7 @@ function receive(id){
     f.querySelector('[data-update-pack]').disabled=busy||Number(f.elements.pack.value)===savedPack||!f.elements.pack.validity.valid;
     f.querySelector('[data-preview]').dataset.tone=error?'danger':'neutral';
     const quantities=[physical,damaged,wrong,missing],valid=!error&&quantities.every(q=>Number.isFinite(q)&&q>=0&&Number.isInteger(q));
+    f.querySelector('[type=submit]').disabled=busy||!valid;
     const tone=!valid||damaged+wrong+missing>0?'invalid':extra>0?'partial':remaining===0?'complete':'partial';
     delete summary.dataset.receiptProgress;
     summary.querySelector('[data-summary-remaining]').textContent=number(remaining)+' each remaining';
@@ -197,7 +207,7 @@ function receive(id){
     }
   };
   f.elements.cases.addEventListener('input',()=>{f.elements.quantity.value=String(Number((Number(f.elements.cases.value)*Number(f.elements.pack.value)).toFixed(4)))});
-  const syncCases=(key,cases)=>{const total=Number(f.elements[key].value),size=Number(f.elements.pack.value)||1;f.elements[cases].value=String(Math.floor(total/size));f.querySelector('[data-remainder="'+key+'"]').textContent=Math.floor(total/size)+' full case'+(Math.floor(total/size)===1?'':'s')+' + '+number(total%size)+' each';};
+  const syncCases=(key,cases)=>{const count=Number(f.elements[cases].value),loose=Number(f.elements[key==='quantity'?'loose':key+'Loose'].value),size=Number(f.elements.pack.value)||1;f.elements[key].value=String(count*size+loose);f.querySelector('[data-remainder="'+key+'"]').textContent=number(count)+' full case'+(count===1?'':'s')+' + '+number(loose)+' each';};
   f.elements.pack.addEventListener('input',()=>{f.querySelectorAll('[data-exception-pack]').forEach(input=>input.value=f.elements.pack.value);syncCases('quantity','cases');exceptions.forEach(([key])=>syncCases(key,key+'Cases'));});
   f.elements.quantity.addEventListener('input',()=>syncCases('quantity','cases'));
   exceptions.forEach(([key])=>{
@@ -223,12 +233,12 @@ function receive(id){
   tabs.querySelectorAll('button').forEach(b=>{b.id='rw-tab-'+b.dataset.exception;b.setAttribute('aria-label',b.textContent);b.setAttribute('aria-controls','rw-'+b.dataset.exception);});
   const selectTab=key=>{
     selectedTab=key;sellable.hidden=key!=='sellable';
-    exceptions.forEach(([name])=>{const section=f.querySelector('[data-exception-fields="'+name+'"]');section.hidden=key!==name;if(key===name&&section.disabled){section.disabled=false;f.elements[name].value=f.elements.pack.value;syncCases(name,name+'Cases');}});
+    exceptions.forEach(([name])=>{const section=f.querySelector('[data-exception-fields="'+name+'"]');section.hidden=key!==name;if(key===name&&section.disabled){section.disabled=false;f.elements[name+'Cases'].value='1';f.elements[name+'Loose'].value='0';syncCases(name,name+'Cases');}});
     tabs.querySelectorAll('button').forEach(b=>{const active=b.dataset.exception===key,enabled=b.dataset.exception==='sellable'||!f.querySelector('[data-exception-fields="'+b.dataset.exception+'"]').disabled;b.dataset.enabled=String(enabled);b.setAttribute('aria-selected',String(active));b.tabIndex=active?0:-1;});preview();
-    const input=key==='sellable'?f.elements.quantity:f.elements[key];input.focus();input.select();
+    const input=key==='sellable'?f.elements.expiration:f.elements[key+'Cases'];input.focus();if(input.type!=='date')input.select();
   };
-  tabs.querySelectorAll('button').forEach((b,index)=>{b.setAttribute('role','tab');b.removeAttribute('aria-expanded');b.onclick=async()=>{const key=b.dataset.exception,section=f.querySelector('[data-exception-fields="'+key+'"]');if(section&&!section.disabled&&selectedTab===key){if(Number(f.elements[key].value)>0&&!await confirmReceiving('Clear '+b.textContent+' quantity?',number(f.elements[key].value)+' unsaved units will be cleared and this section will become inactive. Other receipt entries will stay unchanged. No saved inventory or receipt history will be changed.','Clear quantity'))return;section.disabled=true;f.elements[key].value='0';syncCases(key,key+'Cases');selectTab('sellable');}else selectTab(key);receiptDirty=true;remember();};b.onkeydown=event=>{const buttons=[...tabs.querySelectorAll('button')];let next=event.key==='ArrowRight'?(index+1)%buttons.length:event.key==='ArrowLeft'?(index+buttons.length-1)%buttons.length:event.key==='Home'?0:event.key==='End'?buttons.length-1:-1;if(next>=0){event.preventDefault();buttons[next].click();}};});
-  const remember=()=>receiptDrafts.set(id,{requestId:f.dataset.requestId,tab:selectedTab,batches:extraBatches.map(row=>({quantity:row.querySelector('[data-batch-quantity]').value,expiration:row.querySelector('[data-batch-date]').value})),values:Object.fromEntries([...f.elements].filter(el=>el.name&&!el.closest('.rw-expiration-batch')).map(el=>[el.name,el.type==='checkbox'?el.checked:el.value])),active:exceptions.filter(([key])=>!f.querySelector('[data-exception-fields="'+key+'"]').disabled).map(([key])=>key)});
+  tabs.querySelectorAll('button').forEach((b,index)=>{b.setAttribute('role','tab');b.removeAttribute('aria-expanded');b.onclick=async()=>{const key=b.dataset.exception,section=f.querySelector('[data-exception-fields="'+key+'"]');if(section&&!section.disabled&&selectedTab===key){if(Number(f.elements[key].value)>0&&!await confirmReceiving('Clear '+b.textContent+' quantity?',number(f.elements[key].value)+' unsaved units will be cleared and this section will become inactive. Other receipt entries will stay unchanged. No saved inventory or receipt history will be changed.','Clear quantity'))return;section.disabled=true;f.elements[key+'Cases'].value='0';f.elements[key+'Loose'].value='0';syncCases(key,key+'Cases');selectTab('sellable');}else selectTab(key);receiptDirty=true;remember();};b.onkeydown=event=>{const buttons=[...tabs.querySelectorAll('button')];let next=event.key==='ArrowRight'?(index+1)%buttons.length:event.key==='ArrowLeft'?(index+buttons.length-1)%buttons.length:event.key==='Home'?0:event.key==='End'?buttons.length-1:-1;if(next>=0){event.preventDefault();buttons[next].click();}};});
+  const remember=()=>receiptDrafts.set(id,{overage,requestId:f.dataset.requestId,tab:selectedTab,batches:extraBatches.map(row=>({cases:row.querySelector('[data-batch-cases]').value,loose:row.querySelector('[data-batch-loose]').value,quantity:row.querySelector('[data-batch-quantity]').value,expiration:row.querySelector('[data-batch-date]').value})),values:Object.fromEntries([...f.elements].filter(el=>el.name&&!el.closest('.rw-expiration-batch')).map(el=>[el.name,el.type==='checkbox'?el.checked:el.value])),active:exceptions.filter(([key])=>!f.querySelector('[data-exception-fields="'+key+'"]').disabled).map(([key])=>key)});
   const draft=receiptDrafts.get(id);
   if(draft?.batches)draft.batches.forEach(insertBatch);
   if(draft){exceptions.forEach(([key])=>{const active=draft.active.includes(key),section=f.querySelector('[data-exception-fields="'+key+'"]');section.hidden=!active;section.disabled=!active;f.querySelector('[data-exception="'+key+'"]').setAttribute('aria-expanded',String(active));});Object.entries(draft.values).forEach(([name,value])=>{const el=f.elements[name];if(el){if(el.type==='checkbox')el.checked=value;else el.value=value;}});f.querySelectorAll('[data-exception-pack]').forEach(el=>el.value=f.elements.pack.value);exceptions.forEach(([key])=>syncCases(key,key+'Cases'));preview();f.elements.expiration.dispatchEvent(new Event('input',{bubbles:true}));}
@@ -237,6 +247,8 @@ function receive(id){
   if(!l.receipts)body.append(button('Item fees…',()=>{remember();prepare(id);returnToReceipt=()=>receive(id);drawer.querySelectorAll('[data-rw-close]').forEach(b=>{if(b.textContent.includes('Back to'))b.textContent='Back to receipt';});},'rw-text-action'));
   f.addEventListener('invalid',event=>{const section=event.target.closest('[data-exception-fields]');selectTab(section?section.dataset.exceptionFields:'sellable');},true);
   syncCases('quantity','cases');selectTab(draft?.tab||'sellable');
+  if(overage)tabs.hidden=true;
+  requestAnimationFrame(()=>{if(f.isConnected&&!sellable.hidden)f.elements.expiration.focus();});
 }
 function quickLocation(receiptForm){
   const modal=document.getElementById('location-dialog'),locationForm=modal.querySelector('form');
@@ -334,7 +346,10 @@ function closeDocument(id){
     (f,requestId)=>run('close',id,{requestId,reason:partial?f.elements.reason.value:null,creditExpected:!!f.elements.creditExpected?.checked,previewReceived:d.received,previewOutstanding:d.outstanding},f,()=>reviewDocument(id))));
 }
 document.addEventListener('click',event=>{
-  const target=event.target.closest('[data-receive],[data-review-line],[data-review-document]');if(!target)return;
+  const target=event.target.closest('[data-receive],[data-review-line],[data-review-document],[data-adjust-line],[data-overage-line]');if(!target)return;
+  const menu=target.closest('details');if(menu)menu.open=false;
+  if(target.dataset.adjustLine)review(target.dataset.adjustLine);
+  if(target.dataset.overageLine)receive(target.dataset.overageLine,true);
   if(target.dataset.receive)receive(target.dataset.receive);
   if(target.dataset.reviewLine)review(target.dataset.reviewLine);
   if(target.dataset.reviewDocument)reviewDocument(target.dataset.reviewDocument);

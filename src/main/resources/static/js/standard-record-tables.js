@@ -51,6 +51,6 @@
   document.querySelectorAll('.table-action-icon:not([data-art-ready])').forEach(icon=>{icon.dataset.artReady='true';icon.replaceChildren(window.NextAiIcons.create(artwork(icon.parentElement.textContent)));});
   document.querySelectorAll('#inventory-action-menu button>span,#inventory-action-menu a>span').forEach(icon=>{if(icon.dataset.artReady)return;icon.dataset.artReady='true';icon.replaceChildren(window.NextAiIcons.create(artwork(icon.parentElement.textContent)))});
  }
- window.NextAiStandardTables={enhance};
+ window.NextAiStandardTables={enhance,editPicture:(trigger,holder,url)=>imageMenu(trigger,holder,url,true)};
  document.addEventListener('DOMContentLoaded',()=>requestAnimationFrame(enhance));
 })();

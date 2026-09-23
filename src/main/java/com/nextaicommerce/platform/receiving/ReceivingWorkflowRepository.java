@@ -38,6 +38,14 @@ public class ReceivingWorkflowRepository {
     public record ShelfStatus(String disposition,String tone,String message){}
     public record ReceiptBatch(BigDecimal quantity,LocalDate expiration){}
     /** All expiration portions and exceptions commit under one command and inventory lock. */
+    public void requireOverageReady(UUID tenant,UUID line){
+        lock(tenant);
+        var id=identity(tenant,line);
+        var current=lines(tenant,List.of(id.document())).stream().filter(l->l.id().equals(line)).findFirst().orElseThrow();
+        if(current.closed()||current.remaining().signum()!=0)
+            throw new IllegalArgumentException("Account for the expected units first, then receive extra units at zero cost. Closed documents cannot receive more stock.");
+    }
+
     @Transactional
     public void receiveBatches(UUID tenant,String actor,UUID line,List<ReceiptBatch> batches,
             BigDecimal damaged,BigDecimal missing,BigDecimal mispick,UUID location,Boolean dateRequired,

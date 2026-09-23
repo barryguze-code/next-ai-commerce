@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.3.1",
+    "title": "Faster receiving with shared pictures and clearer quantities",
+    "sections": [
+      {"title":"Receiving checklist","items":["Show existing catalogue pictures with the shared centered picture editor, collaboration rail, action artwork and table styling.","Open stock adjustments and zero-cost overshipped receiving from the item actions. Expected units must be accounted for before a separate zero-cost receipt."]},
+      {"title":"Receipt entry","items":["Focus expiration date when receiving opens and return focus to checklist search after a successful receipt.","Enter cases, units per case and any loose units. Total units are calculated and read-only across sellable stock, exceptions and expiration batches.","Keep invoice quantities, original costs, reservation protection and receipt audit history intact."]}
+    ]
+  },
+  {
     "version": "1.3.0",
     "title": "Shared inventory, safer order checks and consistent tables",
     "sections": [
