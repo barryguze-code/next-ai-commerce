@@ -19,14 +19,21 @@ public class InventoryPublicationWorker {
  private final InventoryPublicationRepository repository; private final TransactionTemplate tx;
  private final AmazonSpApiClient amazon; private final ObjectMapper json;
  private final boolean dryRun;
+ private final java.util.Set<java.util.UUID> allowedConnections;
+ private final java.util.Set<String> allowedSkus;
  private final java.time.Instant startup=java.time.Instant.now();
  public InventoryPublicationWorker(InventoryPublicationRepository repository,TransactionTemplate tx,AmazonSpApiClient amazon,ObjectMapper json,
   @Value("${app.amazon.inventory-publication-mode:DRY_RUN}") String mode,
   @Value("${app.local-development:false}") boolean local,
   @Value("${app.amazon.write-enabled:false}") boolean writes,
-  @Value("${app.amazon.listing-actions-enabled:false}") boolean legacy){
+  @Value("${app.amazon.listing-actions-enabled:false}") boolean legacy,
+  @Value("${app.amazon.inventory-publication-connections:}") String connections,
+  @Value("${app.amazon.inventory-publication-skus:}") String skus){
   if(!mode.equals("DRY_RUN")&&!mode.equals("LIVE"))throw new IllegalArgumentException("Unknown inventory publication mode");
   if(mode.equals("LIVE")&&(local||!writes||legacy))throw new IllegalStateException("Live inventory requires nonlocal writes and the legacy listing worker disabled");
+  this.allowedConnections=java.util.Arrays.stream(connections.split(",")).map(String::trim).filter(s->!s.isEmpty()).map(java.util.UUID::fromString).collect(java.util.stream.Collectors.toUnmodifiableSet());
+  this.allowedSkus=java.util.Arrays.stream(skus.split(",")).map(String::trim).filter(s->!s.isEmpty()).collect(java.util.stream.Collectors.toUnmodifiableSet());
+  if(mode.equals("LIVE")&&allowedConnections.isEmpty())throw new IllegalStateException("Live inventory requires an explicit connection allowlist");
   this.repository=repository;this.tx=tx;this.amazon=amazon;this.json=json;this.dryRun=mode.equals("DRY_RUN");
  }
  @Scheduled(fixedDelayString="${app.amazon.inventory-publication-delay-ms:1000}",initialDelayString="${app.amazon.inventory-publication-initial-delay-ms:30000}")
@@ -37,7 +44,7 @@ public class InventoryPublicationWorker {
     tx.executeWithoutResult(s->{repository.plan(tenant);if(dryRun)repository.simulate(tenant);});
     if(!dryRun){Boolean sent=tx.execute(s->{
      repository.scope(tenant);
-     var pending=repository.next(tenant,startup);if(pending.isEmpty()||!repository.acquireRequestSlot())return false;
+     var pending=repository.next(tenant,startup,allowedConnections,String.join(",",allowedSkus));if(pending.isEmpty()||!repository.acquireRequestSlot())return false;
      process(pending.get());return true;
     });if(Boolean.TRUE.equals(sent))break;}
    }catch(RuntimeException e){log.error("Inventory publication failed for tenant {}",tenant,e);}
@@ -46,6 +53,7 @@ public class InventoryPublicationWorker {
  void process(Pending p){
   // Last-resort guard: tests and local code cannot accidentally invoke this live path.
   if(dryRun){repository.result(p,"DRY_RUN",0,0,"Local simulation only — no Amazon request sent.",null);return;}
+  if(!allowedConnections.contains(p.connection())||(!allowedSkus.isEmpty()&&!allowedSkus.contains(p.sku())))return;
   int attempt=p.attempts()+1;
   try{
    String path="/listings/2021-08-01/items/"+encode(p.seller())+"/"+encode(p.sku())+"?marketplaceIds="+encode(p.marketplace());

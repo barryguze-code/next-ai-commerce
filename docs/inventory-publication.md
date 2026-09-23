@@ -47,7 +47,10 @@ appear under Inventory sync and generate informational ledger notes. Confirmed c
 release reservations with an audit note. Older responses cannot regress cancellation status.
 
 Live startup rejects local mode, disabled Amazon writes, or coexistence with the legacy listing
-action worker. Production activation requires a separate reviewed rollout: seller/marketplace
+action worker, and requires `AMAZON_INVENTORY_PUBLICATION_CONNECTIONS` (comma-separated connection
+UUIDs). `AMAZON_INVENTORY_PUBLICATION_SKUS` optionally limits a canary to exact comma-separated
+SKU names; leave it empty only after the canary succeeds. Both queue selection and the HTTP
+path enforce these restrictions. Production activation requires a separate reviewed rollout: seller/marketplace
 allowlist, fresh order reconciliation, explicit transition of simulated rows, monitoring, and a
 small canary. Do not merely switch the mode to LIVE: DRY_RUN rows intentionally remain unsent.
 There is currently no self-service activation endpoint or production deployment in this change.
@@ -82,3 +85,16 @@ The v1.3.0 clean Java verification subsequently passed 264 tests (one skipped; z
 errors). The earlier Java discovery/security-fixture blockers are resolved. Browser-launch
 restrictions remain locally; CI must pass. See `releases/V1.3.0.md` for the remaining
 partial-shipment review and production activation gate. Production publishing remains disabled.
+
+### Partial-shipment release hardening
+
+Migration 78 records missing historical shipment allocations separately so repeated imports
+cannot consume unshipped reservations to make up the missing history. Known partial shipments
+split existing reservations and deduct only the new portion, with idempotent shipment entries.
+Cancellation releases the remaining reservation, never stock already shipped or packed.
+Unaccounted partial shipments produce a zero-movement review note and hold every related SKU
+at zero. A physical count must cover every remaining positive location/expiration batch after
+detection to clear that hold. Counting only one batch does not release the item.
+Direct order checks require imported shipped-item totals to match Amazon before changing a
+partial/shipped/cancelled status. Missing totals or mismatches retain reservations and retry;
+ordinary item import or manual review must resolve the missing shipment evidence.

@@ -22,7 +22,9 @@ public class MarketplaceSkuRepository {
     /** Seller-fulfilled availability is derived locally: the least available mapped component limits a bundle. */
     public static final String LOCAL_MAPPING_AVAILABILITY = """
               LEFT JOIN LATERAL (
-                SELECT floor(min(greatest(coalesce(sellable.quantity,0)-coalesce(reserved.quantity,0),0)
+                SELECT floor(min(CASE WHEN EXISTS(SELECT 1 FROM order_unrecorded_shipments review
+                    WHERE review.tenant_id=mapping.tenant_id AND review.account_catalog_item_id=component.account_catalog_item_id
+                      AND review.reviewed_at IS NULL) THEN 0 ELSE greatest(coalesce(sellable.quantity,0)-coalesce(reserved.quantity,0),0) END
                     / nullif(component.quantity,0))) available
                 FROM (
                   SELECT part.account_catalog_item_id,part.quantity
@@ -66,7 +68,7 @@ public class MarketplaceSkuRepository {
                   WHERE reservation.tenant_id=mapping.tenant_id
                     AND reservation.account_catalog_item_id=component.account_catalog_item_id
                     AND reservation.status='ACTIVE'
-                    AND upper(trim(coalesce(open_order.order_status,''))) IN ('PENDING','UNSHIPPED')
+                    AND regexp_replace(upper(coalesce(open_order.order_status,'')),'[^A-Z]','','g') IN ('PENDING','UNSHIPPED','PARTIALLYSHIPPED')
                 ) reserved ON true
               ) local_inventory ON mapping.id IS NOT NULL
             """;

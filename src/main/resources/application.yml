@@ -63,6 +63,8 @@ app:
     listing-actions-enabled: ${AMAZON_LISTING_ACTIONS_ENABLED:false}
     inventory-publication-enabled: ${AMAZON_INVENTORY_PUBLICATION_ENABLED:false}
     inventory-publication-mode: ${AMAZON_INVENTORY_PUBLICATION_MODE:DRY_RUN}
+    inventory-publication-connections: ${AMAZON_INVENTORY_PUBLICATION_CONNECTIONS:}
+    inventory-publication-skus: ${AMAZON_INVENTORY_PUBLICATION_SKUS:}
     unresolved-order-checks-enabled: ${AMAZON_UNRESOLVED_ORDER_CHECKS_ENABLED:false}
     recurring-enabled: ${AMAZON_RECURRING_SYNC_ENABLED:true}
     startup-order-reconciliation-enabled: ${AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED:true}

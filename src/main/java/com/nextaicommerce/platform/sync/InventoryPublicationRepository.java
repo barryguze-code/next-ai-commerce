@@ -56,10 +56,18 @@ public class InventoryPublicationRepository {
   return next(tenant,null);
  }
  public Optional<Pending> next(UUID tenant,java.time.Instant startup){
+  return next(tenant,startup,null);
+ }
+ public Optional<Pending> next(UUID tenant,java.time.Instant startup,Set<UUID> allowedConnections){
+  return next(tenant,startup,allowedConnections,"");
+ }
+ public Optional<Pending> next(UUID tenant,java.time.Instant startup,Set<UUID> allowedConnections,String allowedSkus){
   scope(tenant);
   return jdbc.query("""
    SELECT p.*,c.seller_identifier FROM inventory_publications p JOIN marketplace_connections c ON c.tenant_id=p.tenant_id AND c.id=p.connection_id
    WHERE p.tenant_id=? AND c.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM inventory_publication_dirty d WHERE d.tenant_id=p.tenant_id) AND p.status NOT IN ('DISABLED','DRY_RUN') AND p.next_attempt_at<=now()
+     AND (?::uuid[] IS NULL OR p.connection_id=ANY(?::uuid[]))
+     AND (?='' OR p.seller_sku=ANY(string_to_array(?,',')))
      AND (?::timestamptz IS NULL OR (
        EXISTS(SELECT 1 FROM marketplace_sync_jobs j JOIN marketplace_sync_runs r ON r.tenant_id=j.tenant_id AND r.id=j.sync_run_id
          WHERE j.tenant_id=p.tenant_id AND j.marketplace_connection_id=p.connection_id
@@ -71,8 +79,9 @@ public class InventoryPublicationRepository {
          AND j.status IN ('QUEUED','RUNNING','WAITING'))
      ))
    ORDER BY (p.desired_quantity=0) DESC,p.next_attempt_at FOR UPDATE OF p SKIP LOCKED LIMIT 1
-   """,(r,n)->new Pending(tenant,r.getObject("connection_id",UUID.class),r.getString("marketplace_id"),r.getString("seller_sku"),r.getInt("desired_quantity"),r.getLong("revision"),r.getString("status"),r.getInt("attempts"),r.getString("seller_identifier")),tenant,startup==null?null:java.sql.Timestamp.from(startup),startup==null?null:java.sql.Timestamp.from(startup)).stream().findFirst();
+   """,(r,n)->new Pending(tenant,r.getObject("connection_id",UUID.class),r.getString("marketplace_id"),r.getString("seller_sku"),r.getInt("desired_quantity"),r.getLong("revision"),r.getString("status"),r.getInt("attempts"),r.getString("seller_identifier")),tenant,connectionArray(allowedConnections),connectionArray(allowedConnections),allowedSkus,allowedSkus,startup==null?null:java.sql.Timestamp.from(startup),startup==null?null:java.sql.Timestamp.from(startup)).stream().findFirst();
  }
+ private static String connectionArray(Set<UUID> ids){return ids==null?null:"{"+String.join(",",ids.stream().map(UUID::toString).toList())+"}";}
  public void result(Pending p,String state,int attempts,int delay,String error,Integer observed){
   jdbc.update("UPDATE inventory_publications SET status=?,attempts=?,next_attempt_at=now()+make_interval(secs=>?),last_error=?,observed_quantity=?,updated_at=now() WHERE tenant_id=? AND connection_id=? AND marketplace_id=? AND seller_sku=? AND revision=?",
    state,attempts,delay,error,observed,p.tenant,p.connection,p.marketplace,p.sku,p.revision);

@@ -31,7 +31,8 @@ public class UnresolvedOrderWorker {
     throw new IllegalStateException("Unrecognized or mismatched order response");
    // A terminal response without its update timestamp is not enough evidence to release stock.
    Instant updated=Instant.parse(order.path("LastUpdateDate").asText());
-   tx.executeWithoutResult(s->repository.confirmed(c,status,updated));
+   Integer shipped=order.path("NumberOfItemsShipped").isIntegralNumber()?order.path("NumberOfItemsShipped").intValue():null;
+   tx.executeWithoutResult(s->repository.confirmed(c,status,updated,shipped));
   }catch(Exception e){
    int delay=Math.min(21600,60*(1<<Math.min(8,c.failures())));
    boolean missing=e instanceof AmazonSpApiClient.AmazonApiException a&&a.status()==404;

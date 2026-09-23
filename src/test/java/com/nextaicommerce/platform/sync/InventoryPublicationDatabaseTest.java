@@ -82,6 +82,58 @@ class InventoryPublicationDatabaseTest {
   repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(8);
   assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",Integer.class,tenant,item)).isEqualTo(8);
  });}
+ @Test void directCancellationWithUnimportedShipmentDetailsCannotReleaseStock(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);order("not-yet-imported","SINGLE",3);
+  var orders=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);orders.reconcile(tenant,connection);
+  var checks=new UnresolvedOrderRepository(jdbc,orders);var check=checks.claim(tenant).orElseThrow();
+  assertThatThrownBy(()->checks.confirmed(check,"Canceled",java.time.Instant.now(),1)).isInstanceOf(IllegalStateException.class);
+  assertThatThrownBy(()->checks.confirmed(check,"Canceled",java.time.Instant.now(),null)).isInstanceOf(IllegalStateException.class);
+  repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(9);
+  checks.confirmed(check,"Canceled",java.time.Instant.now(),0);repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(12);
+ });}
+ @Test void partialPackShipmentKeepsRemainderReservedAndCancellationNeverReturnsShippedStock(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);order("partial","PACK",2);var orders=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);orders.reconcile(tenant,connection);
+  jdbc.update("UPDATE amazon_orders SET order_status='Partially shipped' WHERE tenant_id=?",tenant);
+  jdbc.update("UPDATE amazon_order_items SET quantity_shipped=1 WHERE tenant_id=?",tenant);
+  orders.reconcile(tenant,connection);orders.reconcile(tenant,connection);repo.plan(tenant);
+  assertThat(quantity("SINGLE")).isEqualTo(4);
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM order_inventory_reservations WHERE tenant_id=? AND status='ACTIVE'",Integer.class,tenant)).isEqualTo(4);
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND entry_type='SHIPMENT'",Integer.class,tenant)).isEqualTo(-4);
+  jdbc.update("UPDATE amazon_orders SET order_status='Canceled' WHERE tenant_id=?",tenant);
+  orders.reconcile(tenant,connection);orders.reconcile(tenant,connection);repo.plan(tenant);
+  assertThat(quantity("SINGLE")).isEqualTo(8);assertThat(quantity("PACK")).isEqualTo(2);
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM order_inventory_reservations WHERE tenant_id=? AND status='ACTIVE'",Integer.class,tenant)).isZero();
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND entry_type='RESERVATION_RELEASED'",Integer.class,tenant)).isEqualTo(1);
+ });}
+ @Test void repeatedPartialBundleShipmentsAndFinalShipmentDeductEachComponentExactlyOnce(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);order("partial","BUNDLE",3);var orders=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);orders.reconcile(tenant,connection);
+  for(int shipped=1;shipped<=3;shipped++){
+   jdbc.update("UPDATE amazon_orders SET order_status=? WHERE tenant_id=?",shipped==3?"Shipped":"PartiallyShipped",tenant);
+   jdbc.update("UPDATE amazon_order_items SET quantity_shipped=? WHERE tenant_id=?",shipped,tenant);
+   orders.reconcile(tenant,connection);orders.reconcile(tenant,connection);repo.plan(tenant);
+   assertThat(quantity("SINGLE")).isEqualTo(6);assertThat(quantity("BUNDLE")).isZero();
+   assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND entry_type='SHIPMENT'",Integer.class,tenant,item)).isEqualTo(-2*shipped);
+   assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND entry_type='SHIPMENT'",Integer.class,tenant,second)).isEqualTo(-shipped);
+  }
+ });}
+ @Test void missingPartialAllocationHoldsAllRelatedSkusWithoutConsumingRemainderOnRepeatedSync(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);order("missing-partial","SINGLE",3);
+  jdbc.update("UPDATE amazon_orders SET order_status='PartiallyShipped' WHERE tenant_id=?",tenant);
+  jdbc.update("UPDATE amazon_order_items SET quantity_shipped=1 WHERE tenant_id=?",tenant);
+  var orders=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+  for(int i=0;i<3;i++){orders.reconcile(tenant,connection);repo.plan(tenant);}
+  assertThat(quantity("SINGLE")).isZero();assertThat(quantity("PACK")).isZero();assertThat(quantity("BUNDLE")).isZero();
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",Integer.class,tenant,item)).isEqualTo(12);
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM order_inventory_reservations WHERE tenant_id=? AND status='ACTIVE'",Integer.class,tenant)).isEqualTo(2);
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM order_unrecorded_shipments WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND entry_type='ORDER_STATUS_REVIEW'",Integer.class,tenant)).isEqualTo(1);
+  stock(item,2,50);
+  jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,entry_type,quantity,expiration_date,source_type,occurred_at,idempotency_key) VALUES (?,?,'ADJUSTMENT',0,current_date+40,'PHYSICAL_COUNT',now(),?)",tenant,item,UUID.randomUUID().toString());
+  orders.reconcileTenantAfterPhysicalCount(tenant);repo.plan(tenant);assertThat(quantity("SINGLE")).isZero();
+  jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,entry_type,quantity,expiration_date,source_type,occurred_at,idempotency_key) VALUES (?,?,'ADJUSTMENT',0,current_date+50,'PHYSICAL_COUNT',now(),?)",tenant,item,UUID.randomUUID().toString());
+  orders.reconcileTenantAfterPhysicalCount(tenant);repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(12);
+  orders.reconcile(tenant,connection);repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(12);
+ });}
  @Test void livePublishingRequiresFreshCompletedReconciliationAndNoImportInProgress(){tx.executeWithoutResult(s->{
   repo.plan(tenant);var startup=java.time.Instant.now().minusSeconds(1);
   assertThat(repo.next(tenant,startup)).isEmpty();
@@ -89,6 +141,11 @@ class InventoryPublicationDatabaseTest {
   jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,status,window_start,window_end) VALUES (?,?,?,'INCREMENTAL','ORDER_CHANGES','COMPLETED',now()-interval '10 minutes',now())",run,tenant,connection);
   jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,status,completed_at) VALUES (?,?,?,?,'FINAL_RECONCILIATION',1,'COMPLETED',now())",job,tenant,connection,run);
   assertThat(repo.next(tenant,startup)).isPresent();
+  assertThat(repo.next(tenant,startup,Set.of(UUID.randomUUID()))).isEmpty();
+  assertThat(repo.next(tenant,startup,Set.of())).isEmpty();
+  assertThat(repo.next(tenant,startup,Set.of(connection))).isPresent();
+  assertThat(repo.next(tenant,startup,Set.of(connection),"missing-sku")).isEmpty();
+  assertThat(repo.next(tenant,startup,Set.of(connection),"PACK").orElseThrow().sku()).isEqualTo("PACK");
   jdbc.update("INSERT INTO marketplace_sync_jobs(tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,status) VALUES (?,?,?,'ORDERS_API_DELTA',2,'RUNNING')",tenant,connection,run);
   assertThat(repo.next(tenant,startup)).isEmpty();
   jdbc.update("UPDATE marketplace_sync_jobs SET status='COMPLETED' WHERE tenant_id=?",tenant);

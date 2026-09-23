@@ -168,13 +168,18 @@ public class OrderRepository {
                    EXISTS (SELECT 1 FROM order_inventory_reservations reservation
                      WHERE reservation.tenant_id=orders.tenant_id
                        AND reservation.marketplace_connection_id=orders.marketplace_connection_id
-                       AND reservation.amazon_order_id=orders.amazon_order_id AND reservation.status='ACTIVE')
+                       AND reservation.amazon_order_id=orders.amazon_order_id AND reservation.status='ACTIVE'),
+                   EXISTS (SELECT 1 FROM amazon_order_items shipped_item WHERE shipped_item.tenant_id=orders.tenant_id
+                     AND shipped_item.marketplace_connection_id=orders.marketplace_connection_id
+                     AND shipped_item.amazon_order_id=orders.amazon_order_id AND shipped_item.quantity_shipped>0)
             FROM amazon_orders orders
             WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND orders.operational_scope='LIVE'
               AND upper(coalesce(orders.fulfillment_channel,'')) NOT IN ('AFN','AMAZON')
             ORDER BY orders.purchase_date,orders.created_at
-            """,(rs,row)->new Object[]{rs.getString(1),rs.getString(2),rs.getString(3),rs.getBoolean(4)},tenantId,connectionId);
+            """,(rs,row)->new Object[]{rs.getString(1),rs.getString(2),rs.getString(3),rs.getBoolean(4),rs.getBoolean(5)},tenantId,connectionId);
         for(Object[] candidate:candidates){
+            if((boolean)candidate[4]&&!statusLeavesWarehouse((String)candidate[1]))
+                postReportedPartialReservations(tenantId,connectionId,(String)candidate[0]);
             if(statusLeavesWarehouse((String)candidate[1])
                     &&(!"SHIPPED".equals(candidate[2])||(boolean)candidate[3])){
                 allocateOrder(tenantId,connectionId,(String)candidate[0]);
@@ -195,11 +200,10 @@ public class OrderRepository {
             INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,marketplace_connection_id,
                 entry_type,quantity,expiration_date,source_type,source_id,occurred_at,idempotency_key,notes,cost_status)
             SELECT r.tenant_id,r.account_catalog_item_id,r.location_id,r.marketplace_connection_id,
-                CASE WHEN coalesce(shipment.partial,false) THEN 'ORDER_STATUS_REVIEW' ELSE 'RESERVATION_RELEASED' END,
+                'RESERVATION_RELEASED',
                 0,r.expiration_date,'AMAZON_ORDER',o.id,now(),
                 'cancel-reservation:'||o.id||':'||r.account_catalog_item_id||':'||r.location_id||':'||coalesce(r.expiration_date::text,'none'),
-                CASE WHEN coalesce(shipment.partial,false) THEN 'Amazon cancelled after a partial shipment. Review physical stock before publishing; no automatic stock return.'
-                 ELSE 'Amazon confirmed cancellation. Released '||sum(r.quantity)::text||' reserved eaches. Physical on-hand stock unchanged.' END,'FINAL'
+                'Amazon confirmed cancellation. Released '||sum(r.quantity)::text||' remaining reserved eaches. Previously shipped stock is not returned.','FINAL'
             FROM order_inventory_reservations r JOIN amazon_orders o ON o.tenant_id=r.tenant_id
                 AND o.marketplace_connection_id=r.marketplace_connection_id AND o.amazon_order_id=r.amazon_order_id
             LEFT JOIN LATERAL (SELECT bool_or(i.quantity_shipped>0) partial FROM amazon_order_items i
@@ -216,6 +220,21 @@ public class OrderRepository {
     public int reconcileTenantAfterPhysicalCount(UUID tenantId){
         setTenant(tenantId);
         jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",rs->{},tenantId);
+        // A count must cover every remaining stock batch, not just one location or expiration.
+        jdbc.update("""
+            UPDATE order_unrecorded_shipments review SET reviewed_at=now()
+            WHERE review.tenant_id=? AND review.reviewed_at IS NULL
+              AND EXISTS(SELECT 1 FROM inventory_ledger_entries counted WHERE counted.tenant_id=review.tenant_id
+                AND counted.account_catalog_item_id=review.account_catalog_item_id AND counted.source_type='PHYSICAL_COUNT'
+                AND counted.occurred_at>=review.detected_at)
+              AND NOT EXISTS(SELECT 1 FROM inventory_ledger_entries stock
+                WHERE stock.tenant_id=review.tenant_id AND stock.account_catalog_item_id=review.account_catalog_item_id
+                GROUP BY stock.location_id,stock.expiration_date HAVING sum(stock.quantity)>0
+                  AND NOT EXISTS(SELECT 1 FROM inventory_ledger_entries counted WHERE counted.tenant_id=review.tenant_id
+                    AND counted.account_catalog_item_id=review.account_catalog_item_id AND counted.source_type='PHYSICAL_COUNT'
+                    AND counted.location_id=stock.location_id AND counted.expiration_date IS NOT DISTINCT FROM stock.expiration_date
+                    AND counted.occurred_at>=review.detected_at))
+            """,tenantId);
         List<UUID> connections=jdbc.query("""
             SELECT id FROM marketplace_connections
             WHERE tenant_id=? AND channel='AMAZON' AND status='ACTIVE' ORDER BY id
@@ -644,6 +663,82 @@ public class OrderRepository {
         return result;
     }
 
+    /** Move only the newly reported shipped portion of existing allocations. No retrospective stock allocation. */
+    private void postReportedPartialReservations(UUID tenantId,UUID connectionId,String orderId){
+        var needs=jdbc.query("""
+            SELECT i.id,c.account_catalog_item_id,
+                greatest(least(i.quantity_ordered,coalesce(i.quantity_shipped,0))*c.quantity-coalesce(posted.quantity,0)-coalesce(unrecorded.quantity,0),0)
+            FROM amazon_order_items i JOIN marketplace_sku_mappings m ON m.tenant_id=i.tenant_id
+                AND m.marketplace_connection_id=i.marketplace_connection_id AND m.marketplace_sku=i.seller_sku AND m.status='ACTIVE'
+            JOIN marketplace_sku_mapping_components c ON c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id
+            LEFT JOIN LATERAL (SELECT sum(r.quantity) quantity FROM order_inventory_reservations r
+                WHERE r.tenant_id=i.tenant_id AND r.amazon_order_item_id=i.id
+                  AND r.account_catalog_item_id=c.account_catalog_item_id AND r.status='SHIPPED') posted ON true
+            LEFT JOIN order_unrecorded_shipments unrecorded ON unrecorded.tenant_id=i.tenant_id
+                AND unrecorded.amazon_order_item_id=i.id AND unrecorded.account_catalog_item_id=c.account_catalog_item_id
+            WHERE i.tenant_id=? AND i.marketplace_connection_id=? AND i.amazon_order_id=? AND i.quantity_shipped>0
+            """,(r,n)->new Object[]{r.getObject(1,UUID.class),r.getObject(2,UUID.class),r.getBigDecimal(3)},tenantId,connectionId,orderId);
+        for(var need:needs){
+            BigDecimal remaining=(BigDecimal)need[2];if(remaining.signum()<=0)continue;
+            var layers=jdbc.query("SELECT id,quantity FROM order_inventory_reservations WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_item_id=? AND account_catalog_item_id=? AND status='ACTIVE' ORDER BY expiration_date NULLS LAST,created_at,id FOR UPDATE",
+                (r,n)->new Object[]{r.getObject(1,UUID.class),r.getBigDecimal(2)},tenantId,connectionId,need[0],need[1]);
+            for(var layer:layers){
+                if(remaining.signum()<=0)break;
+                UUID original=(UUID)layer[0],shipped=original;BigDecimal quantity=(BigDecimal)layer[1],take=remaining.min(quantity);
+                if(take.compareTo(quantity)<0){
+                    shipped=UUID.randomUUID();
+                    jdbc.update("""
+                        INSERT INTO order_inventory_reservations(id,tenant_id,marketplace_connection_id,amazon_order_id,
+                          amazon_order_item_id,account_catalog_item_id,location_id,cost_layer_id,expiration_date,unit_cost,cost_currency,quantity,status)
+                        SELECT ?,tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,account_catalog_item_id,
+                          location_id,cost_layer_id,expiration_date,unit_cost,cost_currency,?,'SHIPPED'
+                        FROM order_inventory_reservations WHERE tenant_id=? AND id=? AND status='ACTIVE'
+                        """,shipped,take,tenantId,original);
+                    jdbc.update("UPDATE order_inventory_reservations SET quantity=quantity-? WHERE tenant_id=? AND id=? AND status='ACTIVE'",take,tenantId,original);
+                }else jdbc.update("UPDATE order_inventory_reservations SET status='SHIPPED' WHERE tenant_id=? AND id=? AND status='ACTIVE'",tenantId,original);
+                jdbc.update("""
+                    INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,marketplace_connection_id,
+                      entry_type,quantity,expiration_date,unit_cost,currency,source_type,source_id,occurred_at,idempotency_key,notes,cost_status)
+                    SELECT r.tenant_id,r.account_catalog_item_id,r.location_id,r.marketplace_connection_id,'SHIPMENT',-r.quantity,
+                      r.expiration_date,r.unit_cost,coalesce(r.cost_currency,o.currency,'USD'),'AMAZON_ORDER',o.id,now(),
+                      'amazon-shipment:'||r.id,'Amazon reported a partial shipment. Only the newly shipped portion left reserved stock.','FINAL'
+                    FROM order_inventory_reservations r JOIN amazon_orders o ON o.tenant_id=r.tenant_id
+                      AND o.marketplace_connection_id=r.marketplace_connection_id AND o.amazon_order_id=r.amazon_order_id
+                    WHERE r.tenant_id=? AND r.id=? AND NOT EXISTS(SELECT 1 FROM inventory_ledger_entries counted
+                      WHERE counted.tenant_id=r.tenant_id AND counted.account_catalog_item_id=r.account_catalog_item_id
+                        AND counted.location_id=r.location_id AND counted.expiration_date IS NOT DISTINCT FROM r.expiration_date
+                        AND counted.source_type='PHYSICAL_COUNT' AND counted.occurred_at>=coalesce(o.last_update_date,o.purchase_date,o.created_at))
+                    ON CONFLICT(tenant_id,idempotency_key) DO NOTHING
+                    """,tenantId,shipped);
+                remaining=remaining.subtract(take);
+            }
+            if(remaining.signum()>0){
+                // Do not introduce holds for fully shipped historical imports: their existing audit path applies.
+                int held=jdbc.update("""
+                    INSERT INTO order_unrecorded_shipments(tenant_id,amazon_order_item_id,account_catalog_item_id,quantity)
+                    SELECT ?,i.id,?,? FROM amazon_order_items i JOIN amazon_orders o ON o.tenant_id=i.tenant_id
+                      AND o.marketplace_connection_id=i.marketplace_connection_id AND o.amazon_order_id=i.amazon_order_id
+                    WHERE i.tenant_id=? AND i.id=? AND (i.quantity_shipped<i.quantity_ordered
+                      OR regexp_replace(upper(o.order_status),'[^A-Z]','','g')='PARTIALLYSHIPPED')
+                    ON CONFLICT(tenant_id,amazon_order_item_id,account_catalog_item_id) DO UPDATE
+                      SET quantity=order_unrecorded_shipments.quantity+excluded.quantity,detected_at=now(),reviewed_at=NULL
+                    """,tenantId,need[1],remaining,tenantId,need[0]);
+                if(held>0)jdbc.update("""
+                    INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,marketplace_connection_id,
+                      entry_type,quantity,source_type,source_id,occurred_at,idempotency_key,notes,cost_status)
+                    SELECT review.tenant_id,review.account_catalog_item_id,o.marketplace_connection_id,
+                      'ORDER_STATUS_REVIEW',0,'AMAZON_ORDER',o.id,now(),
+                      'partial-shipment-review:'||i.id||':'||review.account_catalog_item_id||':'||review.quantity,
+                      'Partial shipment has '||review.quantity||' eaches without prior stock allocations. Related SKUs held at zero. Count every remaining stock batch to release the hold; no stock was deducted retrospectively.','FINAL'
+                    FROM order_unrecorded_shipments review JOIN amazon_order_items i ON i.tenant_id=review.tenant_id AND i.id=review.amazon_order_item_id
+                    JOIN amazon_orders o ON o.tenant_id=i.tenant_id AND o.marketplace_connection_id=i.marketplace_connection_id AND o.amazon_order_id=i.amazon_order_id
+                    WHERE review.tenant_id=? AND review.amazon_order_item_id=? AND review.account_catalog_item_id=?
+                    ON CONFLICT(tenant_id,idempotency_key) DO NOTHING
+                    """,tenantId,need[0],need[1]);
+            }
+        }
+    }
+
     private void postActiveReservations(UUID tenantId,UUID connectionId,String orderId,UUID orderItemId){
         jdbc.update("""
             INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,marketplace_connection_id,
@@ -711,7 +806,7 @@ public class OrderRepository {
     }
     static boolean statusReservesInventory(String status){
         String normalized=status==null?"":status.toUpperCase(java.util.Locale.ROOT).replaceAll("[^A-Z]","");
-        return List.of("PENDING","UNSHIPPED").contains(normalized);
+        return List.of("PENDING","UNSHIPPED","PARTIALLYSHIPPED").contains(normalized);
     }
     private void setTenant(UUID tenantId){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());}
     private static String sellerCentralDomain(String marketplace){return switch(marketplace){

@@ -11,8 +11,12 @@ import com.nextaicommerce.platform.sync.InventoryPublicationRepository.Pending;
 class InventoryPublicationWorkerTest {
  final InventoryPublicationRepository repo=mock(InventoryPublicationRepository.class);
  final AmazonSpApiClient amazon=mock(AmazonSpApiClient.class);final ObjectMapper json=new ObjectMapper();
- InventoryPublicationWorker worker(String mode,boolean local,boolean writes){return new InventoryPublicationWorker(repo,mock(TransactionTemplate.class),amazon,json,mode,local,writes,false);}
- Pending pending(int q,String status,int attempts){return new Pending(UUID.randomUUID(),UUID.randomUUID(),"ATVPDKIKX0DER","sku / +",q,2,status,attempts,"seller");}
+ final UUID allowedConnection=UUID.randomUUID();
+ InventoryPublicationWorker worker(String mode,boolean local,boolean writes){return new InventoryPublicationWorker(repo,mock(TransactionTemplate.class),amazon,json,mode,local,writes,false,allowedConnection.toString(),"");}
+ Pending pending(int q,String status,int attempts){return new Pending(UUID.randomUUID(),allowedConnection,"ATVPDKIKX0DER","sku / +",q,2,status,attempts,"seller");}
+ @Test void missingAllowlistRejectsLiveStartup(){assertThatThrownBy(()->new InventoryPublicationWorker(repo,mock(TransactionTemplate.class),amazon,json,"LIVE",false,true,false,"","")).isInstanceOf(IllegalStateException.class);}
+ @Test void canaryRestrictsSkuAsWellAsConnection(){new InventoryPublicationWorker(repo,mock(TransactionTemplate.class),amazon,json,"LIVE",false,true,false,allowedConnection.toString(),"canary-only").process(pending(9,"PENDING",0));verifyNoInteractions(amazon);}
+ @Test void anotherConnectionNeverCallsAmazon(){worker("LIVE",false,true).process(new Pending(UUID.randomUUID(),UUID.randomUUID(),"ATVPDKIKX0DER","outside-scope",9,1,"PENDING",0,"seller"));verifyNoInteractions(amazon);verifyNoInteractions(repo);}
  AmazonSpApiClient.ApiResponse response(String body){return new AmazonSpApiClient.ApiResponse(200,"test",json.readTree(body),body);}
  @Test void localCanNeverEnableLiveWrites(){assertThatThrownBy(()->worker("LIVE",true,true)).isInstanceOf(IllegalStateException.class);assertThatThrownBy(()->worker("LIVE",false,false)).isInstanceOf(IllegalStateException.class);}
  @Test void dryRunDoesNotReadOrWriteAmazon(){var p=pending(0,"PENDING",0);worker("DRY_RUN",true,false).process(p);verifyNoInteractions(amazon);verify(repo).result(eq(p),eq("DRY_RUN"),eq(0),eq(0),anyString(),isNull());}

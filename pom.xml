@@ -42,7 +42,8 @@
   <profiles>
     <profile>
       <id>isolated-build</id>
-      <build><directory>${project.basedir}/.local/verification-build</directory></build>
+      <properties><isolated.build.directory>${project.basedir}/.local/verification-build</isolated.build.directory></properties>
+      <build><directory>${isolated.build.directory}</directory></build>
     </profile>
   </profiles>
 </project>

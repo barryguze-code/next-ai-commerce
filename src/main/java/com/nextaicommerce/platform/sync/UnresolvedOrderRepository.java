@@ -42,6 +42,16 @@ public class UnresolvedOrderRepository {
   jdbc.update("UPDATE amazon_order_status_checks SET next_check_at=now()+interval '5 minutes' WHERE tenant_id=? AND connection_id=? AND amazon_order_id=?",tenant,c.connection,c.orderId);
   return Optional.of(c);
  }
+ public void confirmed(Check c,String status,Instant updated,Integer shippedItems){
+  scope(c.tenant);
+  jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",r->{},c.tenant);
+  if(Set.of("Canceled","Cancelled","PartiallyShipped","Shipped").contains(status)){
+   Integer recorded=jdbc.queryForObject("SELECT coalesce(sum(quantity_shipped),0) FROM amazon_order_items WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",Integer.class,c.tenant,c.connection,c.orderId);
+   if(shippedItems==null||shippedItems<0||!shippedItems.equals(recorded))
+    throw new IllegalStateException("Shipment item details must be reconciled before applying this order status");
+  }
+  confirmed(c,status,updated);
+ }
  public void confirmed(Check c,String status,Instant updated){
   scope(c.tenant);
   jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",r->{},c.tenant);
