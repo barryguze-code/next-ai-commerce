@@ -32,7 +32,7 @@ test('receiving tabs, expiration batches, fee navigation and overage confirmatio
   await page.locator('[name=pack]').fill('5');assert.equal(await page.locator('[name=cases]').inputValue(),'2');assert.equal(await page.locator('[name=quantity]').inputValue(),'10');
   assert.equal(packPosts,0);
   await page.getByRole('button',{name:'Update catalogue case size',exact:true}).click();
-  await page.locator('#rw-warning-dialog').getByRole('button',{name:'Keep editing',exact:true}).click();assert.equal(packPosts,0);
+  await page.locator('#rw-warning-dialog').getByRole('button',{name:'Keep editing',exact:true}).last().click();assert.equal(packPosts,0);
   await page.getByRole('button',{name:'Update catalogue case size',exact:true}).click();
   await page.getByRole('button',{name:'Update catalogue',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('[data-pack-feedback]').textContent.includes('updated to 5'));
