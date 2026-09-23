@@ -2,7 +2,7 @@
 .platform-standard-tables .rw-table td[data-column=record-context]{min-width:0;max-width:none}
 .platform-standard-tables .rw-drawer .rw-form{font-size:.85rem}
 .platform-standard-tables .rw-drawer .rw-form label{font-size:.85rem}
-.platform-standard-tables .rw-drawer .rw-quantity-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.platform-standard-tables .rw-drawer .rw-quantity-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 .rw-quantity-grid input[readonly]{background:var(--surface,#f3f6fa);color:var(--muted);cursor:default;appearance:textfield}
 .rw-quantity-grid input[readonly]::-webkit-inner-spin-button{appearance:none}
 .rw-product-picture.table-overview-picture{position:relative;flex-shrink:0}

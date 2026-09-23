@@ -1,3 +1,18 @@
+
+  "version": "1.3.2",
+  "title": "Editable case sizes with explicit catalogue updates",
+  "sections": [
+    {
+      "title": "Receiving hotfix",
+      "items": [
+        "Enter cases and units per case independently for sellable stock, exceptions and expiration batches. Total units are calculated and read-only.",
+        "Remove loose units. Receipt entry does not change catalogue defaults.",
+        "Update the shared catalogue case size only through the explicit action and confirmation dialog. Existing invoice quantities remain unchanged."
+      ]
+    }
+  ]
+},
+  {
 [
   {
     "version": "1.3.1",
