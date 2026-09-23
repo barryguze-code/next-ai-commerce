@@ -117,6 +117,9 @@ public class InventoryRepository {
             case "RECEIPT" -> "Received";
             case "SALE","SHIPMENT" -> "Order shipped";
             case "SHIPMENT_UNRECORDED" -> "Shipped";
+            case "SHARED_STOCK_SALES" -> "Shared-stock sales";
+            case "RESERVATION_RELEASED" -> "Reservation released";
+            case "ORDER_STATUS_REVIEW" -> "Order status review";
             case "RETURN" -> "Customer return";
             case "ADJUSTMENT" -> "Adjustment";
             case "TRANSFER" -> "Transfer";
@@ -137,6 +140,7 @@ public class InventoryRepository {
             default -> title(sourceType);
         };}
         public String description(){
+            if(java.util.Set.of("SHARED_STOCK_SALES","RESERVATION_RELEASED","ORDER_STATUS_REVIEW").contains(entryType))return notes;
             if("SHIPMENT_UNRECORDED".equals(entryType))return "No stock deducted.";
             if("RETURN".equals(entryType)&&notes!=null&&notes.startsWith("Packing mark undone"))return notes;
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())

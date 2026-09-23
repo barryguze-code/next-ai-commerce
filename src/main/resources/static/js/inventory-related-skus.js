@@ -73,7 +73,7 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
     if(upload){
       upload.replaceChildren();upload.hidden=!source;
       if(source){
-        const form=source.cloneNode(true);form.className='history-image-upload-form';form.removeAttribute('onclick');
+        const form=source.cloneNode(true);form.querySelectorAll('.standard-picture-edit').forEach(el=>el.remove());form.className='history-image-upload-form';form.removeAttribute('onclick');
         const input=form.querySelector('input[type="file"]');
         const label=form.querySelector('label');label.replaceChildren();
         const button=document.createElement('button');button.type='button';

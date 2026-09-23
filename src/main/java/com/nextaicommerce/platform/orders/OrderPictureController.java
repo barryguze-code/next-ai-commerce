@@ -36,8 +36,27 @@ public class OrderPictureController {
    return new Context(t,s,rs.getString(1),rs.getString(2),rs.getString(3));
   },t,s,item);});
  }
+ Context skuContext(HttpSession session,String sku,Authentication auth){return skuContext(session,sku,auth,true);}
+ Context skuContext(HttpSession session,String sku,Authentication auth,boolean write){
+  Object tenant=session.getAttribute("selectedTenantId"),store=session.getAttribute(AccountSelectionController.STORE_ID);
+  if(!(tenant instanceof UUID t)||!(store instanceof UUID st))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an account and store first.");
+  if(write&&!access.canOperateAccount(t,auth.getName()))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+  return tx.execute(status->{scope(t);return jdbc.query("SELECT seller_sku,asin,marketplace_id FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?",rs->{
+   if(!rs.next())throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+   return new Context(t,st,rs.getString(1),rs.getString(2),rs.getString(3));
+  },t,st,sku);});
+ }
+ String amazonImage(Context c) throws Exception {
+  if(c.asin()==null||c.asin().isBlank())throw new IllegalArgumentException("This SKU has no Amazon ASIN.");
+  var response=amazon.get(c.tenant(),c.store(),"/catalog/2022-04-01/items/"+URLEncoder.encode(c.asin(),StandardCharsets.UTF_8)+"?marketplaceIds="+URLEncoder.encode(c.marketplace(),StandardCharsets.UTF_8)+"&includedData=images").json();
+  for(var group:response.path("images"))if(c.marketplace().equals(group.path("marketplaceId").asText()))for(var image:group.path("images"))if("MAIN".equals(image.path("variant").asText())){
+   String url=image.path("link").asText();URI uri=URI.create(url);String host=uri.getHost();
+   if("https".equals(uri.getScheme())&&uri.getUserInfo()==null&&(uri.getPort()==-1||uri.getPort()==443)&&host!=null&&(host.endsWith(".media-amazon.com")||host.endsWith(".ssl-images-amazon.com")))return url;
+  }
+  throw new IllegalArgumentException("Amazon did not return a main image. Your existing picture was kept.");
+ }
  private void scope(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
- static String imageType(byte[] bytes) throws java.io.IOException {
+ public static String imageType(byte[] bytes) throws java.io.IOException {
   if(bytes.length==0||bytes.length>5_000_000)throw new IllegalArgumentException("Choose a JPG or PNG up to 5 MB.");
   try(var input=ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))){
    var readers=ImageIO.getImageReaders(input);
@@ -49,7 +68,7 @@ public class OrderPictureController {
    }finally{reader.dispose();}
   }
  }
- private void save(Context c,Authentication auth,byte[] bytes,String type,String url){tx.executeWithoutResult(status->{scope(c.tenant());jdbc.update("""
+ void save(Context c,Authentication auth,byte[] bytes,String type,String url){tx.executeWithoutResult(status->{scope(c.tenant());jdbc.update("""
   INSERT INTO order_sku_pictures(tenant_id,marketplace_connection_id,seller_sku,image_bytes,content_type,source_url,updated_by)
   VALUES(?,?,?,?,?,?,?) ON CONFLICT(tenant_id,marketplace_connection_id,seller_sku) DO UPDATE
   SET image_bytes=EXCLUDED.image_bytes,content_type=EXCLUDED.content_type,source_url=EXCLUDED.source_url,
@@ -79,6 +98,9 @@ public class OrderPictureController {
  @GetMapping("/app/orders/items/{item}/picture") @ResponseBody
  public ResponseEntity<byte[]> picture(@PathVariable UUID item,HttpSession session,Authentication auth){
   var c=context(session,item,auth,false);
+  return picture(c);
+ }
+ ResponseEntity<byte[]> picture(Context c){
   return tx.execute(status->{scope(c.tenant());return jdbc.query("SELECT image_bytes,content_type,source_url FROM order_sku_pictures WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?",rs->{
    if(!rs.next())return ResponseEntity.notFound().build();
    if(rs.getString(3)!=null)return ResponseEntity.status(302).location(URI.create(rs.getString(3))).cacheControl(CacheControl.noStore()).build();

@@ -140,7 +140,7 @@
       window.closeInventoryActionMenu();
       return;
     }
-    const width = 282;
+    const width = menu.offsetWidth || 370;
     const anchor = menuTrigger.hasAttribute('data-context-action') ? box.right + 8 : box.right - width;
     const left = Math.max(12, Math.min(anchor, window.innerWidth - width - 12));
     const height = menu.offsetHeight;

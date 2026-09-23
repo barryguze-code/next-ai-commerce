@@ -81,6 +81,10 @@ public class AmazonReportNormalizer {
                 sales_channel=EXCLUDED.sales_channel,ship_service_level=EXCLUDED.ship_service_level,
                 order_total=coalesce(EXCLUDED.order_total,amazon_orders.order_total),
                 currency=coalesce(EXCLUDED.currency,amazon_orders.currency),updated_at=now()
+            WHERE amazon_orders.last_update_date IS NULL OR EXCLUDED.last_update_date>amazon_orders.last_update_date
+              OR (EXCLUDED.last_update_date=amazon_orders.last_update_date AND
+                (regexp_replace(upper(amazon_orders.order_status),'[^A-Z]','','g') NOT IN ('CANCELED','CANCELLED')
+                 OR regexp_replace(upper(EXCLUDED.order_status),'[^A-Z]','','g') IN ('CANCELED','CANCELLED')))
             """,job.tenantId(),job.connectionId(),job.marketplaceId(),orderId,purchase.instant(),updated.instant(),
             purchase.marketplaceDate(),updated.marketplaceDate(),order.path("OrderStatus").asText(null),
             order.path("FulfillmentChannel").asText(null),order.path("SalesChannel").asText(null),
@@ -221,6 +225,10 @@ public class AmazonReportNormalizer {
                     last_update_marketplace_date=EXCLUDED.last_update_marketplace_date,
                     order_status=EXCLUDED.order_status,fulfillment_channel=EXCLUDED.fulfillment_channel,
                     sales_channel=EXCLUDED.sales_channel,ship_service_level=EXCLUDED.ship_service_level,updated_at=now()
+                WHERE amazon_orders.last_update_date IS NULL OR EXCLUDED.last_update_date>amazon_orders.last_update_date
+                  OR (EXCLUDED.last_update_date=amazon_orders.last_update_date AND
+                    (regexp_replace(upper(amazon_orders.order_status),'[^A-Z]','','g') NOT IN ('CANCELED','CANCELLED')
+                     OR regexp_replace(upper(EXCLUDED.order_status),'[^A-Z]','','g') IN ('CANCELED','CANCELLED')))
                 """,job.tenantId(),job.connectionId(),job.marketplaceId(),orderId,
                 purchase.instant(),updated.instant(),purchase.marketplaceDate(),updated.marketplaceDate(),
                 value(report,row,"order-status"),value(report,row,"fulfillment-channel"),

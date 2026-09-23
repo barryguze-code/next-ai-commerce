@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MarketplaceSkuRepository {
     private static final DateTimeFormatter SYNC_TIME=DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a");
     /** Seller-fulfilled availability is derived locally: the least available mapped component limits a bundle. */
-    private static final String LOCAL_MAPPING_AVAILABILITY = """
+    public static final String LOCAL_MAPPING_AVAILABILITY = """
               LEFT JOIN LATERAL (
                 SELECT floor(min(greatest(coalesce(sellable.quantity,0)-coalesce(reserved.quantity,0),0)
                     / nullif(component.quantity,0))) available
@@ -75,6 +75,42 @@ public class MarketplaceSkuRepository {
 
     public record SkuSummary(long total,long active,long outOfStock,long inactive,long amazonProblems,
             long deleted,long unmapped,long availableUnits){}
+    public record SkuInsights(long active,long known,long matched,long above,long currentUnits,long previousUnits){
+        public String matchPercent(){return percent(matched,known);}
+        public String coveragePercent(){return percent(known,active);}
+        public String weeklyChange(){
+            if(previousUnits==0)return currentUnits==0?"—":"New sales";
+            return BigDecimal.valueOf(currentUnits-previousUnits).multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(previousUnits),1,RoundingMode.HALF_UP).toPlainString()+"%";
+        }
+        private static String percent(long value,long total){return total==0?"—":BigDecimal.valueOf(value)
+            .multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(total),1,RoundingMode.HALF_UP).toPlainString()+"%";}
+    }
+    @Transactional(readOnly=true)
+    public SkuInsights insights(UUID tenantId,UUID connectionId){
+        setTenant(tenantId);
+        return jdbc.queryForObject("""
+            WITH active AS (
+              SELECT price,CASE WHEN buy_box_currency=currency OR buy_box_currency IS NULL THEN buy_box_price END buy_box_price FROM amazon_listings
+              WHERE tenant_id=? AND marketplace_connection_id=? AND upper(listing_status)='ACTIVE'
+                AND coalesce(platform_status,'') NOT IN ('REMOVED','DELETED')
+            ), sales AS (
+              SELECT coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '7 days'),0) current_units,
+                     coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date<now()-interval '7 days'),0) previous_units
+              FROM amazon_order_items item JOIN amazon_orders orders
+                ON orders.tenant_id=item.tenant_id AND orders.marketplace_connection_id=item.marketplace_connection_id
+                AND orders.amazon_order_id=item.amazon_order_id
+              WHERE item.tenant_id=? AND item.marketplace_connection_id=?
+                AND orders.purchase_date>=now()-interval '14 days' AND orders.purchase_date<=now()
+                AND upper(coalesce(orders.order_status,'')) NOT IN ('CANCELLED','CANCELED')
+            )
+            SELECT count(*),count(*) FILTER (WHERE buy_box_price>0 AND price IS NOT NULL),
+                   count(*) FILTER (WHERE buy_box_price>0 AND round(price,2)=round(buy_box_price,2)),
+                   count(*) FILTER (WHERE buy_box_price>0 AND round(price,2)>round(buy_box_price,2)),
+                   (SELECT current_units FROM sales),(SELECT previous_units FROM sales) FROM active
+            """,(rs,n)->new SkuInsights(rs.getLong(1),rs.getLong(2),rs.getLong(3),rs.getLong(4),rs.getLong(5),rs.getLong(6)),
+            tenantId,connectionId,tenantId,connectionId);
+    }
     public record MappingComponentView(UUID itemId,String productName,String vendorItemCode,
             String accountSku,BigDecimal quantity){
         public String selectionLabel(){
@@ -87,22 +123,22 @@ public class MarketplaceSkuRepository {
             String conditionType,String fulfillmentChannel,BigDecimal price,String currency,Integer merchantQuantity,
             String fnsku,Integer fbaAvailable,Integer inboundQuantity,Integer reservedQuantity,Integer unfulfillableQuantity,
             long week4Sales,long week3Sales,long week2Sales,long currentWeekSales,
-            long sales30Days,BigDecimal revenue30Days,BigDecimal estimatedFees,String feeCurrency,
+            long fourWeekOrders,BigDecimal fourWeekShippingAverage,BigDecimal estimatedFees,String feeCurrency,
             String mappedProduct,String mappingStatus,String mappedVendorItemCode,BigDecimal mappingQuantity,
-            String marketplaceId,Instant lastSeenAt,String shippingTemplate,BigDecimal customerShipping30Days,
+            String marketplaceId,Instant lastSeenAt,String shippingTemplate,BigDecimal fourWeekShipping,
             BigDecimal calculatedAvailable,String localInventoryPlan,BigDecimal buyBoxPrice,
             String buyBoxCurrency,Instant buyBoxUpdatedAt){
         public SkuView(String sellerSku,String asin,String title,String imageUrl,String listingStatus,
                 String conditionType,String fulfillmentChannel,BigDecimal price,String currency,Integer merchantQuantity,
                 String fnsku,Integer fbaAvailable,Integer inboundQuantity,Integer reservedQuantity,Integer unfulfillableQuantity,
                 long week4Sales,long week3Sales,long week2Sales,long currentWeekSales,
-                long sales30Days,BigDecimal revenue30Days,BigDecimal estimatedFees,String feeCurrency,
+                long fourWeekOrders,BigDecimal fourWeekShippingAverage,BigDecimal estimatedFees,String feeCurrency,
                 String mappedProduct,String mappingStatus,String mappedVendorItemCode,BigDecimal mappingQuantity,
-                String marketplaceId,Instant lastSeenAt,String shippingTemplate,BigDecimal customerShipping30Days){
+                String marketplaceId,Instant lastSeenAt,String shippingTemplate,BigDecimal fourWeekShipping){
             this(sellerSku,asin,title,imageUrl,listingStatus,conditionType,fulfillmentChannel,price,currency,merchantQuantity,
                 fnsku,fbaAvailable,inboundQuantity,reservedQuantity,unfulfillableQuantity,week4Sales,week3Sales,week2Sales,
-                currentWeekSales,sales30Days,revenue30Days,estimatedFees,feeCurrency,mappedProduct,mappingStatus,
-                mappedVendorItemCode,mappingQuantity,marketplaceId,lastSeenAt,shippingTemplate,customerShipping30Days,
+                currentWeekSales,fourWeekOrders,fourWeekShippingAverage,estimatedFees,feeCurrency,mappedProduct,mappingStatus,
+                mappedVendorItemCode,mappingQuantity,marketplaceId,lastSeenAt,shippingTemplate,fourWeekShipping,
                 null,null,null,null,null);
         }
         public String operationalStatus(){
@@ -126,8 +162,7 @@ public class MarketplaceSkuRepository {
         public int safeUnfulfillableQuantity(){return zero(unfulfillableQuantity);}
         public String fulfillmentLabel(){return fba()?"FBA":"FBM";}
         public BigDecimal averageCustomerShipping(){
-            if(fba()||customerShipping30Days==null||sales30Days<=0)return BigDecimal.ZERO;
-            return customerShipping30Days.divide(BigDecimal.valueOf(sales30Days),2,RoundingMode.HALF_UP);
+            return fba()||fourWeekShippingAverage==null?BigDecimal.ZERO:fourWeekShippingAverage;
         }
         public String mappingLabel(){return mappedProduct==null?"Unmapped":"Mapped";}
         public String inventoryPlanLabel(){return localInventoryPlan==null?null:switch(localInventoryPlan){
@@ -137,6 +172,8 @@ public class MarketplaceSkuRepository {
             case "DISCOUNT" -> "Sale plan saved";
             default -> "Inventory plan saved";
         };}
+        public long fourWeekUnits(){return week4Sales+week3Sales+week2Sales+currentWeekSales;}
+        public String currencySymbol(String code){return switch(code==null?"USD":code){case "USD" -> "$";case "CAD" -> "CA$";case "GBP" -> "£";case "EUR" -> "€";default -> code+" ";};}
         public String weeklySalesLabel(){return week4Sales+" | "+week3Sales+" | "+week2Sales+" | "+currentWeekSales;}
         public String mappingDetail(){
             if(mappedProduct==null)return null;
@@ -311,6 +348,12 @@ public class MarketplaceSkuRepository {
     @Transactional(readOnly=true)
     public SkuPage list(UUID tenantId,UUID connectionId,String search,String status,String sort,String direction,
             int requestedPage,int pageSize){
+        return list(tenantId,connectionId,search,status,sort,direction,requestedPage,pageSize,Map.of());
+    }
+    @Transactional(readOnly=true)
+    public SkuPage list(UUID tenantId,UUID connectionId,String search,String status,String sort,String direction,
+            int requestedPage,int pageSize,Map<String,String> filters){
+        var smart=MarketplaceSkuFilters.parse(filters);
         setTenant(tenantId);String query=search==null?"":search.trim();String filter=normalizeStatus(status);
         int size=Math.max(25,Math.min(pageSize,200));int page=Math.max(requestedPage,0);int offset=page*size;
         String sql="""
@@ -320,13 +363,14 @@ public class MarketplaceSkuRepository {
                      coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '21 days' AND orders.purchase_date<now()-interval '14 days'),0) week_3,
                      coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '14 days' AND orders.purchase_date<now()-interval '7 days'),0) week_2,
                      coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '7 days'),0) current_week,
-                     coalesce(sum(item.quantity_ordered),0) units,coalesce(sum(item.item_price),0) revenue,
-                     coalesce(sum(item.shipping_price),0) customer_shipping
+                     count(DISTINCT orders.amazon_order_id) sold_orders,
+                     coalesce(round(sum(greatest(coalesce(item.shipping_price,0)-coalesce(item.shipping_discount,0),0))/nullif(sum(item.quantity_ordered),0),2),0) average_shipping,
+                     coalesce(sum(greatest(coalesce(item.shipping_price,0)-coalesce(item.shipping_discount,0),0)),0) customer_shipping
               FROM amazon_order_items item JOIN amazon_orders orders
                 ON orders.tenant_id=item.tenant_id AND orders.marketplace_connection_id=item.marketplace_connection_id
                AND orders.amazon_order_id=item.amazon_order_id
               WHERE item.tenant_id=? AND item.marketplace_connection_id=?
-                AND orders.purchase_date>=now()-interval '30 days'
+                AND orders.purchase_date>=now()-interval '28 days' AND orders.purchase_date<=now()
                 AND upper(coalesce(orders.order_status,'')) NOT IN ('CANCELLED','CANCELED')
               GROUP BY item.tenant_id,item.marketplace_connection_id,item.seller_sku
             ), sku_rows AS (
@@ -337,7 +381,7 @@ public class MarketplaceSkuRepository {
                      inventory.reserved_quantity,inventory.unfulfillable_quantity,
                      coalesce(sales.week_4,0) week_4,coalesce(sales.week_3,0) week_3,
                      coalesce(sales.week_2,0) week_2,coalesce(sales.current_week,0) current_week,
-                     coalesce(sales.units,0) sales_30_days,coalesce(sales.revenue,0) revenue_30_days,
+                     coalesce(sales.sold_orders,0) sold_orders,coalesce(sales.average_shipping,0) average_shipping,
                      fees.estimated_fee_total,fees.currency fee_currency,
                      coalesce(account_item.display_name,product.canonical_name) mapped_product,mapping.status mapping_status,
                      mapped_offer.vendor_item_code,mapping.quantity_per_marketplace_unit,
@@ -353,7 +397,9 @@ public class MarketplaceSkuRepository {
                           WHEN upper(coalesce(listing.listing_status,''))='ACTIVE' THEN 'ACTIVE'
                           ELSE 'INACTIVE' END operational_status,
                      inventory_plan.action_type local_inventory_plan,listing.buy_box_price,
-                     listing.buy_box_currency,listing.buy_box_updated_at
+                     listing.buy_box_currency,listing.buy_box_updated_at,
+                     coalesce(mapped_offer.vendor_item_code,'')||' '||coalesce(account_item.account_sku,'')||' '||coalesce((SELECT string_agg(ci.account_sku||' '||coalesce(vo.vendor_item_code,''),' ') FROM marketplace_sku_mapping_components mc JOIN account_catalog_items ci ON ci.tenant_id=mc.tenant_id AND ci.id=mc.account_catalog_item_id LEFT JOIN vendor_catalog_offers vo ON vo.tenant_id=ci.tenant_id AND vo.account_catalog_item_id=ci.id AND vo.effective_to IS NULL WHERE mc.tenant_id=mapping.tenant_id AND mc.marketplace_sku_mapping_id=mapping.id),'') mapping_codes,
+                     EXISTS(SELECT 1 FROM order_sku_pictures pic WHERE pic.tenant_id=listing.tenant_id AND pic.marketplace_connection_id=listing.marketplace_connection_id AND pic.seller_sku=listing.seller_sku) custom_picture
               FROM amazon_listings listing
               LEFT JOIN LATERAL (SELECT fnsku,fulfillable_quantity,inbound_working_quantity,inbound_shipped_quantity,
                       inbound_receiving_quantity,reserved_quantity,unfulfillable_quantity
@@ -405,8 +451,10 @@ public class MarketplaceSkuRepository {
             WHERE (?='' OR seller_sku ILIKE '%'||?||'%' OR coalesce(asin,'') ILIKE '%'||?||'%'
                       OR coalesce(item_name,'') ILIKE '%'||?||'%')
               AND (?='ALL' OR operational_status=? OR (?='DELETED' AND operational_status='REMOVED') OR (?='UNMAPPED' AND mapped_product IS NULL))
-            """+" ORDER BY CASE WHEN operational_status='DELETED' THEN 1 ELSE 0 END, "+orderClause(sort,direction)+" LIMIT ? OFFSET ?";
-        List<Object[]> raw=jdbc.query(sql,(rs,row)->new Object[]{new SkuView(rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4),
+            """+" AND "+smart.sql()+" ORDER BY CASE WHEN operational_status='DELETED' THEN 1 ELSE 0 END, "+orderClause(sort,direction)+" LIMIT ? OFFSET ?";
+        List<Object> parameters=new ArrayList<>(List.of(tenantId,connectionId,tenantId,connectionId,query,query,query,query,filter,filter,filter,filter));
+        parameters.addAll(smart.args());parameters.add(size);parameters.add(offset);
+        List<Object[]> raw=jdbc.query(sql,(rs,row)->new Object[]{new SkuView(rs.getString(1),rs.getString(2),rs.getString(3),rs.getBoolean("custom_picture")?"/app/marketplace-skus/mapping-picture?sku="+java.net.URLEncoder.encode(rs.getString(1),java.nio.charset.StandardCharsets.UTF_8):rs.getString(4),
                 rs.getString(33),rs.getString(6),rs.getString(7),rs.getBigDecimal(8),rs.getString(9),
                 (Integer)rs.getObject(10),rs.getString(11),(Integer)rs.getObject(12),(Integer)rs.getObject(13),
                 (Integer)rs.getObject(14),(Integer)rs.getObject(15),rs.getLong(16),rs.getLong(17),rs.getLong(18),rs.getLong(19),
@@ -414,11 +462,10 @@ public class MarketplaceSkuRepository {
                 rs.getString(25),rs.getString(26),rs.getBigDecimal(27),rs.getString(28),
                 rs.getTimestamp(29)==null?null:rs.getTimestamp(29).toInstant(),rs.getString(30),rs.getBigDecimal(31),rs.getBigDecimal(32),
                 rs.getString(34),rs.getBigDecimal(35),rs.getString(36),
-                rs.getTimestamp(37)==null?null:rs.getTimestamp(37).toInstant()),rs.getLong(38)},
-                tenantId,connectionId,tenantId,connectionId,query,query,query,query,filter,filter,filter,filter,size,offset);
+                rs.getTimestamp(37)==null?null:rs.getTimestamp(37).toInstant()),rs.getLong("filtered_total")},parameters.toArray());
         long total=raw.isEmpty()?0:(long)raw.getFirst()[1];
         List<SkuView> rows=raw.stream().map(row->(SkuView)row[0]).toList();
-        if(total>0&&offset>=total){page=Math.max(0,(int)((total-1)/size));return list(tenantId,connectionId,query,filter,sort,direction,page,size);}
+        if(total>0&&offset>=total){page=Math.max(0,(int)((total-1)/size));return list(tenantId,connectionId,query,filter,sort,direction,page,size,filters);}
         return new SkuPage(rows,total,page,size);
     }
 
@@ -435,7 +482,6 @@ public class MarketplaceSkuRepository {
             case "fulfillment" -> "fulfillment_channel";
             case "available" -> "available";
             case "fourWeek" -> "(week_4+week_3+week_2+current_week)";
-            case "sales30" -> "sales_30_days";
             case "fees" -> "estimated_fee_total";
             case "profit" -> "lower(seller_sku)";
             case "catalog" -> "mapped_product";

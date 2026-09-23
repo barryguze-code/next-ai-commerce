@@ -19,17 +19,31 @@
       if(shortcuts.childElementCount)copy.append(shortcuts);
     });
   }
+  const packingClicksKey='nextai.packing-slip-clicked.v1';
+  let packingClicks=[];
+  try{const saved=JSON.parse(localStorage.getItem(packingClicksKey)||'[]');if(Array.isArray(saved))packingClicks=saved.filter(id=>typeof id==='string').slice(-1000);}catch(_){}
+  function showPackingClicked(button){
+    button.dataset.packingClicked='true';
+    if(window.NextAiIcons)button.replaceChildren(window.NextAiIcons.create('printClicked'));
+    button.title='Packing slip opened — click to reprint';
+    button.setAttribute('aria-label',button.title);
+    button.closest('.order-action-tip')?.setAttribute('data-tooltip',button.title);
+  }
   function addPackingSlipActions(){
-    document.querySelectorAll('.order-icon-action.shipping[data-order-id]').forEach(shipping=>{
+    document.querySelectorAll('[data-packing-slip-order]').forEach(shipping=>{
       if(shipping.closest('[data-tooltip]'))shipping.removeAttribute('title');
-      if(shipping.parentElement?.parentElement?.querySelector('.order-icon-action.packing-slip'))return;
-      const orderId=shipping.dataset.orderId,orderRow=shipping.closest('.order-row');
+      if(shipping.parentElement?.querySelector('.order-icon-action.packing-slip'))return;
+      const orderId=shipping.dataset.packingSlipOrder,orderRow=shipping.closest('.order-row');
       if(!orderId||!orderRow)return;
       const tip=document.createElement('span');tip.className='order-action-tip';tip.dataset.tooltip='Open packing slip';
       const button=document.createElement('button');button.type='button';button.className='order-icon-action shipping packing-slip';
       button.setAttribute('aria-label','Open packing slip and Seller Central order');
       button.innerHTML='<span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 4H5v17h10M15 4h3v7M9 2h5v4H9zM8 10l1.5 1.5L12 9M8 15h3"/><path d="m15 14 3-1.5 3 1.5v5l-3 1.5-3-1.5zM15 14l3 1.5 3-1.5M18 15.5v5"/></svg></span>';
+      if(packingClicks.includes(orderId))showPackingClicked(button);
       button.addEventListener('click',()=>{
+        packingClicks=[...packingClicks.filter(id=>id!==orderId),orderId].slice(-1000);
+        try{localStorage.setItem(packingClicksKey,JSON.stringify(packingClicks));}catch(_){}
+        showPackingClicked(button);
         const labelUrl='/app/orders/'+encodeURIComponent(orderId)+'/packing-slip';
         const sellerUrl=orderRow.querySelector('.order-number')?.href;
         const label=window.open('about:blank','_blank');
@@ -46,7 +60,7 @@
           const close=document.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label','Dismiss');close.onclick=()=>notice.remove();notice.append(close);
         }
       });
-      tip.append(button);shipping.parentElement.parentElement.append(tip);
+      tip.append(button);shipping.parentElement.append(tip);
     });
   }
   addPackingSlipActions();addOrderSearchShortcuts();

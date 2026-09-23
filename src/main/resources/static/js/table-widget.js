@@ -20,11 +20,11 @@ document.addEventListener('pointerdown',event=>document.querySelectorAll('.table
 document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelectorAll('.order-stage-actions[open]').forEach(details=>{details.open=false;details.querySelector('summary')?.focus()})});
 function read(key){return window.NextAiTablePreferences?.read(key)||null}
 function write(key,value){window.NextAiTablePreferences?.write(key,value)}
+function overviewIcon(name){if(window.NextAiIcons)return window.NextAiIcons.create(name);const img=document.createElement('img');const file={actions:'actions-ai-human',alert:'actions-ai-human-alert'}[name]||name;img.src='/images/platform/table/'+file+'.png?v=20260919-17';img.alt='';img.className='platform-icon';return img;}
 function actionTrigger(element,warning){
   element.classList.add('table-action-trigger');
   element.classList.toggle('needs-attention',Boolean(warning));
-  element.innerHTML='<svg viewBox="0 0 28 20" aria-hidden="true"><circle cx="5" cy="10" r="1.3"/><circle cx="10" cy="10" r="1.3"/><circle cx="15" cy="10" r="1.3"/><path d="m20 8 3 3 3-3"/></svg>';
-  if(warning){const badge=document.createElement('span');badge.className='table-action-alert';badge.textContent='!';badge.setAttribute('aria-hidden','true');element.append(badge)}
+  const image=overviewIcon(warning?'alert':'actions');element.replaceChildren(image);
 }
 function metadata(el,index){
   const title=el.dataset.title||el.textContent.replace(/[↑↓]/g,'').trim();
@@ -140,11 +140,11 @@ function prepareContextColumn(root){
           icon.textContent=control.dataset.actionIcon||(control.matches('[data-open-selection]')?'⇉':menu?'↗':'±');
           const label=document.createElement('span');label.className='table-action-label';
           const strong=document.createElement('strong');strong.textContent=control.textContent.trim();
-          const small=document.createElement('small');small.textContent=control.dataset.actionDescription||(control.matches('[data-open-selection]')?'Open your checked documents in one workspace':menu?'Open only this document; keep your selection':'Update stock for the mapped products');
+          const small=document.createElement('small');small.textContent=control.dataset.actionDescription||(control.matches('[data-open-selection]')?'Open your checked documents in one workspace':menu?(document.body.classList.contains('platform-standard-tables')?'Open this record’s settings':'Open only this document; keep your selection'):'Update stock for the mapped products');
           label.append(strong,small);control.replaceChildren(icon,label);
         });
         details.append(summary,panel);cell.append(details);
-        details.addEventListener('toggle',()=>{if(details.open){const box=summary.getBoundingClientRect();panel.style.top=Math.max(12,Math.min(box.bottom+6,innerHeight-panel.offsetHeight-12))+'px';panel.style.left=Math.max(12,Math.min(box.right+8,innerWidth-312))+'px'}});
+        details.addEventListener('toggle',()=>{if(!details.open){if(panel.matches(':popover-open'))panel.hidePopover();return;}if(document.body.classList.contains('platform-standard-tables')){panel.setAttribute('popover','manual');panel.style.margin='0';panel.style.inset='auto';if(!panel.matches(':popover-open'))panel.showPopover();}if(details.open){const box=summary.getBoundingClientRect();panel.style.top=Math.max(12,Math.min(box.bottom+6,innerHeight-panel.offsetHeight-12))+'px';panel.style.left=Math.max(12,Math.min(box.right+8,innerWidth-panel.offsetWidth-12))+'px'}});
         details.addEventListener('keydown',event=>{if(event.key==='Escape'){details.open=false;summary.focus()}});
         (root.closest('.table-wrap')||root).addEventListener('scroll',()=>details.open=false,{passive:true});
       }
@@ -160,6 +160,35 @@ function prepareContextColumn(root){
     }
   }
   if(!isTable)root.querySelectorAll('.order-actions').forEach(el=>el.hidden=true);
+}
+function prepareOverview(root){
+  if(!root.matches('table')||!root.tHead||root.dataset.overviewReady)return;
+  root.dataset.overviewReady='true';
+  const header=root.tHead.rows[0];if(!header)return;
+  let heading=header.querySelector('[data-column=record-context]');
+  if(!heading){heading=document.createElement('th');heading.dataset.column='record-context';header.prepend(heading);root.querySelectorAll('tbody [colspan]').forEach(cell=>cell.colSpan++);}
+  heading.dataset.columnRequired='true';heading.dataset.noSort='true';heading.dataset.title='Overview';heading.textContent='Overview';heading.setAttribute('aria-label','Overview');
+  [...root.tBodies].flatMap(body=>[...body.rows]).filter(row=>!row.querySelector('[colspan]')).forEach(row=>{
+    let cell=row.querySelector('[data-column=record-context]');
+    if(!cell){cell=document.createElement('td');cell.dataset.column='record-context';row.prepend(cell);}
+    cell.classList.add('table-context-cell','table-overview-cell');
+    const rail=document.createElement('div');rail.className='table-overview-rail';
+    while(cell.firstChild)rail.append(cell.firstChild);
+    const avatar=row.querySelector('.product-avatar'),upload=avatar?.closest('.product-image-upload');
+    const picture=upload||avatar||document.createElement('span');picture.classList.add('table-overview-picture');
+    if(!avatar){const label=row.dataset.title||row.dataset.product||row.querySelector('strong')?.textContent||'Record';const src=row.dataset.image||row.querySelector('.collaboration-row-button')?.dataset.image;
+      const initials=document.createElement('b');initials.textContent=label.trim().split(/\s+/).slice(0,2).map(word=>word[0]).join('').toUpperCase();picture.append(initials);
+      if(src){const img=document.createElement('img');img.src=src;img.alt='';img.loading='lazy';img.decoding='async';initials.hidden=true;img.onerror=()=>{img.remove();initials.hidden=false};picture.append(img);}
+    }
+    const chat=rail.querySelector('.collaboration-row-button')||row.querySelector('.collaboration-row-button');
+    if(chat)rail.prepend(chat);
+    else{const button=document.createElement('button');button.type='button';button.disabled=true;button.title='Collaboration unavailable for this record';button.append(overviewIcon('collaboration-no-message-gray'));rail.prepend(button);}
+    const action=row.querySelector('[data-context-action]');
+    if(action&&!rail.contains(action)){actionTrigger(action,action.dataset.warningText);rail.append(action);}
+    if(!rail.querySelector('.table-action-trigger')){const button=document.createElement('button');button.type='button';button.disabled=true;button.title='No actions available';actionTrigger(button,false);rail.append(button);}
+    const layout=document.createElement('div');layout.className='table-overview-layout';
+    layout.append(picture,rail);cell.append(layout);
+  });
 }
 function prepareSalesBars(root){
   root.querySelectorAll('.weekly-sales:not([data-bars-ready])').forEach(el=>{
@@ -198,6 +227,7 @@ function init(root){
     });
   }
   prepareContextColumn(root);
+  prepareOverview(root);
   prepareSalesBars(root);
   root.classList.add('table-widget');
   const isTable=root.matches('table'),defaults=isTable?tableColumns(root):gridColumns(root);if(!defaults.length)return;
@@ -272,6 +302,6 @@ function init(root){
   requestAnimationFrame(()=>{const scroller=root.closest('.table-wrap');if(scroller)scroller.scrollLeft=0});
 }
 function initPageJump(form){if(form.dataset.pageJumpReady)return;form.dataset.pageJumpReady='true';const input=form.querySelector('[name="goToPage"]');if(!input)return;let starting=input.value;const clean=()=>{input.value=input.value.replace(/\D/g,'')};input.addEventListener('input',clean);form.addEventListener('submit',event=>{clean();const max=Math.max(1,Number(input.dataset.pageMax)||1),value=Number(input.value);if(!Number.isFinite(value)||value<1){event.preventDefault();input.value='1';input.focus();return}input.value=String(Math.min(max,Math.floor(value)))});input.addEventListener('blur',()=>{clean();if(input.value&&input.value!==starting)form.requestSubmit()});input.addEventListener('focus',()=>input.select())}
-function boot(){document.querySelectorAll('.desk-table:not([data-table-widget])').forEach(root=>{root.dataset.tableWidget='shipping-ready';root.dataset.gridRow='.candidate-row';const header=root.querySelector('.desk-table-head');header?.classList.add('table-grid-header');[...header.children].forEach((cell,index)=>{cell.dataset.column=['select','product','order','package','shipping','action'][index];cell.dataset.columnRequired=String(index===0||index===1||index===5);if(index===0)cell.dataset.title='Select'})});document.querySelectorAll('.data-card table:not([data-table-widget])').forEach((root,index)=>{if(root.tHead&&!root.closest('dialog'))root.dataset.tableWidget=location.pathname.replace(/\W+/g,'-')+'-'+index});document.querySelectorAll('[data-table-widget]:not([data-table-widget-ready])').forEach(root=>{root.dataset.tableWidgetReady='true';init(root)});document.querySelectorAll('[data-page-jump]').forEach(initPageJump);window.NextAiTableDataTools?.refresh()}
+function boot(){document.querySelectorAll('.desk-table:not([data-table-widget])').forEach(root=>{root.dataset.tableWidget='shipping-ready';root.dataset.gridRow='.candidate-row';const header=root.querySelector('.desk-table-head');header?.classList.add('table-grid-header');[...header.children].forEach((cell,index)=>{cell.dataset.column=['select','product','order','package','shipping','action'][index];cell.dataset.columnRequired=String(index===0||index===1||index===5);if(index===0)cell.dataset.title='Select'})});document.querySelectorAll('.data-card table:not([data-table-widget])').forEach((root,index)=>{if(root.tHead&&!root.closest('dialog'))root.dataset.tableWidget=location.pathname.replace(/\W+/g,'-')+'-'+index});document.querySelectorAll('[data-table-widget]:not([data-table-widget-ready])').forEach(root=>{root.dataset.tableWidgetReady='true';init(root)});document.querySelectorAll('[data-page-jump]').forEach(initPageJump);window.NextAiTableDataTools?.refresh();window.NextAiStandardTables?.enhance()}
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();window.NextAiTableWidget={refresh:boot};
 })();

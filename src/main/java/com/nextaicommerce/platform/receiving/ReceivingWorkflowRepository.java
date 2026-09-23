@@ -21,7 +21,7 @@ public class ReceivingWorkflowRepository {
     }
     public record Document(UUID id,UUID sessionId,String vendor,String type,String number,String filename,
             LocalDate date,Instant uploadedAt,String currency,BigDecimal expected,BigDecimal received,
-            BigDecimal outstanding,boolean closed,boolean partial,boolean hasHistory,String closeReason){
+            BigDecimal outstanding,boolean closed,boolean partial,boolean hasHistory,String closeReason,UUID vendorId){
         public String label(){return ("INVOICE".equals(type)?"Invoice":"Packing list")+" · "+(number==null||number.isBlank()?filename:number);}
         public String progress(){return closed?(partial?"Closed · Partial":"Closed · Received"):
             outstanding.signum()==0?(received.compareTo(expected)<0?"Resolved · exceptions":"Fully received"):
@@ -170,7 +170,7 @@ public class ReceivingWorkflowRepository {
           OR EXISTS(SELECT 1 FROM vendor_credit_requests c JOIN purchase_order_items i
             ON i.tenant_id=c.tenant_id AND i.id=c.purchase_order_item_id JOIN purchase_orders p
             ON p.tenant_id=i.tenant_id AND p.id=i.purchase_order_id
-            WHERE c.tenant_id=d.tenant_id AND p.receiving_document_id=d.id),d.close_reason
+            WHERE c.tenant_id=d.tenant_id AND p.receiving_document_id=d.id),d.close_reason,d.vendor_id
         FROM receiving_documents d JOIN receiving_sessions s ON s.tenant_id=d.tenant_id AND s.id=d.receiving_session_id
         JOIN vendors v ON v.tenant_id=d.tenant_id AND v.id=d.vendor_id
         LEFT JOIN LATERAL (SELECT sum(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END) expected,
@@ -204,7 +204,7 @@ public class ReceivingWorkflowRepository {
         return sql.query(DOCUMENTS+(ids.isEmpty()?"":" AND d.id IN (:ids)")+" ORDER BY d.created_at DESC",
             Map.of("tenant",tenant,"ids",ids),(rs,n)->new Document(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),
             rs.getString(4),rs.getString(5),rs.getString(6),rs.getObject(7,LocalDate.class),rs.getTimestamp(8).toInstant(),
-            rs.getString(9),rs.getBigDecimal(10),rs.getBigDecimal(11),rs.getBigDecimal(12),rs.getBoolean(13),rs.getBoolean(14),rs.getBoolean(15),rs.getString(16)));
+            rs.getString(9),rs.getBigDecimal(10),rs.getBigDecimal(11),rs.getBigDecimal(12),rs.getBoolean(13),rs.getBoolean(14),rs.getBoolean(15),rs.getString(16),rs.getObject(17,UUID.class)));
     }
     @Transactional(readOnly=true)
     public List<WorkLine> lines(UUID tenant,List<UUID> ids){

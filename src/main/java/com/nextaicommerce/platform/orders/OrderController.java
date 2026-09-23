@@ -33,7 +33,7 @@ public class OrderController {
             @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="0") int page,
             @RequestParam(required=false) Integer goToPage,
             @RequestParam(defaultValue=com.nextaicommerce.platform.web.TablePaging.DEFAULT_PARAMETER) int size,
-            Authentication auth,HttpSession session,Model model){
+            Authentication auth,HttpSession session,Model model,@RequestParam Map<String,String> smartParameters){
         if(!PageController.addTenantModel(session,model))return "redirect:/app/select-account";
         PageController.addAccessModel(auth,model);model.addAttribute("selectedStatus",status.toUpperCase());model.addAttribute("query",q);
         UUID tenant=tenant(session);Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
@@ -47,15 +47,20 @@ public class OrderController {
         model.addAttribute("pickupOverrides",orders.pickupOverrides(tenant,connection));
         model.addAttribute("pickupEligibleOrders",orders.pickupEligibleOrders(tenant,connection));
         int requestedPage=goToPage==null?page:Math.max(0,goToPage-1);
-        var orderPage=orders.orders(tenant,connection,status,q,requestedPage,com.nextaicommerce.platform.web.TablePaging.size(size));var rows=orderPage.rows();
+        Map<String,String> smart;try{smart=OrderSmartFilters.clean(smartParameters);}catch(IllegalArgumentException ex){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,ex.getMessage());}
+        var orderPage=orders.orders(tenant,connection,status,q,requestedPage,com.nextaicommerce.platform.web.TablePaging.size(size),smart);var rows=orderPage.rows();
+        if(!q.isBlank()||!"ALL".equalsIgnoreCase(status)||smart.keySet().stream().anyMatch(k->k.startsWith("f_")&&!k.endsWith("_op")))
+            model.addAttribute("filteredSummary",orders.filteredSummary(tenant,connection,status,q,smart));
         var items=orders.itemsForOrders(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList());
+        if(smart.keySet().stream().anyMatch(k->k.startsWith("f_"))){var matches=orders.matchingItems(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList(),smart);items.replaceAll((id,list)->list.stream().filter(item->matches.contains(item.id())).toList());}
+        model.addAttribute("soldTotals",orders.soldTotals(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).distinct().toList()));
         model.addAttribute("buyBoxLostItems",orders.buyBoxLostItems(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList()));
         model.addAttribute("fourWeekSales",orders.fourWeekSales(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).toList()));
         model.addAttribute("orders",rows);model.addAttribute("orderPage",orderPage);model.addAttribute("itemsByOrder",items);var summary=orders.summary(tenant,connection);
         model.addAttribute("threadsByOrder",collaboration==null?java.util.Map.of():collaboration.openSubjectSummaries(
             tenant,"ORDER",rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList(),auth.getName()));
         model.addAttribute("orderStreamKey",orders.streamVersion(tenant,connection));
-        model.addAttribute("todayOrders",summary.todayOrders());model.addAttribute("todaySales",summary.todaySales());
+        model.addAttribute("todayOrders",summary.todayOrders());model.addAttribute("todayUnits",summary.todayUnits());model.addAttribute("todaySales",summary.todaySales());
         model.addAttribute("sales30Days",summary.sales30Days());model.addAttribute("liveCount",summary.live());
         model.addAttribute("historicalCount",summary.historical());
         var syncAvailability=manualSync.availability(tenant,connection);boolean fresh=summary.lastSyncedAt()!=null&&java.time.Duration.between(summary.lastSyncedAt(),java.time.Instant.now()).compareTo(java.time.Duration.ofMinutes(5))<0;

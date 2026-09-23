@@ -46,7 +46,7 @@ public class MarketplaceSkuController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(required = false) Integer goToPage,
             @RequestParam(defaultValue = com.nextaicommerce.platform.web.TablePaging.DEFAULT_PARAMETER) int size,
-            Authentication authentication, HttpSession session, Model model) {
+            @RequestParam java.util.Map<String,String> filters, Authentication authentication, HttpSession session, Model model) {
         if (!PageController.addTenantModel(session, model)) return "redirect:/app/select-account";
         PageController.addAccessModel(authentication, model);
         model.addAttribute("query", q == null ? "" : q.trim());
@@ -73,9 +73,10 @@ public class MarketplaceSkuController {
         String normalizedStatus = normalizeStatus(status);
         model.addAttribute("selectedStatus", normalizedStatus);
         model.addAttribute("summary", skus.summary(tenantId, connectionId));
+        model.addAttribute("insights", skus.insights(tenantId, connectionId));
         int requestedPage=goToPage==null?page:Math.max(0,goToPage-1);
         var skuPage=skus.list(tenantId, connectionId, q, normalizedStatus,
-            normalizeSort(sort),"desc".equalsIgnoreCase(direction)?"desc":"asc",requestedPage, com.nextaicommerce.platform.web.TablePaging.size(size));
+            normalizeSort(sort),"desc".equalsIgnoreCase(direction)?"desc":"asc",requestedPage, com.nextaicommerce.platform.web.TablePaging.size(size),filters);
         model.addAttribute("skuPage",skuPage);
         model.addAttribute("salesAsOf",java.time.Instant.now());
         model.addAttribute("threadsByMarketplaceSku",collaboration==null?java.util.Map.of():collaboration.openSubjectSummaries(
@@ -131,7 +132,7 @@ public class MarketplaceSkuController {
     String clearMapping(@RequestParam String sellerSku,
             @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="ALL") String status,
             @RequestParam(defaultValue="status") String sort,@RequestParam(defaultValue="asc") String direction,
-            @RequestParam(defaultValue="0") int page,HttpSession session,RedirectAttributes redirect){
+            @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String returnTo,HttpSession session,RedirectAttributes redirect){
         try{
             UUID tenantId=requiredTenant(session);UUID connectionId=requiredAmazonConnection(tenantId,session);
             skus.clearMapping(tenantId,connectionId,sellerSku);
@@ -139,7 +140,7 @@ public class MarketplaceSkuController {
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("mappingError",e.getMessage());}
         catch(Exception e){log.error("Marketplace SKU mapping clear failed sellerSku={}",sellerSku,e);
             redirect.addFlashAttribute("mappingError","The mapping could not be cleared. Nothing was changed.");}
-        return redirectView(q,status,sort,direction,page);
+        return safeReturn(returnTo,redirectView(q,status,sort,direction,page));
     }
 
     private static String normalizeStatus(String status) {
@@ -151,7 +152,7 @@ public class MarketplaceSkuController {
 
     private static String normalizeSort(String sort){
         return java.util.Set.of("listing","sku","status","price","buyBox","fulfillment","available",
-            "fourWeek","sales30","fees","profit","catalog").contains(sort)?sort:"status";
+            "fourWeek","fees","profit","catalog").contains(sort)?sort:"status";
     }
 
     private static UUID requiredTenant(HttpSession session){
@@ -174,6 +175,6 @@ public class MarketplaceSkuController {
         return "redirect:"+target;
     }
     private static String safeReturn(String returnTo,String fallback){
-        return returnTo!=null && returnTo.matches("/app/orders(?:\\?[^\\r\\n]*)?") ? "redirect:"+returnTo : fallback;
+        return returnTo!=null && returnTo.matches("/app/(?:orders|marketplace-skus)(?:\\?[^\\r\\n]*)?") ? "redirect:"+returnTo : fallback;
     }
 }

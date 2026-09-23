@@ -1,4 +1,19 @@
 .table-widget-tools{display:flex;align-items:center;gap:8px}
+.table-widget [data-column=record-context]:has(.table-overview-rail),.table-widget th[data-column=record-context]{width:142px!important;min-width:142px!important;max-width:none!important}
+.table-widget .table-overview-cell{white-space:nowrap;vertical-align:middle}
+.table-widget .table-overview-layout{display:flex!important;flex-flow:row nowrap!important;align-items:center;justify-content:center;gap:10px;min-width:124px!important}
+.table-widget .table-overview-layout>.table-overview-picture{box-sizing:border-box;flex:0 0 80px;margin:0!important}
+.table-widget .table-overview-layout>.table-overview-rail{display:flex!important;flex:0 0 34px;width:34px;min-width:34px;flex-direction:column;align-items:center}
+.table-widget .table-overview-picture{display:inline-flex!important;align-items:center;justify-content:center;width:80px!important;height:88px!important;margin:0 10px 0 0!important;vertical-align:middle;border-radius:18px;background:var(--white);color:var(--muted);overflow:hidden}
+.table-widget .table-overview-picture img{width:100%;height:100%;object-fit:contain}
+.table-widget .table-overview-picture .product-avatar{width:80px;height:88px;margin:0}
+.table-widget .table-overview-rail{display:inline-flex;flex-direction:column;gap:10px;vertical-align:middle;width:34px}
+.table-widget .table-overview-rail :is(button,summary).table-action-trigger,.table-widget .table-overview-rail>.collaboration-row-button,.table-widget .table-overview-rail>button{position:relative!important;inset:auto!important;display:grid!important;place-items:center;width:34px!important;height:34px!important;min-width:34px;padding:0!important;margin:0!important;border:1px solid #b7c8de!important;border-radius:10px!important;background:transparent!important;box-shadow:none!important}
+.table-widget .table-overview-rail img.platform-icon{width:30px!important;height:30px!important;object-fit:contain}
+.table-widget .table-overview-rail .table-action-trigger.needs-attention{border-color:#e7a34a!important;background:rgba(255,165,0,.12)!important}
+.table-widget .table-overview-rail .table-action-trigger:not(.needs-attention):not(:disabled){border-color:#d97706!important;background:rgba(217,119,6,.08)!important}
+.platform-pickup-label,.order-action-summary{color:#a65a05!important;background:#fff4df!important;border-color:#d97706}
+html[data-theme=dark] .platform-pickup-label,html[data-theme=dark] .order-action-summary{color:#fbbf64!important;background:#3d2e1e!important}
 .background-job-card.local-job .background-job-phase{display:block}
 .background-sync-notice[hidden]{display:none!important}
 .data-card table.table-widget{width:100%;min-width:var(--table-min-width,0px)!important;table-layout:fixed}

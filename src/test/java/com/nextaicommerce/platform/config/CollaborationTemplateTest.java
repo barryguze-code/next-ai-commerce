@@ -102,9 +102,11 @@ class CollaborationTemplateTest {
         String skus=Files.readString(Path.of("src/main/resources/templates/marketplace-skus.html"));
         String styles=Files.readString(Path.of("src/main/resources/static/css/table-widget.css"));
         String adjustmentJs=Files.readString(Path.of("src/main/resources/static/js/order-inventory-adjust.js"));
-        assertThat(List.of(orders,skus)).allSatisfy(template->assertThat(template)
+        assertThat(orders)
             .contains("table-mapping-control","table-mapping-icon","table-mapping-copy","Mapped SKU","Map SKU")
-            .doesNotContain("mapping-summary-button\" th:attr=\"data-seller-sku=${item.sellerSku},data-product-title=${item.title ?: item.sellerSku}\" onclick=\"openOrderMapping(this)\" th:title="));
+            .doesNotContain("mapping-summary-button\" th:attr=\"data-seller-sku=${item.sellerSku},data-product-title=${item.title ?: item.sellerSku}\" onclick=\"openOrderMapping(this)\" th:title=");
+        assertThat(skus).contains("sku-mapping-icon","NextAiMappingWidget.open(this)","Review SKU mapping","mapping-widget.js");
+        assertThat(orders).contains("mapping-widget.js");
         assertThat(orders).contains("shortage-inventory-action","Adjust stock","openOrderInventoryAdjustment(this)",
             "order-inventory-adjust-dialog","order-inventory-adjust.js");
         assertThat(styles).contains(".table-mapping-control.needs-mapping",".table-mapping-icon svg",

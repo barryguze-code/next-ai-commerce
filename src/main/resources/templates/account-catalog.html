@@ -8,17 +8,17 @@
 <link rel="stylesheet" href="/css/app.css">
 <link rel="stylesheet" href="/css/brand.css?v=20260909-1">
 <link rel="stylesheet" href="/css/access.css">
-<link rel="stylesheet" href="/css/table-widget.css?v=1.0.0">
+
 <link rel="stylesheet" href="/css/locations.css">
 <link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7"><link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2"><link rel="stylesheet" href="/css/collaboration-thread.css?v=20260911-8">
 <script defer src="/js/theme.js?v=20260905-1">
 </script>
-<script defer src="/js/table-preferences.js?v=20260911-2"></script><script defer src="/js/table-widget.js?v=1.0.0"></script>
+<script defer src="/js/table-preferences.js?v=20260911-2"></script>
 <script defer src="/js/catalog-image-sync.js?v=1.2.0"></script>
 <script defer src="/js/collaboration.js?v=20260918-5"></script>
 <link rel="stylesheet" href="/css/catalog-inventory-controls.css?v=1.2.0">
-</head>
-<body class="app-page">
+<link rel="stylesheet" href="/css/standard-record-tables.css?v=20260922-32"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31"><script defer src="/js/standard-record-tables.js?v=20260922-31"></script></head>
+<body class="app-page platform-standard-tables">
 <aside class="sidebar">
 <a class="brand brand-lockup" href="/app">
 <img src="/images/next-ai-mark-transparent.png" alt="">
@@ -38,7 +38,7 @@
 <main class="workspace">
 <header class="workspace-header">
 <div>
-<span class="eyebrow dark">Catalogue &amp; purchasing</span>
+
 <h1>Account Catalogue</h1>
 <p class="page-intro">Products, vendors, buying costs, and receiving readiness for this account.</p>
 </div>
@@ -105,11 +105,11 @@
 <th data-column-weight=".75"><span class="column-heading-with-info">Default location <button class="column-info" type="button" aria-label="About default inventory location" data-tip="New receipts and count rows use this location unless another location is supplied.">i</button></span></th>
 <th>Receiving</th>
 <th>Status</th>
-<th data-column-required="true">Action</th>
+<th data-column-required="true" data-context-actions>Action</th>
 </tr>
 </thead>
 <tbody>
-<tr class="catalog-row" th:each="item:${items}" th:attr="data-search=${#strings.toLowerCase(item.name + ' ' + (item.brand ?: '') + ' ' + (item.vendorName ?: '') + ' ' + (item.vendorItemCode ?: '') + ' ' + (item.identifier ?: '') + ' ' + (item.accountSku ?: ''))}">
+<tr class="catalog-row" th:each="item:${items}" th:attr="data-picture-item=${item.id},data-can-edit-picture=${canEditCatalog},data-search=${#strings.toLowerCase(item.name + ' ' + (item.brand ?: '') + ' ' + (item.vendorName ?: '') + ' ' + (item.vendorItemCode ?: '') + ' ' + (item.identifier ?: '') + ' ' + (item.accountSku ?: ''))}">
 <td>
 <div class="product-cell">
 <form th:if="${canEditCatalog}" method="post" enctype="multipart/form-data" th:action="@{/app/catalog/products/{id}/image(id=${item.id})}" class="product-image-upload" onclick="event.stopPropagation()"><input type="hidden" name="returnTo" value="/app/catalog"><label th:title="${'Upload a picture for '+item.name}"><span class="product-avatar product-image"><img th:if="${item.imageUrl != null}" th:src="${item.imageUrl}" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><b th:hidden="${item.imageUrl != null}" th:text="${#strings.substring(item.name,0,1)}">P</b><i aria-hidden="true">↥</i></span><input class="sr-only" type="file" name="image" accept="image/png,image/jpeg,image/webp" onchange="this.form.requestSubmit()"></label></form><span th:unless="${canEditCatalog}" class="product-avatar product-image"><img th:if="${item.imageUrl != null}" th:src="${item.imageUrl}" alt="" loading="lazy"><b th:unless="${item.imageUrl != null}" th:text="${#strings.substring(item.name,0,1)}">P</b></span>
@@ -147,7 +147,7 @@
 </span>
 <small th:if="${item.completionStatus == 'NEEDS_COMPLETION'}" class="cell-note">Receiving can continue · add UPC/EAN later</small>
 </td>
-<td th:with="conversation=${threadsByCatalogItem == null ? null : threadsByCatalogItem.get(item.id.toString())}"><div class="collaboration-row-actions"><span class="record-collaboration-actions"><button class="collaboration-row-button" th:classappend="${conversation != null and conversation.totalCount > 0 ? 'has-conversation' : ''}" type="button" th:attr="data-entity-type='CATALOG',data-entity-id=${item.id},data-title=${item.name},data-identifier=${item.accountSku ?: item.vendorItemCode ?: item.identifier},data-image=${item.imageUrl ?: ''},data-location-label=${item.defaultLocationCode+' · '+item.defaultLocationName},data-status=${item.status},data-price=${item.currentBuyingCost == null ? '' : item.currency+' '+item.currentBuyingCost},data-parent-url='/app/catalog',data-can-collaborate=${canEditCatalog},data-active-count=${conversation == null ? 0 : conversation.activeCount},data-total-count=${conversation == null ? 0 : conversation.totalCount},data-closed-count=${conversation == null ? 0 : conversation.closedCount}" onclick="openRecordCollaboration(this)" title="Start or open collaboration"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/><path class="conversation-lines" d="M9 9h6M9 12h4"/></svg><b th:if="${conversation != null and conversation.totalCount > 0}" th:text="${conversation.totalCount}">1</b></button></span><button th:if="${canEditCatalog}" class="secondary-button compact-action" type="button" th:disabled="${#lists.isEmpty(vendors)}" th:attr="data-item-id=${item.id},data-item-name=${item.name}" onclick="openCost(this)">Set price</button></div>
+<td th:with="conversation=${threadsByCatalogItem == null ? null : threadsByCatalogItem.get(item.id.toString())}"><div class="collaboration-row-actions" data-context-menu data-title="Actions"><span class="record-collaboration-actions"><button class="collaboration-row-button" th:classappend="${conversation != null and conversation.totalCount > 0 ? 'has-conversation' : ''}" type="button" th:attr="data-entity-type='CATALOG',data-entity-id=${item.id},data-title=${item.name},data-identifier=${item.accountSku ?: item.vendorItemCode ?: item.identifier},data-image=${item.imageUrl ?: ''},data-location-label=${item.defaultLocationCode+' · '+item.defaultLocationName},data-status=${item.status},data-price=${item.currentBuyingCost == null ? '' : item.currency+' '+item.currentBuyingCost},data-parent-url='/app/catalog',data-can-collaborate=${canEditCatalog},data-active-count=${conversation == null ? 0 : conversation.activeCount},data-total-count=${conversation == null ? 0 : conversation.totalCount},data-closed-count=${conversation == null ? 0 : conversation.closedCount}" onclick="openRecordCollaboration(this)" title="Start or open collaboration"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/><path class="conversation-lines" d="M9 9h6M9 12h4"/></svg><b th:if="${conversation != null and conversation.totalCount > 0}" th:text="${conversation.totalCount}">1</b></button></span><button th:if="${canEditCatalog}" class="secondary-button compact-action" type="button" th:disabled="${#lists.isEmpty(vendors)}" th:attr="data-item-id=${item.id},data-item-name=${item.name}" onclick="openCost(this)">Set price</button></div>
 </td>
 </tr>
 <tr th:if="${#lists.isEmpty(items)}">

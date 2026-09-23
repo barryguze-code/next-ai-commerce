@@ -17,12 +17,58 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderRepository {
     static final String MARKETPLACE_IDENTIFIER_SQL="SELECT marketplace_identifier FROM marketplace_connections WHERE tenant_id=? AND id=?";
     private final JdbcTemplate jdbc;
+    public record SoldTotals(long orders,long units){}
+    @Transactional(readOnly=true)
+    public Map<String,SoldTotals> soldTotals(UUID tenant,UUID connection,List<String> skus){
+        setTenant(tenant);var result=new LinkedHashMap<String,SoldTotals>();if(skus.isEmpty())return result;
+        var args=new ArrayList<Object>();args.add(tenant);args.add(connection);args.addAll(skus);
+        jdbc.query("SELECT item.seller_sku,count(DISTINCT orders.id),coalesce(sum(item.quantity_ordered),0) FROM amazon_order_items item JOIN amazon_orders orders ON orders.tenant_id=item.tenant_id AND orders.marketplace_connection_id=item.marketplace_connection_id AND orders.amazon_order_id=item.amazon_order_id WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND orders.purchase_date>=now()-interval '28 days' AND orders.purchase_date<=now() AND upper(coalesce(orders.order_status,'')) NOT IN ('CANCELLED','CANCELED') AND item.seller_sku IN ("+String.join(",",java.util.Collections.nCopies(skus.size(),"?"))+") GROUP BY item.seller_sku",rs->{result.put(rs.getString(1),new SoldTotals(rs.getLong(2),rs.getLong(3)));},args.toArray());return result;
+    }
+    @Transactional(readOnly=true)
+    public java.util.Set<UUID> matchingItems(UUID tenant,UUID connection,List<String> ids,Map<String,String> filters){
+        setTenant(tenant);if(ids.isEmpty())return java.util.Set.of();var smart=smartFilters(tenant,connection,filters);
+        var args=new ArrayList<Object>();args.add(tenant);args.add(connection);args.addAll(ids);args.addAll(smart.args());
+        return new java.util.HashSet<>(jdbc.query("SELECT item.id "+OrderSmartFilters.FROM+" WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND orders.amazon_order_id IN ("+String.join(",",java.util.Collections.nCopies(ids.size(),"?"))+") AND "+smart.sql(),(rs,row)->rs.getObject(1,UUID.class),args.toArray()));
+    }
+
+    private static final String SEARCH_SQL="""
+      (?='%%' OR lower(orders.amazon_order_id) LIKE ? OR lower(coalesce(item.seller_sku,'')) LIKE ?
+                   OR lower(coalesce(item.title,'')) LIKE ?
+                   OR lower(coalesce(item.asin,listing.asin,mapping.asin,'')) LIKE ?
+                   OR EXISTS (SELECT 1 FROM marketplace_sku_mapping_components component
+                     JOIN account_catalog_items catalog_item ON catalog_item.tenant_id=component.tenant_id
+                       AND catalog_item.id=component.account_catalog_item_id
+                     JOIN global_catalog_products product ON product.id=catalog_item.global_product_id
+                     WHERE component.tenant_id=mapping.tenant_id AND component.marketplace_sku_mapping_id=mapping.id
+                       AND lower(coalesce(product.brand,'')) LIKE ?))
+      """;
+    public record FilteredMoney(String currency,BigDecimal sales,BigDecimal shipping){
+        public String symbol(){return switch(currency){case "USD"->"$";case "GBP"->"£";case "EUR"->"€";case "CAD"->"CA$";default->currency+" ";};}
+    }
+    public record FilteredSummary(long orders,long units,List<FilteredMoney> amounts){}
+    @Transactional(readOnly=true)
+    public FilteredSummary filteredSummary(UUID tenant,UUID connection,String status,String search,Map<String,String> filters){
+        setTenant(tenant);var smart=smartFilters(tenant,connection,filters);
+        var args=new ArrayList<Object>();args.add(tenant);args.add(connection);
+        String q="%"+(search==null?"":search.trim().toLowerCase(java.util.Locale.ROOT))+"%";
+        for(int i=0;i<6;i++)args.add(q);args.addAll(smart.args());
+        var rows=jdbc.query("WITH matched AS (SELECT DISTINCT item.id,orders.id order_id,item.quantity_ordered,coalesce(item.currency,orders.currency,'USD') currency,coalesce(item.item_price,0) sales,greatest(coalesce(item.shipping_price,0)-coalesce(item.shipping_discount,0),0) shipping "+OrderSmartFilters.FROM+" WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND ("+tabPredicate(status)+") AND "+SEARCH_SQL+" AND "+smart.sql()+") SELECT currency,sum(sales),sum(shipping),(SELECT count(DISTINCT order_id) FROM matched),(SELECT coalesce(sum(quantity_ordered),0) FROM matched) FROM matched GROUP BY currency ORDER BY currency",
+            (rs,n)->new Object[]{new FilteredMoney(rs.getString(1),rs.getBigDecimal(2),rs.getBigDecimal(3)),rs.getLong(4),rs.getLong(5)},args.toArray());
+        return new FilteredSummary(rows.isEmpty()?0:(long)rows.getFirst()[1],rows.isEmpty()?0:(long)rows.getFirst()[2],rows.stream().map(row->(FilteredMoney)row[0]).toList());
+    }
+
     public OrderRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
+    private OrderSmartFilters.Query smartFilters(UUID tenant,UUID connection,Map<String,String> filters){
+        if(!filters.containsKey("f_date_preset"))return OrderSmartFilters.parse(filters);
+        String marketplace=jdbc.queryForObject(MARKETPLACE_IDENTIFIER_SQL,String.class,tenant,connection);
+        return OrderSmartFilters.parse(filters,AmazonMarketplaceTime.zone(marketplace==null?"":marketplace),java.time.Clock.systemUTC());
+    }
 
     public record OrderView(UUID id,String amazonOrderId,Instant purchaseDate,LocalDate purchaseDay,String amazonStatus,
             String fulfillmentChannel,String scope,String state,int itemCount,int units,String currency,
             BigDecimal total,String firstSku,String unmappedSku,int unmappedItems,BigDecimal reservedUnits,
             String imageUrl,String marketplaceId){
+        public String fulfillmentTag(){return switch(fulfillmentChannel==null?"":fulfillmentChannel.toUpperCase(java.util.Locale.ROOT)){case "AFN","FBA"->"FBA";case "MFN","FBM"->"FBM";default->"";};}
         public String stateLabel(){return switch(state){
             case "REPORTING_ONLY" -> "Historical"; case "AMAZON_FULFILLED" -> "Amazon fulfilled";
             case "NEEDS_MAPPING" -> "Needs mapping"; case "INVENTORY_SHORTAGE" -> "Inventory shortage";
@@ -48,7 +94,7 @@ public class OrderRepository {
             "https://www."+amazonDomain(marketplaceId)+"/dp/"+asin;}
     }
     public record OrderSummary(long todayOrders,BigDecimal todaySales,BigDecimal sales30Days,long live,long historical,
-            Instant lastSyncedAt){}
+            Instant lastSyncedAt,long todayUnits){}
     public record OrderTab(String key,String label,boolean readiness,long orders,long units){}
     static final List<String> TAB_KEYS=List.of("ALL","UNSHIPPED","WAITING_FOR_PICKUP","SHIPPED","INVENTORY_SHORTAGE","NEEDS_MAPPING","BUY_BOX_LOST");
     private static final String PRICE_MISMATCH="listing.price IS NOT NULL AND listing.buy_box_price IS NOT NULL AND coalesce(listing.currency,'USD')=coalesce(listing.buy_box_currency,listing.currency,'USD') AND listing.price<>listing.buy_box_price";
@@ -118,7 +164,7 @@ public class OrderRepository {
               AND connection.tenant_id=orders.tenant_id AND connection.id=orders.marketplace_connection_id
             """,tenantId,connectionId);
         List<Object[]> candidates=jdbc.query("""
-            SELECT orders.amazon_order_id,CASE WHEN orders.platform_waiting_for_pickup THEN 'WaitingForPickup' ELSE orders.order_status END,orders.fulfillment_state,
+            SELECT orders.amazon_order_id,CASE WHEN regexp_replace(upper(orders.order_status),'[^A-Z]','','g') IN ('CANCELED','CANCELLED') THEN orders.order_status WHEN orders.platform_waiting_for_pickup THEN 'WaitingForPickup' ELSE orders.order_status END,orders.fulfillment_state,
                    EXISTS (SELECT 1 FROM order_inventory_reservations reservation
                      WHERE reservation.tenant_id=orders.tenant_id
                        AND reservation.marketplace_connection_id=orders.marketplace_connection_id
@@ -134,6 +180,7 @@ public class OrderRepository {
                 allocateOrder(tenantId,connectionId,(String)candidate[0]);
             }
         }
+        recordCancelledReservations(tenantId,connectionId);
         jdbc.update("DELETE FROM order_inventory_reservations WHERE tenant_id=? AND marketplace_connection_id=? AND status='ACTIVE'",
             tenantId,connectionId);
         for(Object[] candidate:candidates){
@@ -141,6 +188,27 @@ public class OrderRepository {
                 allocateOrder(tenantId,connectionId,(String)candidate[0]);
         }
         return reconciliationResult(tenantId,connectionId);
+    }
+
+    private void recordCancelledReservations(UUID tenantId,UUID connectionId){
+        jdbc.update("""
+            INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,marketplace_connection_id,
+                entry_type,quantity,expiration_date,source_type,source_id,occurred_at,idempotency_key,notes,cost_status)
+            SELECT r.tenant_id,r.account_catalog_item_id,r.location_id,r.marketplace_connection_id,
+                CASE WHEN coalesce(shipment.partial,false) THEN 'ORDER_STATUS_REVIEW' ELSE 'RESERVATION_RELEASED' END,
+                0,r.expiration_date,'AMAZON_ORDER',o.id,now(),
+                'cancel-reservation:'||o.id||':'||r.account_catalog_item_id||':'||r.location_id||':'||coalesce(r.expiration_date::text,'none'),
+                CASE WHEN coalesce(shipment.partial,false) THEN 'Amazon cancelled after a partial shipment. Review physical stock before publishing; no automatic stock return.'
+                 ELSE 'Amazon confirmed cancellation. Released '||sum(r.quantity)::text||' reserved eaches. Physical on-hand stock unchanged.' END,'FINAL'
+            FROM order_inventory_reservations r JOIN amazon_orders o ON o.tenant_id=r.tenant_id
+                AND o.marketplace_connection_id=r.marketplace_connection_id AND o.amazon_order_id=r.amazon_order_id
+            LEFT JOIN LATERAL (SELECT bool_or(i.quantity_shipped>0) partial FROM amazon_order_items i
+                WHERE i.tenant_id=o.tenant_id AND i.marketplace_connection_id=o.marketplace_connection_id AND i.amazon_order_id=o.amazon_order_id) shipment ON true
+            WHERE r.tenant_id=? AND r.marketplace_connection_id=? AND r.status='ACTIVE'
+                AND regexp_replace(upper(o.order_status),'[^A-Z]','','g') IN ('CANCELED','CANCELLED')
+            GROUP BY r.tenant_id,r.account_catalog_item_id,r.location_id,r.marketplace_connection_id,r.expiration_date,o.id,shipment.partial
+            ON CONFLICT(tenant_id,idempotency_key) DO NOTHING
+            """,tenantId,connectionId);
     }
 
     /** Rebuilds reservations across every store after an authoritative physical count. */
@@ -199,10 +267,38 @@ public class OrderRepository {
             UUID orderItemId=(UUID)need[0],catalogItemId=(UUID)need[1];
             BigDecimal reserveRemaining=allocateQuantity(tenantId,connectionId,orderId,orderItemId,catalogItemId,(BigDecimal)need[2]);
             if(reserveRemaining.signum()>0)shortage=true;
+            recordSharedStockSales(tenantId,connectionId,orderId,orderItemId,catalogItemId,reserveRemaining);
         }
         setState(tenantId,connectionId,orderId,shortage?"INVENTORY_SHORTAGE":"READY_TO_SHIP");
     }
 
+
+    /** Informational, idempotent zero movement: nearby purchase timestamps are evidence of overlap, not proof of simultaneity. */
+    private void recordSharedStockSales(UUID tenant,UUID connection,String order,UUID item,UUID product,BigDecimal missing){
+        jdbc.update("""
+            INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,marketplace_connection_id,
+                entry_type,quantity,source_type,source_id,occurred_at,idempotency_key,notes,cost_status)
+            SELECT own.tenant_id,?,own.marketplace_connection_id,'SHARED_STOCK_SALES',0,'AMAZON_ORDER',own.id,now(),
+                'shared-stock:'||?::text||':'||?::text,
+                left('Overlapping shared-stock sales (purchase times within 5 minutes). SKU '||line.seller_sku||
+                    ' shares this item with order '||other.amazon_order_id||' / SKU '||other.seller_sku||
+                    '. Unallocated units on this order at detection: '||?::text||'. Informational only; no additional stock deducted.',500),'FINAL'
+            FROM amazon_orders own JOIN amazon_order_items line ON line.tenant_id=own.tenant_id
+                AND line.marketplace_connection_id=own.marketplace_connection_id AND line.amazon_order_id=own.amazon_order_id AND line.id=?
+            JOIN LATERAL (
+                SELECT peer.amazon_order_id,peer_line.seller_sku FROM order_inventory_reservations r
+                JOIN amazon_orders peer ON peer.tenant_id=r.tenant_id AND peer.marketplace_connection_id=r.marketplace_connection_id AND peer.amazon_order_id=r.amazon_order_id
+                JOIN amazon_order_items peer_line ON peer_line.tenant_id=r.tenant_id AND peer_line.id=r.amazon_order_item_id
+                WHERE r.tenant_id=own.tenant_id AND r.account_catalog_item_id=? AND r.status IN ('ACTIVE','SHIPPED')
+                  AND peer.id<>own.id AND peer_line.seller_sku<>line.seller_sku
+                  AND upper(coalesce(peer.order_status,'')) NOT IN ('CANCELED','CANCELLED')
+                  AND peer.purchase_date BETWEEN own.purchase_date-interval '5 minutes' AND own.purchase_date+interval '5 minutes'
+                ORDER BY peer.purchase_date,peer.id LIMIT 1
+            ) other ON true
+            WHERE own.tenant_id=? AND own.marketplace_connection_id=? AND own.amazon_order_id=?
+            ON CONFLICT(tenant_id,idempotency_key) DO NOTHING
+            """,product,item,product,missing,item,product,tenant,connection,order);
+    }
 
     private BigDecimal allocateQuantity(UUID tenantId,UUID connectionId,String orderId,UUID orderItemId,
             UUID catalogItemId,BigDecimal required){
@@ -355,7 +451,10 @@ public class OrderRepository {
                         AND document.source_type IN ('ORDERS_API_DELTA','ORDERS_30_DAY')),
                      (SELECT max(job.completed_at) FROM marketplace_sync_jobs job
                       WHERE job.tenant_id=? AND job.marketplace_connection_id=?
-                        AND job.job_type IN ('ORDERS_API_DELTA','ORDERS_30_DAY') AND job.status='COMPLETED'))
+                        AND job.job_type IN ('ORDERS_API_DELTA','ORDERS_30_DAY') AND job.status='COMPLETED')),
+                   coalesce(sum(seller_sales.units) FILTER (WHERE orders.purchase_marketplace_date=(now() AT TIME ZONE definition.reporting_timezone)::date
+                     AND orders.fulfillment_state<>'CANCELLED'
+                     AND upper(regexp_replace(trim(coalesce(orders.order_status,'')),'[^A-Z]','','g')) NOT IN ('CANCELLED','CANCELED')),0)
             FROM amazon_orders orders
             JOIN marketplace_connections connection ON connection.tenant_id=orders.tenant_id
               AND connection.id=orders.marketplace_connection_id
@@ -364,7 +463,8 @@ public class OrderRepository {
             LEFT JOIN LATERAL (
               SELECT coalesce(sum(coalesce(item.item_price,0)-coalesce(item.promotion_discount,0)
                 +CASE WHEN upper(coalesce(orders.fulfillment_channel,'')) IN ('AFN','AMAZON') THEN 0
-                  ELSE greatest(coalesce(item.shipping_price,0)-coalesce(item.shipping_discount,0),0) END),0) amount
+                  ELSE greatest(coalesce(item.shipping_price,0)-coalesce(item.shipping_discount,0),0) END),0) amount,
+                     coalesce(sum(item.quantity_ordered),0) units
               FROM amazon_order_items item
               WHERE item.tenant_id=orders.tenant_id
                 AND item.marketplace_connection_id=orders.marketplace_connection_id
@@ -377,13 +477,20 @@ public class OrderRepository {
                   AND visible_item.amazon_order_id=orders.amazon_order_id)
             """,
             (rs,row)->new OrderSummary(rs.getLong(1),rs.getBigDecimal(2),rs.getBigDecimal(3),rs.getLong(4),rs.getLong(5),
-                rs.getTimestamp(6)==null?null:rs.getTimestamp(6).toInstant()),tenantId,connectionId,tenantId,connectionId,tenantId,connectionId);
+                rs.getTimestamp(6)==null?null:rs.getTimestamp(6).toInstant(),rs.getLong(7)),tenantId,connectionId,tenantId,connectionId,tenantId,connectionId);
     }
 
     @Transactional(readOnly=true)
     public OrderPage orders(UUID tenantId,UUID connectionId,String filter,String search,int requestedPage,int pageSize){
+        return orders(tenantId,connectionId,filter,search,requestedPage,pageSize,Map.of());
+    }
+    @Transactional(readOnly=true)
+    public OrderPage orders(UUID tenantId,UUID connectionId,String filter,String search,int requestedPage,int pageSize,Map<String,String> filters){
         setTenant(tenantId);String state=filter==null?"ALL":filter.toUpperCase();String q="%"+(search==null?"":search.trim().toLowerCase())+"%";
         int size=Math.max(10,Math.min(pageSize,100)),page=Math.max(0,requestedPage),offset=page*size;
+        var smart=smartFilters(tenantId,connectionId,filters);var parameters=new ArrayList<Object>();parameters.add(tenantId);parameters.add(connectionId);
+        for(int i=0;i<6;i++)parameters.add(q);parameters.addAll(smart.args());parameters.add(size);parameters.add(offset);
+        String smartOrder=smart.sort().isEmpty()?"":"max("+OrderSmartFilters.metric(smart.sort().startsWith("orders"))+") "+(smart.sort().endsWith("asc")?"ASC":"DESC")+" NULLS LAST,";
         List<Object[]> raw=jdbc.query("""
             SELECT orders.id,orders.amazon_order_id,orders.purchase_date,
                    coalesce(orders.purchase_marketplace_date,orders.purchase_date::date),orders.order_status,
@@ -408,16 +515,14 @@ public class OrderRepository {
               AND (
             """+tabPredicate(state)+"""
               )
-              AND (?='%%' OR lower(orders.amazon_order_id) LIKE ? OR lower(coalesce(item.seller_sku,'')) LIKE ?
-                   OR lower(coalesce(item.title,'')) LIKE ?
-                   OR lower(coalesce(item.asin,listing.asin,mapping.asin,'')) LIKE ?
-                   OR EXISTS (SELECT 1 FROM marketplace_sku_mapping_components component
-                     JOIN account_catalog_items catalog_item ON catalog_item.tenant_id=component.tenant_id
-                       AND catalog_item.id=component.account_catalog_item_id
-                     JOIN global_catalog_products product ON product.id=catalog_item.global_product_id
-                     WHERE component.tenant_id=mapping.tenant_id AND component.marketplace_sku_mapping_id=mapping.id
-                       AND lower(coalesce(product.brand,'')) LIKE ?))
-            GROUP BY orders.id,reserved.quantity ORDER BY CASE WHEN
+              AND
+            """+SEARCH_SQL+"""
+
+            AND
+            """+smart.sql()+"\n"+"""
+            GROUP BY orders.id,reserved.quantity ORDER BY
+            """+smartOrder+"""
+            CASE WHEN
             """+"("+tabPredicate("NEEDS_MAPPING")+" OR "+tabPredicate("INVENTORY_SHORTAGE")+")"+"""
             THEN 0 ELSE 1 END,orders.purchase_date DESC NULLS LAST,orders.id
             LIMIT ? OFFSET ?
@@ -425,9 +530,9 @@ public class OrderRepository {
                 rs.getTimestamp(3)==null?null:rs.getTimestamp(3).toInstant(),rs.getObject(4,LocalDate.class),
                 rs.getString(5),rs.getString(6),rs.getString(7),rs.getString(8),rs.getInt(9),rs.getInt(10),
                 rs.getString(11),rs.getBigDecimal(12),rs.getString(13),rs.getString(14),rs.getInt(15),
-                rs.getBigDecimal(16),rs.getString(17),rs.getString(18)),rs.getLong(19)},tenantId,connectionId,q,q,q,q,q,q,size,offset);
+                rs.getBigDecimal(16),rs.getString(17),rs.getString(18)),rs.getLong(19)},parameters.toArray());
         long total=raw.isEmpty()?0:(long)raw.getFirst()[1];
-        if(total>0&&offset>=total)return orders(tenantId,connectionId,state,search,(int)((total-1)/size),size);
+        if(total>0&&offset>=total)return orders(tenantId,connectionId,state,search,(int)((total-1)/size),size,filters);
         return new OrderPage(raw.stream().map(row->(OrderView)row[0]).toList(),total,page,size);
     }
 

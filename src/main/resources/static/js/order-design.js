@@ -47,8 +47,8 @@
      const pack=b.classList.contains('packing-slip'),ship=!!b.closest('.platform-pickup-action');
      if(!pack&&!ship){const tip=b.closest('.order-action-tip');if(tip&&!tip.hidden)tip.hidden=true;return;}
      if(b.dataset.designIcon)return;b.dataset.designIcon='true';
-     b.replaceChildren(icon(pack?'print-packing-slip-simple':'shipped'));
-     b.title=pack?'Print packing slip':b.getAttribute('aria-label');
+     b.replaceChildren(icon(pack?(b.dataset.packingClicked?'printClicked':'print'):b.closest('form')?.querySelector('[name="waiting"]')?.value==='false'?'undoShipped':'shipped'));
+     b.title=pack?(b.dataset.packingClicked?'Packing slip opened — click to reprint':'Print packing slip'):b.getAttribute('aria-label');
     });
    }
    row.querySelectorAll('.item-number strong,.order-customer-shipping').forEach(el=>{
@@ -76,6 +76,7 @@
    }
   });
   for(const [selector,name] of [['.order-picture-edit','edit'],['.order-picture-more','actions-ai-human']])document.querySelectorAll(selector+':not([data-library-icon])').forEach(button=>{button.dataset.libraryIcon='true';button.querySelector('svg')?.remove();const stage=button.closest('.order-item')?.querySelector('[data-picture-actions]'),alert=button.matches('.order-picture-more')&&stage?.dataset.actionRequired==='true';button.prepend(icon(alert?'actions-ai-human-alert':name));if(button.matches('.order-picture-more')){button.setAttribute('aria-label','Actions');button.title=alert?'Actions — '+stage.dataset.actionSummary:'Actions';}});
+  document.querySelectorAll('.orders-workspace .order-list[data-table-widget-ready]').forEach(root=>{root.dataset.orderDesignReady='true';});
  }
  const tip=document.createElement('div');tip.className='order-design-tooltip';tip.setAttribute('role','tooltip');tip.id='order-design-tooltip';tip.hidden=true;document.body.append(tip);
  function show(e){const target=e.target.closest('[data-order-copy]');if(!target)return;tip.textContent=target.dataset.orderCopy+'  ⧉';tip.hidden=false;target.setAttribute('aria-describedby',tip.id);const r=target.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(r.left,innerWidth-tip.offsetWidth-8))+'px';tip.style.top=Math.max(8,Math.min(r.bottom+7,innerHeight-tip.offsetHeight-8))+'px';}

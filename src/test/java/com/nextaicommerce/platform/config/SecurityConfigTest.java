@@ -132,6 +132,7 @@ class SecurityConfigTest {
         }
         @Bean MarketplaceSkuRepository marketplaceSkuRepository() {
             return new MarketplaceSkuRepository(null) {
+                @Override public SkuInsights insights(UUID tenantId,UUID connectionId){return new SkuInsights(0,0,0,0,0,0);}
                 @Override public SkuSummary summary(UUID tenantId, UUID connectionId) {
                     return new SkuSummary(1, 1, 0, 0, 0, 0, 1, 12);
                 }
@@ -139,6 +140,7 @@ class SecurityConfigTest {
                         String status, String sort, String direction, int requestedPage, int pageSize) {
                     return new SkuPage(List.of(), 0, 0, pageSize);
                 }
+                @Override public SkuPage list(UUID tenantId,UUID connectionId,String search,String status,String sort,String direction,int page,int size,Map<String,String> filters){return new SkuPage(List.of(),0,0,size);}
                 @Override public Map<String,List<MappingComponentView>> mappingComponents(UUID tenantId,
                         UUID connectionId) { return Map.of(); }
                 @Override public Map<String,List<MappingComponentView>> mappingComponents(UUID tenantId,

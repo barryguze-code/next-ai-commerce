@@ -7,14 +7,7 @@
   const hiddenFor = input => input.parentElement.querySelector('input[name="productId"]');
   const labelFor = product => [product.vendorItemCode, product.name, product.accountSku]
     .filter(Boolean).join(' · ');
-  const setMappingPicture = (line, product) => {
-    let picture = line.querySelector('.mapping-component-picture');
-    if (!picture) { picture = document.createElement('span'); picture.className = 'mapping-component-picture'; line.prepend(picture); }
-    const input = line.querySelector('input[type="search"]');
-    picture.textContent = (product?.name || input?.value || 'P').trim().charAt(0).toUpperCase();
-    picture.style.backgroundImage = product?.imageUrl ? `url(${product.imageUrl})` : '';
-    picture.classList.toggle('has-image', Boolean(product?.imageUrl));
-  };
+  const setMappingPicture=(line,product)=>window.NextAiMappingWidget.picture(line,product);
 
   const openQuickCreate = input => {
     const drawer = document.getElementById('catalog-quick-create');
@@ -43,6 +36,7 @@
 
   window.searchMappingProduct = input => {
     hiddenFor(input).value = '';
+    setMappingPicture(input.closest('.mapping-product-line'),null);
     input.setCustomValidity('Choose a product from the account catalogue.');
     clearTimeout(timers.get(input));
     const results = resultsFor(input);
@@ -65,7 +59,7 @@
           const option = document.createElement('button');
           option.type = 'button';
           option.innerHTML = '<strong></strong><small></small>';
-          if(product.imageUrl){const image=document.createElement('img');image.className='catalog-search-picture';image.src=product.imageUrl;image.alt='';image.loading='lazy';image.onerror=()=>image.hidden=true;option.prepend(image);}
+          window.NextAiMappingWidget.option(option,product);
           option.querySelector('strong').textContent = product.name;
           option.querySelector('small').textContent = [product.brand, product.vendorItemCode, product.identifier]
             .filter(Boolean).join(' · ');

@@ -137,3 +137,23 @@ node --test src/test/js/table-widget.test.cjs
 Set `TEST_BROWSER_CHANNEL=chrome` to use an installed Chrome instead of the
 Playwright Chromium download. This launches an isolated test profile, not a
 signed-in user profile.
+
+## Local standardization — 1.2.7-local.20260922.31
+
+Available Inventory, Inventory Ledger, Account Catalogue, Vendors, and Receiving
+opt into `platform-standard-tables`. The shared overview remains picture-left,
+collaboration and Human+AI actions-right, with a compact row height. Existing
+actions are moved, not cloned, so permissions and domain handlers remain intact.
+A single versioned table runtime is loaded through the shell.
+
+The shared right-side filter drawer supports text contains, numeric intervals,
+and calendar-date intervals where applicable. Client collections filter before
+pagination. Server-paged screens continue to label column filters “on this page”;
+global search remains server-owned. This UI change does not add account-saved
+smart filters to these additional tables.
+
+Catalogue pictures use the existing account product image endpoints. Vendor and
+receiving-session pictures use tenant-scoped record overrides (V75), with explicit
+account access and operator checks, actual PNG/JPEG validation, and a 5 MB limit.
+These non-product images offer upload only, not an unrelated Amazon sync. Product
+sync retains the catalogue endpoint’s existing single-product mapping rules.

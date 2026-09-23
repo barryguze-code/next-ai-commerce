@@ -25,7 +25,7 @@ class ReceivingWorkflowControllerTest {
             var session=new MockHttpSession();session.setAttribute("selectedTenantId",tenant);
             var completed=new ReceivingWorkflowRepository.Document(first,UUID.randomUUID(),"Vendor","INVOICE","123","invoice.csv",
                 java.time.LocalDate.now(),java.time.Instant.now(),"USD",java.math.BigDecimal.TEN,java.math.BigDecimal.TEN,
-                java.math.BigDecimal.ZERO,closed,false,true,null);
+                java.math.BigDecimal.ZERO,closed,false,true,null,UUID.randomUUID());
             when(repository.documents(tenant,List.of(first,second))).thenReturn(List.of(completed,completed));
             var redirect=new org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap();
             var result=controller.work(List.of(first,second),new UsernamePasswordAuthenticationToken("qa@example.test","n/a"),session,new org.springframework.ui.ExtendedModelMap(),redirect);

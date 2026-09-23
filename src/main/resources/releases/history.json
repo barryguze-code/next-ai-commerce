@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.3.0",
+    "title": "Shared inventory, safer order checks and consistent tables",
+    "sections": [
+      {"title":"Inventory synchronization","items":["Calculate affected seller-fulfilled SKU quantities from shared catalogue stock, including multipacks, bundles, reservations, adjustments and shelf-life rules.","Queue quantity changes durably, prioritize zero stock and verify Amazon responses. Inventory sync shows calculated quantities, retry status and local simulation results.","Add informational ledger notes when nearby orders through different SKUs share the same catalogue item."]},
+      {"title":"Pending orders and cancellations","items":["Recheck unresolved orders individually, including payment-pending orders older than 30 days. Missing orders remain reserved and are flagged for review; age alone never releases stock.","Confirmed cancellations release reservations with a ledger explanation, without adding physical stock. Older status responses cannot overwrite a newer cancellation."]},
+      {"title":"Consistent operational tables","items":["Use the shared picture, collaboration, action and mapping design across Orders, Marketplace SKUs, inventory, catalogue, vendors and receiving.","Save account-based tagged smart filters with dynamic dates and show filtered order, unit and sales totals without expanding summary cards.","Use shared picture editing and vendor logos, compact mapping dialogs, four-week sales summaries and consistent currency formatting.","Keep packing-slip reprints available and use the approved action artwork."]}
+    ]
+  },
+  {
     "version": "1.2.7",
     "title": "Approved Orders table and action design",
     "sections": [

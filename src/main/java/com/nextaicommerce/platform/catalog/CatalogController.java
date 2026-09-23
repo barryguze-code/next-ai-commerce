@@ -93,9 +93,28 @@ public class CatalogController {
         return "redirect:"+("/app/inventory".equals(returnTo)?returnTo:"/app/catalog");
     }
 
+    @PostMapping("/app/catalog/products/{itemId}/image/upload")
+    @org.springframework.web.bind.annotation.ResponseBody
+    ResponseEntity<?> uploadMappingProductImage(@PathVariable UUID itemId,Authentication authentication,
+            HttpSession session,@RequestParam("image") MultipartFile image) throws java.io.IOException {
+        try{
+            if(image==null||image.isEmpty()||image.getSize()>5_000_000
+                    ||!java.util.Set.of("image/png","image/jpeg").contains(image.getContentType()==null?"":image.getContentType()))
+                return ResponseEntity.badRequest().body(java.util.Map.of("error","Choose a JPG or PNG up to 5 MB."));
+            catalog.saveProductImage(requiredTenantId(session),authentication.getName(),itemId,com.nextaicommerce.platform.orders.OrderPictureController.imageType(image.getBytes()),image.getOriginalFilename(),image.getBytes());
+            return ResponseEntity.ok(java.util.Map.of("imageUrl","/app/catalog/products/"+itemId+"/image"));
+        }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(java.util.Map.of("error","The picture could not be saved."));}
+    }
+
     @GetMapping("/app/catalog/products/{itemId}/image") @org.springframework.web.bind.annotation.ResponseBody
     ResponseEntity<byte[]> productImage(@PathVariable UUID itemId,HttpSession session){
-        var image=catalog.productImage(requiredTenantId(session),itemId);if(image==null)return ResponseEntity.notFound().build();
+        var image=catalog.productImage(requiredTenantId(session),itemId);
+        if(image==null){
+            String fallback=catalog.pickerImages(requiredTenantId(session),java.util.List.of(itemId)).get(itemId);
+            if(fallback!=null && (fallback.startsWith("https://")||fallback.startsWith("http://")))
+                return ResponseEntity.status(302).location(java.net.URI.create(fallback)).cacheControl(org.springframework.http.CacheControl.noCache()).build();
+            return ResponseEntity.notFound().build();
+        }
         return ResponseEntity.ok().contentType(MediaType.parseMediaType(image.contentType()))
             .cacheControl(org.springframework.http.CacheControl.noCache()).body(image.bytes());
     }

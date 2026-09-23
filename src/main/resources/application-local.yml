@@ -13,7 +13,7 @@ server:
 app:
   # Local pages read the real checkout branch; the version follows application.yml.
   local-development: true
-  build-version: 1.2.7-local.20260919.16
+  build-version: 1.3.0-local.20260922.1
   build-branch: local
   public-url: http://localhost:8080
   scheduling:
@@ -27,6 +27,9 @@ app:
     recurring-enabled: true
     startup-order-reconciliation-enabled: true
     listing-actions-enabled: false
+    inventory-publication-enabled: true
+    inventory-publication-mode: DRY_RUN
+    unresolved-order-checks-enabled: true
   local-packing-history:
     path: ${LOCAL_PACKING_HISTORY_FILE:}
   mail:

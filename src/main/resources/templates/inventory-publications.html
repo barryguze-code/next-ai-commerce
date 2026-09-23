@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Inventory sync | Next AI Commerce</title>
+<link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1"><link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/inventory.css"><link rel="stylesheet" href="/css/standard-record-tables.css?v=20260922-33"><script defer src="/js/theme.js"></script></head>
+<body class="app-page platform-standard-tables"><aside class="sidebar"><a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a><div th:replace="~{fragments/sidebar-nav :: nav('inventory-ledger')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
+<main class="workspace"><header class="workspace-header"><div><h1>Inventory sync</h1><p th:text="${publicationMode == 'DRY_RUN' ? 'Local simulation — quantities below have not been sent to Amazon.' : (publicationMode == 'DISABLED' ? 'Publishing is disabled.' : 'Amazon inventory submission and verification status.')}" role="status"></p></div><a class="secondary-button" href="/app/inventory/ledger">Back to inventory ledger</a></header>
+<section class="data-card"><div class="card-toolbar"><div><h2>Latest 100 SKU updates</h2><p>Shared stock · FBM only · zero quantities take priority. Refresh to see the latest result.</p></div></div>
+<div class="table-wrap"><table class="table-widget"><thead><tr><th>SKU</th><th>Marketplace</th><th>Calculated quantity</th><th>Amazon observed</th><th>State</th><th>Attempts</th><th>Details</th></tr></thead><tbody>
+<tr th:each="p:${publications}"><td th:text="${p.seller_sku}"></td><td th:text="${p.marketplace_id}"></td><td th:text="${p.desired_quantity}"></td><td th:text="${p.observed_quantity ?: '—'}"></td><td th:text="${p.status}"></td><td th:text="${p.attempts}"></td><td th:text="${p.last_error ?: 'No reported error'}"></td></tr>
+<tr th:if="${#lists.isEmpty(publications)}"><td colspan="7">No inventory updates have been calculated yet.</td></tr>
+</tbody></table></div></section>
+<section class="data-card" th:if="${orderChecks != null and !#lists.isEmpty(orderChecks)}"><div class="card-toolbar"><div><h2>Orders needing status review</h2><p>Reservations stay in place until cancellation is confirmed. Missing orders and elapsed time do not release stock.</p></div></div>
+<div class="table-wrap"><table><thead><tr><th>Order</th><th>Status</th><th>Details</th><th>Last check</th><th>Next check</th></tr></thead><tbody>
+<tr th:each="c:${orderChecks}"><td th:text="${c.amazon_order_id}"></td><td th:text="${c.state}"></td><td th:text="${c.detail}"></td><td th:text="${c.checked_at}"></td><td th:text="${c.next_check_at}"></td></tr>
+</tbody></table></div></section></main></body></html>

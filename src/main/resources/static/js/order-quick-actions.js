@@ -21,23 +21,20 @@
     const url=new URL(location.href);
     const load=async()=>{const response=await fetch(url.href,{cache:'no-store',headers:{'X-Order-Stream':'refresh'}});if(!response.ok)throw new Error('refresh');const stream=new DOMParser().parseFromString(await response.text(),'text/html').querySelector('[data-order-stream]');if(!stream)throw new Error('refresh');return stream;};
     let incoming=await load();
-    if(clearEmpty&&incoming.querySelector('.table-empty'))window.NextAiTableDataTools?.resetFilters('orders');
-    // Only completion-triggered refreshes clear an exhausted search, never normal browsing.
-    if(clearEmpty&&incoming.querySelector('.table-empty')&&(url.searchParams.has('q')||url.searchParams.has('page'))){
-      url.searchParams.delete('q');url.searchParams.delete('page');
-      incoming=await load();
-      window.NextAiTableDataTools?.resetFilters('orders');
-      history.replaceState(history.state,'',url.href);
-      notify('All matching orders completed — filters cleared');
-    }
+    if(clearEmpty&&!incoming.querySelector('.order-item')){continueUnshipped();return null;}
     return incoming;
+  }
+  function continueUnshipped(){
+    window.NextAiTableDataTools?.resetFilters('orders');
+    const url=new URL(location.href);
+    [...url.searchParams.keys()].filter(key=>key.startsWith('f_')||['q','status','smartSort','page','goToPage'].includes(key)).forEach(key=>url.searchParams.delete(key));
+    url.searchParams.set('status','UNSHIPPED');
+    location.assign(url.href);
   }
   function clearExhaustedColumnFilters(stream){
     const items=[...stream.querySelectorAll('.order-item')];
     if(items.length&&items.every(item=>item.classList.contains('table-data-hidden'))){
-      window.NextAiTableDataTools?.resetFilters('orders');
-      stream.querySelector('[data-table-widget="orders"]')?.dispatchEvent(new Event('table:reset-filters'));
-      notify('All matching orders completed — column filters cleared');
+      continueUnshipped();
     }
   }
   window.addEventListener('storage',event=>{if(event.key==='nextai-order-updated')refreshOnReturn=true;});
@@ -45,7 +42,7 @@
     if(!refreshOnReturn||window.NextAiOrderActionPending)return;
     window.NextAiOrderActionPending=true;
     try{
-      const incoming=await refreshedOrders(),current=document.querySelector('[data-order-stream]');if(!current)throw new Error();
+      const incoming=await refreshedOrders(),current=document.querySelector('[data-order-stream]');if(!incoming)return;if(!current)throw new Error();
       const positions=['.orders-workspace','.order-list.table-widget-scroll'].map(selector=>{const el=document.querySelector(selector);return {selector,top:el?.scrollTop||0,left:el?.scrollLeft||0};});const x=scrollX,y=scrollY;
       current.replaceWith(incoming);window.NextAiTableWidget?.refresh();clearExhaustedColumnFilters(incoming);
       const restore=()=>{positions.forEach(p=>{const el=document.querySelector(p.selector);if(el){el.scrollTop=p.top;el.scrollLeft=p.left;}});window.scrollTo(x,y);};restore();requestAnimationFrame(restore);refreshOnReturn=false;
@@ -67,7 +64,8 @@
       saved=true;
       const incoming=await refreshedOrders(waiting);
       const current=document.querySelector('[data-order-stream]');
-      if(!incoming||!current)throw new Error('refresh');
+      if(!incoming)return;
+      if(!current)throw new Error('refresh');
       // Capture immediately before replacement so scrolling during the request is preserved.
       const selectors=['.orders-workspace','.order-list.table-widget-scroll'];
       const positions=selectors.map(selector=>{const el=document.querySelector(selector);return {selector,top:el?.scrollTop||0,left:el?.scrollLeft||0};});

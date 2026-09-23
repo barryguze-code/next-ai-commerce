@@ -19,7 +19,7 @@
     menu.append(action({item:source.dataset.itemId}));source.parentElement.append(menu);
   });
   document.querySelectorAll('.sku-table tbody tr').forEach(row=>{
-    const source=row.querySelector('[name="sellerSku"]');if(!source)return;
+    const source=row.querySelector('[name="sellerSku"]');if(!source||row.querySelector('.sku-open-actions'))return;
     const cell=row.querySelector('td:last-child'),menu=document.createElement('div');menu.dataset.contextMenu='';menu.dataset.title='Marketplace SKU';
     menu.append(action({sellerSku:source.value}));cell.append(menu);
   });

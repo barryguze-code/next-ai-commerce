@@ -8,14 +8,14 @@
   <link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/receiving.css"><link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7"><link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2"><link rel="stylesheet" href="/css/collaboration-thread.css?v=20260911-8">
   <script defer src="/js/theme.js?v=20260905-1"></script><script defer src="/js/collaboration.js?v=20260918-5"></script>
   <link rel="stylesheet" href="/css/receiving-work.css?v=20260916-4"><script defer src="/js/receiving-documents.js?v=20260916-4"></script>
-</head>
-<body class="app-page">
+<link rel="stylesheet" href="/css/standard-record-tables.css?v=20260922-32"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31"><script defer src="/js/standard-record-tables.js?v=20260922-31"></script></head>
+<body class="app-page platform-standard-tables">
 <aside class="sidebar">
   <a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
   <div th:replace="~{fragments/sidebar-nav :: nav('receiving')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div>
 </aside>
 <main class="workspace receiving-home">
-  <header class="workspace-header"><div><span class="eyebrow dark">Inventory operations</span><h1>Receiving</h1><p class="page-intro">Turn supplier documents into accurate, expiration-aware inventory.</p></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
+  <header class="workspace-header"><div><h1>Receiving</h1><p class="page-intro">Turn supplier documents into accurate, expiration-aware inventory.</p></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
   <p class="notice" th:if="${catalogSuccess}" th:text="${catalogSuccess}"></p>
   <p class="notice error" th:if="${catalogError}" th:text="${catalogError}"></p>
 
@@ -48,7 +48,7 @@
     <div class="table-wrap"><table data-table-widget="receiving-documents">
       <thead><tr><th data-column="selection" data-column-weight="0.35" data-no-sort="true">Select</th><th data-column="document" data-column-required="true" data-column-weight="3">Source document</th><th data-column="vendor" data-column-weight="1.4">Vendor</th><th data-column="date">Uploaded</th><th data-column="expected">Expected</th><th data-column="received">Received</th><th data-column="status">Receiving status</th><th data-column="actions" data-context-actions>Action</th></tr></thead>
       <tbody>
-        <tr th:each="d:${workDocuments}" th:attr="data-receiving-status=${d.statusTone()}">
+        <tr th:each="d:${workDocuments}" th:attr="data-title=${d.label()},data-picture-type='VENDOR',data-picture-id=${d.vendorId},data-can-edit-picture=${canEditCatalog},data-image=${'/app/catalog/record-pictures/VENDOR/'+d.vendorId},data-receiving-status=${d.statusTone()}">
           <td data-column="selection"><input type="checkbox" data-source-select th:value="${d.id}" th:attr="aria-label=${'Select '+d.label()}" th:disabled="${d.closed or d.outstanding.signum() <= 0}" th:title="${d.closed ? 'Closed document — review only' : d.outstanding.signum() <= 0 ? 'Fully received — review or close this document' : 'Select to receive only the outstanding quantities'}"></td>
           <td data-column="document"><a class="rw-document-title" th:href="@{/app/receiving/work(documents=${d.id})}" th:title="${d.closed ? 'Review closed document' : 'Open document'}"><strong th:text="${d.label()}">Invoice</strong></a><small th:text="${d.filename}">Source file</small></td>
           <td data-column="vendor" th:text="${d.vendor}"></td>

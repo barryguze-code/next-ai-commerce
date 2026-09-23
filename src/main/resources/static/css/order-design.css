@@ -1,4 +1,13 @@
 /* Shared SVG assets keep their authored colors and aspect ratios. */
+.orders-workspace .order-list:not([data-order-design-ready]){visibility:hidden;animation:orders-reveal-fallback 0s 1.5s forwards}
+@keyframes orders-reveal-fallback{to{visibility:visible}}
+.orders-workspace .order-list[data-order-design-ready]{visibility:visible}
+.orders-workspace .order-toolbar>div:first-child{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:20px;width:100%}
+.orders-workspace .order-toolbar .stream-heading{grid-column:1;grid-row:1}
+.orders-workspace .order-toolbar .order-sync-status{grid-column:2;grid-row:1;margin:0;justify-content:flex-end}
+.orders-workspace .order-toolbar>div:first-child>p{grid-column:1/-1;grid-row:2;margin-top:7px}
+.today-order-units{white-space:nowrap;font-variant-numeric:tabular-nums}
+@media(max-width:900px){.orders-workspace .order-toolbar>div:first-child{grid-template-columns:1fr}.orders-workspace .order-toolbar .order-sync-status{grid-column:1;grid-row:3;justify-content:flex-start}}
 .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=picture]{flex:0 0 132px;min-width:132px}
 .orders-workspace .order-list .order-item>.order-picture-cell{display:flex;flex-flow:row nowrap;align-items:center;justify-content:flex-start;gap:10px}
 .order-picture-cell>.order-engagement{flex:0 0 34px}
@@ -33,7 +42,7 @@
 .orders-workspace .order-reference-options .order-copy-value{border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding:0!important;max-width:none!important;font:inherit;color:var(--muted)}
 .order-mapping-inline{display:flex;align-items:center;gap:5px;max-width:310px}.order-mapping-values{flex:1;min-width:0}.order-inline-mapping-trigger{display:inline-flex;align-items:center;justify-content:center;background:#fff!important;border:1px solid #ccd9e9!important;border-radius:7px!important;padding:0!important;box-shadow:0 1px 3px #233c5b18!important;cursor:pointer;flex:none;width:29px!important;height:29px!important;overflow:hidden}.order-inline-mapping-trigger img{width:33px;height:33px;max-width:none;object-fit:contain;flex:none}.order-inline-mapping-trigger:hover{background:#edf4ff!important;border-color:#8eb4e8!important}.order-inline-mapping-trigger:focus-visible{outline:2px solid #3277db;outline-offset:2px}
 .order-list.table-widget .item-actions{display:flex;align-items:center;justify-content:center;gap:8px;min-width:90px!important}.order-list.table-widget .item-actions .order-icon-action{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important}.item-actions .platform-icon{width:38px;height:38px}.item-actions .order-icon-action:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-.order-customer-shipping .platform-icon{width:18px;height:18px;vertical-align:middle;margin-right:4px}
+.order-customer-shipping .platform-icon{width:30px;height:30px;object-fit:contain;vertical-align:middle;margin-right:5px}
 .platform-icon{display:inline-block;width:24px;height:24px;object-fit:contain;flex:none}
 .order-list.table-widget .order-item,.order-list.table-widget .order-item-grid-header{gap:18px}
 .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=product]{flex:4.4;min-width:300px}
@@ -55,7 +64,7 @@
 .orders-workspace .order-identifier-lock img{width:22px;height:22px}.order-identifier-lock .reference-value{display:none}
 .order-identifier-lock:focus-visible,.order-copy-value:focus-visible,strong[data-order-copy]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .order-picture-edit .platform-icon{width:28px;height:28px}.order-stage-chat>.platform-icon{width:25px;height:25px}.order-picture-more>.platform-icon{width:26px;height:26px}
-.order-customer-shipping{display:block;margin-top:5px;font-size:.72rem;color:var(--muted);line-height:1.4}
+.order-customer-shipping{display:flex;align-items:center;justify-content:center;margin-top:5px;font-size:.9rem;font-weight:600;color:var(--muted);line-height:1.4;white-space:nowrap}
 .orders-workspace .amazon-order-status{display:inline-flex;align-items:center;gap:5px;width:max-content;max-width:100%;border-radius:999px;padding:5px 10px;font-size:.72rem;margin-top:5px}
 .amazon-order-status[data-tone=pending],.amazon-order-status[data-tone=unshipped]{background:#fff3df;color:#a65308}
 .amazon-order-status[data-tone=pickup],.platform-pickup-label{background:#fff3da;color:#986419}

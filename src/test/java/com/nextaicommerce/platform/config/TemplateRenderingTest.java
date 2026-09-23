@@ -39,12 +39,17 @@ import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 class TemplateRenderingTest {
+    @Test void inventoryPublicationStatusShowsSimulationAndZeroObservedQuantity(){
+        var c=webContext();c.setVariable("publicationMode","DRY_RUN");c.setVariable("publications",List.of(Map.of("seller_sku","TEST-SKU","marketplace_id","US","desired_quantity",0,"observed_quantity",0,"status","DRY_RUN","attempts",0,"last_error","No request sent")));
+        assertThat(templateEngine().process("inventory-publications",c)).contains("Local simulation","TEST-SKU","No request sent");
+    }
+
     @Test
     void combinedReceivingRendersIndependentDocumentsAndCompactDrawer() {
         var c=webContext();UUID document=UUID.randomUUID(),session=UUID.randomUUID(),line=UUID.randomUUID();
         var d=new com.nextaicommerce.platform.receiving.ReceivingWorkflowRepository.Document(document,session,"QA supplier",
             "INVOICE","INV-101","invoice.csv",java.time.LocalDate.now(),Instant.now(),"USD",
-            new BigDecimal("10"),new BigDecimal("3"),new BigDecimal("7"),false,false,true,null);
+            new BigDecimal("10"),new BigDecimal("3"),new BigDecimal("7"),false,false,true,null,UUID.randomUUID());
         var l=new com.nextaicommerce.platform.receiving.ReceivingWorkflowRepository.WorkLine(line,document,session,UUID.randomUUID(),
             "Yogurt & cream","QA-100",new BigDecimal("10"),new BigDecimal("3"),new BigDecimal("7"),BigDecimal.ONE,
             new BigDecimal("2"),"USD",true,false,1,BigDecimal.ZERO,BigDecimal.ZERO,UUID.randomUUID());
@@ -83,6 +88,7 @@ class TemplateRenderingTest {
                 order.firstSku(),"B012345678","Test product",2,0,"MAPPED","63792 × 2",BigDecimal.ZERO,
                 "https://images.example.test/product.jpg",new BigDecimal("12"),new BigDecimal("42.50"),
                 new BigDecimal("6.99"),"USD",new BigDecimal("39.95"),"USD",Instant.parse("2026-09-10T16:00:00Z"))))),
+            Map.entry("soldTotals",Map.of()),
             Map.entry("fourWeekSales",Map.of(order.firstSku(),"1 | 2 | 3 | 4")),
             Map.entry("todayOrders",1L),Map.entry("todaySales",new BigDecimal("42.50")),
             Map.entry("sales30Days",new BigDecimal("420.50")),Map.entry("liveCount",1L),
@@ -93,7 +99,7 @@ class TemplateRenderingTest {
             Map.entry("orderStreamKey","test-key")
         ));
         assertThat(templateEngine().process("orders",context)).contains("Today’s orders","Today’s sales","Sales · 30 days","Live",
-            "113-1234567-1234567","Unshipped","Catalogue mapping","Save mapping","Buy shipping label","Profit · margin · markup",
+            "113-1234567-1234567","Unshipped","/js/mapping-widget.js","/css/mapping-widget.css","Buy shipping label","Profit · margin · markup",
             "https://images.example.test/product.jpg","sellercentral.amazon.com/orders-v3/order/","Available",
             "Item Sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
             "Showing 1–1 of 1","data-order-stream","Sync now","Last Amazon order check",
@@ -249,6 +255,7 @@ class TemplateRenderingTest {
             Map.entry("selectedStoreName","Ibcore"),
             Map.entry("selectedStore",new ConnectionView(UUID.randomUUID(),UUID.randomUUID(),"Ibcore LLC","Ibcore",
                 "AMAZON","seller","ATVPDKIKX0DER","Amazon US","🇺🇸","ACTIVE",Instant.now(),true)),
+            Map.entry("insights",new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.SkuInsights(216,100,50,50,20,10)),
             Map.entry("summary",new SkuSummary(1710,216,0,1494,0,0,1710,647)),
             Map.entry("skuPage",new SkuPage(List.of(new SkuView("IB-TEST-SKU","B012345678","Test Product",
                 "https://images.example.test/product.jpg","ACTIVE","New","AMAZON",new BigDecimal("29.99"),
@@ -259,8 +266,8 @@ class TemplateRenderingTest {
         String rendered=templateEngine().process("marketplace-skus",context);
         assertThat(rendered).contains("Marketplace SKUs","Ibcore assortment","IB-TEST-SKU","B012345678",
             "4w sales","1 | 2 | 3 | 4","Profit","Pending","Catalogue","Unmapped","Price (+ shipping)","Buy Box",
-            "Customer shipping (30d)","Shipping template","data-column-control=\"marketplace-skus\"",
-            "647 sellable units","/images/channels/amazon-seller.png","/images/channels/amazon-product.svg",
+            "Available","Shipping template","data-column-control=\"marketplace-skus\"",
+            "Buy Box price match","/images/channels/amazon-seller.png","/images/platform/table/amazon.com-logo.png",
             "https://www.amazon.com/dp/B012345678","sellercentral.amazon.com")
             .doesNotContain(">Seller SKU <","Seller SKU &amp; links","SKU Mapping <small>Planned");
     }
