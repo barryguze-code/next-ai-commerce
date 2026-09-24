@@ -176,6 +176,18 @@ public class WorkspaceAccessRepository {
     }
 
     @Transactional(readOnly = true)
+    public boolean canAdministerAccount(UUID tenantId, String email, boolean superAdmin) {
+        if (superAdmin) return jdbc.queryForObject("SELECT count(*) FROM tenants WHERE id=? AND status='ACTIVE'", Integer.class, tenantId) == 1;
+        setTenant(tenantId);
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM tenant_memberships m
+              JOIN app_users u ON u.id=m.user_id JOIN tenants t ON t.id=m.tenant_id
+              WHERE m.tenant_id=? AND lower(u.email)=lower(?)
+                AND u.status='ACTIVE' AND t.status='ACTIVE' AND m.role IN ('OWNER','ADMIN'))
+            """, Boolean.class, tenantId, email));
+    }
+
+    @Transactional(readOnly = true)
     public boolean connectionBelongsToAccount(UUID tenantId, UUID connectionId) {
         setTenant(tenantId);
         Integer count = jdbc.queryForObject(

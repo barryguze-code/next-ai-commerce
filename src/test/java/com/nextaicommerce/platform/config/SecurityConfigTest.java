@@ -4,6 +4,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
@@ -88,6 +89,8 @@ class SecurityConfigTest {
                 @Override public List<SyncJobView> listCurrentSyncJobs(UUID tenantId) { return List.of(); }
                 @Override public boolean historicalSyncInProgress(UUID tenantId) { return false; }
                 @Override public boolean canAccessAccount(UUID tenantId, String email, boolean superAdmin) { return true; }
+                @Override public boolean canAdministerAccount(UUID tenantId, String email, boolean superAdmin) { return true; }
+                @Override public void saveAccountLogo(UUID tenantId,String contentType,byte[] bytes) {}
                 @Override public LogoData accountLogo(UUID tenantId) { return new LogoData(new byte[] {1, 2, 3}, "image/png"); }
                 @Override public ConnectionIdentity findConnection(UUID tenantId, UUID connectionId) {
                     return new ConnectionIdentity(connectionId, "AMAZON");
@@ -170,6 +173,22 @@ class SecurityConfigTest {
                 .with(user("member@example.com").roles("VIEWER")))
             .andExpect(status().isOk())
             .andExpect(content().contentType("image/png"));
+    }
+
+    @Test void accountAdministratorsCanUploadTheirLogoWithoutPlatformAccess() throws Exception {
+        var logo=new org.springframework.mock.web.MockMultipartFile("logo","logo.png","image/png",new byte[]{1,2,3});
+        mvc.perform(multipart("/app/platform/accounts/"+TENANT_ID+"/logo").file(logo)
+                .with(user("owner@example.com").roles("OWNER")).with(csrf()))
+            .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/app"));
+        mvc.perform(multipart("/app/platform/accounts/"+TENANT_ID+"/logo").file(logo)
+                .with(user("admin@example.com").roles("ADMIN")).with(csrf()))
+            .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/app"));
+        mvc.perform(multipart("/app/platform/accounts/"+TENANT_ID+"/logo").file(logo)
+                .with(user("operator@example.com").roles("OPERATOR")).with(csrf()))
+            .andExpect(status().isForbidden());
+        mvc.perform(multipart("/app/platform/accounts/"+TENANT_ID+"/logo").file(logo)
+                .with(user("viewer@example.com").roles("VIEWER")).with(csrf()))
+            .andExpect(status().isForbidden());
     }
 
     @Test void logoutPostsWithCsrfAndReturnsToLogin() throws Exception {

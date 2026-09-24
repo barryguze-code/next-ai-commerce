@@ -34,14 +34,19 @@ class InventoryPublicationDatabaseTest {
   repo.scope(tenant);
   var access=new com.nextaicommerce.platform.web.WorkspaceAccessRepository(jdbc);
   var existing=jdbc.queryForObject("SELECT inventory_activated_at FROM marketplace_connections WHERE id=?",java.sql.Timestamp.class,connection);
-  access.addConnection(tenant,"AMAZON","New Amazon US","new-seller","ATVPDKIKX0DER");
+ access.addConnection(tenant,"AMAZON","New Amazon US","new-seller","ATVPDKIKX0DER");
   access.addConnection(tenant,"WALMART","New Walmart US",null,"Walmart-US");
   var rows=jdbc.queryForList("SELECT status,inventory_activated_at,credential_secret_ref FROM marketplace_connections WHERE tenant_id=? AND id<>?",tenant,connection);
   assertThat(rows).hasSize(2).allSatisfy(row->{
    assertThat(row.get("inventory_activated_at")).isNotNull();
    assertThat(row.get("status")).isEqualTo("PENDING");
-   assertThat(row.get("credential_secret_ref")).isEqualTo("pending://marketplace-connection");
+  assertThat(row.get("credential_secret_ref")).isEqualTo("pending://marketplace-connection");
   });
+  jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'OWNER')",tenant,user);
+  assertThat(access.canAdministerAccount(tenant,user+"@example.test",false)).isTrue();
+  jdbc.update("UPDATE tenant_memberships SET role='OPERATOR' WHERE tenant_id=? AND user_id=?",tenant,user);
+  assertThat(access.canAdministerAccount(tenant,user+"@example.test",false)).isFalse();
+  assertThat(access.canAdministerAccount(tenant,user+"@example.test",true)).isTrue();
   assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_publications WHERE tenant_id=?",Integer.class,tenant)).isZero();
   assertThat(jdbc.queryForObject("SELECT count(*) FROM shelf_sale_settings WHERE tenant_id=?",Integer.class,tenant)).isZero();
   jdbc.update("UPDATE marketplace_connections SET status='DISABLED' WHERE id=?",connection);

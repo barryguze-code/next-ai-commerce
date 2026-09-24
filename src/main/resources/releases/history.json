@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.3.9",
+ "title":"Account administrator logo uploads",
+ "sections":[{"title":"Company identity","items":["Allow account OWNER and ADMIN members to upload the logo for their own active account without requiring platform-superadmin access.","Keep tenant-specific authorization at the controller boundary. Operators and viewers remain unable to change company identity, and normal account admins return to their workspace after saving."]}]
+},
+{
  "version":"1.3.8",
  "title":"New marketplace connection setup",
  "sections":[{"title":"Connection creation","items":["Initialize the required inventory start timestamp when creating a marketplace connection, fixing the database error during Amazon US setup.","New connections remain pending authorization. Existing connection timestamps and inventory/price publishing permissions are unchanged."]}]

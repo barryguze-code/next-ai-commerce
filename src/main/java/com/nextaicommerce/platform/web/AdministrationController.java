@@ -128,7 +128,12 @@ public class AdministrationController {
     }
 
     @PostMapping("/app/platform/accounts/{tenantId}/logo")
-    String uploadLogo(@PathVariable UUID tenantId,@RequestParam MultipartFile logo,RedirectAttributes redirect){
+    String uploadLogo(@PathVariable UUID tenantId,@RequestParam MultipartFile logo,
+            Authentication authentication,RedirectAttributes redirect){
+        boolean superAdmin=authentication.getAuthorities().stream()
+            .anyMatch(authority->authority.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
+        if(!repository.canAdministerAccount(tenantId,authentication.getName(),superAdmin))
+            return "redirect:/app?accountLogoError=forbidden";
         try{
             if(logo==null||logo.isEmpty())throw new IllegalArgumentException("Choose a PNG, JPEG, or WebP logo.");
             if(logo.getSize()>2_000_000)throw new IllegalArgumentException("Use a logo smaller than 2 MB.");
@@ -137,7 +142,7 @@ public class AdministrationController {
             repository.saveAccountLogo(tenantId,type,logo.getBytes());
             redirect.addFlashAttribute("accountSuccess","Company logo saved. It now appears wherever this account is selected.");
         }catch(Exception e){redirect.addFlashAttribute("accountError",e instanceof IllegalArgumentException?e.getMessage():"The company logo could not be saved.");}
-        return "redirect:/app/platform/accounts";
+        return superAdmin?"redirect:/app/platform/accounts":"redirect:/app";
     }
     @GetMapping("/app/platform/accounts/{tenantId}/logo") @ResponseBody
     ResponseEntity<byte[]> logo(@PathVariable UUID tenantId, Authentication authentication){

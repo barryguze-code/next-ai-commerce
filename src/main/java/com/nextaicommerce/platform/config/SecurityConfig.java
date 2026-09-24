@@ -20,6 +20,8 @@ public class SecurityConfig {
                 // Workspace members need the selected account's logo in the header.  The controller
                 // checks that the signed-in user can access the requested account.
                 .requestMatchers(HttpMethod.GET, "/app/platform/accounts/*/logo").authenticated()
+                .requestMatchers(HttpMethod.POST, "/app/platform/accounts/*/logo")
+                    .hasAnyRole("PLATFORM_ADMIN", "OWNER", "ADMIN")
                 .requestMatchers("/app/users/**", "/app/connections/**")
                     .hasAnyRole("PLATFORM_ADMIN", "OWNER", "ADMIN")
                 .requestMatchers("/app/platform/**").hasRole("PLATFORM_ADMIN")
