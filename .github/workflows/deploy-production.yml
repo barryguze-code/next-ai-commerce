@@ -22,7 +22,8 @@ jobs:
       - name: Verify user-facing release notes
         run: |
           node scripts/check-release-history.cjs
-          echo "RELEASE_VERSION=$(node -p \"require('./src/main/resources/releases/history.json')[0].version\")" >> "$GITHUB_ENV"
+          release_version=$(node -p "require('./src/main/resources/releases/history.json')[0].version")
+          echo "RELEASE_VERSION=$release_version" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
