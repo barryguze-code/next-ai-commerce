@@ -151,7 +151,7 @@ function receive(id,overage=false){
   const exceptions=[['damaged','Damaged'],['shortShipped','Short shipped'],['wrongItem','Mispick']];
   const initial=Number(l.received)>0||overage?0:Number(l.remaining);let savedPack=Number(facts.catalogPack||pack);
   const f=form('<fieldset class="rw-exception-fields rw-sellable"><legend>Sellable</legend><div class="rw-quantity-grid"><label>Cases<input name="cases" type="number" min="0" step="1" value="'+Math.floor(initial/pack)+'"></label><label>Units / case<input name="pack" type="number" min="1" max="100000" step="1" required value="'+pack+'"></label><label>Total units<input name="quantity" type="number" min="0" step="1" required value="'+initial+'"></label></div><small class="rw-muted" data-remainder="quantity"></small></fieldset>'+
-    '<div><button class="rw-text-action" type="button" data-update-pack disabled>Update catalogue case size</button><small class="rw-muted" data-pack-feedback role="status">Explicit update only · shared catalogue product, including other accounts. Invoice quantities stay unchanged.</small></div>'+
+    '<div><button class="secondary-button compact-button" type="button" data-update-pack disabled>Update catalogue case size</button><small class="rw-muted" data-pack-feedback role="status"></small></div>'+
     '<div class="rw-pair"><label>Expiration date<input name="expiration" type="date"></label><div class="rw-location-field"><label>Location<select name="locationId" required><option value="">Choose a location</option>'+locations+'</select></label>'+(document.querySelector('.receive-work').dataset.canAddLocation==='true'?'<button type="button" class="rw-add-location secondary-button" data-add-location aria-label="Add location" title="Add location">+</button>':'')+'</div></div>'+
     '<label class="rw-check"><input name="requiresExpiration" type="checkbox"'+(l.requiresExpiration?' checked':'')+'><span>Require expiration date when receiving this item<small>Saved to catalogue for future receipts.</small></span></label>'+
     '<p class="rw-status-badge" data-expiration-status role="status">No expiration date entered</p>'+
@@ -170,7 +170,7 @@ function receive(id,overage=false){
   if(initial%pack){f.elements.cases.value='1';f.elements.pack.value=initial;}
   function editablePack(input,name){input.readOnly=false;input.type='number';input.name=name;input.min='1';input.max='100000';input.step='1';input.required=true;}
   exceptions.forEach(([key])=>{f.elements[key].readOnly=true;editablePack(f.elements[key].closest('.rw-quantity-grid').querySelector('[data-exception-pack]'),key+'Pack');f.elements[key+'Pack'].value='0';f.elements[key+'Pack'].min='0';});
-  if(initial===0){f.elements.pack.value='0';f.elements.pack.min='0';}
+  // Additional receipts keep the catalogue case size; only cases start at zero.
   const extraBatches=[];let batchSequence=0;
   const sellable=f.querySelector('.rw-sellable');
   // Tab names already label their panels; avoid repeating visible headings.

@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.3.7",
+ "title":"Receiving case-size defaults",
+ "sections":[{"title":"Faster receiving","items":["First receiving prefills the remaining invoiced quantity using the case size. Additional receiving starts with zero cases while retaining units per case and focusing expiration date.","Update catalogue case size is a compact secondary button. Its confirmation explains the change; redundant inline guidance is removed. Exception clear actions still reset both values to zero."]}]
+},
+{
  "version":"1.3.6",
  "title":"Unshipped invoice line consolidation",
  "sections":[{"title":"Vendor invoice accuracy","items":["Combine paired vendor status rows for the same invoice line so a partially shipped item shows one shortage, not two. Distinct invoice line numbers remain separate.","Includes v1.3.5 receiving zero-default safeguards, SKU-count confirmation and prompt shelf-life sale reconciliation. No receipt or stock quantities are changed by this informational summary."]}]

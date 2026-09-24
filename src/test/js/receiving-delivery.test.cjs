@@ -26,6 +26,8 @@ test('receiving tabs, expiration batches, fee navigation and overage confirmatio
   await page.getByRole('button',{name:'Receive',exact:true}).click();
   assert.equal(await page.locator('[name=quantity]').inputValue(),'12');
   assert.equal(await page.locator('[name=cases]').inputValue(),'2');
+  assert.equal(await page.locator('[name=pack]').inputValue(),'6');
+  assert.equal(await page.locator('[data-pack-feedback]').textContent(),'');
   assert.equal(await page.locator('[name=quantity]').getAttribute('readonly'),'');
   assert.equal(await page.getByText('Loose units',{exact:true}).count(),0);
   await page.waitForFunction(()=>document.activeElement?.name==='expiration');
@@ -81,7 +83,11 @@ test('receiving tabs, expiration batches, fee navigation and overage confirmatio
   await page.evaluate(()=>{window.receivingWork.lines[0].received=6;window.receivingWork.lines[0].remaining=6;});
   await page.getByRole('button',{name:'Receive',exact:true}).click();
   assert.equal(await page.locator('[name=quantity]').inputValue(),'0');
-  assert.equal(await page.locator('[name=cases]').inputValue(),'0');assert.equal(await page.locator('[name=pack]').inputValue(),'0');
+  assert.equal(await page.locator('[name=cases]').inputValue(),'0');assert.equal(await page.locator('[name=pack]').inputValue(),'6');
+  await page.waitForFunction(()=>document.activeElement?.name==='expiration');
+  await page.locator('[name=cases]').fill('1');
+  assert.equal(await page.locator('[name=quantity]').inputValue(),'6');
+  await page.locator('[name=cases]').fill('0');
   assert.equal(await page.getByRole('button',{name:'Save receipt',exact:true}).isEnabled(),false);
   for(const [tab,key] of [['Damaged','damaged'],['Short shipped','shortShipped'],['Mispick','wrongItem']]){
    await page.getByRole('tab',{name:tab,exact:true}).click();
