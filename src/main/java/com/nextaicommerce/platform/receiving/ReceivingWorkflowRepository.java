@@ -451,7 +451,7 @@ public class ReceivingWorkflowRepository {
         if(id.product()!=null)throw new IllegalArgumentException("This line is already linked to the catalogue. Refresh the checklist.");
         var source=jdbc.queryForMap("SELECT i.description,i.vendor_item_code,p.vendor_id FROM purchase_order_items i JOIN purchase_orders p ON p.tenant_id=i.tenant_id AND p.id=i.purchase_order_id WHERE i.tenant_id=? AND i.id=?",tenant,line);
         UUID product=catalog.addImportedVendorProduct(tenant,actor,(UUID)source.get("vendor_id"),(String)source.get("vendor_item_code"),
-            (String)source.get("description"),null,"UPC","",(String)source.get("vendor_item_code"),Boolean.TRUE.equals(expirationRequired));
+            (String)source.get("description"),null,"UPC","",null,Boolean.TRUE.equals(expirationRequired));
         jdbc.update("UPDATE purchase_order_items SET account_catalog_item_id=? WHERE tenant_id=? AND id=?",product,tenant,line);
         jdbc.update("UPDATE receiving_document_lines SET account_catalog_item_id=?,match_status='MATCHED' WHERE tenant_id=? AND id=(SELECT receiving_line_id FROM purchase_order_items WHERE tenant_id=? AND id=?)",product,tenant,tenant,line);
         saveCatalogueSettings(tenant,actor,line,pack,expirationRequired);

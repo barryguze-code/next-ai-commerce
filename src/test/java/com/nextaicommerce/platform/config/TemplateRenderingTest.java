@@ -39,6 +39,15 @@ import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 class TemplateRenderingTest {
+    @Test void catalogueImportHasOptionalRememberedBranch(){
+        var c=webContext();
+        c.setVariable("catalogImport",new com.nextaicommerce.platform.catalog.CatalogImportService.ImportView(
+            UUID.randomUUID(),"catalog.csv","VALIDATED","KEHE",List.of("UPC"),Map.of("distributionCenter","19","identifierType","EAN"),List.of(),
+            1,1,0,BigDecimal.ZERO,List.of(),List.of(),"FAILED",0,0,"Review branch",0,0));
+        String html=templateEngine().process("catalog-import",c);
+        assertThat(html).contains("Supplier DC / branch","name=\"distributionCenter\"","value=\"19\"","Review branch");
+        assertThat(html).contains("value=\"EAN\" selected=\"selected\"");
+    }
     @Test void inventoryPublicationStatusShowsSimulationAndZeroObservedQuantity(){
         var c=webContext();c.setVariable("publicationMode","DRY_RUN");c.setVariable("publications",List.of(Map.of("seller_sku","TEST-SKU","marketplace_id","US","desired_quantity",0,"observed_quantity",0,"status","DRY_RUN","attempts",0,"last_error","No request sent")));
         assertThat(templateEngine().process("inventory-publications",c)).contains("Local simulation","TEST-SKU","No request sent");

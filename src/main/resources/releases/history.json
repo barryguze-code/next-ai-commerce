@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.3.11",
+ "title":"Branch-aware global catalogue identity",
+ "sections":[{"title":"Safe supplier imports","items":["Match equivalent UPC/EAN/GTIN barcodes globally while scoping supplier item codes and case packs to their distribution center. Different DCs may reuse a code for different products without mixing account catalogues.","Add an optional supplier DC field to import review. Ambiguous branch codes request review; existing vendor history cannot silently move to another branch.","Assign Ibcore KEHE catalogue identity to DC 41 without changing product IDs, stock, receipts or marketplace mappings. Preserve account-specific buying prices and branch packaging.","Use indexed batch matching with transaction safeguards and a 25,845-row regression test. Existing Amazon publishing settings remain unchanged."]}]
+},
+{
  "version":"1.3.10",
  "title":"Shared catalogue barcode import fix",
  "sections":[{"title":"Catalogue imports","items":["Preserve an existing global product's primary barcode when another account imports a known alternate barcode. Do not create duplicate products.","Flag changed barcodes with the affected row and vendor item code instead of silently merging unrelated products or showing a database error. Failed imports roll back safely for review and retry.","Includes a 25,845-row import regression test. No marketplace publishing settings are changed."]}]

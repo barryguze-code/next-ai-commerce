@@ -340,7 +340,14 @@ public class ReceivingRepository {
             MatchedItem matched=matchOrCreateItem(tenantId,vendorId,actorEmail,description,brand,vendorCode,identifier,cost,
                 cleanCurrency,documentType,documentNumber);
             if(packSize.isBlank()){
-                BigDecimal savedPack=jdbc.queryForObject("SELECT g.units_per_case FROM account_catalog_items a JOIN global_catalog_products g ON g.id=a.global_product_id WHERE a.tenant_id=? AND a.id=?",BigDecimal.class,tenantId,matched.itemId());
+                BigDecimal savedPack=jdbc.queryForObject("""
+                    SELECT coalesce((SELECT packaging.units_per_case FROM vendor_catalog_offers offer
+                      JOIN global_product_packaging_versions packaging ON packaging.id=offer.packaging_version_id
+                      WHERE offer.tenant_id=a.tenant_id AND offer.account_catalog_item_id=a.id AND offer.vendor_id=?
+                        AND offer.effective_to IS NULL ORDER BY offer.updated_at DESC LIMIT 1),g.units_per_case)
+                    FROM account_catalog_items a JOIN global_catalog_products g ON g.id=a.global_product_id
+                    WHERE a.tenant_id=? AND a.id=?
+                    """,BigDecimal.class,vendorId,tenantId,matched.itemId());
                 if(savedPack!=null&&savedPack.signum()>0){unitsPerCase=savedPack;cost=casePrice?invoicePrice.divide(unitsPerCase,4,java.math.RoundingMode.HALF_UP):invoicePrice;}
             }
             if(matched.created()&&identifier.isBlank()) jdbc.update("""
@@ -801,18 +808,20 @@ public class ReceivingRepository {
               AND upper(regexp_replace(vendor_item_code,'[^A-Za-z0-9]','','g'))=?
               AND effective_to IS NULL LIMIT 1
             """,rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,vendorId,cleanCode(vendorCode));
+        if(!vendorCode.isBlank()){
+            boolean created=itemId==null;
+            itemId=catalog.addImportedVendorProduct(tenantId,actorEmail,vendorId,vendorCode,description,
+                blank(brand),identifierType(identifier),identifier,null,false);
+            if(created)catalog.saveVendorOffer(tenantId,actorEmail,itemId,vendorId,vendorCode,cost,BigDecimal.ZERO,currency,sourceType,blank(sourceReference));
+            return new MatchedItem(itemId,created);
+        }
         if(itemId==null&&!identifier.isBlank()) itemId=jdbc.query("""
             SELECT item.id FROM global_product_identifiers identifier
             JOIN account_catalog_items item ON item.global_product_id=identifier.global_product_id
-            WHERE item.tenant_id=? AND identifier.identifier_value=? LIMIT 1
-            """,rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,normalizeIdentifier(identifier));
-        if(itemId==null&&!vendorCode.isBlank()) itemId=jdbc.query("""
-            SELECT id FROM account_catalog_items WHERE tenant_id=? AND lower(account_sku)=lower(?) LIMIT 1
-            """,rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,vendorCode);
+            WHERE item.tenant_id=? AND identifier.identity_key=catalog_identifier_key(?,?) LIMIT 1
+            """,rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,identifierType(identifier),normalizeIdentifier(identifier));
         boolean created=itemId==null;
-        if(created&&!vendorCode.isBlank())itemId=catalog.addImportedVendorProduct(tenantId,actorEmail,vendorId,
-            vendorCode,description,blank(brand),identifierType(identifier),identifier,vendorCode,false);
-        else if(created)itemId=catalog.addAccountProduct(tenantId,actorEmail,description,blank(brand),
+        if(created)itemId=catalog.addAccountProduct(tenantId,actorEmail,description,blank(brand),
             identifierType(identifier),identifier,vendorCode,false);
         if(created)
             catalog.saveVendorOffer(tenantId,actorEmail,itemId,vendorId,vendorCode,cost,BigDecimal.ZERO,currency,

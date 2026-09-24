@@ -52,6 +52,10 @@
 <span>We detected these automatically. Change only a row that does not look correct.</span>
 </div>
 <div class="mapping-grid">
+<label><span>Supplier DC / branch <em>Optional</em></span>
+<input name="distributionCenter" maxlength="40" th:value="${catalogImport.mapping['distributionCenter']}" placeholder="e.g. 19">
+<small class="branch-help">Enter a branch when supplier item codes differ between distribution centers. Existing vendor branches cannot be changed after importing products.</small>
+</label>
 <label><span>Product name <b>Required</b></span>
 <select name="productName" required>
 <option value="">Choose column</option>
@@ -71,10 +75,7 @@
 </select>
 </label>
 <label><span>Identifier type</span><select name="identifierType">
-<option>UPC</option>
-<option>EAN</option>
-<option>GTIN</option>
-<option>MPN</option>
+<option th:each="kind:${ {'UPC','EAN','GTIN','MPN'} }" th:value="${kind}" th:text="${kind}" th:selected="${kind == catalogImport.mapping['identifierType']}">UPC</option>
 </select>
 </label>
 <label><span>List / unit cost <b>Required</b></span>

@@ -328,8 +328,8 @@ public class CatalogController {
             Authentication authentication, HttpSession session, RedirectAttributes redirect) {
         UUID tenantId=tenantId(session);
         if(tenantId==null)return "redirect:/app/select-account";
-        Map<String,String> mapping=importMapping(parameters);
         try {
+            Map<String,String> mapping=importMapping(parameters);
             imports.validate(tenantId,importId,mapping);
             if(!"VALIDATED".equals(imports.load(tenantId,importId).status())){
                 redirect.addFlashAttribute("catalogError","Some rows need attention. Correct the mapping or source file shown below.");
@@ -350,6 +350,7 @@ public class CatalogController {
         for(String key:java.util.List.of("productName","brand","identifier","accountSku","vendorItemCode","listCost","discountRate","expirationRequired","size","unitOfMeasure","casePack","unitOfSale","suggestedRetail","category","effectiveDate","minimumQuantity")){
             String value=parameters.get(key);if(value!=null&&!value.isBlank())mapping.put(key,value);
         }
+        if(parameters.containsKey("distributionCenter"))mapping.put("distributionCenter",CatalogIdentity.distributionCenter(parameters.get("distributionCenter")));
         mapping.put("identifierType",parameters.getOrDefault("identifierType","UPC"));return mapping;
     }
 

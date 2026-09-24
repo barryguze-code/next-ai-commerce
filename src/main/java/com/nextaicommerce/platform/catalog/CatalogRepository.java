@@ -41,7 +41,9 @@ public class CatalogRepository {
         public int displayPage(){return page+1;}
     }
     public record VendorView(UUID id, String name, String code, String currency,
-            BigDecimal discountRate, BigDecimal defaultFreightAmount, int productCount, String status) {}
+            BigDecimal discountRate, BigDecimal defaultFreightAmount, int productCount, String status,String distributionCenter) {
+        public VendorView(UUID id,String name,String code,String currency,BigDecimal discountRate,BigDecimal freight,int count,String status){this(id,name,code,currency,discountRate,freight,count,status,"");}
+    }
     public record InlineProductResult(UUID productId, UUID vendorId, String vendorName) {}
     public record VendorOfferView(UUID itemId, UUID vendorId, String vendorName, String vendorItemCode,
             BigDecimal listCost, BigDecimal discountRate, BigDecimal buyingCost, String currency,
@@ -131,7 +133,7 @@ public class CatalogRepository {
                    product.unit_of_measure, product.requires_expiration_date, product.status
             FROM global_catalog_products product
             LEFT JOIN LATERAL (
-                SELECT vendor_name,vendor_item_code FROM global_product_vendor_codes
+                SELECT vendor_name||CASE WHEN catalog_scope LIKE 'DC:%' THEN ' · DC '||substring(catalog_scope FROM 4) ELSE '' END vendor_name,vendor_item_code FROM global_product_vendor_codes
                 WHERE global_product_id=product.id ORDER BY last_seen_at DESC LIMIT 1
             ) vendor_code ON true
             LEFT JOIN LATERAL (
@@ -406,7 +408,7 @@ public class CatalogRepository {
         setTenant(tenantId);
         return jdbc.query("""
             SELECT vendor.id,vendor.name,vendor.vendor_code,vendor.currency,
-                   vendor.default_discount_rate,vendor.default_freight_amount,vendor.status,
+                   vendor.default_discount_rate,vendor.default_freight_amount,vendor.status,vendor.distribution_center,
                    count(DISTINCT offer.account_catalog_item_id) product_count
             FROM vendors vendor LEFT JOIN vendor_catalog_offers offer
               ON offer.tenant_id=vendor.tenant_id AND offer.vendor_id=vendor.id AND offer.effective_to IS NULL
@@ -414,7 +416,7 @@ public class CatalogRepository {
             GROUP BY vendor.id ORDER BY lower(vendor.name)
             """, (rs, row) -> new VendorView(rs.getObject("id", UUID.class), rs.getString("name"),
                 rs.getString("vendor_code"), rs.getString("currency"), rs.getBigDecimal("default_discount_rate"),
-                rs.getBigDecimal("default_freight_amount"), rs.getInt("product_count"), rs.getString("status")), tenantId);
+                rs.getBigDecimal("default_freight_amount"), rs.getInt("product_count"), rs.getString("status"),rs.getString("distribution_center")), tenantId);
     }
 
     /** Vendor selector data without scanning and counting the complete offer catalogue. */
@@ -422,10 +424,10 @@ public class CatalogRepository {
     public List<VendorView> listVendorChoices(UUID tenantId){
         setTenant(tenantId);
         return jdbc.query("""
-            SELECT id,name,vendor_code,currency,default_discount_rate,default_freight_amount,status
+            SELECT id,name,vendor_code,currency,default_discount_rate,default_freight_amount,status,distribution_center
             FROM vendors WHERE tenant_id=? AND status='ACTIVE' ORDER BY lower(name)
             """,(rs,row)->new VendorView(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),
-                rs.getString(4),rs.getBigDecimal(5),rs.getBigDecimal(6),0,rs.getString(7)),tenantId);
+                rs.getString(4),rs.getBigDecimal(5),rs.getBigDecimal(6),0,rs.getString(7),rs.getString(8)),tenantId);
     }
 
     @Transactional(readOnly = true)
@@ -466,13 +468,14 @@ public class CatalogRepository {
     public UUID addAccountProduct(UUID tenantId, String actorEmail, String name, String brand,
             String identifierType, String identifier, String accountSku, boolean expirationRequired) {
         setTenant(tenantId);
+        CatalogIdentity.lock(jdbc);
         UUID reactivated=reactivateAccountSkuIfPresent(tenantId,accountSku,name,brand,identifierType,identifier,expirationRequired);
         if(reactivated!=null)return reactivated;
         UUID actorId = actorId(actorEmail);
         String cleanIdentifier = normalizeIdentifier(identifierType, identifier);
         UUID globalId = cleanIdentifier.isBlank() ? null : jdbc.query("""
             SELECT global_product_id FROM global_product_identifiers
-            WHERE identifier_type=? AND identifier_value=?
+            WHERE identity_key=catalog_identifier_key(?,?)
             """, rs -> rs.next() ? rs.getObject(1, UUID.class) : null,
             identifierType.toUpperCase(Locale.ROOT), cleanIdentifier);
         if (globalId == null) {
@@ -500,6 +503,7 @@ public class CatalogRepository {
             String vendorItemCode, String name, String brand, String identifierType,
             String identifier, String accountSku, boolean expirationRequired) {
         setTenant(tenantId);
+        CatalogIdentity.lock(jdbc);
         String cleanVendorCode=normalizeVendorItemCode(vendorItemCode);
         if(cleanVendorCode.isBlank())throw new IllegalArgumentException("Vendor item code is required.");
         UUID existing=jdbc.query("""
@@ -511,16 +515,18 @@ public class CatalogRepository {
             String incomingIdentifier=normalizeIdentifier(identifierType,identifier);
             if(!incomingIdentifier.isBlank()){
                 UUID existingGlobal=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenantId,existing);
-                UUID identifierGlobal=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identifier_type=? AND identifier_value=?",
+                UUID identifierGlobal=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identity_key=catalog_identifier_key(?,?)",
                     rs->rs.next()?rs.getObject(1,UUID.class):null,identifierType.toUpperCase(Locale.ROOT),incomingIdentifier);
                 if(identifierGlobal!=null&&!identifierGlobal.equals(existingGlobal))throw new IllegalArgumentException(
                     "Vendor item code "+vendorItemCode+" and identifier "+identifier+" belong to different global products. Review this row instead of creating a duplicate.");
+                requireCompatibleBarcode(existingGlobal,identifierGlobal,incomingIdentifier);
+                if(identifierGlobal==null)attachFirstBarcode(existingGlobal,identifierType,incomingIdentifier);
             }
             reactivateAccountItem(existing,name,brand,expirationRequired);
             return existing;
         }
-        VendorIdentity vendor=jdbc.query("SELECT name,vendor_code FROM vendors WHERE tenant_id=? AND id=?",
-            rs->rs.next()?new VendorIdentity(rs.getString(1),rs.getString(2)):null,tenantId,vendorId);
+        VendorIdentity vendor=jdbc.query("SELECT name,vendor_code,distribution_center FROM vendors WHERE tenant_id=? AND id=?",
+            rs->rs.next()?new VendorIdentity(rs.getString(1),rs.getString(2),rs.getString(3)):null,tenantId,vendorId);
         if(vendor==null)throw new IllegalArgumentException("Vendor was not found in this account.");
         UUID reactivated=reactivateAccountSkuIfPresent(tenantId,accountSku,name,brand,identifierType,identifier,expirationRequired);
         if(reactivated!=null){
@@ -532,17 +538,23 @@ public class CatalogRepository {
         String vendorKey=normalizeVendorKey(vendor.code()==null?vendor.name():vendor.code());
         UUID vendorGlobalId=jdbc.query("""
             SELECT global_product_id FROM global_product_vendor_codes
-            WHERE vendor_key=? AND normalized_item_code=? ORDER BY last_seen_at DESC LIMIT 1
-            """,rs->rs.next()?rs.getObject(1,UUID.class):null,vendorKey,cleanVendorCode);
+            WHERE vendor_key=? AND catalog_scope=? AND normalized_item_code=? ORDER BY last_seen_at DESC LIMIT 1
+            """,rs->rs.next()?rs.getObject(1,UUID.class):null,vendorKey,CatalogIdentity.scope(tenantId,vendor.dc()),cleanVendorCode);
         String cleanIdentifier=normalizeIdentifier(identifierType,identifier);
         UUID identifierGlobalId=null;
         if(!cleanIdentifier.isBlank()){
-            identifierGlobalId=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identifier_type=? AND identifier_value=?",
+            identifierGlobalId=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identity_key=catalog_identifier_key(?,?)",
                 rs->rs.next()?rs.getObject(1,UUID.class):null,identifierType.toUpperCase(Locale.ROOT),cleanIdentifier);
         }
         if(vendorGlobalId!=null&&identifierGlobalId!=null&&!vendorGlobalId.equals(identifierGlobalId))
             throw new IllegalArgumentException("Vendor item code "+vendorItemCode+" and identifier "+identifier+" belong to different global products. Review this row instead of creating a duplicate.");
-        UUID globalId=vendorGlobalId!=null?vendorGlobalId:identifierGlobalId;
+        if(vendorGlobalId!=null)requireCompatibleBarcode(vendorGlobalId,identifierGlobalId,cleanIdentifier);
+        if(vendor.dc().isBlank()&&vendorGlobalId==null&&Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM global_product_vendor_codes WHERE vendor_key=? AND normalized_item_code=?
+              AND catalog_scope<>? AND global_product_id IS DISTINCT FROM ?::uuid)
+            """,Boolean.class,vendorKey,cleanVendorCode,CatalogIdentity.scope(tenantId,vendor.dc()),identifierGlobalId)))
+            throw new IllegalArgumentException("This supplier item code differs between branches. Enter the supplier DC on a catalogue import before receiving this item.");
+        UUID globalId=identifierGlobalId!=null?identifierGlobalId:vendorGlobalId;
         if(globalId==null){
             UUID actorId=actorId(actorEmail);
             globalId=jdbc.queryForObject("""
@@ -554,12 +566,12 @@ public class CatalogRepository {
                 int inserted=jdbc.update("""
                     INSERT INTO global_product_identifiers
                         (global_product_id,identifier_type,identifier_value,is_primary) VALUES (?,?,?,true)
-                    ON CONFLICT (identifier_type,identifier_value) DO NOTHING
+                    ON CONFLICT DO NOTHING
                     """,globalId,identifierType.toUpperCase(Locale.ROOT),cleanIdentifier);
                 if(inserted==0){
                     UUID matched=jdbc.queryForObject("""
                         SELECT global_product_id FROM global_product_identifiers
-                        WHERE identifier_type=? AND identifier_value=?
+                        WHERE identity_key=catalog_identifier_key(?,?)
                         """,UUID.class,identifierType.toUpperCase(Locale.ROOT),cleanIdentifier);
                     if(matched!=null&&!matched.equals(globalId)){
                         jdbc.update("DELETE FROM global_catalog_products WHERE id=?",globalId);
@@ -568,6 +580,7 @@ public class CatalogRepository {
                 }
             }
         }
+        if(!cleanIdentifier.isBlank())attachFirstBarcode(globalId,identifierType,cleanIdentifier);
         UUID itemId=jdbc.queryForObject("""
             INSERT INTO account_catalog_items (tenant_id,global_product_id,account_sku,created_by)
             VALUES (?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?)))
@@ -596,18 +609,33 @@ public class CatalogRepository {
             UUID.class,tenantId,itemId);
         String cleanIdentifier=normalizeIdentifier(identifierType,identifier);
         if(!cleanIdentifier.isBlank()){
-            UUID identifierGlobal=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identifier_type=? AND identifier_value=?",
+            UUID identifierGlobal=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identity_key=catalog_identifier_key(?,?)",
                 rs->rs.next()?rs.getObject(1,UUID.class):null,identifierType.toUpperCase(Locale.ROOT),cleanIdentifier);
             if(identifierGlobal!=null&&!identifierGlobal.equals(globalId))throw new IllegalArgumentException(
                 "Identifier "+identifier+" belongs to another global product. Review it before reactivating item code "+accountSku+".");
+            requireCompatibleBarcode(globalId,identifierGlobal,cleanIdentifier);
             if(identifierGlobal==null)jdbc.update("""
                 INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary)
                 SELECT ?,?,?,NOT EXISTS(SELECT 1 FROM global_product_identifiers WHERE global_product_id=? AND is_primary)
-                ON CONFLICT (identifier_type,identifier_value) DO NOTHING
+                ON CONFLICT DO NOTHING
                 """,globalId,identifierType.toUpperCase(Locale.ROOT),cleanIdentifier,globalId);
         }
         reactivateAccountItem(itemId,name,brand,expirationRequired);
         return itemId;
+    }
+
+    private void requireCompatibleBarcode(UUID product,UUID matched,String barcode){
+        if(!barcode.isBlank()&&matched==null&&Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM global_product_identifiers WHERE global_product_id=? AND is_primary)",Boolean.class,product)))
+            throw new IllegalArgumentException("Barcode differs from the existing product. Review the supplier DC / branch; a different barcode cannot silently replace its identity.");
+    }
+
+    private void attachFirstBarcode(UUID product,String type,String value){
+        jdbc.update("""
+            INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary)
+            SELECT ?,?,?,true WHERE NOT EXISTS(SELECT 1 FROM global_product_identifiers WHERE global_product_id=? AND is_primary)
+            ON CONFLICT DO NOTHING
+            """,product,type.toUpperCase(Locale.ROOT),value,product);
     }
 
     private void reactivateAccountItem(UUID itemId,String name,String brand,boolean expirationRequired){
@@ -693,28 +721,30 @@ public class CatalogRepository {
             String category,String unitOfMeasure,String packageSize,BigDecimal unitsPerCase,
             BigDecimal unitsOfSale,LocalDate effectiveFrom){
         setTenant(tenantId);
+        CatalogIdentity.lock(jdbc);
         String uom=unitOfMeasure==null||unitOfMeasure.isBlank()?null:unitOfMeasure.trim().toUpperCase(Locale.ROOT);
         BigDecimal pack=unitsPerCase==null?BigDecimal.ONE:unitsPerCase;
         jdbc.update("""
             UPDATE global_catalog_products SET
                 category=coalesce(nullif(?,''),category),unit_of_measure=coalesce(?,unit_of_measure),
-                package_size=coalesce(nullif(?,''),package_size),units_per_case=coalesce(?,units_per_case),updated_at=now()
+                package_size=coalesce(package_size,nullif(?,'')),units_per_case=coalesce(units_per_case,?),updated_at=now()
             WHERE id=(SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?)
             """,category==null?"":category.trim(),uom,packageSize==null?"":packageSize.trim(),unitsPerCase,tenantId,itemId);
-        VendorIdentity vendor=jdbc.query("SELECT name,vendor_code FROM vendors WHERE tenant_id=? AND id=?",
-            rs->rs.next()?new VendorIdentity(rs.getString(1),rs.getString(2)):null,tenantId,vendorId);
+        VendorIdentity vendor=jdbc.query("SELECT name,vendor_code,distribution_center FROM vendors WHERE tenant_id=? AND id=?",
+            rs->rs.next()?new VendorIdentity(rs.getString(1),rs.getString(2),rs.getString(3)):null,tenantId,vendorId);
         UUID globalId=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenantId,itemId);
         String vendorKey=normalizeVendorKey(vendor.code()==null?vendor.name():vendor.code()),code=normalizeVendorItemCode(vendorItemCode);
-        UUID active=jdbc.query("SELECT id FROM global_product_packaging_versions WHERE vendor_key=? AND normalized_vendor_item_code=? AND status='ACTIVE' AND coalesce(package_size,'')=coalesce(?,'') AND unit_of_measure=? AND units_per_case=? AND coalesce(units_of_sale,1)=coalesce(?,1)",
-            rs->rs.next()?rs.getObject(1,UUID.class):null,vendorKey,code,blankToNull(packageSize),uom==null?"EA":uom,pack,unitsOfSale);
+        String scope=CatalogIdentity.scope(tenantId,vendor.dc());
+        UUID active=jdbc.query("SELECT id FROM global_product_packaging_versions WHERE vendor_key=? AND catalog_scope=? AND normalized_vendor_item_code=? AND status='ACTIVE' AND coalesce(package_size,'')=coalesce(?,'') AND unit_of_measure=? AND units_per_case=? AND coalesce(units_of_sale,1)=coalesce(?,1)",
+            rs->rs.next()?rs.getObject(1,UUID.class):null,vendorKey,scope,code,blankToNull(packageSize),uom==null?"EA":uom,pack,unitsOfSale);
         if(active==null){
-            jdbc.update("UPDATE global_product_packaging_versions SET status='SUPERSEDED',effective_to=greatest(effective_from,coalesce(?,current_date)),updated_at=now() WHERE vendor_key=? AND normalized_vendor_item_code=? AND status='ACTIVE'",
-                effectiveFrom,vendorKey,code);
+            jdbc.update("UPDATE global_product_packaging_versions SET status='SUPERSEDED',effective_to=greatest(effective_from,coalesce(?,current_date)),updated_at=now() WHERE vendor_key=? AND catalog_scope=? AND normalized_vendor_item_code=? AND status='ACTIVE'",
+                effectiveFrom,vendorKey,scope,code);
             active=jdbc.queryForObject("""
-                INSERT INTO global_product_packaging_versions(global_product_id,vendor_key,normalized_vendor_item_code,
+                INSERT INTO global_product_packaging_versions(global_product_id,vendor_key,catalog_scope,normalized_vendor_item_code,
                     package_size,unit_of_measure,units_per_case,units_of_sale,effective_from)
-                VALUES(?,?,?,?,?,?,?,coalesce(?,current_date)) RETURNING id
-                """,UUID.class,globalId,vendorKey,code,blankToNull(packageSize),uom==null?"EA":uom,pack,unitsOfSale,effectiveFrom);
+                VALUES(?,?,?,?,?,?,?,?,coalesce(?,current_date)) RETURNING id
+                """,UUID.class,globalId,vendorKey,scope,code,blankToNull(packageSize),uom==null?"EA":uom,pack,unitsOfSale,effectiveFrom);
         }
     }
 
@@ -742,8 +772,12 @@ public class CatalogRepository {
                 minimum_order_quantity=coalesce(?,minimum_order_quantity),
                 effective_from=coalesce(?,effective_from),
                 packaging_version_id=(SELECT version.id FROM global_product_packaging_versions version
-                  JOIN global_product_vendor_codes code ON code.global_product_id=version.global_product_id
-                  WHERE code.normalized_item_code=upper(regexp_replace(vendor_catalog_offers.vendor_item_code,'[^A-Za-z0-9]','','g'))
+                  JOIN vendors vendor ON vendor.id=vendor_catalog_offers.vendor_id AND vendor.tenant_id=vendor_catalog_offers.tenant_id
+                  JOIN account_catalog_items item ON item.id=vendor_catalog_offers.account_catalog_item_id AND item.tenant_id=vendor_catalog_offers.tenant_id
+                  WHERE version.normalized_vendor_item_code=regexp_replace(upper(regexp_replace(vendor_catalog_offers.vendor_item_code,'[^A-Za-z0-9]','','g')),'^0+(?!$)','')
+                    AND version.vendor_key=upper(regexp_replace(coalesce(vendor.vendor_code,vendor.name),'[^A-Za-z0-9]','','g'))
+                    AND version.catalog_scope=catalog_vendor_scope(vendor.tenant_id,vendor.distribution_center)
+                    AND version.global_product_id=item.global_product_id
                     AND version.status='ACTIVE' ORDER BY version.updated_at DESC LIMIT 1),updated_at=now()
             WHERE tenant_id=? AND vendor_id=? AND account_catalog_item_id=? AND effective_to IS NULL
             """,unitsOfSale,suggestedRetail,minimumQuantity,effectiveFrom,tenantId,vendorId,itemId);
@@ -754,6 +788,7 @@ public class CatalogRepository {
             String vendorItemCode, BigDecimal listCost, BigDecimal discountRate, String currency,
             String sourceType, String sourceReference) {
         setTenant(tenantId);
+        CatalogIdentity.lock(jdbc);
         if(listCost==null||listCost.signum()<0)throw new IllegalArgumentException("Vendor price cannot be negative.");
         if(discountRate!=null&&(discountRate.signum()<0||discountRate.compareTo(BigDecimal.valueOf(100))>0))
             throw new IllegalArgumentException("Discount must be between 0 and 100 percent.");
@@ -797,8 +832,8 @@ public class CatalogRepository {
         if(preferredVendor==null) jdbc.update("UPDATE account_catalog_items SET preferred_vendor_id=?,updated_at=now() WHERE tenant_id=? AND id=?",
             vendorId,tenantId,itemId);
         if(vendorItemCode!=null&&!vendorItemCode.isBlank()){
-            VendorIdentity vendor=jdbc.query("SELECT name,vendor_code FROM vendors WHERE tenant_id=? AND id=?",
-                rs->rs.next()?new VendorIdentity(rs.getString(1),rs.getString(2)):null,tenantId,vendorId);
+            VendorIdentity vendor=jdbc.query("SELECT name,vendor_code,distribution_center FROM vendors WHERE tenant_id=? AND id=?",
+                rs->rs.next()?new VendorIdentity(rs.getString(1),rs.getString(2),rs.getString(3)):null,tenantId,vendorId);
             UUID globalId=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",
                 UUID.class,tenantId,itemId);
             if(vendor!=null&&globalId!=null)saveGlobalVendorCode(globalId,tenantId,vendor,vendorItemCode);
@@ -806,22 +841,24 @@ public class CatalogRepository {
     }
 
     private void saveGlobalVendorCode(UUID globalId,UUID tenantId,VendorIdentity vendor,String itemCode){
+        CatalogIdentity.lock(jdbc);
         String vendorKey=normalizeVendorKey(vendor.code()==null?vendor.name():vendor.code());
+        String scope=CatalogIdentity.scope(tenantId,vendor.dc());
         String normalizedCode=normalizeVendorItemCode(itemCode);
         UUID existing=jdbc.query("""
             SELECT global_product_id FROM global_product_vendor_codes
-            WHERE vendor_key=? AND normalized_item_code=?
-            """,rs->rs.next()?rs.getObject(1,UUID.class):null,vendorKey,normalizedCode);
+            WHERE vendor_key=? AND catalog_scope=? AND normalized_item_code=?
+            """,rs->rs.next()?rs.getObject(1,UUID.class):null,vendorKey,scope,normalizedCode);
         if(existing!=null&&!existing.equals(globalId))throw new IllegalArgumentException(
             "This vendor item code already belongs to another product. Review the product match before saving.");
         jdbc.update("""
             INSERT INTO global_product_vendor_codes
-                (global_product_id,vendor_key,vendor_name,vendor_item_code,normalized_item_code,source_tenant_id)
-            VALUES (?,?,?,?,?,?)
-            ON CONFLICT (vendor_key,normalized_item_code) DO UPDATE SET
+                (global_product_id,vendor_key,catalog_scope,vendor_name,vendor_item_code,normalized_item_code,source_tenant_id)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT (vendor_key,catalog_scope,normalized_item_code) DO UPDATE SET
                 vendor_name=EXCLUDED.vendor_name,vendor_item_code=EXCLUDED.vendor_item_code,
                 source_tenant_id=EXCLUDED.source_tenant_id,last_seen_at=now()
-            """,globalId,vendorKey,vendor.name(),itemCode.trim(),normalizedCode,tenantId);
+            """,globalId,vendorKey,scope,vendor.name(),itemCode.trim(),normalizedCode,tenantId);
     }
 
     @Transactional(readOnly=true)
@@ -933,5 +970,5 @@ public class CatalogRepository {
     }
     private static String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
     private static BigDecimal orZero(BigDecimal value) { return value == null ? BigDecimal.ZERO : value; }
-    private record VendorIdentity(String name,String code){}
+    private record VendorIdentity(String name,String code,String dc){}
 }

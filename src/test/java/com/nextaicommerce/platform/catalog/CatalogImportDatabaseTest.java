@@ -15,6 +15,7 @@ class CatalogImportDatabaseTest {
     static JdbcTemplate jdbc;
     static TransactionTemplate tx;
     static String schema;
+    static UUID migratedProduct,migratedVendor;
     CatalogImportService service;
     UUID tenant,vendor,user;
     String email;
@@ -32,9 +33,18 @@ class CatalogImportDatabaseTest {
             url=postgres.getJdbcUrl("postgres","postgres");
         }
         var source=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);
-        org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+        org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").target("81").load().migrate();
         jdbc=new JdbcTemplate(source);tx=new TransactionTemplate(new DataSourceTransactionManager(source));
         jdbc.execute("ALTER FUNCTION "+schema+".ensure_item_default_location() SET search_path TO "+schema);
+        UUID ibcore=UUID.fromString("d018e963-2c60-4b41-9331-a6232e1981b2");migratedProduct=UUID.randomUUID();migratedVendor=UUID.randomUUID();
+        jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,'ibcore-migration-test','Ibcore')",ibcore);
+        jdbc.update("INSERT INTO vendors(id,tenant_id,name,vendor_code,currency) VALUES (?,?,'KEHE','KEHE','USD')",migratedVendor,ibcore);
+        jdbc.update("INSERT INTO vendors(tenant_id,name,vendor_code,currency) VALUES (?,'Outer Aisle','OA','USD')",ibcore);
+        jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Retained product')",migratedProduct);
+        jdbc.update("INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku) VALUES (?,?,'UNCHANGED')",ibcore,migratedProduct);
+        jdbc.update("INSERT INTO global_product_vendor_codes(global_product_id,vendor_key,vendor_name,vendor_item_code,normalized_item_code,source_tenant_id) VALUES (?,'KEHE','KEHE','100040','100040',?)",migratedProduct,ibcore);
+        jdbc.update("INSERT INTO global_product_packaging_versions(global_product_id,vendor_key,normalized_vendor_item_code,unit_of_measure,units_per_case) VALUES (?,'KEHE','100040','EA',12)",migratedProduct);
+        org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
     }
     @AfterAll static void cleanup() throws Exception {
         if(jdbc!=null&&schema.matches("catalog_test_[a-f0-9]{32}"))jdbc.execute("DROP SCHEMA "+schema+" CASCADE");
@@ -54,7 +64,67 @@ class CatalogImportDatabaseTest {
         if(barcode!=null)jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) VALUES (?,'UPC',?,true)",id,barcode);
         return id;}
     String normalized(String value){return value.replaceAll("[^A-Za-z0-9]","").toUpperCase(Locale.ROOT);}
-    void code(UUID product,String code){jdbc.update("INSERT INTO global_product_vendor_codes(global_product_id,vendor_key,vendor_name,vendor_item_code,normalized_item_code,source_tenant_id) VALUES (?,?,'Test vendor',?,?,?)",product,normalized(vendor.toString()),code,code,tenant);}
+    void code(UUID product,String code){jdbc.update("INSERT INTO global_product_vendor_codes(global_product_id,vendor_key,catalog_scope,vendor_name,vendor_item_code,normalized_item_code,source_tenant_id) VALUES (?,?,?,'Test vendor',?,?,?)",product,normalized(vendor.toString()),CatalogIdentity.scope(tenant,""),code,code,tenant);}
+
+    @Test void migrationBackfillsOnlyIbcoreKeheWithoutChangingProductIdentity(){
+        assertThat(jdbc.queryForObject("SELECT distribution_center FROM vendors WHERE id=?",String.class,migratedVendor)).isEqualTo("41");
+        assertThat(jdbc.queryForObject("SELECT distribution_center FROM vendors WHERE vendor_code='OA'",String.class)).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE account_sku='UNCHANGED'",UUID.class)).isEqualTo(migratedProduct);
+        assertThat(jdbc.queryForObject("SELECT catalog_scope FROM global_product_vendor_codes WHERE global_product_id=?",String.class,migratedProduct)).isEqualTo("DC:41");
+        assertThat(jdbc.queryForObject("SELECT catalog_scope FROM global_product_packaging_versions WHERE global_product_id=?",String.class,migratedProduct)).isEqualTo("DC:41");
+    }
+
+    @Test void differentBranchesMayReuseSupplierCodeForDifferentProducts(){
+        UUID original=product(normalized("old"+user));code(original,"789800");
+        jdbc.update("UPDATE global_product_vendor_codes SET catalog_scope='DC:41' WHERE global_product_id=?",original);
+        UUID staged=stage("Coconut,789800,3.71,"+normalized("new"+user)+"\n");
+        assertThatThrownBy(()->approve(staged)).hasMessageContaining("Enter the supplier DC / branch");
+        var dcMapping=new HashMap<>(mapping);dcMapping.put("distributionCenter","DC 19");
+        tx.executeWithoutResult(s->service.approve(tenant,email,staged,dcMapping));
+        UUID imported=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=?",UUID.class,tenant);
+        assertThat(imported).isNotEqualTo(original);
+        assertThat(jdbc.queryForObject("SELECT global_product_id FROM global_product_vendor_codes WHERE vendor_key=? AND catalog_scope='DC:41'",UUID.class,normalized(vendor.toString()))).isEqualTo(original);
+        assertThat(jdbc.queryForObject("SELECT distribution_center FROM vendors WHERE id=?",String.class,vendor)).isEqualTo("19");
+        UUID next=stage("Coconut,789800,4.71,"+normalized("new"+user)+"\n");dcMapping.put("distributionCenter","41");
+        assertThatThrownBy(()->tx.executeWithoutResult(s->service.approve(tenant,email,next,dcMapping))).hasMessageContaining("separate vendor entry");
+    }
+
+    @Test void equivalentUpcEanAcrossBranchesReusesProductWithoutChangingItsCasePack(){
+        UUID original=product("076371012317");code(original,"789800");
+        jdbc.update("UPDATE global_catalog_products SET units_per_case=12 WHERE id=?",original);
+        jdbc.update("UPDATE global_product_vendor_codes SET catalog_scope='DC:41' WHERE global_product_id=?",original);
+        var dcMapping=new HashMap<>(mapping);dcMapping.put("distributionCenter","19");dcMapping.put("identifierType","EAN");
+        UUID staged=stage("Tofu,425223,2.00,0076371012317\n");
+        tx.executeWithoutResult(s->service.approve(tenant,email,staged,dcMapping));
+        assertThat(jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=?",UUID.class,tenant)).isEqualTo(original);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers WHERE global_product_id=?",Integer.class,original)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT units_per_case FROM global_catalog_products WHERE id=?",Integer.class,original)).isEqualTo(12);
+        assertThat(jdbc.queryForObject("SELECT catalog_scope FROM global_product_packaging_versions WHERE global_product_id=?",String.class,original)).isEqualTo("DC:19");
+    }
+
+    @Test void equivalentBarcodeRowsInSameFileAreRejectedAtomically(){
+        UUID staged=stage("One,111,1.00,041331090988\nTwo,112,1.00,0041331090988\n");
+        assertThatThrownBy(()->approve(staged)).hasMessageContaining("Duplicate equivalent UPC / EAN");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isZero();
+    }
+
+    @Test void manualReceivingProductPathUsesBranchAndBarcodeIdentity(){
+        var repository=new CatalogRepository(jdbc);
+        UUID original=product(normalized("existing"+user));code(original,"99");
+        jdbc.update("UPDATE global_product_vendor_codes SET catalog_scope='DC:41' WHERE global_product_id=?",original);
+        jdbc.update("UPDATE vendors SET distribution_center='19' WHERE id=?",vendor);
+        UUID item=tx.execute(s->repository.addImportedVendorProduct(tenant,email,vendor,"99","Other product",null,"MPN","new"+user,null,false));
+        tx.executeWithoutResult(s->{
+            repository.updateImportedProductAttributes(tenant,item,vendor,"99",null,"EA","6 pack",new java.math.BigDecimal("6"),null,null);
+            repository.saveVendorOffer(tenant,email,item,vendor,"99",java.math.BigDecimal.ONE,java.math.BigDecimal.ZERO,"USD","MANUAL",null,null,null,null,null);
+        });
+        assertThat(jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE id=?",UUID.class,item)).isNotEqualTo(original);
+        assertThat(jdbc.queryForObject("SELECT p.catalog_scope FROM vendor_catalog_offers o JOIN global_product_packaging_versions p ON p.id=o.packaging_version_id WHERE o.account_catalog_item_id=?",String.class,item)).isEqualTo("DC:19");
+        assertThatThrownBy(()->tx.execute(s->repository.addImportedVendorProduct(tenant,email,vendor,"99","Wrong product",null,"MPN","wrong"+user,null,false)))
+            .hasMessageContaining("Barcode differs");
+        UUID repeated=tx.execute(s->repository.addImportedVendorProduct(tenant,email,vendor,"99","Other product",null,"MPN","new"+user,null,false));
+        assertThat(repeated).isEqualTo(item);
+    }
 
     @Test void sharedProductKeepsPrimaryAndRecognizesKnownAlternateBarcodeWithoutDuplication(){
         String old=normalized("old-"+user),newCode=normalized("new-"+user);UUID product=product(old);code(product,"123");

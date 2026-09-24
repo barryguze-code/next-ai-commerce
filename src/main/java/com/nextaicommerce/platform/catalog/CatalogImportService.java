@@ -81,6 +81,8 @@ public class CatalogImportService {
                 throw new IllegalArgumentException("This catalogue exceeds the 50,000 row import limit.");
             UUID actorId = jdbc.queryForObject("SELECT id FROM app_users WHERE lower(email)=lower(?)", UUID.class, actorEmail);
             Map<String,String> autoMapping = autoMap(sheet.headers());
+            String defaultDc=jdbc.queryForObject("SELECT distribution_center FROM vendors WHERE tenant_id=? AND id=?",String.class,tenantId,vendorId);
+            if(defaultDc!=null&&!defaultDc.isBlank())autoMapping.put("distributionCenter",defaultDc);
             UUID importId = jdbc.queryForObject("""
                 INSERT INTO catalog_imports
                     (tenant_id,vendor_id,original_filename,file_sha256,status,column_mapping,total_rows,uploaded_by)
@@ -139,6 +141,10 @@ public class CatalogImportService {
               AND validation_status IN ('REJECTED','WARNING') ORDER BY row_number LIMIT 12
             """,(rs,row)->rs.getString(1),tenantId,importId);
         Map<String,String> mapping=readMap(base.mapping());
+        if(!mapping.containsKey("distributionCenter")){
+            String dc=jdbc.queryForObject("SELECT vendor.distribution_center FROM catalog_imports ci JOIN vendors vendor ON vendor.id=ci.vendor_id AND vendor.tenant_id=ci.tenant_id WHERE ci.tenant_id=? AND ci.id=?",String.class,tenantId,importId);
+            mapping.put("distributionCenter",dc==null?"":dc);
+        }
         var mappedHeaders=new java.util.HashSet<>(mapping.values());
         List<String> ignored=headers.stream().filter(header->!mappedHeaders.contains(header)).toList();
         int percent=base.total()==0?0:Math.min(100,(int)Math.floor(base.processed()*100.0/base.total()));
@@ -157,9 +163,9 @@ public class CatalogImportService {
             (rs,row)->new SourceRow(rs.getObject(1,UUID.class),rs.getInt(2),readMap(rs.getString(3))),tenantId,importId);
         if(rows.isEmpty())throw new IllegalArgumentException("This file has no product rows.");
         Map<String,Integer> itemCodes=new java.util.HashMap<>(),identifiers=new java.util.HashMap<>();
-        for(SourceRow row:rows){count(itemCodes,normalized(value(row.data(),mapping,"vendorItemCode")));count(identifiers,normalized(value(row.data(),mapping,"identifier")));}
+        for(SourceRow row:rows){count(itemCodes,normalizedVendorCode(value(row.data(),mapping,"vendorItemCode")));count(identifiers,normalized(value(row.data(),mapping,"identifier")));}
         List<Object[]> updates=new ArrayList<>(rows.size());int valid=0,rejected=0;
-        for(SourceRow row:rows){List<String> problems=new ArrayList<>();String code=normalized(value(row.data(),mapping,"vendorItemCode"));String identifier=normalized(value(row.data(),mapping,"identifier"));
+        for(SourceRow row:rows){List<String> problems=new ArrayList<>();String code=normalizedVendorCode(value(row.data(),mapping,"vendorItemCode"));String identifier=normalized(value(row.data(),mapping,"identifier"));
             if(value(row.data(),mapping,"productName").isBlank())problems.add("Product name is missing");
             if(code.isBlank()&&identifier.isBlank())problems.add("Both vendor item code and UPC / EAN are missing");
             else if(code.isBlank())problems.add("Vendor item code is missing");
@@ -177,17 +183,24 @@ public class CatalogImportService {
     @Transactional
     public void approve(UUID tenantId, String actorEmail, UUID importId, Map<String,String> mapping) {
         setTenant(tenantId);
+        CatalogIdentity.lock(jdbc);
         require(mapping, "productName", "Product name");
         require(mapping, "vendorItemCode", "Vendor item code");
         require(mapping, "listCost", "List cost");
         ImportVendor source = jdbc.query("""
-            SELECT ci.vendor_id,vendor.currency,vendor.default_discount_rate,vendor.name,vendor.vendor_code FROM catalog_imports ci
+            SELECT ci.vendor_id,vendor.currency,vendor.default_discount_rate,vendor.name,vendor.vendor_code,vendor.distribution_center FROM catalog_imports ci
             JOIN vendors vendor ON vendor.tenant_id=ci.tenant_id AND vendor.id=ci.vendor_id
             WHERE ci.tenant_id=? AND ci.id=? AND ci.status='VALIDATED' FOR UPDATE
             """, rs -> rs.next() ? new ImportVendor(rs.getObject(1,UUID.class),rs.getString(2),
-                rs.getBigDecimal(3),rs.getString(4),rs.getString(5)) : null,
+                rs.getBigDecimal(3),rs.getString(4),rs.getString(5),rs.getString(6)) : null,
             tenantId, importId);
         if (source == null) throw new IllegalArgumentException("This catalogue was already processed or is unavailable.");
+        String dc=CatalogIdentity.distributionCenter(mapping.getOrDefault("distributionCenter",source.distributionCenter()));
+        if(!dc.equals(source.distributionCenter())&&Boolean.TRUE.equals(jdbc.queryForObject(
+            "SELECT EXISTS(SELECT 1 FROM vendor_catalog_offers WHERE tenant_id=? AND vendor_id=?)",Boolean.class,tenantId,source.vendorId())))
+            throw new IllegalArgumentException("This vendor already has catalogue history for another DC / branch. Add a separate vendor entry for the new branch to preserve receiving and prices.");
+        jdbc.update("UPDATE vendors SET distribution_center=? WHERE tenant_id=? AND id=?",dc,tenantId,source.vendorId());
+        source=new ImportVendor(source.vendorId(),source.currency(),source.discountRate(),source.vendorName(),source.vendorCode(),dc);
         List<SourceRow> rows = jdbc.query("""
             SELECT id,row_number,source_data::text FROM catalog_import_rows
             WHERE tenant_id=? AND catalog_import_id=? ORDER BY row_number
@@ -215,6 +228,7 @@ public class CatalogImportService {
         UUID actorId=jdbc.queryForObject("SELECT id FROM app_users WHERE lower(email)=lower(?)",UUID.class,actorEmail);
         String identifierType=mapping.getOrDefault("identifierType","UPC").toUpperCase(Locale.ROOT);
         String vendorKey=normalized(source.vendorCode()==null?source.vendorName():source.vendorCode());
+        String scope=CatalogIdentity.scope(tenantId,source.distributionCenter());
         jdbc.execute("DROP TABLE IF EXISTS catalog_import_work");
         jdbc.execute("""
             CREATE TEMP TABLE catalog_import_work(
@@ -246,19 +260,38 @@ public class CatalogImportService {
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,batch);
         reportProgress(tenantId,importId,Math.max(1,rows.size()/10));
+        Integer duplicateKeys=jdbc.queryForObject("""
+            SELECT count(*) FROM (SELECT catalog_identifier_key(identifier_type,identifier_value)
+              FROM catalog_import_work WHERE identifier_value IS NOT NULL
+              GROUP BY catalog_identifier_key(identifier_type,identifier_value) HAVING count(*)>1) duplicate
+            """,Integer.class);
+        if(duplicateKeys!=null&&duplicateKeys>0)throw new IllegalArgumentException("Duplicate equivalent UPC / EAN product rows in this file. Review them before importing; no catalogue changes were saved.");
         jdbc.update("""
             UPDATE catalog_import_work work SET vendor_global_id=code.global_product_id
-            FROM global_product_vendor_codes code WHERE code.vendor_key=? AND code.normalized_item_code=work.normalized_code
-            """,vendorKey);
+            FROM global_product_vendor_codes code WHERE code.vendor_key=? AND code.catalog_scope=? AND code.normalized_item_code=work.normalized_code
+            """,vendorKey,scope);
         jdbc.update("""
             UPDATE catalog_import_work work SET identifier_global_id=identifier.global_product_id
             FROM global_product_identifiers identifier
-            WHERE work.identifier_value IS NOT NULL AND identifier.identifier_type=work.identifier_type
-              AND identifier.identifier_value=work.identifier_value
+            WHERE work.identifier_value IS NOT NULL
+              AND identifier.identity_key=catalog_identifier_key(work.identifier_type,work.identifier_value)
             """);
+        if(source.distributionCenter().isBlank()){
+            List<String> branchConflicts=jdbc.query("""
+                SELECT work.row_number,work.vendor_item_code FROM catalog_import_work work
+                WHERE work.vendor_global_id IS NULL AND EXISTS (
+                  SELECT 1 FROM global_product_vendor_codes code
+                  WHERE code.vendor_key=? AND code.normalized_item_code=work.normalized_code AND code.catalog_scope<>?
+                    AND (work.identifier_global_id IS NULL OR code.global_product_id<>work.identifier_global_id))
+                ORDER BY work.row_number LIMIT 8
+                """,(rs,n)->"row "+rs.getInt(1)+" (item "+rs.getString(2)+")",vendorKey,scope);
+            if(!branchConflicts.isEmpty())throw new IllegalArgumentException("Enter the supplier DC / branch on this import: "+String.join(", ",branchConflicts)+" conflicts with another branch. No catalogue changes were saved.");
+        }
         Integer conflicts=jdbc.queryForObject("SELECT count(*) FROM catalog_import_work WHERE vendor_global_id IS NOT NULL AND identifier_global_id IS NOT NULL AND vendor_global_id<>identifier_global_id",Integer.class);
         if(conflicts!=null&&conflicts>0)throw new IllegalArgumentException(conflicts+" rows have vendor item codes and UPC/EAN values belonging to different global products.");
-        jdbc.update("UPDATE catalog_import_work SET global_id=coalesce(vendor_global_id,identifier_global_id)");
+        jdbc.update("UPDATE catalog_import_work SET global_id=coalesce(identifier_global_id,vendor_global_id)");
+        Integer duplicateProducts=jdbc.queryForObject("SELECT count(*) FROM (SELECT global_id FROM catalog_import_work WHERE global_id IS NOT NULL GROUP BY global_id HAVING count(*)>1) repeated",Integer.class);
+        if(duplicateProducts!=null&&duplicateProducts>0)throw new IllegalArgumentException("Multiple rows resolve to the same global barcode/product. Review duplicate product rows before importing; no catalogue changes were saved.");
         jdbc.update("UPDATE catalog_import_work SET global_id=gen_random_uuid(),is_new=true WHERE global_id IS NULL");
         jdbc.update("""
             INSERT INTO global_catalog_products(id,canonical_name,brand,requires_expiration_date,source_tenant_id,created_by)
@@ -266,10 +299,10 @@ public class CatalogImportService {
             """,tenantId,actorId);
         mergeIdentifiers();
         jdbc.update("""
-            INSERT INTO global_product_vendor_codes(global_product_id,vendor_key,vendor_name,vendor_item_code,normalized_item_code,source_tenant_id)
-            SELECT global_id,?, ?,vendor_item_code,normalized_code,? FROM catalog_import_work
-            ON CONFLICT(vendor_key,normalized_item_code) DO UPDATE SET last_seen_at=now()
-            """,vendorKey,source.vendorName(),tenantId);
+            INSERT INTO global_product_vendor_codes(global_product_id,vendor_key,catalog_scope,vendor_name,vendor_item_code,normalized_item_code,source_tenant_id)
+            SELECT global_id,?, ?,?,vendor_item_code,normalized_code,? FROM catalog_import_work
+            ON CONFLICT(vendor_key,catalog_scope,normalized_item_code) DO UPDATE SET last_seen_at=now()
+            """,vendorKey,scope,source.vendorName(),tenantId);
         reportProgress(tenantId,importId,rows.size()*3/10);
         jdbc.update("""
             INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku,created_by)
@@ -286,31 +319,31 @@ public class CatalogImportService {
               unit_of_measure=coalesce(upper(work.uom),product.unit_of_measure),
               package_size=coalesce(work.package_size,product.package_size),
               units_per_case=coalesce(work.units_per_case,product.units_per_case),updated_at=now()
-            FROM catalog_import_work work WHERE product.id=work.global_id
+            FROM catalog_import_work work WHERE product.id=work.global_id AND work.is_new
             """);
         jdbc.update("UPDATE account_catalog_items item SET preferred_vendor_id=coalesce(item.preferred_vendor_id,?),updated_at=now() FROM catalog_import_work work WHERE item.tenant_id=? AND item.id=work.item_id",source.vendorId(),tenantId);
         reportProgress(tenantId,importId,rows.size()/2);
         jdbc.update("""
             UPDATE global_product_packaging_versions version SET status='SUPERSEDED',
               effective_to=greatest(version.effective_from,coalesce(work.effective_from,current_date)),updated_at=now()
-            FROM catalog_import_work work WHERE version.vendor_key=? AND version.normalized_vendor_item_code=work.normalized_code
+            FROM catalog_import_work work WHERE version.vendor_key=? AND version.catalog_scope=? AND version.normalized_vendor_item_code=work.normalized_code
               AND version.status='ACTIVE' AND (coalesce(version.package_size,'')<>coalesce(work.package_size,'')
                 OR version.unit_of_measure<>coalesce(upper(work.uom),'EA')
                 OR version.units_per_case<>coalesce(work.units_per_case,1)
                 OR coalesce(version.units_of_sale,1)<>coalesce(work.units_of_sale,1))
-            """,vendorKey);
+            """,vendorKey,scope);
         jdbc.update("""
-            INSERT INTO global_product_packaging_versions(global_product_id,vendor_key,normalized_vendor_item_code,
+            INSERT INTO global_product_packaging_versions(global_product_id,vendor_key,catalog_scope,normalized_vendor_item_code,
               package_size,unit_of_measure,units_per_case,units_of_sale,effective_from)
-            SELECT work.global_id,?,work.normalized_code,work.package_size,coalesce(upper(work.uom),'EA'),
+            SELECT work.global_id,?,?,work.normalized_code,work.package_size,coalesce(upper(work.uom),'EA'),
               coalesce(work.units_per_case,1),work.units_of_sale,coalesce(work.effective_from,current_date)
             FROM catalog_import_work work WHERE NOT EXISTS(SELECT 1 FROM global_product_packaging_versions version
-              WHERE version.vendor_key=? AND version.normalized_vendor_item_code=work.normalized_code AND version.status='ACTIVE')
-            """,vendorKey,vendorKey);
+              WHERE version.vendor_key=? AND version.catalog_scope=? AND version.normalized_vendor_item_code=work.normalized_code AND version.status='ACTIVE')
+            """,vendorKey,scope,vendorKey,scope);
         jdbc.update("""
             UPDATE catalog_import_work work SET packaging_id=version.id FROM global_product_packaging_versions version
-            WHERE version.vendor_key=? AND version.normalized_vendor_item_code=work.normalized_code AND version.status='ACTIVE'
-            """,vendorKey);
+            WHERE version.vendor_key=? AND version.catalog_scope=? AND version.normalized_vendor_item_code=work.normalized_code AND version.status='ACTIVE'
+            """,vendorKey,scope);
         jdbc.update("""
             UPDATE vendor_catalog_offers offer SET is_default=false FROM catalog_import_work work
             WHERE offer.tenant_id=? AND offer.account_catalog_item_id=work.item_id AND offer.is_default
@@ -364,8 +397,8 @@ public class CatalogImportService {
               AND EXISTS (SELECT 1 FROM global_product_identifiers existing
                 WHERE existing.global_product_id=work.global_id AND existing.is_primary)
               AND NOT EXISTS (SELECT 1 FROM global_product_identifiers known
-                WHERE known.global_product_id=work.global_id AND known.identifier_type=work.identifier_type
-                  AND known.identifier_value=work.identifier_value)
+                WHERE known.global_product_id=work.global_id
+                  AND known.identity_key=catalog_identifier_key(work.identifier_type,work.identifier_value))
             ORDER BY work.row_number LIMIT 10
             """,(rs,row)->"row "+rs.getInt(1)+" (item "+rs.getString(2)+")");
         if(!mismatches.isEmpty())throw new IllegalArgumentException(
@@ -374,14 +407,14 @@ public class CatalogImportService {
         jdbc.update("""
             INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary)
             SELECT global_id,identifier_type,identifier_value,false FROM catalog_import_work WHERE identifier_value IS NOT NULL
-            ON CONFLICT(identifier_type,identifier_value) DO NOTHING
+            ON CONFLICT DO NOTHING
             """);
         jdbc.update("""
             WITH candidates AS (
               SELECT DISTINCT ON (identifier.global_product_id) identifier.id
               FROM global_product_identifiers identifier
               JOIN catalog_import_work work ON work.global_id=identifier.global_product_id
-                AND work.identifier_type=identifier.identifier_type AND work.identifier_value=identifier.identifier_value
+                AND identifier.identity_key=catalog_identifier_key(work.identifier_type,work.identifier_value)
               WHERE NOT EXISTS (SELECT 1 FROM global_product_identifiers existing
                 WHERE existing.global_product_id=identifier.global_product_id AND existing.is_primary)
               ORDER BY identifier.global_product_id,work.row_number,identifier.id
@@ -573,7 +606,7 @@ public class CatalogImportService {
     public record ParsedSheet(List<String> headers,List<Map<String,String>> rows){}
     private record QuantityPair(BigDecimal ordered,BigDecimal shipped){}
     private record ImportBase(UUID id,String filename,String status,String mapping,int total,int valid,int rejected,String vendorName,BigDecimal discountRate,String processState,int processed,String processError,int mappedSkus,int unmappedSkus){}
-    private record ImportVendor(UUID vendorId,String currency,BigDecimal discountRate,String vendorName,String vendorCode){}
+    private record ImportVendor(UUID vendorId,String currency,BigDecimal discountRate,String vendorName,String vendorCode,String distributionCenter){}
     private record SourceRow(UUID id,int number,Map<String,String> data){}
     private record ValidationSummary(String status,int valid,int rejected){}
     private record ExistingImport(UUID id,String status,UUID vendorId){}
