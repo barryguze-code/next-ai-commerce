@@ -44,6 +44,9 @@ class CatalogImportDatabaseTest {
         jdbc.update("INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku) VALUES (?,?,'UNCHANGED')",ibcore,migratedProduct);
         jdbc.update("INSERT INTO global_product_vendor_codes(global_product_id,vendor_key,vendor_name,vendor_item_code,normalized_item_code,source_tenant_id) VALUES (?,'KEHE','KEHE','100040','100040',?)",migratedProduct,ibcore);
         jdbc.update("INSERT INTO global_product_packaging_versions(global_product_id,vendor_key,normalized_vendor_item_code,unit_of_measure,units_per_case) VALUES (?,'KEHE','100040','EA',12)",migratedProduct);
+        org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").target("82").load().migrate();
+        // Reproduce an application-role migration where tenant RLS hid the vendor row.
+        jdbc.update("UPDATE vendors SET distribution_center='' WHERE id=?",migratedVendor);
         org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
     }
     @AfterAll static void cleanup() throws Exception {
