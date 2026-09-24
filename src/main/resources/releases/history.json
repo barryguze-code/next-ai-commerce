@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.3.10",
+ "title":"Shared catalogue barcode import fix",
+ "sections":[{"title":"Catalogue imports","items":["Preserve an existing global product's primary barcode when another account imports a known alternate barcode. Do not create duplicate products.","Flag changed barcodes with the affected row and vendor item code instead of silently merging unrelated products or showing a database error. Failed imports roll back safely for review and retry.","Includes a 25,845-row import regression test. No marketplace publishing settings are changed."]}]
+},
+{
  "version":"1.3.9",
  "title":"Account administrator logo uploads",
  "sections":[{"title":"Company identity","items":["Allow account OWNER and ADMIN members to upload the logo for their own active account without requiring platform-superadmin access.","Keep tenant-specific authorization at the controller boundary. Operators and viewers remain unable to change company identity, and normal account admins return to their workspace after saving."]}]

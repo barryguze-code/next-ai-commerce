@@ -264,11 +264,7 @@ public class CatalogImportService {
             INSERT INTO global_catalog_products(id,canonical_name,brand,requires_expiration_date,source_tenant_id,created_by)
             SELECT global_id,product_name,brand,expiration_required,?,? FROM catalog_import_work WHERE is_new
             """,tenantId,actorId);
-        jdbc.update("""
-            INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary)
-            SELECT global_id,identifier_type,identifier_value,true FROM catalog_import_work WHERE identifier_value IS NOT NULL
-            ON CONFLICT(identifier_type,identifier_value) DO NOTHING
-            """);
+        mergeIdentifiers();
         jdbc.update("""
             INSERT INTO global_product_vendor_codes(global_product_id,vendor_key,vendor_name,vendor_item_code,normalized_item_code,source_tenant_id)
             SELECT global_id,?, ?,vendor_item_code,normalized_code,? FROM catalog_import_work
@@ -349,6 +345,50 @@ public class CatalogImportService {
             """,tenantId);
         reportProgress(tenantId,importId,rows.size());
         return rows.size();
+    }
+
+    // Called inside the import transaction. Lock in stable order so overlapping imports
+    // cannot both elect a primary identifier for the same existing product.
+    void mergeIdentifiers(){
+        jdbc.queryForList("""
+            SELECT product.id FROM global_catalog_products product
+            WHERE product.id IN (SELECT global_id FROM catalog_import_work WHERE identifier_value IS NOT NULL)
+            ORDER BY product.id FOR UPDATE
+            """,UUID.class);
+        // A vendor code may have been reused or linked incorrectly. Never turn a
+        // different product's barcode into an alias just to bypass the unique index.
+        List<String> mismatches=jdbc.query("""
+            SELECT work.row_number,work.vendor_item_code
+            FROM catalog_import_work work
+            WHERE work.identifier_value IS NOT NULL
+              AND EXISTS (SELECT 1 FROM global_product_identifiers existing
+                WHERE existing.global_product_id=work.global_id AND existing.is_primary)
+              AND NOT EXISTS (SELECT 1 FROM global_product_identifiers known
+                WHERE known.global_product_id=work.global_id AND known.identifier_type=work.identifier_type
+                  AND known.identifier_value=work.identifier_value)
+            ORDER BY work.row_number LIMIT 10
+            """,(rs,row)->"row "+rs.getInt(1)+" (item "+rs.getString(2)+")");
+        if(!mismatches.isEmpty())throw new IllegalArgumentException(
+            "Barcode differs from the existing global product: "+String.join(", ",mismatches)
+            +". Review these vendor item links before retrying. No catalogue changes were saved.");
+        jdbc.update("""
+            INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary)
+            SELECT global_id,identifier_type,identifier_value,false FROM catalog_import_work WHERE identifier_value IS NOT NULL
+            ON CONFLICT(identifier_type,identifier_value) DO NOTHING
+            """);
+        jdbc.update("""
+            WITH candidates AS (
+              SELECT DISTINCT ON (identifier.global_product_id) identifier.id
+              FROM global_product_identifiers identifier
+              JOIN catalog_import_work work ON work.global_id=identifier.global_product_id
+                AND work.identifier_type=identifier.identifier_type AND work.identifier_value=identifier.identifier_value
+              WHERE NOT EXISTS (SELECT 1 FROM global_product_identifiers existing
+                WHERE existing.global_product_id=identifier.global_product_id AND existing.is_primary)
+              ORDER BY identifier.global_product_id,work.row_number,identifier.id
+            )
+            UPDATE global_product_identifiers identifier SET is_primary=true
+            FROM candidates WHERE identifier.id=candidates.id
+            """);
     }
 
     private void reportProgress(UUID tenantId,UUID importId,int rows){if(progress!=null)progress.processing(tenantId,importId,rows);}
