@@ -30,6 +30,25 @@ class InventoryPublicationDatabaseTest {
   jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,1)",tenant,bundle,second);
   mapping("FBA",item,1);jdbc.update("UPDATE amazon_listings SET fulfillment_channel='AFN' WHERE tenant_id=? AND seller_sku='FBA'",tenant);
  });}
+ @Test void newConnectionsInitializeInventoryBoundaryWithoutActivation(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);
+  var access=new com.nextaicommerce.platform.web.WorkspaceAccessRepository(jdbc);
+  var existing=jdbc.queryForObject("SELECT inventory_activated_at FROM marketplace_connections WHERE id=?",java.sql.Timestamp.class,connection);
+  access.addConnection(tenant,"AMAZON","New Amazon US","new-seller","ATVPDKIKX0DER");
+  access.addConnection(tenant,"WALMART","New Walmart US",null,"Walmart-US");
+  var rows=jdbc.queryForList("SELECT status,inventory_activated_at,credential_secret_ref FROM marketplace_connections WHERE tenant_id=? AND id<>?",tenant,connection);
+  assertThat(rows).hasSize(2).allSatisfy(row->{
+   assertThat(row.get("inventory_activated_at")).isNotNull();
+   assertThat(row.get("status")).isEqualTo("PENDING");
+   assertThat(row.get("credential_secret_ref")).isEqualTo("pending://marketplace-connection");
+  });
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_publications WHERE tenant_id=?",Integer.class,tenant)).isZero();
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shelf_sale_settings WHERE tenant_id=?",Integer.class,tenant)).isZero();
+  jdbc.update("UPDATE marketplace_connections SET status='DISABLED' WHERE id=?",connection);
+  access.addConnection(tenant,"AMAZON","Reconnected","seller","ATVPDKIKX0DER");
+  assertThat(jdbc.queryForObject("SELECT inventory_activated_at FROM marketplace_connections WHERE id=?",java.sql.Timestamp.class,connection)).isEqualTo(existing);
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM marketplace_connections WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(3);
+ });}
  UUID product(){UUID p=UUID.randomUUID(),g=UUID.randomUUID();jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Test product')",g);jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES (?,?,?,?)",p,tenant,g,p.toString());return p;}
  UUID stock(UUID p,int qty,int days){UUID id=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,entry_type,quantity,expiration_date,source_type,occurred_at,idempotency_key) VALUES (?,?,?,'ADJUSTMENT',?,current_date+?,'MANUAL',now(),?)",id,tenant,p,qty,days,id.toString());return id;}
  UUID mapping(String sku,UUID p,int qty){UUID m=UUID.randomUUID();jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,account_catalog_item_id,marketplace_sku,quantity_per_marketplace_unit) VALUES (?,?,?,?,?,?)",m,tenant,connection,p,sku,qty);jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,?)",tenant,m,p,qty);jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_channel,listing_status) VALUES (?,?,'ATVPDKIKX0DER',?,'MFN','Active')",tenant,connection,sku);return m;}

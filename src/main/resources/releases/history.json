@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.3.8",
+ "title":"New marketplace connection setup",
+ "sections":[{"title":"Connection creation","items":["Initialize the required inventory start timestamp when creating a marketplace connection, fixing the database error during Amazon US setup.","New connections remain pending authorization. Existing connection timestamps and inventory/price publishing permissions are unchanged."]}]
+},
+{
  "version":"1.3.7",
  "title":"Receiving case-size defaults",
  "sections":[{"title":"Faster receiving","items":["First receiving prefills the remaining invoiced quantity using the case size. Additional receiving starts with zero cases while retaining units per case and focusing expiration date.","Update catalogue case size is a compact secondary button. Its confirmation explains the change; redundant inline guidance is removed. Exception clear actions still reset both values to zero."]}]

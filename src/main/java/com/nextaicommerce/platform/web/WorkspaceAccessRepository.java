@@ -379,8 +379,8 @@ public class WorkspaceAccessRepository {
         int inserted = jdbc.update("""
             INSERT INTO marketplace_connections
                 (tenant_id, channel, seller_identifier, marketplace_identifier,
-                 credential_secret_ref, status, display_name, reporting_timezone)
-            SELECT ?, ?, ?, ?, ?, 'PENDING', ?, definition.reporting_timezone
+                 credential_secret_ref, status, display_name, reporting_timezone, inventory_activated_at)
+            SELECT ?, ?, ?, ?, ?, 'PENDING', ?, definition.reporting_timezone, now()
             FROM marketplace_definitions definition
             WHERE definition.channel=? AND definition.marketplace_identifier=?
             """, tenantId, channel, storedIdentifier, marketplaceIdentifier,
