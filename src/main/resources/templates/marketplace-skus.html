@@ -45,6 +45,10 @@
     <section class="data-card sku-card">
       <div class="card-toolbar sku-toolbar">
         <div><h2 th:text="${(selectedStoreName ?: 'Amazon')+' assortment'}">Amazon assortment</h2><p>Synced from Amazon. Search by seller SKU, ASIN, or product title.</p></div>
+        <form th:if="${listingSync != null}" method="post" th:action="@{/app/marketplace-skus/sync}">
+          <button type="submit" class="secondary-button" th:disabled="${!listingSync.allowed()}" th:title="${listingSync.message()}">↻ Sync Amazon SKUs</button>
+          <small role="status" th:if="${!listingSync.allowed()}" th:text="${listingSync.message()}"></small>
+        </form>
         <div class="sku-toolbar-actions table-widget-tools"><form class="sku-search" method="get" action="/app/marketplace-skus">
           <input type="hidden" name="status" th:value="${selectedStatus}">
           <input type="hidden" name="sort" th:value="${selectedSort}"><input type="hidden" name="direction" th:value="${sortDirection}">

@@ -47,6 +47,20 @@ import org.springframework.test.web.servlet.MockMvc;
 class SecurityConfigTest {
     private static final UUID TENANT_ID = UUID.randomUUID();
     @Autowired MockMvc mvc;
+    @Test void invitationSurvivesLoginRedirectWithoutSavingBackgroundRequests() throws Exception {
+        var session=new org.springframework.mock.web.MockHttpSession();
+        mvc.perform(get("/invitation/accept").servletPath("/invitation/accept").param("tenantId",TENANT_ID.toString()).param("token","test-invitation")
+            .session(session).header("Sec-Fetch-Mode","navigate").header("Sec-Fetch-Dest","document"))
+            .andExpect(status().is3xxRedirection());
+        var saved=(org.springframework.security.web.savedrequest.SavedRequest)session.getAttribute("SPRING_SECURITY_SAVED_REQUEST");
+        org.junit.jupiter.api.Assertions.assertNotNull(saved);
+        org.junit.jupiter.api.Assertions.assertTrue(saved.getRedirectUrl().contains("/invitation/accept"));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new String[]{"test-invitation"},saved.getParameterValues("token"));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new String[]{TENANT_ID.toString()},saved.getParameterValues("tenantId"));
+        org.junit.jupiter.api.Assertions.assertTrue(SecurityConfig.loginDestination("/invitation/accept"));
+        org.junit.jupiter.api.Assertions.assertFalse(SecurityConfig.loginDestination("/invitation/other"));
+        org.junit.jupiter.api.Assertions.assertFalse(SecurityConfig.loginDestination("/application"));
+    }
     @Test
     void loginScriptsArePublicAndNeverSavedAsLoginDestinations() throws Exception {
         var session = new org.springframework.mock.web.MockHttpSession();

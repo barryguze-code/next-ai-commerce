@@ -28,6 +28,7 @@ public class MarketplaceSkuController {
     private final WorkspaceAccessRepository workspace;
     private final CatalogRepository catalog;
     private CollaborationRepository collaboration;
+    private com.nextaicommerce.platform.sync.AmazonManualListingSync listingSync;
 
     MarketplaceSkuController(MarketplaceSkuRepository skus, WorkspaceAccessRepository workspace,
             CatalogRepository catalog) {
@@ -37,6 +38,8 @@ public class MarketplaceSkuController {
     }
     @Autowired(required=false)
     void configureCollaboration(CollaborationRepository repository){this.collaboration=repository;}
+    @Autowired(required=false)
+    void configureListingSync(com.nextaicommerce.platform.sync.AmazonManualListingSync sync){this.listingSync=sync;}
 
     @GetMapping("/app/marketplace-skus")
     String marketplaceSkus(@RequestParam(defaultValue = "") String q,
@@ -71,6 +74,8 @@ public class MarketplaceSkuController {
         }
 
         String normalizedStatus = normalizeStatus(status);
+        if(listingSync!=null && maySync(tenantId,connectionId,authentication))
+            model.addAttribute("listingSync",listingSync.availability(tenantId,connectionId));
         model.addAttribute("selectedStatus", normalizedStatus);
         model.addAttribute("summary", skus.summary(tenantId, connectionId));
         model.addAttribute("insights", skus.insights(tenantId, connectionId));
@@ -86,6 +91,26 @@ public class MarketplaceSkuController {
         model.addAttribute("vendors",Boolean.TRUE.equals(model.asMap().get("canEditCatalog"))
             ?catalog.listVendorChoices(tenantId):List.of());
         return "marketplace-skus";
+    }
+
+    @PostMapping("/app/marketplace-skus/sync")
+    String syncListings(Authentication authentication,HttpSession session,RedirectAttributes redirect) {
+        UUID tenant=requiredTenant(session),connection=requiredAmazonConnection(tenant,session);
+        if(!maySync(tenant,connection,authentication))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+        try {
+            if(listingSync==null) throw new IllegalStateException("Amazon SKU sync is temporarily unavailable.");
+            listingSync.request(tenant,connection);
+            redirect.addFlashAttribute("mappingSuccess","Amazon SKU sync requested. It runs in the background after any current sync; refresh this page to see updated listings.");
+        } catch(IllegalStateException ex) { redirect.addFlashAttribute("mappingError",ex.getMessage()); }
+        return "redirect:/app/marketplace-skus";
+    }
+
+    private boolean maySync(UUID tenant,UUID connection,Authentication authentication) {
+        if(authentication==null || !workspace.canOperateAccount(tenant,authentication.getName()))return false;
+        boolean admin=authentication.getAuthorities().stream().anyMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));
+        return workspace.listAccountOptions(authentication.getName(),admin).stream()
+            .filter(a->a.id().equals(tenant)).flatMap(a->a.stores().stream()).anyMatch(s->s.id().equals(connection));
     }
 
     @PostMapping("/app/marketplace-skus/mappings")

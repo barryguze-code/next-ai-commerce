@@ -58,7 +58,7 @@ public class SecurityConfig {
                 var cache = documentRequestCache();
                 var saved = cache.getRequest(request, response);
                 // Discard asset destinations saved by older versions as well.
-                if (saved != null && !java.net.URI.create(saved.getRedirectUrl()).getPath().startsWith(request.getContextPath() + "/app/")) {
+                if (saved != null && !loginDestination(java.net.URI.create(saved.getRedirectUrl()).getPath().substring(request.getContextPath().length()))) {
                     cache.removeRequest(request, response);
                 }
                 var success = new org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler();
@@ -78,9 +78,12 @@ public class SecurityConfig {
     private org.springframework.security.web.savedrequest.HttpSessionRequestCache documentRequestCache() {
         var cache = new org.springframework.security.web.savedrequest.HttpSessionRequestCache();
         cache.setRequestMatcher(request -> "GET".equals(request.getMethod())
-            && request.getServletPath().startsWith("/app")
+            && loginDestination(request.getServletPath())
             && "navigate".equals(request.getHeader("Sec-Fetch-Mode"))
             && "document".equals(request.getHeader("Sec-Fetch-Dest")));
         return cache;
+    }
+    static boolean loginDestination(String path) {
+        return "/app".equals(path) || path.startsWith("/app/") || "/invitation/accept".equals(path);
     }
 }
