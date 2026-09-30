@@ -40,11 +40,13 @@
 </div>
 </div>
 </header>
+<p class="notice" th:if="${catalogSuccess}" th:text="${catalogSuccess}">Saved.</p>
+<p class="notice error" th:if="${catalogError}" th:text="${catalogError}">Error.</p>
 <section class="callout">
 <span class="callout-icon">G</span>
 <div>
 <strong>Product identity only</strong>
-<p>Vendor item codes identify products globally. Prices, discounts, landed costs, SKUs, and inventory remain private to each account.</p>
+<p>UPC, EAN, or GTIN is the global identity. Vendor item codes, prices, SKUs, and inventory remain private to each account.</p>
 </div>
 </section>
 <section class="data-card catalog-card">
@@ -65,15 +67,15 @@
 <thead>
 <tr>
 <th>Product</th>
-<th>Vendor item code</th>
 <th>UPC / EAN</th>
 <th>Unit</th>
 <th>Handling</th>
 <th>Status</th>
+<th>Action</th>
 </tr>
 </thead>
 <tbody>
-<tr class="catalog-row" th:each="product:${products}" th:attr="data-search=${#strings.toLowerCase(product.name + ' ' + (product.brand ?: '') + ' ' + (product.vendorName ?: '') + ' ' + (product.vendorItemCode ?: '') + ' ' + (product.identifier ?: ''))}">
+<tr class="catalog-row" th:each="product:${products}" th:attr="data-search=${#strings.toLowerCase(product.name + ' ' + (product.brand ?: '') + ' ' + (product.identifier ?: ''))}">
 <td>
 <div class="product-cell">
 <span class="product-avatar"><img th:if="${globalProductImageIds != null and globalProductImageIds.contains(product.id)}" th:src="@{/app/platform/catalog/products/{id}/image(id=${product.id})}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:contain" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><b th:hidden="${globalProductImageIds != null and globalProductImageIds.contains(product.id)}" th:text="${#strings.substring(product.name,0,1)}">P</b></span>
@@ -84,11 +86,8 @@
 </div>
 </td>
 <td>
-<strong th:text="${product.vendorItemCode ?: 'Not assigned'}">Vendor code</strong>
-<small class="cell-note" th:if="${product.vendorName != null}" th:text="${product.vendorName}">Vendor</small>
-</td>
-<td>
 <strong th:text="${product.identifier ?: 'Not assigned'}">UPC</strong>
+<small class="cell-note" th:text="${product.identifierType ?: 'UPC'}">UPC</small>
 </td>
 <td th:text="${product.unitOfMeasure}">EA</td>
 <td>
@@ -101,6 +100,7 @@
 <span th:text="${product.status}">ACTIVE</span>
 </span>
 </td>
+<td><button class="secondary-button compact-button" type="button" th:attr="data-target=|global-edit-${product.id}|" onclick="document.getElementById(this.dataset.target).showModal()">Edit</button></td>
 </tr>
 <tr th:if="${#lists.isEmpty(products)}">
 <td colspan="6">
@@ -117,6 +117,18 @@
 <span th:text="${'Showing '+products.size()+' global product(s)'}">Showing products</span>
 </div>
 </section>
+<dialog th:each="product:${products}" th:id="|global-edit-${product.id}|" class="invite-dialog">
+<form method="post" th:action="|/app/platform/catalog/products/${product.id}|" class="dialog-shell">
+<div class="dialog-header"><div><span class="eyebrow dark">Global identity</span><h2>Edit global product</h2><p>Changes apply to every account linked by this UPC/EAN/GTIN.</p></div><button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button></div>
+<div class="dialog-body catalog-form">
+<label>Canonical product name<input name="name" required th:value="${product.name}"></label>
+<div class="form-pair"><label>Brand<input name="brand" th:value="${product.brand}"></label><label>Unit<input name="unitOfMeasure" required th:value="${product.unitOfMeasure}"></label></div>
+<div class="form-pair"><label>Identifier type<select name="identifierType"><option value="UPC" th:selected="${product.identifierType == 'UPC'}">UPC</option><option value="EAN" th:selected="${product.identifierType == 'EAN'}">EAN</option><option value="GTIN" th:selected="${product.identifierType == 'GTIN'}">GTIN</option></select></label><label>UPC / EAN / GTIN<input name="identifier" required th:value="${product.identifier}"></label></div>
+<div class="form-pair"><label>Status<select name="status"><option value="ACTIVE" th:selected="${product.status == 'ACTIVE'}">Active</option><option value="ARCHIVED" th:selected="${product.status == 'ARCHIVED'}">Archived</option></select></label><label class="check-line"><input type="checkbox" name="expirationRequired" value="true" th:checked="${product.expirationRequired}"><span><strong>Track expiration dates</strong></span></label></div>
+</div>
+<div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button" type="submit">Save changes</button></div>
+</form>
+</dialog>
 </main>
 <script>function filterRows(v){const q=v.trim().toLowerCase();document.querySelectorAll('.catalog-row').forEach(r=>r.hidden=!r.dataset.search.includes(q));}</script>
 <th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block></body>

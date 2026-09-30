@@ -266,30 +266,15 @@ public class CatalogImportService {
               GROUP BY catalog_identifier_key(identifier_type,identifier_value) HAVING count(*)>1) duplicate
             """,Integer.class);
         if(duplicateKeys!=null&&duplicateKeys>0)throw new IllegalArgumentException("Duplicate equivalent UPC / EAN product rows in this file. Review them before importing; no catalogue changes were saved.");
-        jdbc.update("""
-            UPDATE catalog_import_work work SET vendor_global_id=code.global_product_id
-            FROM global_product_vendor_codes code WHERE code.vendor_key=? AND code.catalog_scope=? AND code.normalized_item_code=work.normalized_code
-            """,vendorKey,scope);
+        Integer missingIdentifiers=jdbc.queryForObject("SELECT count(*) FROM catalog_import_work WHERE identifier_value IS NULL",Integer.class);
+        if(missingIdentifiers!=null&&missingIdentifiers>0)throw new IllegalArgumentException(missingIdentifiers+" rows are missing UPC/EAN/GTIN. Every global catalogue product requires a unique identifier; no catalogue changes were saved.");
         jdbc.update("""
             UPDATE catalog_import_work work SET identifier_global_id=identifier.global_product_id
             FROM global_product_identifiers identifier
             WHERE work.identifier_value IS NOT NULL
               AND identifier.identity_key=catalog_identifier_key(work.identifier_type,work.identifier_value)
             """);
-        if(source.distributionCenter().isBlank()){
-            List<String> branchConflicts=jdbc.query("""
-                SELECT work.row_number,work.vendor_item_code FROM catalog_import_work work
-                WHERE work.vendor_global_id IS NULL AND EXISTS (
-                  SELECT 1 FROM global_product_vendor_codes code
-                  WHERE code.vendor_key=? AND code.normalized_item_code=work.normalized_code AND code.catalog_scope<>?
-                    AND (work.identifier_global_id IS NULL OR code.global_product_id<>work.identifier_global_id))
-                ORDER BY work.row_number LIMIT 8
-                """,(rs,n)->"row "+rs.getInt(1)+" (item "+rs.getString(2)+")",vendorKey,scope);
-            if(!branchConflicts.isEmpty())throw new IllegalArgumentException("Enter the supplier DC / branch on this import: "+String.join(", ",branchConflicts)+" conflicts with another branch. No catalogue changes were saved.");
-        }
-        Integer conflicts=jdbc.queryForObject("SELECT count(*) FROM catalog_import_work WHERE vendor_global_id IS NOT NULL AND identifier_global_id IS NOT NULL AND vendor_global_id<>identifier_global_id",Integer.class);
-        if(conflicts!=null&&conflicts>0)throw new IllegalArgumentException(conflicts+" rows have vendor item codes and UPC/EAN values belonging to different global products.");
-        jdbc.update("UPDATE catalog_import_work SET global_id=coalesce(identifier_global_id,vendor_global_id)");
+        jdbc.update("UPDATE catalog_import_work SET global_id=identifier_global_id");
         Integer duplicateProducts=jdbc.queryForObject("SELECT count(*) FROM (SELECT global_id FROM catalog_import_work WHERE global_id IS NOT NULL GROUP BY global_id HAVING count(*)>1) repeated",Integer.class);
         if(duplicateProducts!=null&&duplicateProducts>0)throw new IllegalArgumentException("Multiple rows resolve to the same global barcode/product. Review duplicate product rows before importing; no catalogue changes were saved.");
         jdbc.update("UPDATE catalog_import_work SET global_id=gen_random_uuid(),is_new=true WHERE global_id IS NULL");
@@ -298,11 +283,7 @@ public class CatalogImportService {
             SELECT global_id,product_name,brand,expiration_required,?,? FROM catalog_import_work WHERE is_new
             """,tenantId,actorId);
         mergeIdentifiers();
-        jdbc.update("""
-            INSERT INTO global_product_vendor_codes(global_product_id,vendor_key,catalog_scope,vendor_name,vendor_item_code,normalized_item_code,source_tenant_id)
-            SELECT global_id,?, ?,?,vendor_item_code,normalized_code,? FROM catalog_import_work
-            ON CONFLICT(vendor_key,catalog_scope,normalized_item_code) DO UPDATE SET last_seen_at=now()
-            """,vendorKey,scope,source.vendorName(),tenantId);
+        // Supplier item codes are stored only on tenant/vendor offers; they do not establish global identity.
         reportProgress(tenantId,importId,rows.size()*3/10);
         jdbc.update("""
             INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku,created_by)

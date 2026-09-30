@@ -155,7 +155,8 @@ class TemplateRenderingTest {
                 "Test Brand", "KeHE", "53383", "012345678905", "EA", true, "ACTIVE")))
         ));
         assertThat(engine.process("global-catalog", globalContext)).contains(
-            "Global Catalogue", "Product identity only", "Vendor item code", "53383", "012345678905");
+            "Global Catalogue", "Product identity only", "UPC, EAN, or GTIN is the global identity",
+            "012345678905", "Edit global product");
     }
 
     @Test

@@ -132,9 +132,37 @@ public class CatalogController {
             @RequestParam(required=false) String accountSku,
             @RequestParam(defaultValue="false") boolean expirationRequired,
             RedirectAttributes redirect) {
-        catalog.addAccountProduct(requiredTenantId(session), authentication.getName(), name, brand,
-            identifierType, identifier, accountSku, expirationRequired);
-        redirect.addFlashAttribute("catalogSuccess", "Product added to this account’s catalogue.");
+        try{
+            catalog.addAccountProduct(requiredTenantId(session), authentication.getName(), name, brand,
+                identifierType, identifier, accountSku, expirationRequired);
+            redirect.addFlashAttribute("catalogSuccess", "Product added to this account’s catalogue.");
+        }catch(IllegalArgumentException e){redirect.addFlashAttribute("catalogError",e.getMessage());}
+        return "redirect:/app/catalog";
+    }
+
+    @PostMapping("/app/platform/catalog/products/{productId}")
+    String updateGlobalProduct(@PathVariable UUID productId,@RequestParam String name,
+            @RequestParam(required=false) String brand,@RequestParam String identifierType,
+            @RequestParam String identifier,@RequestParam(defaultValue="EA") String unitOfMeasure,
+            @RequestParam(defaultValue="false") boolean expirationRequired,
+            @RequestParam(defaultValue="ACTIVE") String status,RedirectAttributes redirect){
+        try{
+            catalog.updateGlobalProduct(productId,name,brand,identifierType,identifier,unitOfMeasure,expirationRequired,status);
+            redirect.addFlashAttribute("catalogSuccess","Global product identity updated.");
+        }catch(IllegalArgumentException e){redirect.addFlashAttribute("catalogError",e.getMessage());}
+        catch(Exception e){log.error("Global product update failed productId={}",productId,e);redirect.addFlashAttribute("catalogError","The global product could not be updated. Nothing was changed.");}
+        return "redirect:/app/platform/catalog";
+    }
+
+    @PostMapping("/app/catalog/products/{itemId}")
+    String updateAccountProduct(@PathVariable UUID itemId,HttpSession session,
+            @RequestParam(required=false) String displayName,@RequestParam(required=false) String accountSku,
+            @RequestParam(defaultValue="ACTIVE") String status,RedirectAttributes redirect){
+        try{
+            catalog.updateAccountProduct(requiredTenantId(session),itemId,displayName,accountSku,status);
+            redirect.addFlashAttribute("catalogSuccess","Account product details updated.");
+        }catch(IllegalArgumentException e){redirect.addFlashAttribute("catalogError",e.getMessage());}
+        catch(Exception e){log.error("Account product update failed itemId={}",itemId,e);redirect.addFlashAttribute("catalogError","The account product could not be updated. Nothing was changed.");}
         return "redirect:/app/catalog";
     }
 

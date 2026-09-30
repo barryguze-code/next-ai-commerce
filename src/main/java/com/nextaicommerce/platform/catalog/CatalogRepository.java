@@ -19,8 +19,13 @@ public class CatalogRepository {
     }
 
     public record GlobalProductView(UUID id, String name, String brand, String vendorName,
-            String vendorItemCode, String identifier, String unitOfMeasure,
-            boolean expirationRequired, String status) {}
+            String vendorItemCode, String identifierType,String identifier, String unitOfMeasure,
+            boolean expirationRequired, String status) {
+        public GlobalProductView(UUID id,String name,String brand,String vendorName,String vendorItemCode,
+                String identifier,String unitOfMeasure,boolean expirationRequired,String status){
+            this(id,name,brand,vendorName,vendorItemCode,"UPC",identifier,unitOfMeasure,expirationRequired,status);
+        }
+    }
     public record AccountItemView(UUID id, UUID globalProductId, String name, String brand,
             String vendorName, String vendorItemCode, String identifier, String accountSku,
             int vendorCount, BigDecimal currentBuyingCost, String currency,
@@ -129,7 +134,7 @@ public class CatalogRepository {
     public List<GlobalProductView> listGlobalProducts() {
         return jdbc.query("""
             SELECT product.id, product.canonical_name, product.brand,
-                   vendor_code.vendor_name,vendor_code.vendor_item_code,identifier.identifier_value,
+                   vendor_code.vendor_name,vendor_code.vendor_item_code,identifier.identifier_type,identifier.identifier_value,
                    product.unit_of_measure, product.requires_expiration_date, product.status
             FROM global_catalog_products product
             LEFT JOIN LATERAL (
@@ -143,7 +148,7 @@ public class CatalogRepository {
             ORDER BY lower(product.canonical_name)
             """, (rs, row) -> new GlobalProductView(rs.getObject("id", UUID.class),
                 rs.getString("canonical_name"), rs.getString("brand"), rs.getString("vendor_name"),
-                rs.getString("vendor_item_code"),rs.getString("identifier_value"),
+                rs.getString("vendor_item_code"),rs.getString("identifier_type"),rs.getString("identifier_value"),
                 rs.getString("unit_of_measure"), rs.getBoolean("requires_expiration_date"),
                 rs.getString("status")));
     }
@@ -473,7 +478,8 @@ public class CatalogRepository {
         if(reactivated!=null)return reactivated;
         UUID actorId = actorId(actorEmail);
         String cleanIdentifier = normalizeIdentifier(identifierType, identifier);
-        UUID globalId = cleanIdentifier.isBlank() ? null : jdbc.query("""
+        if(cleanIdentifier.isBlank())throw new IllegalArgumentException("UPC, EAN, or GTIN is required for every global catalogue product.");
+        UUID globalId = jdbc.query("""
             SELECT global_product_id FROM global_product_identifiers
             WHERE identity_key=catalog_identifier_key(?,?)
             """, rs -> rs.next() ? rs.getObject(1, UUID.class) : null,
@@ -517,8 +523,12 @@ public class CatalogRepository {
                 UUID existingGlobal=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenantId,existing);
                 UUID identifierGlobal=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identity_key=catalog_identifier_key(?,?)",
                     rs->rs.next()?rs.getObject(1,UUID.class):null,identifierType.toUpperCase(Locale.ROOT),incomingIdentifier);
-                if(identifierGlobal!=null&&!identifierGlobal.equals(existingGlobal))throw new IllegalArgumentException(
-                    "Vendor item code "+vendorItemCode+" and identifier "+identifier+" belong to different global products. Review this row instead of creating a duplicate.");
+                if(identifierGlobal!=null&&!identifierGlobal.equals(existingGlobal)){
+                    Boolean alreadyPresent=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM account_catalog_items WHERE tenant_id=? AND global_product_id=? AND id<>?)",Boolean.class,tenantId,identifierGlobal,existing);
+                    if(Boolean.TRUE.equals(alreadyPresent))throw new IllegalArgumentException("This UPC/EAN is already present in the account catalogue. Merge the duplicate account product before receiving it.");
+                    jdbc.update("UPDATE account_catalog_items SET global_product_id=?,updated_at=now() WHERE tenant_id=? AND id=?",identifierGlobal,tenantId,existing);
+                    existingGlobal=identifierGlobal;
+                }
                 requireCompatibleBarcode(existingGlobal,identifierGlobal,incomingIdentifier);
                 if(identifierGlobal==null)attachFirstBarcode(existingGlobal,identifierType,incomingIdentifier);
             }
@@ -530,31 +540,14 @@ public class CatalogRepository {
         if(vendor==null)throw new IllegalArgumentException("Vendor was not found in this account.");
         UUID reactivated=reactivateAccountSkuIfPresent(tenantId,accountSku,name,brand,identifierType,identifier,expirationRequired);
         if(reactivated!=null){
-            UUID reactivatedGlobal=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",
-                UUID.class,tenantId,reactivated);
-            saveGlobalVendorCode(reactivatedGlobal,tenantId,vendor,vendorItemCode);
             return reactivated;
         }
-        String vendorKey=normalizeVendorKey(vendor.code()==null?vendor.name():vendor.code());
-        UUID vendorGlobalId=jdbc.query("""
-            SELECT global_product_id FROM global_product_vendor_codes
-            WHERE vendor_key=? AND catalog_scope=? AND normalized_item_code=? ORDER BY last_seen_at DESC LIMIT 1
-            """,rs->rs.next()?rs.getObject(1,UUID.class):null,vendorKey,CatalogIdentity.scope(tenantId,vendor.dc()),cleanVendorCode);
         String cleanIdentifier=normalizeIdentifier(identifierType,identifier);
+        if(cleanIdentifier.isBlank())throw new IllegalArgumentException("UPC, EAN, or GTIN is required to create a global catalogue product. Review this invoice row and enter its identifier.");
         UUID identifierGlobalId=null;
-        if(!cleanIdentifier.isBlank()){
-            identifierGlobalId=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identity_key=catalog_identifier_key(?,?)",
-                rs->rs.next()?rs.getObject(1,UUID.class):null,identifierType.toUpperCase(Locale.ROOT),cleanIdentifier);
-        }
-        if(vendorGlobalId!=null&&identifierGlobalId!=null&&!vendorGlobalId.equals(identifierGlobalId))
-            throw new IllegalArgumentException("Vendor item code "+vendorItemCode+" and identifier "+identifier+" belong to different global products. Review this row instead of creating a duplicate.");
-        if(vendorGlobalId!=null)requireCompatibleBarcode(vendorGlobalId,identifierGlobalId,cleanIdentifier);
-        if(vendor.dc().isBlank()&&vendorGlobalId==null&&Boolean.TRUE.equals(jdbc.queryForObject("""
-            SELECT EXISTS(SELECT 1 FROM global_product_vendor_codes WHERE vendor_key=? AND normalized_item_code=?
-              AND catalog_scope<>? AND global_product_id IS DISTINCT FROM ?::uuid)
-            """,Boolean.class,vendorKey,cleanVendorCode,CatalogIdentity.scope(tenantId,vendor.dc()),identifierGlobalId)))
-            throw new IllegalArgumentException("This supplier item code differs between branches. Enter the supplier DC on a catalogue import before receiving this item.");
-        UUID globalId=identifierGlobalId!=null?identifierGlobalId:vendorGlobalId;
+        identifierGlobalId=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identity_key=catalog_identifier_key(?,?)",
+            rs->rs.next()?rs.getObject(1,UUID.class):null,identifierType.toUpperCase(Locale.ROOT),cleanIdentifier);
+        UUID globalId=identifierGlobalId;
         if(globalId==null){
             UUID actorId=actorId(actorEmail);
             globalId=jdbc.queryForObject("""
@@ -588,8 +581,43 @@ public class CatalogRepository {
                 account_sku=coalesce(EXCLUDED.account_sku,account_catalog_items.account_sku),updated_at=now()
             RETURNING id
             """,UUID.class,tenantId,globalId,blankToNull(accountSku),actorEmail);
-        saveGlobalVendorCode(globalId,tenantId,vendor,vendorItemCode);
         return itemId;
+    }
+
+    @Transactional
+    public void updateGlobalProduct(UUID productId,String name,String brand,String identifierType,String identifier,
+            String unitOfMeasure,boolean expirationRequired,String status){
+        CatalogIdentity.lock(jdbc);
+        if(name==null||name.isBlank())throw new IllegalArgumentException("Enter the canonical product name.");
+        String type=identifierType==null?"":identifierType.trim().toUpperCase(Locale.ROOT);
+        if(!java.util.Set.of("UPC","EAN","GTIN").contains(type))throw new IllegalArgumentException("Choose UPC, EAN, or GTIN.");
+        String clean=normalizeIdentifier(type,identifier);
+        if(clean.isBlank())throw new IllegalArgumentException("UPC, EAN, or GTIN is required for every global catalogue product.");
+        UUID owner=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identity_key=catalog_identifier_key(?,?)",
+            rs->rs.next()?rs.getObject(1,UUID.class):null,type,clean);
+        if(owner!=null&&!owner.equals(productId))throw new IllegalArgumentException("That UPC/EAN already identifies another global product.");
+        int updated=jdbc.update("""
+            UPDATE global_catalog_products SET canonical_name=?,brand=?,unit_of_measure=?,requires_expiration_date=?,status=?,updated_at=now()
+            WHERE id=?
+            """,name.trim(),blankToNull(brand),unitOfMeasure==null||unitOfMeasure.isBlank()?"EA":unitOfMeasure.trim().toUpperCase(Locale.ROOT),
+            expirationRequired,"ARCHIVED".equals(status)?"ARCHIVED":"ACTIVE",productId);
+        if(updated==0)throw new IllegalArgumentException("Global product was not found.");
+        jdbc.update("DELETE FROM global_product_identifiers WHERE global_product_id=? AND is_primary",productId);
+        jdbc.update("""
+            INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary)
+            VALUES (?,?,?,true) ON CONFLICT (identity_key) DO UPDATE SET is_primary=true
+            """,productId,type,clean);
+    }
+
+    @Transactional
+    public void updateAccountProduct(UUID tenantId,UUID itemId,String displayName,String accountSku,String status){
+        setTenant(tenantId);
+        int updated=jdbc.update("""
+            UPDATE account_catalog_items SET display_name=nullif(?,''),account_sku=nullif(?,''),status=?,updated_at=now()
+            WHERE tenant_id=? AND id=?
+            """,displayName==null?"":displayName.trim(),accountSku==null?"":accountSku.trim(),
+            java.util.Set.of("INACTIVE","DISCONTINUED").contains(status)?status:"ACTIVE",tenantId,itemId);
+        if(updated==0)throw new IllegalArgumentException("Account product was not found.");
     }
 
     /** Reuses an account SKU that is already present but hidden from active operational lookups. */
@@ -831,13 +859,7 @@ public class CatalogRepository {
             currency.toUpperCase(Locale.ROOT), actorId);
         if(preferredVendor==null) jdbc.update("UPDATE account_catalog_items SET preferred_vendor_id=?,updated_at=now() WHERE tenant_id=? AND id=?",
             vendorId,tenantId,itemId);
-        if(vendorItemCode!=null&&!vendorItemCode.isBlank()){
-            VendorIdentity vendor=jdbc.query("SELECT name,vendor_code,distribution_center FROM vendors WHERE tenant_id=? AND id=?",
-                rs->rs.next()?new VendorIdentity(rs.getString(1),rs.getString(2),rs.getString(3)):null,tenantId,vendorId);
-            UUID globalId=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",
-                UUID.class,tenantId,itemId);
-            if(vendor!=null&&globalId!=null)saveGlobalVendorCode(globalId,tenantId,vendor,vendorItemCode);
-        }
+        // Vendor item codes belong to this tenant/vendor offer. They never establish global product identity.
     }
 
     private void saveGlobalVendorCode(UUID globalId,UUID tenantId,VendorIdentity vendor,String itemCode){

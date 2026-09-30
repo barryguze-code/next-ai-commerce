@@ -79,7 +79,7 @@
 <div class="card-toolbar">
 <div>
 <h2>Products</h2>
-<p>Vendor item code is the primary buying identity; UPC or EAN confirms the global product.</p>
+<p>UPC/EAN identifies the global product. Account SKUs and vendor item codes are editable for this account.</p>
 </div>
 <div class="toolbar-tools table-widget-tools">
 <form method="get" action="/app/catalog"><label class="search-field">
@@ -147,7 +147,7 @@
 </span>
 <small th:if="${item.completionStatus == 'NEEDS_COMPLETION'}" class="cell-note">Receiving can continue · add UPC/EAN later</small>
 </td>
-<td th:with="conversation=${threadsByCatalogItem == null ? null : threadsByCatalogItem.get(item.id.toString())}"><div class="collaboration-row-actions" data-context-menu data-title="Actions"><span class="record-collaboration-actions"><button class="collaboration-row-button" th:classappend="${conversation != null and conversation.totalCount > 0 ? 'has-conversation' : ''}" type="button" th:attr="data-entity-type='CATALOG',data-entity-id=${item.id},data-title=${item.name},data-identifier=${item.accountSku ?: item.vendorItemCode ?: item.identifier},data-image=${item.imageUrl ?: ''},data-location-label=${item.defaultLocationCode+' · '+item.defaultLocationName},data-status=${item.status},data-price=${item.currentBuyingCost == null ? '' : item.currency+' '+item.currentBuyingCost},data-parent-url='/app/catalog',data-can-collaborate=${canEditCatalog},data-active-count=${conversation == null ? 0 : conversation.activeCount},data-total-count=${conversation == null ? 0 : conversation.totalCount},data-closed-count=${conversation == null ? 0 : conversation.closedCount}" onclick="openRecordCollaboration(this)" title="Start or open collaboration"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/><path class="conversation-lines" d="M9 9h6M9 12h4"/></svg><b th:if="${conversation != null and conversation.totalCount > 0}" th:text="${conversation.totalCount}">1</b></button></span><button th:if="${canEditCatalog}" class="secondary-button compact-action" type="button" th:disabled="${#lists.isEmpty(vendors)}" th:attr="data-item-id=${item.id},data-item-name=${item.name}" onclick="openCost(this)">Set price</button></div>
+<td th:with="conversation=${threadsByCatalogItem == null ? null : threadsByCatalogItem.get(item.id.toString())}"><div class="collaboration-row-actions" data-context-menu data-title="Actions"><span class="record-collaboration-actions"><button class="collaboration-row-button" th:classappend="${conversation != null and conversation.totalCount > 0 ? 'has-conversation' : ''}" type="button" th:attr="data-entity-type='CATALOG',data-entity-id=${item.id},data-title=${item.name},data-identifier=${item.accountSku ?: item.vendorItemCode ?: item.identifier},data-image=${item.imageUrl ?: ''},data-location-label=${item.defaultLocationCode+' · '+item.defaultLocationName},data-status=${item.status},data-price=${item.currentBuyingCost == null ? '' : item.currency+' '+item.currentBuyingCost},data-parent-url='/app/catalog',data-can-collaborate=${canEditCatalog},data-active-count=${conversation == null ? 0 : conversation.activeCount},data-total-count=${conversation == null ? 0 : conversation.totalCount},data-closed-count=${conversation == null ? 0 : conversation.closedCount}" onclick="openRecordCollaboration(this)" title="Start or open collaboration"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/><path class="conversation-lines" d="M9 9h6M9 12h4"/></svg><b th:if="${conversation != null and conversation.totalCount > 0}" th:text="${conversation.totalCount}">1</b></button></span><button th:if="${canEditCatalog}" class="secondary-button compact-action" type="button" th:attr="data-target=|account-edit-${item.id}|" onclick="document.getElementById(this.dataset.target).showModal()">Edit</button><button th:if="${canEditCatalog}" class="secondary-button compact-action" type="button" th:disabled="${#lists.isEmpty(vendors)}" th:attr="data-item-id=${item.id},data-item-name=${item.name}" onclick="openCost(this)">Set price</button></div>
 </td>
 </tr>
 <tr th:if="${#lists.isEmpty(items)}">
@@ -166,6 +166,13 @@
 <nav aria-label="Catalogue pages"><a th:if="${catalogPage.hasPrevious()}" th:href="@{/app/catalog(q=${query},page=0)}">First</a><a th:if="${catalogPage.hasPrevious()}" th:href="@{/app/catalog(q=${query},page=${catalogPage.page-1})}">Previous</a><form method="get" action="/app/catalog" class="page-jump" data-page-jump><input type="hidden" name="q" th:value="${query}"><label><span>Page</span><input type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" name="goToPage" th:attr="data-page-max=${catalogPage.totalPages()}" th:value="${catalogPage.displayPage()}" aria-label="Page number"><span th:text="${'of '+catalogPage.totalPages()}">of 1</span></label></form><a th:if="${catalogPage.hasNext()}" th:href="@{/app/catalog(q=${query},page=${catalogPage.page+1})}">Next</a><a th:if="${catalogPage.hasNext()}" th:href="@{/app/catalog(q=${query},page=${catalogPage.totalPages()-1})}">Last</a></nav>
 </div>
 </section>
+<dialog th:each="item:${items}" th:id="|account-edit-${item.id}|" class="invite-dialog">
+<form method="post" th:action="|/app/catalog/products/${item.id}|" class="dialog-shell">
+<div class="dialog-header"><div><span class="eyebrow dark">Account product</span><h2>Edit product</h2><p>The UPC/EAN remains global; these details apply only to this account.</p></div><button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button></div>
+<div class="dialog-body catalog-form"><label>Account display name<input name="displayName" th:value="${item.name}"></label><label>Account item code<input name="accountSku" th:value="${item.accountSku}"></label><label>Status<select name="status"><option value="ACTIVE" th:selected="${item.status == 'ACTIVE'}">Active</option><option value="INACTIVE" th:selected="${item.status == 'INACTIVE'}">Inactive</option><option value="DISCONTINUED" th:selected="${item.status == 'DISCONTINUED'}">Discontinued</option></select></label><p class="cell-note">Edit a vendor item code from “View vendor prices” for that vendor.</p></div>
+<div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button" type="submit">Save changes</button></div>
+</form>
+</dialog>
 <dialog th:each="item:${items}" th:id="|offers-${item.id}|" class="invite-dialog offer-dialog">
 <div class="dialog-shell">
 <div class="dialog-header">
@@ -179,24 +186,29 @@
 <div class="dialog-body">
 <div class="offer-list">
 <article th:each="offer:${offersByItem[item.id]}">
+<form th:if="${canEditCatalog}" method="post" th:action="@{/app/catalog/offers}" class="catalog-form">
+<input type="hidden" name="itemId" th:value="${item.id}"><input type="hidden" name="vendorId" th:value="${offer.vendorId}">
 <div>
 <strong th:text="${offer.vendorName}">Vendor</strong>
-<small th:text="${offer.vendorItemCode ?: 'No vendor item code'}">Item code</small>
+<label>Vendor item code<input name="vendorItemCode" th:value="${offer.vendorItemCode}"></label>
 </div>
 <dl>
 <div>
 <dt>List price</dt>
-<dd th:text="${offer.currency+' '+#numbers.formatDecimal(offer.listCost,1,'COMMA',2,'POINT')}">USD 0.00</dd>
+<dd><input name="listCost" type="number" min="0" step="0.0001" required th:value="${offer.listCost}"></dd>
 </div>
 <div>
 <dt>Discount</dt>
-<dd th:text="${offer.discountRate+'%'}">0%</dd>
+<dd><input name="discountRate" type="number" min="0" max="100" step="0.0001" th:value="${offer.discountRate}"></dd>
 </div>
 <div>
 <dt>Buying cost</dt>
 <dd th:text="${offer.currency+' '+#numbers.formatDecimal(offer.buyingCost,1,'COMMA',2,'POINT')}">USD 0.00</dd>
 </div>
 </dl>
+<input type="hidden" name="currency" th:value="${offer.currency}"><button class="secondary-button compact-button" type="submit">Save vendor details</button>
+</form>
+<th:block th:unless="${canEditCatalog}"><div><strong th:text="${offer.vendorName}">Vendor</strong><small th:text="${offer.vendorItemCode ?: 'No vendor item code'}">Item code</small></div></th:block>
 <span th:if="${offer.preferred}" class="catalog-pill">Preferred</span>
 </article>
 </div>
@@ -270,10 +282,9 @@
 <option>UPC</option>
 <option>EAN</option>
 <option>GTIN</option>
-<option>MPN</option>
 </select>
 </label>
-<label>Identifier<input name="identifier" placeholder="Scan or enter identifier">
+<label>Identifier<input name="identifier" required placeholder="Scan or enter UPC, EAN, or GTIN">
 </label>
 </div>
 <label class="check-line">

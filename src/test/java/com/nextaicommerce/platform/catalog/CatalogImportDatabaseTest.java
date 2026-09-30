@@ -77,19 +77,21 @@ class CatalogImportDatabaseTest {
         assertThat(jdbc.queryForObject("SELECT catalog_scope FROM global_product_packaging_versions WHERE global_product_id=?",String.class,migratedProduct)).isEqualTo("DC:41");
     }
 
-    @Test void differentBranchesMayReuseSupplierCodeForDifferentProducts(){
+    @Test void supplierCodeNeverOverridesGlobalBarcodeIdentity(){
         UUID original=product(normalized("old"+user));code(original,"789800");
         jdbc.update("UPDATE global_product_vendor_codes SET catalog_scope='DC:41' WHERE global_product_id=?",original);
         UUID staged=stage("Coconut,789800,3.71,"+normalized("new"+user)+"\n");
-        assertThatThrownBy(()->approve(staged)).hasMessageContaining("Enter the supplier DC / branch");
-        var dcMapping=new HashMap<>(mapping);dcMapping.put("distributionCenter","DC 19");
-        tx.executeWithoutResult(s->service.approve(tenant,email,staged,dcMapping));
+        approve(staged);
         UUID imported=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=?",UUID.class,tenant);
         assertThat(imported).isNotEqualTo(original);
+        assertThat(jdbc.queryForObject("SELECT identifier_value FROM global_product_identifiers WHERE global_product_id=?",String.class,imported)).isEqualTo(normalized("new"+user));
+        assertThat(jdbc.queryForObject("SELECT vendor_item_code FROM vendor_catalog_offers WHERE tenant_id=?",String.class,tenant)).isEqualTo("789800");
+        /* A branch/DC remains packaging metadata, never product identity. */
+        UUID secondTenant=UUID.randomUUID();
+        jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?, 'Second account')",secondTenant,secondTenant.toString());
         assertThat(jdbc.queryForObject("SELECT global_product_id FROM global_product_vendor_codes WHERE vendor_key=? AND catalog_scope='DC:41'",UUID.class,normalized(vendor.toString()))).isEqualTo(original);
-        assertThat(jdbc.queryForObject("SELECT distribution_center FROM vendors WHERE id=?",String.class,vendor)).isEqualTo("19");
-        UUID next=stage("Coconut,789800,4.71,"+normalized("new"+user)+"\n");dcMapping.put("distributionCenter","41");
-        assertThatThrownBy(()->tx.executeWithoutResult(s->service.approve(tenant,email,next,dcMapping))).hasMessageContaining("separate vendor entry");
+        /* Keep the old evidence row to prove it did not control the match. */
+        assertThat(imported).isNotEqualTo(original);
     }
 
     @Test void equivalentUpcEanAcrossBranchesReusesProductWithoutChangingItsCasePack(){
@@ -129,6 +131,17 @@ class CatalogImportDatabaseTest {
         assertThat(repeated).isEqualTo(item);
     }
 
+    @Test void invoiceRelinksLegacyVendorCodeProductToCanonicalUpcProduct(){
+        var repository=new CatalogRepository(jdbc);
+        UUID legacy=product(null),canonical=product("891613000224");
+        UUID item=jdbc.queryForObject("INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku) VALUES (?,?,?) RETURNING id",UUID.class,tenant,legacy,"94018");
+        jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,vendor_item_code,list_cost,currency) VALUES (?,?,?,?,1,'USD')",tenant,vendor,item,"94018");
+        UUID resolved=tx.execute(s->repository.addImportedVendorProduct(tenant,email,vendor,"94018","Cheese Sharp Chdr","Old Croc","UPC","891613000224","94018",false));
+        assertThat(resolved).isEqualTo(item);
+        assertThat(jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenant,item)).isEqualTo(canonical);
+        assertThat(jdbc.queryForObject("SELECT vendor_item_code FROM vendor_catalog_offers WHERE tenant_id=? AND account_catalog_item_id=?",String.class,tenant,item)).isEqualTo("94018");
+    }
+
     @Test void sharedProductKeepsPrimaryAndRecognizesKnownAlternateBarcodeWithoutDuplication(){
         String old=normalized("old-"+user),newCode=normalized("new-"+user);UUID product=product(old);code(product,"123");
         jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) VALUES (?,'UPC',?,false)",product,newCode);
@@ -143,18 +156,19 @@ class CatalogImportDatabaseTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers WHERE global_product_id=?",Integer.class,product)).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
     }
-    @Test void newAndPreviouslyUnidentifiedProductsReceivePrimaryBarcodes(){
+    @Test void importRejectsRowsWithoutGlobalIdentifierAtomically(){
         UUID existing=product(null);code(existing,"124");
-        approve(stage("Existing,124,1.00,a-"+user+"\nNew,125,2.00,b-"+user+"\nWithout barcode,126,3.00,\n"));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(3);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers i JOIN account_catalog_items a ON a.global_product_id=i.global_product_id WHERE a.tenant_id=? AND i.is_primary",Integer.class,tenant)).isEqualTo(2);
+        UUID staged=stage("Existing,124,1.00,a-"+user+"\nNew,125,2.00,b-"+user+"\nWithout barcode,126,3.00,\n");
+        assertThatThrownBy(()->approve(staged)).hasMessageContaining("missing UPC/EAN/GTIN");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isZero();
     }
-    @Test void conflictingIdentitiesRollbackInsteadOfMergingUnrelatedProducts(){
+    @Test void barcodeIdentityWinsWhenLegacyVendorCodePointsElsewhere(){
         UUID first=product(normalized("first-"+user));code(first,"127");product(normalized("second-"+user));
         UUID staged=stage("Conflict,127,1.00,second-"+user+"\n");
-        assertThatThrownBy(()->approve(staged)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("different global products");
-        assertThat(jdbc.queryForObject("SELECT status FROM catalog_imports WHERE id=?",String.class,staged)).isEqualTo("VALIDATED");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isZero();
+        approve(staged);
+        UUID selected=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=?",UUID.class,tenant);
+        assertThat(selected).isNotEqualTo(first);
+        assertThat(jdbc.queryForObject("SELECT identifier_value FROM global_product_identifiers WHERE global_product_id=?",String.class,selected)).isEqualTo(normalized("second-"+user));
     }
 
     @Test void imports25845RowsWithAnExistingPrimaryBarcode(){
@@ -168,13 +182,13 @@ class CatalogImportDatabaseTest {
         assertThat(jdbc.queryForObject("SELECT identifier_value FROM global_product_identifiers WHERE global_product_id=? AND is_primary",String.class,existing)).isEqualTo(normalized("original"+user));
     }
 
-    @Test void changedBarcodeOnVendorCodeRequiresReviewAndRollsBack(){
+    @Test void changedBarcodeOnVendorCodeCreatesBarcodeProductAndKeepsOfferCode(){
         UUID existing=product(normalized("old"+user));code(existing,"789800");
         UUID staged=stage("Different product,789800,3.71,"+normalized("new"+user)+"\n");
-        assertThatThrownBy(()->approve(staged)).isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("Barcode differs","row 2 (item 789800)","No catalogue changes were saved");
+        approve(staged);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers WHERE global_product_id=?",Integer.class,existing)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isZero();
-        assertThat(jdbc.queryForObject("SELECT status FROM catalog_imports WHERE id=?",String.class,staged)).isEqualTo("VALIDATED");
+        UUID selected=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=?",UUID.class,tenant);
+        assertThat(selected).isNotEqualTo(existing);
+        assertThat(jdbc.queryForObject("SELECT vendor_item_code FROM vendor_catalog_offers WHERE tenant_id=?",String.class,tenant)).isEqualTo("789800");
     }
 }
