@@ -28,7 +28,7 @@ public class ReceivingWorkflowRepository {
             received.signum()>0||outstanding.compareTo(expected)<0?"Partially received":"Not received";}
         public String statusTone(){return closed?"closed":outstanding.signum()==0?"complete":received.signum()>0||outstanding.compareTo(expected)<0?"partial":"open";}
     }
-    public record WorkLine(UUID id,UUID documentId,UUID sessionId,UUID productId,String product,String code,
+    public record WorkLine(UUID id,UUID documentId,UUID sessionId,UUID productId,String product,String code,String identifier,
             BigDecimal expected,BigDecimal received,BigDecimal remaining,BigDecimal unitsPerCase,
             BigDecimal unitCost,String currency,boolean requiresExpiration,boolean closed,int receipts,
             BigDecimal depositFee,BigDecimal otherFee,UUID locationId){}
@@ -223,7 +223,7 @@ public class ReceivingWorkflowRepository {
     public List<WorkLine> lines(UUID tenant,List<UUID> ids){
         tenant(tenant);if(ids.isEmpty())return List.of();
         return sql.query("""
-            SELECT i.id,d.id,d.receiving_session_id,i.account_catalog_item_id,i.description,i.vendor_item_code,
+            SELECT i.id,d.id,d.receiving_session_id,i.account_catalog_item_id,i.description,i.vendor_item_code,i.source_identifier,
               i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END expected,
               i.received_quantity,greatest(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END
                 -i.received_quantity-i.discrepancy_quantity+(SELECT coalesce(sum(r.total_each_quantity),0) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='OVER_SHIPPED' AND r.voided_at IS NULL),0),i.units_per_case,i.unit_cost,i.currency,coalesce(g.requires_expiration_date,false),
@@ -240,9 +240,9 @@ public class ReceivingWorkflowRepository {
             WHERE d.tenant_id=:tenant AND d.id IN (:ids) AND d.removed_at IS NULL
             ORDER BY d.created_at,i.created_at,i.id
             """,Map.of("tenant",tenant,"ids",ids),(rs,n)->new WorkLine(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),
-            rs.getObject(3,UUID.class),rs.getObject(4,UUID.class),rs.getString(5),rs.getString(6),rs.getBigDecimal(7),rs.getBigDecimal(8),
-            rs.getBigDecimal(9),rs.getBigDecimal(10),rs.getBigDecimal(11),rs.getString(12),rs.getBoolean(13),rs.getBoolean(14),
-            rs.getInt(15),rs.getBigDecimal(16),rs.getBigDecimal(17),rs.getObject(18,UUID.class)));
+            rs.getObject(3,UUID.class),rs.getObject(4,UUID.class),rs.getString(5),rs.getString(6),rs.getString(7),rs.getBigDecimal(8),rs.getBigDecimal(9),
+            rs.getBigDecimal(10),rs.getBigDecimal(11),rs.getBigDecimal(12),rs.getString(13),rs.getBoolean(14),rs.getBoolean(15),
+            rs.getInt(16),rs.getBigDecimal(17),rs.getBigDecimal(18),rs.getObject(19,UUID.class)));
     }
     private record Identity(UUID document,UUID session,UUID product,boolean closed){}
     @Transactional(readOnly=true)
@@ -445,13 +445,16 @@ public class ReceivingWorkflowRepository {
     private record ReceiveTarget(UUID document,UUID session,UUID product,UUID sourceLine,UUID vendor,
             BigDecimal remaining,boolean dateRequired,boolean closed,UUID location,String claimStatus){}
     @Transactional
-    public void addCatalogueItem(UUID tenant,String actor,UUID line,com.nextaicommerce.platform.catalog.CatalogRepository catalog,BigDecimal pack,Boolean expirationRequired){
+    public void addCatalogueItem(UUID tenant,String actor,UUID line,com.nextaicommerce.platform.catalog.CatalogRepository catalog,String identifier,BigDecimal pack,Boolean expirationRequired){
         lock(tenant);Identity id=identity(tenant,line);
         if(id.closed())throw new IllegalArgumentException("This document is closed.");
         if(id.product()!=null)throw new IllegalArgumentException("This line is already linked to the catalogue. Refresh the checklist.");
-        var source=jdbc.queryForMap("SELECT i.description,i.vendor_item_code,p.vendor_id FROM purchase_order_items i JOIN purchase_orders p ON p.tenant_id=i.tenant_id AND p.id=i.purchase_order_id WHERE i.tenant_id=? AND i.id=?",tenant,line);
+        var source=jdbc.queryForMap("SELECT i.description,i.vendor_item_code,i.source_identifier,p.vendor_id FROM purchase_order_items i JOIN purchase_orders p ON p.tenant_id=i.tenant_id AND p.id=i.purchase_order_id WHERE i.tenant_id=? AND i.id=?",tenant,line);
+        String value=identifier==null||identifier.isBlank()?(String)source.get("source_identifier"):identifier;
+        String normalized=value==null?"":value.replaceAll("[^0-9A-Za-z]","").toUpperCase(Locale.ROOT);
+        String type=normalized.length()==12?"UPC":normalized.length()==13?"EAN":"GTIN";
         UUID product=catalog.addImportedVendorProduct(tenant,actor,(UUID)source.get("vendor_id"),(String)source.get("vendor_item_code"),
-            (String)source.get("description"),null,"UPC","",null,Boolean.TRUE.equals(expirationRequired));
+            (String)source.get("description"),null,type,value,null,Boolean.TRUE.equals(expirationRequired));
         jdbc.update("UPDATE purchase_order_items SET account_catalog_item_id=? WHERE tenant_id=? AND id=?",product,tenant,line);
         jdbc.update("UPDATE receiving_document_lines SET account_catalog_item_id=?,match_status='MATCHED' WHERE tenant_id=? AND id=(SELECT receiving_line_id FROM purchase_order_items WHERE tenant_id=? AND id=?)",product,tenant,tenant,line);
         saveCatalogueSettings(tenant,actor,line,pack,expirationRequired);

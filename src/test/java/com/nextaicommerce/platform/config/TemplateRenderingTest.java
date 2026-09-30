@@ -60,7 +60,7 @@ class TemplateRenderingTest {
             "INVOICE","INV-101","invoice.csv",java.time.LocalDate.now(),Instant.now(),"USD",
             new BigDecimal("10"),new BigDecimal("3"),new BigDecimal("7"),false,false,true,null,UUID.randomUUID());
         var l=new com.nextaicommerce.platform.receiving.ReceivingWorkflowRepository.WorkLine(line,document,session,UUID.randomUUID(),
-            "Yogurt & cream","QA-100",new BigDecimal("10"),new BigDecimal("3"),new BigDecimal("7"),BigDecimal.ONE,
+            "Yogurt & cream","QA-100","012345678901",new BigDecimal("10"),new BigDecimal("3"),new BigDecimal("7"),BigDecimal.ONE,
             new BigDecimal("2"),"USD",true,false,1,BigDecimal.ZERO,BigDecimal.ZERO,UUID.randomUUID());
         c.setVariables(Map.ofEntries(Map.entry("canViewOperations",true),Map.entry("canManageConnections",true),
             Map.entry("canManageUsers",true),Map.entry("canEditCatalog",true),Map.entry("isSuperAdmin",true),

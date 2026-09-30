@@ -812,8 +812,8 @@ class ReceivingWorkflowDatabaseTest {
     }
     @Test void unmatchedReceivingItemCanJoinCatalogueBeforeReceipt(){
         var f=fixture("INVOICE");
-        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET account_catalog_item_id=null,vendor_item_code='NEW-RECEIVING' WHERE tenant_id=? AND id=?",tenant,f.line());});
-        work.addCatalogueItem(tenant,actor,f.line(),context.getBean(CatalogRepository.class),new BigDecimal("6"),true);
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET account_catalog_item_id=null,vendor_item_code='NEW-RECEIVING',source_identifier='012345678901' WHERE tenant_id=? AND id=?",tenant,f.line());});
+        work.addCatalogueItem(tenant,actor,f.line(),context.getBean(CatalogRepository.class),"012345678901",new BigDecimal("6"),true);
         var l=work.lines(tenant,List.of(f.document())).getFirst();
         assertThat(l.productId()).isNotNull();assertThat(l.requiresExpiration()).isTrue();
         work.receive(tenant,actor,f.line(),new BigDecimal("6"),expiry,"SELLABLE",f.location(),null);

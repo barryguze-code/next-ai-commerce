@@ -285,8 +285,8 @@ function quickLocation(receiptForm){
 function addCatalogue(id){
   const l=line(id);open('Add to catalogue',l.product,label(doc(l.documentId)));
   body.innerHTML=note(l.code||'New item','Create this invoice item in your account catalogue, then continue receiving.');
-  body.append(form('<label>Units / case<input name="pack" type="number" min="1" step="1" required value="'+escape(l.unitsPerCase||1)+'"></label><label class="rw-check"><input name="requiresExpiration" type="checkbox" checked>Requires expiration date</label><button type="submit" class="primary-button compact-button">Add item and continue</button>',
-    (f,requestId)=>run('catalogue',id,{requestId,unitsPerCase:Number(f.elements.pack.value),expirationRequired:f.elements.requiresExpiration.checked},f,()=>receive(id))));
+  body.append(form('<label>UPC / EAN / GTIN<input name="identifier" required autocomplete="off" value="'+escape(l.identifier||'')+'" placeholder="Required global product identifier"><small>Global catalogue identity; vendor item code remains account-specific.</small></label><label>Units / case<input name="pack" type="number" min="1" step="1" required value="'+escape(l.unitsPerCase||1)+'"></label><label class="rw-check"><input name="requiresExpiration" type="checkbox" checked>Requires expiration date</label><button type="submit" class="primary-button compact-button">Add item and continue</button>',
+    (f,requestId)=>run('catalogue',id,{requestId,identifier:f.elements.identifier.value,unitsPerCase:Number(f.elements.pack.value),expirationRequired:f.elements.requiresExpiration.checked},f,()=>receive(id))));
 }
 function prepare(id){
   const l=line(id);open('Pack & item fees',l.product,label(doc(l.documentId)));

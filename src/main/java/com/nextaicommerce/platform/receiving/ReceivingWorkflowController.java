@@ -117,10 +117,10 @@ public class ReceivingWorkflowController {
             UUID receipt,String direction,String reason,String notes,Boolean creditExpected,
             BigDecimal previewReceived,BigDecimal previewOutstanding,
             BigDecimal unitsPerCase,BigDecimal depositFee,BigDecimal otherFee,Boolean expirationRequired,
-            BigDecimal damaged,BigDecimal shortShipped,BigDecimal wrongItem){
+            BigDecimal damaged,BigDecimal shortShipped,BigDecimal wrongItem,String identifier){
         public Command(UUID requestId,BigDecimal quantity,LocalDate expiration,String disposition,UUID location,
                 UUID receipt,String direction,String reason,String notes,Boolean creditExpected,BigDecimal previewReceived,BigDecimal previewOutstanding){
-            this(requestId,quantity,expiration,disposition,location,receipt,direction,reason,notes,creditExpected,previewReceived,previewOutstanding,null,null,null,null,null,null,null);
+            this(requestId,quantity,expiration,disposition,location,receipt,direction,reason,notes,creditExpected,previewReceived,previewOutstanding,null,null,null,null,null,null,null,null);
         }
     }
 
@@ -135,7 +135,7 @@ public class ReceivingWorkflowController {
                 case "outcomes" -> ()->workflow.receiveOutcomes(tenant,actor,target,command.quantity(),command.damaged(),command.shortShipped(),command.wrongItem(),command.expiration(),command.location(),command.expirationRequired());
                 case "case-pack" -> ()->workflow.updateCasePack(tenant,actor,target,command.unitsPerCase());
                 case "delivery" -> ()->workflow.receiveDelivery(tenant,actor,target,command.quantity(),command.damaged(),command.shortShipped(),command.wrongItem(),command.expiration(),command.location(),command.unitsPerCase(),command.expirationRequired());
-                case "catalogue" -> ()->workflow.addCatalogueItem(tenant,actor,target,catalog,command.unitsPerCase(),command.expirationRequired());
+                case "catalogue" -> ()->workflow.addCatalogueItem(tenant,actor,target,catalog,command.identifier(),command.unitsPerCase(),command.expirationRequired());
                 case "prepare" -> ()->workflow.prepare(tenant,actor,target,command.unitsPerCase(),command.depositFee(),command.otherFee());
                 case "receive" -> ()->{
                     if(command.unitsPerCase()!=null||command.expirationRequired()!=null)workflow.saveCatalogueSettings(tenant,actor,target,command.unitsPerCase(),command.expirationRequired());
