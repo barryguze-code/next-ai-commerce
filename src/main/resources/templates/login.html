@@ -11,6 +11,9 @@
     </section>
     <section class="form-panel">
       <form class="login-card" method="post" th:action="@{/login}">
+        <input th:if="${param.tenantId != null and param.token != null}" type="hidden" name="tenantId" th:value="${param.tenantId[0]}">
+        <input th:if="${param.tenantId != null and param.token != null}" type="hidden" name="token" th:value="${param.token[0]}">
+        <p class="notice" th:if="${param.tenantId != null and param.token != null}">Sign in with the invited email. You will return here to accept the account invitation.</p>
         <div><span class="eyebrow dark">Welcome back</span><h2>Sign in to Next AI Commerce</h2><p class="muted">Use your company account to continue.</p></div>
         <p class="notice error" th:if="${param.error}">The email or password is incorrect.</p>
         <p class="notice" th:if="${param.logout}">You have signed out safely.</p>

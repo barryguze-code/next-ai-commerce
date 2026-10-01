@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.3.14",
+ "title":"Cross-site invitation sign-in continuity",
+ "sections":[{"title":"Email invitations","items":["Carry the invitation through sign-in and password retries even when strict browser cookies withhold the original session after opening an email link.","Keep strict cookies, CSRF protection, invited-email verification and explicit acceptance. No pending invitation is automatically accepted."]}]
+},
+{
  "version":"1.3.13",
  "title":"Email invitation sign-in recovery",
  "sections":[{"title":"Account access","items":["Invitation links opened from email clients now return to the acceptance page after sign-in even when browser navigation headers are unavailable.","Users must still sign in with the invited email and explicitly accept. Existing memberships, pending invitations, and store permissions are not automatically changed."]}]

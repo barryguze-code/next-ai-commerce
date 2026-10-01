@@ -54,8 +54,22 @@ public class SecurityConfig {
                 .anyRequest().authenticated())
             // Only browser document navigation should become a post-login destination.
             .requestCache(cache -> cache.requestCache(documentRequestCache()))
+            // Strict cookies can be withheld throughout an email-origin redirect chain.
+            // Carry only this fixed internal destination through the login form as well.
+            .exceptionHandling(errors -> errors.defaultAuthenticationEntryPointFor((request, response, error) -> {
+                String invitation = invitationQuery(request);
+                response.sendRedirect(request.getContextPath() + "/login"
+                    + (invitation == null ? "" : "?" + invitation));
+            }, request -> "GET".equals(request.getMethod())
+                && "/invitation/accept".equals(request.getServletPath())))
             .formLogin(form -> form.loginPage("/login").successHandler((request, response, authentication) -> {
                 var cache = documentRequestCache();
+                String invitation = invitationQuery(request);
+                if (invitation != null) {
+                    cache.removeRequest(request, response);
+                    response.sendRedirect(request.getContextPath() + "/invitation/accept?" + invitation);
+                    return;
+                }
                 var saved = cache.getRequest(request, response);
                 // Discard asset destinations saved by older versions as well.
                 if (saved != null && !loginDestination(java.net.URI.create(saved.getRedirectUrl()).getPath().substring(request.getContextPath().length()))) {
@@ -65,6 +79,10 @@ public class SecurityConfig {
                 success.setRequestCache(cache);
                 success.setDefaultTargetUrl("/app/select-account");
                 success.onAuthenticationSuccess(request, response, authentication);
+            }).failureHandler((request, response, error) -> {
+                String invitation = invitationQuery(request);
+                response.sendRedirect(request.getContextPath() + "/login?error"
+                    + (invitation == null ? "" : "&" + invitation));
             }).permitAll())
             .logout(logout -> logout.logoutSuccessUrl("/login?logout"))
             .build();
@@ -88,5 +106,15 @@ public class SecurityConfig {
     }
     static boolean loginDestination(String path) {
         return "/app".equals(path) || path.startsWith("/app/") || "/invitation/accept".equals(path);
+    }
+
+    private static String invitationQuery(jakarta.servlet.http.HttpServletRequest request) {
+        String tenant = request.getParameter("tenantId"), token = request.getParameter("token");
+        if (tenant == null || token == null || !token.matches("[A-Za-z0-9_-]{1,128}")) return null;
+        try {
+            return "tenantId=" + java.util.UUID.fromString(tenant) + "&token=" + token;
+        } catch (IllegalArgumentException invalid) {
+            return null;
+        }
     }
 }

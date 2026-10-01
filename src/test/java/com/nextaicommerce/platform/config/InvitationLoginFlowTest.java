@@ -21,7 +21,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(InvitationController.class)
+@WebMvcTest({InvitationController.class, com.nextaicommerce.platform.web.PageController.class})
 @Import({SecurityConfig.class, InvitationLoginFlowTest.LoginUsers.class})
 class InvitationLoginFlowTest {
     @Autowired MockMvc mvc;
@@ -71,5 +71,35 @@ class InvitationLoginFlowTest {
             .param("tenantId", tenant.toString()).param("token", "synthetic-token"))
             .andExpect(status().isForbidden());
         verifyNoInteractions(workflow);
+    }
+
+    @Test void strictCookieSessionLossAndPasswordRetryKeepInvitation() throws Exception {
+        String query = "tenantId=" + tenant + "&token=synthetic-token";
+        mvc.perform(get("/invitation/accept").servletPath("/invitation/accept")
+            .param("tenantId", tenant.toString()).param("token", "synthetic-token"))
+            .andExpect(redirectedUrl("/login?" + query));
+        // Simulate the browser withholding the first session during a cross-site redirect.
+        var freshSession = new MockHttpSession();
+        mvc.perform(get("/login").session(freshSession)
+            .param("tenantId", tenant.toString()).param("token", "synthetic-token"))
+            .andExpect(status().isOk())
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("name=\"token\" value=\"synthetic-token\"")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("name=\"tenantId\" value=\"" + tenant + "\"")));
+        mvc.perform(post("/login").session(freshSession).with(csrf())
+            .param("tenantId", tenant.toString()).param("token", "synthetic-token")
+            .param("username", EMAIL).param("password", "wrong-password"))
+            .andExpect(redirectedUrl("/login?error&" + query));
+        mvc.perform(post("/login").session(freshSession).with(csrf())
+            .param("tenantId", tenant.toString()).param("token", "synthetic-token")
+            .param("username", EMAIL).param("password", "test-password"))
+            .andExpect(redirectedUrl("/invitation/accept?" + query));
+        verify(workflow, never()).acceptExisting(any(), any(), any());
+    }
+
+    @Test void malformedContinuationCannotRedirectOutsideApplication() throws Exception {
+        mvc.perform(post("/login").with(csrf())
+            .param("tenantId", tenant.toString()).param("token", "https://example.invalid/")
+            .param("username", EMAIL).param("password", "test-password"))
+            .andExpect(redirectedUrl("/app/select-account"));
     }
 }
