@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.3.13",
+ "title":"Email invitation sign-in recovery",
+ "sections":[{"title":"Account access","items":["Invitation links opened from email clients now return to the acceptance page after sign-in even when browser navigation headers are unavailable.","Users must still sign in with the invited email and explicitly accept. Existing memberships, pending invitations, and store permissions are not automatically changed."]}]
+},
+{
  "version":"1.3.12",
  "title":"Invitation access and manual Amazon SKU sync",
  "sections":[{"title":"Account invitations","items":["Invitation acceptance links now survive sign-in, so existing users can accept access to another account without losing the invitation.","Existing account memberships and store permissions remain unchanged until the invitation is accepted."]},{"title":"Marketplace SKUs","items":["Authorized users can request an Amazon listing refresh from Marketplace SKUs.","Refresh requests run through the background scheduler, prevent duplicate requests, and respect a five-minute cooldown after completion. This action imports Amazon listings; it does not publish prices or inventory."]}]

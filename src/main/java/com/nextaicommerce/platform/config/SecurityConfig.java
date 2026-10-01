@@ -79,8 +79,11 @@ public class SecurityConfig {
         var cache = new org.springframework.security.web.savedrequest.HttpSessionRequestCache();
         cache.setRequestMatcher(request -> "GET".equals(request.getMethod())
             && loginDestination(request.getServletPath())
-            && "navigate".equals(request.getHeader("Sec-Fetch-Mode"))
-            && "document".equals(request.getHeader("Sec-Fetch-Dest")));
+            // Email clients/webviews may omit Fetch Metadata. This exact endpoint
+            // only displays a confirmation; acceptance still requires login + CSRF POST.
+            && ("/invitation/accept".equals(request.getServletPath())
+                || ("navigate".equals(request.getHeader("Sec-Fetch-Mode"))
+                    && "document".equals(request.getHeader("Sec-Fetch-Dest")))));
         return cache;
     }
     static boolean loginDestination(String path) {
