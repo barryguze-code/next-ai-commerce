@@ -135,7 +135,7 @@ class CollaborationTemplateTest {
             .doesNotContain("<svg viewBox=\"0 0 24 24\"><path d=\"M5 5h14v10H9l-4 4V5Zm4 4h6m-6 3h4\"/></svg>Collaboration");
         assertThat(javascript).contains("window.LiveHuddleUI","sendHuddle","connectHuddles");
         String floating=Files.readString(Path.of("src/main/resources/static/js/huddle-floating.js"));
-        assertThat(floating).contains("participantIds:[person.id]","Online teammates","draggable(panel,head)",
+        assertThat(floating).contains("participantIds:[person.id]","All teammates","Search teammates","peopleTab='online'","draggable(panel,head)",
             "Pin chat · stay minimized on new messages","Close without saving","Save as a task","field.rows=1");
         assertThat(styles).contains(".sidebar-collaboration{",".sidebar-huddle-menu{",
             ".sidebar-person-avatar",".huddle-invitation.is-sidebar-mounted",
