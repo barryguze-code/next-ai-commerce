@@ -44,6 +44,7 @@ test('header presence opens a floating huddle, protects text, pins, minimizes, a
   await page.mouse.move(head.x+40,head.y+15);await page.mouse.down();await page.mouse.move(head.x-100,head.y-100);await page.mouse.up();
   assert.equal(await page.locator('.floating-huddle').evaluate(el=>el.style.position),'fixed');
   await page.getByRole('button',{name:'Restore chat',exact:true}).click();
+  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='Huddle message');
   assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).evaluate(el=>el===document.activeElement),true);
   await page.getByRole('button',{name:'Close huddle',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Save as a task',exact:true}).isVisible(),true);
