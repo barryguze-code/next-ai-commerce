@@ -16,7 +16,7 @@
   </form>
 </dialog>
 <link rel="stylesheet" href="/css/platform-controls.css?v=1.0.0">
-<script defer src="/js/platform-controls.js?v=20261002-hotfix1"></script>
+<script defer src="/js/platform-controls.js?v=20261002-hotfix2"></script>
 <nav class="product-nav">
   <a class="nav-overview" th:classappend="${active == 'overview' ? 'active' : ''}" href="/app"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/></svg>Overview</a>
 
@@ -79,7 +79,7 @@
       <span class="nav-coming">Activity History <small>Planned</small></span>
     </div>
   </details>
-  <div class="collaborate-nav-row"><a class="global-collaboration-link" th:classappend="${active == 'collaboration' ? ' active' : ''}" href="/app/collaboration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-12h-6l1-8Z"/></svg>Collaborate</a><button th:if="${canEditCatalog}" type="button" data-new-task class="sidebar-create-task" aria-label="Create a store task" title="Create a store task" aria-haspopup="dialog"><img src="/images/platform/new-collaboration-task.png?v=20261002-1" alt=""></button></div>
+  <div class="collaborate-nav-row"><a class="global-collaboration-link" th:classappend="${active == 'collaboration' ? ' active' : ''}" href="/app/collaboration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-12h-6l1-8Z"/></svg>Collaborate</a><button th:if="${canEditCatalog}" type="button" data-new-task class="sidebar-create-task" aria-label="Create a store task" title="Create a store task" aria-haspopup="dialog"><img src="/images/platform/collaboration-new-task.png?v=20261002-2" alt=""></button></div>
 </nav>
 <section class="sidebar-collaboration" th:if="${canViewOperations}" th:classappend="${active == 'collaboration' ? ' is-current' : ''}" data-sidebar-collaboration>
   <div class="sidebar-collaboration-row">

@@ -13,10 +13,10 @@
       const add = (url, label, asset) => {
         const link = document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener noreferrer';
         link.title=label;link.setAttribute('aria-label',label);
-        const image=document.createElement('img');image.src='/images/platform/table/amazon.com-logo.png?v=20260922-26';image.alt='';
+        const image=document.createElement('img');image.src=asset==='seller-central'?'/images/platform/table/seller-central.png?v=20260922-26':'/images/platform/table/amazon.com-logo.png?v=20260922-26';image.alt='';
         link.append(image);host.append(link);
       };
-      if(asin||sku)add('https://sellercentral.'+domain+'/myinventory/inventory?searchTerm='+encodeURIComponent(asin||sku),'Open '+(asin||sku)+' in Seller Central','amazon');
+      if(asin||sku)add('https://sellercentral.'+domain+'/myinventory/inventory?searchTerm='+encodeURIComponent(asin||sku),'Open '+(asin||sku)+' in Seller Central','seller-central');
       if(asin)add('https://www.'+domain+'/dp/'+encodeURIComponent(asin),'Open '+asin+' on Amazon','amazon-product');
     });
   }

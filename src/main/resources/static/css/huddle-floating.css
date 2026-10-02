@@ -34,3 +34,12 @@ html[data-theme=dark] .floating-huddle textarea,html[data-theme=dark] .huddle-me
 [data-thread-assignment-options] label{display:flex;align-items:center;gap:8px;font:inherit}
 .thread-management .unassigned,.assignment-trigger:not([data-assigned-emails]),.assignment-trigger[data-assigned-emails=""],[data-thread-management-error]{color:#bd343e!important}
 .thread-management .conversation-close-button{margin-left:auto;color:#16845d;border-color:#b9dfcb}
+.huddle-people-panel .huddle-person{padding:7px 9px;font-size:.8125rem;line-height:1.35;color:var(--ink,#17283e);background:transparent;border:1px solid transparent}
+.huddle-person-identity{display:flex;align-items:center;gap:8px;min-width:0;text-align:left}
+.huddle-person-identity>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.huddle-presence-dot{width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:#94a3b8}
+.huddle-person[data-online=true] .huddle-presence-dot{background:#22a06b}
+.huddle-person[data-online=true] small{color:#19845b}
+.huddle-people-panel .huddle-person:not(:disabled):hover{background:#22a06b0d;border-color:#22a06b33}
+html[data-theme=dark] .huddle-people-panel .huddle-person{color:#e2e9f3;background:transparent}
+html[data-theme=dark] .huddle-person[data-online=true] small{color:#67d5a5}
