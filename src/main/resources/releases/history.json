@@ -1,5 +1,14 @@
 [
 {
+ "version":"1.4.0",
+ "title":"A consistent workspace and better team collaboration",
+ "sections":[
+  {"title":"Platform experience","items":["Consistent table typography, search controls, record visuals and action menus across the workspace, with improved front-end caching and steadier inventory layouts.","Type date numbers without separators: fields insert slashes automatically and display two-digit years. Inventory totals use compact labels, with details available on hover."]},
+  {"title":"Collaboration","items":["Create store-wide tasks from Collaboration or the sidebar, assign teammates and optionally set due dates. Overdue active tasks are highlighted and record conversations show related product pictures.","Updated floating huddles, compact message composers, teammate mentions and attachments. New conversations keep the composer focused on messaging; optional task deadlines remain available in task controls.","Share suggestions for new actions with the platform team from record action menus."]},
+  {"title":"Inventory and account controls","items":["Improved inventory adjustments, hold and removal actions, saved-plan details and ledger history. Donation and disposal remove the selected batch; returns remain pending until marked complete.","Unmapped seller-fulfilled listings calculate zero publishable inventory. Existing account publication settings continue to control whether changes are sent to Amazon.","Improved member access management and profile pictures. Existing account, marketplace and mail publication policies are preserved."]}
+ ]
+},
+{
  "version":"1.3.14",
  "title":"Cross-site invitation sign-in continuity",
  "sections":[{"title":"Email invitations","items":["Carry the invitation through sign-in and password retries even when strict browser cookies withhold the original session after opening an email link.","Keep strict cookies, CSRF protection, invited-email verification and explicit acceptance. No pending invitation is automatically accepted."]}]

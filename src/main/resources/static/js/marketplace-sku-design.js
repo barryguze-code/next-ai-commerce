@@ -12,7 +12,7 @@ table.querySelectorAll('[data-copy-value]').forEach(button=>{button.title='Copy 
 table.querySelectorAll('.customer-shipping-note').forEach(note=>{const img=window.NextAiIcons.create('shipping-truck');note.prepend(img)});
 table.querySelectorAll('.sku-open-actions').forEach(trigger=>{
  trigger.onclick=()=>{
-  const dialog=document.createElement('dialog');dialog.className='sku-actions-dialog';
+  const dialog=document.createElement('dialog');dialog.className='sku-actions-dialog';dialog.dataset.title=trigger.closest('tr')?.querySelector('.sku-approved-title')?.textContent||'Marketplace SKU actions';
   const header=document.createElement('header'),title=document.createElement('strong'),close=document.createElement('button');title.textContent='Actions';close.textContent='×';close.type='button';close.setAttribute('aria-label','Close actions');header.append(title,close);dialog.append(header);
   const position=()=>{const r=trigger.getBoundingClientRect();dialog.style.left=Math.max(12,Math.min(r.right+8,innerWidth-dialog.offsetWidth-12))+'px';dialog.style.top=Math.max(12,Math.min(r.top,innerHeight-dialog.offsetHeight-12))+'px'};
   const outside=e=>{if(!dialog.contains(e.target)&&!trigger.contains(e.target))dismiss()};
@@ -24,7 +24,7 @@ close.onclick=dismiss;dialog.addEventListener('cancel',e=>{e.preventDefault();di
   entry('inventory','Adjust inventory','Review mapped stock for this SKU',()=>window.openSharedInventoryAdjustment?.(trigger));
   entry('price','Change SKU price','Edit this listing in Seller Central ↗',null,trigger.dataset.sellerUrl);
   entry('sale','Set sale price','Set a promotional price in Seller Central ↗',null,trigger.dataset.sellerUrl);
-  document.querySelectorAll('.sku-actions-dialog').forEach(d=>d.dispatchEvent(new Event('cancel',{cancelable:true})));document.body.append(dialog);dialog.show();position();close.focus();document.addEventListener('click',outside);window.addEventListener('resize',position);document.addEventListener('scroll',position,true);dialog.addEventListener('keydown',e=>{if(e.key==='Escape')dismiss()});
+  document.querySelectorAll('.sku-actions-dialog').forEach(d=>d.dispatchEvent(new Event('cancel',{cancelable:true})));document.body.append(dialog);window.prepareActionSuggestionMenu?.(dialog);dialog.show();position();close.focus();document.addEventListener('click',outside);window.addEventListener('resize',position);document.addEventListener('scroll',position,true);dialog.addEventListener('keydown',e=>{if(e.key==='Escape')dismiss()});
  };
 });
 })();

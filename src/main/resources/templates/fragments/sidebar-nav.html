@@ -2,8 +2,21 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <body>
 <th:block th:fragment="nav(active)">
+<link rel="stylesheet" href="/css/action-suggestions.css?v=20261002-standards3">
+<script defer src="/js/action-suggestions.js?v=20261002-standards3"></script>
+<dialog id="action-suggestion-dialog" aria-labelledby="action-suggestion-title">
+  <form th:action="@{/app/action-suggestions}" method="post">
+    <header><div><span class="eyebrow dark">Help improve the platform</span><h2 id="action-suggestion-title">Suggest an action</h2></div><button type="button" data-suggestion-close aria-label="Close suggestion">×</button></header>
+    <p>What would you like to do from this menu? Your suggestion goes to R&amp;D for review. Approved improvements can benefit everyone.</p>
+    <p data-suggestion-context></p><input type="hidden" name="pagePath"><input type="hidden" name="menuContext">
+    <label>Suggested action<input name="title" maxlength="160" required placeholder="For example: Move stock to another store"></label>
+    <label>Why would it help?<textarea name="explanation" maxlength="2000" rows="3" required placeholder="Briefly describe what you need and why. Do not include passwords or sensitive information."></textarea></label>
+    <p data-suggestion-result role="status" hidden></p>
+    <footer><button type="button" class="secondary-button" data-suggestion-close>Cancel</button><button type="submit" class="primary-button">Send suggestion</button></footer>
+  </form>
+</dialog>
 <link rel="stylesheet" href="/css/platform-controls.css?v=1.0.0">
-<script defer src="/js/platform-controls.js?v=20260919-6"></script>
+<script defer src="/js/platform-controls.js?v=20261002-standards3"></script>
 <nav class="product-nav">
   <a class="nav-overview" th:classappend="${active == 'overview' ? 'active' : ''}" href="/app"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/></svg>Overview</a>
 
@@ -33,7 +46,8 @@
       <a th:if="${canViewOperations}" th:classappend="${active == 'inventory-ledger' ? 'active' : ''}" href="/app/inventory/ledger">Inventory Ledger</a>
       <a th:classappend="${active == 'receiving' ? 'active' : ''}" href="/app/receiving">Receiving</a>
       <span class="nav-coming">Lots &amp; Expiration <small>Planned</small></span>
-      <span class="nav-coming">Replenishment <small>Planned</small></span>
+      <a th:if="${localDevelopment == true and canViewOperations}" th:classappend="${active == 'replenishment' ? 'active' : ''}" href="/app/inventory/replenishment">Replenishment <small>Draft</small></a>
+      <span th:unless="${localDevelopment == true and canViewOperations}" class="nav-coming">Replenishment <small>Planned</small></span>
     </div>
   </details>
 
@@ -60,10 +74,12 @@
     <div>
       <a th:if="${canManageUsers == true}" th:classappend="${active == 'users' ? 'active' : ''}" href="/app/users">Users &amp; Access</a>
       <a th:if="${isSuperAdmin}" th:classappend="${active == 'accounts' ? 'active' : ''}" href="/app/platform/accounts">Platform Accounts</a>
+      <a th:if="${isSuperAdmin}" th:classappend="${active == 'action-suggestions' ? 'active' : ''}" href="/app/platform/action-suggestions">Action suggestions · R&amp;D</a>
       <span class="nav-coming">Templates <small>Planned</small></span>
       <span class="nav-coming">Activity History <small>Planned</small></span>
     </div>
   </details>
+  <div class="collaborate-nav-row"><a class="global-collaboration-link" th:classappend="${active == 'collaboration' ? ' active' : ''}" href="/app/collaboration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-12h-6l1-8Z"/></svg>Collaborate</a><button th:if="${canEditCatalog}" type="button" data-new-task class="sidebar-create-task" aria-label="Create a store task" title="Create a store task" aria-haspopup="dialog"><img src="/images/platform/new-collaboration-task.png?v=20261002-1" alt=""></button></div>
 </nav>
 <section class="sidebar-collaboration" th:if="${canViewOperations}" th:classappend="${active == 'collaboration' ? ' is-current' : ''}" data-sidebar-collaboration>
   <div class="sidebar-collaboration-row">

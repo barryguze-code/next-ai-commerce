@@ -1,0 +1,6 @@
+/* Inventory uses the same in-flow picture/action rail as Orders. */
+.available-inventory-table .table-overview-rail{position:static!important;inset:auto!important;z-index:auto;min-height:0;padding:0;background:transparent}
+.available-inventory-table .inventory-code-line{display:flex!important;align-items:center;gap:5px;white-space:normal!important;overflow:visible!important}
+.identifier-filter-lock{display:inline-flex!important;align-items:center;justify-content:center;flex:none;width:23px!important;height:23px;min-width:23px!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;border-radius:4px;cursor:pointer}
+.identifier-filter-lock img{width:22px;height:22px}.identifier-filter-lock:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.available-inventory-table .stockout-note{display:block;margin-top:4px}

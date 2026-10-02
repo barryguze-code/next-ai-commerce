@@ -18,6 +18,13 @@ function fixture(cookies={},stored={},blocked=false){
   return {api:window.NextAiTablePreferences,jar,storage,writes,events,context};
 }
 const plain=value=>JSON.parse(JSON.stringify(value));
+test('cached preferences invalidate when another tab updates or clears storage',()=>{
+  const key='nextai.table.preferences.orders',f=fixture({}, {[key]:JSON.stringify(preference)});
+  assert.deepEqual(plain(f.api.read('orders')),preference);
+  const updated={...preference,order:['quantity','product']};f.storage.set(key,JSON.stringify(updated));
+  f.events.storage({key});assert.deepEqual(plain(f.api.read('orders')),updated);
+  f.storage.clear();f.events.storage({key:null});assert.equal(f.api.read('orders'),null);
+});
 test('migrates table choices and preserves login, CSRF, theme and unrelated cookies',()=>{
   const f=fixture({'nextai-table-orders':encodeURIComponent(JSON.stringify(preference)),JSESSIONID:'session-sentinel','XSRF-TOKEN':'csrf-sentinel',theme:'dark',other:'value'});
   assert.deepEqual(plain(f.api.read('orders')),preference);

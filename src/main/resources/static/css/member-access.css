@@ -1,0 +1,9 @@
+.granted-store-list{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:max-content}
+.granted-store{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--white)}
+.granted-store>img{width:23px;height:23px;object-fit:contain}
+.granted-store{white-space:nowrap;flex-wrap:nowrap;display:grid;grid-template-columns:23px auto 8px auto;column-gap:8px;row-gap:0;padding:5px 8px}.granted-store>img{grid-row:1/3}.granted-store>strong{grid-column:2;grid-row:1}.granted-store>small{grid-column:2;grid-row:2;font-size:.625rem;line-height:1}.granted-store>.store-connection-status{grid-column:3;grid-row:1/3}.granted-store form{grid-column:4;grid-row:1/3;margin:0}.store-revoke{border:0;background:transparent;color:#bc3547;font:inherit;font-size:.6875rem;cursor:pointer;padding:3px 5px}
+.granted-store strong{font-size:.75rem;font-weight:600}.granted-store small{font-size:.6875rem;color:var(--muted)}
+.store-connection-status{width:8px;height:8px;flex:0 0 8px;border-radius:50%;background:#d78927}
+.store-connection-status.active{background:#1c9c6d}
+.member-access-table .user-cell{gap:0}.member-account-label{margin:0;color:var(--muted)}
+.member-danger-button{background:#c53d50}.member-danger-button:hover{background:#a82f40}

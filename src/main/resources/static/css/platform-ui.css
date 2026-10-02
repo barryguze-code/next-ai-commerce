@@ -1,0 +1,88 @@
+/* Platform contract: Orders' density, shared by every signed-in workspace.
+   Keep artwork, semantic status colors, and domain-specific dialog layouts intact. */
+:root{--ui-page-title:27px;--ui-section-title:18px;--ui-dialog-title:24px;--ui-product-title:14px;--ui-search-text:14px;--ui-label:13px;--ui-meta:12px;--ui-tab:12px;--ui-control-height:38px;--ui-radius:10px;--ui-action:#2d6cdf;--ui-action-hover:#205bc5;--ui-action-soft:#edf4ff;--ui-action-line:#c7dafa;--ui-action-text:#245db7}
+html[data-theme=dark]{--ui-action:#3779e8;--ui-action-hover:#4588f5;--ui-action-soft:#1a304d;--ui-action-line:#365d8b;--ui-action-text:#a8cdff}
+body.app-page .workspace-header h1{font-size:var(--ui-page-title)!important;line-height:1.2;margin:6px 0 8px}
+body.app-page .workspace-header .page-intro{font-size:13px;line-height:1.5;max-width:80ch}
+body.app-page .workspace-header{flex-wrap:wrap}
+body.app-page .workspace-header>div:first-child{min-width:0;flex:1 1 320px}
+body.app-page .workspace-header .header-actions{flex-wrap:wrap;max-width:100%}
+body.app-page :is(.card-toolbar,.desk-card>header,.sync-panel>header) h2{font-size:var(--ui-section-title)!important;line-height:1.35;margin:0 0 4px}
+body.app-page :is(.card-toolbar,.desk-card>header) p{font-size:var(--ui-meta)!important;line-height:1.5}
+/* Stable metrics from first paint: never wait for a script to set typography. */
+html body.app-page :is(.table-standard-search,.search-field,.account-table-search) input[type=search]{font-size:var(--ui-search-text)!important;font-weight:450!important;line-height:24px!important;min-height:24px;letter-spacing:0!important;caret-color:var(--ink)}
+html body.app-page .table-standard-search{min-height:42px!important;border-radius:var(--ui-radius)!important;box-sizing:border-box;align-items:center}
+html body.app-page :is(.table-standard-search,.search-field,.account-table-search) input::placeholder{font-size:var(--ui-search-text)!important;font-weight:450!important;color:var(--muted);opacity:1}
+html body.app-page input[type=search]{font-size:var(--ui-search-text)!important}
+html body.app-page .product-position-total{font-size:11px!important;line-height:1.45!important;white-space:normal!important}
+body.app-page :is(.table-widget th,.table-grid-header>[data-column]){font-size:10px!important;line-height:1.35;font-weight:750!important;letter-spacing:.1em!important}
+/* Scroll the table on compact screens instead of crushing words into letters. */
+html body.app-page table.table-widget{min-width:960px!important}
+html body.app-page table.available-inventory-table{min-width:1200px!important}
+html body.app-page .table-widget th{white-space:nowrap;word-break:normal;overflow-wrap:normal}
+body.app-page :is(.table-widget td,.table-widget-scroll){font-size:13px}
+body.app-page :is(.item-product-copy>strong,.sku-approved-title,.inventory-product-stage>strong,.product-cell>div>strong){font-size:var(--ui-product-title)!important;line-height:1.45!important}
+body.app-page :is(.table-widget td small,.item-product-copy code){font-size:var(--ui-meta);line-height:1.45}
+/* Filter tabs use one geometry; warning states remain red/amber, not blue. */
+body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.inventory-view-switch){gap:6px}
+html body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.inventory-view-switch)>:is(a,button){display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 11px!important;border:1px solid transparent;border-radius:9px!important;font-size:var(--ui-tab)!important;font-weight:650;line-height:20px!important;text-decoration:none;white-space:nowrap;box-sizing:border-box}
+html body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.inventory-view-switch)>:is(a,button).active{background:var(--ui-action-soft)!important;border-color:var(--ui-action-line)!important;color:var(--ui-action-text)!important;box-shadow:none}
+body.app-page :is(.order-tab-count,.sku-filter-bar b,.inventory-filter-bar b){font-size:11px!important;line-height:18px;border-radius:999px;min-width:22px;text-align:center;font-variant-numeric:tabular-nums}
+/* All command buttons share the same blue family. Secondary means blue outline,
+   not a competing grey/green CTA. Image controls are deliberately excluded. */
+html body.app-page :is(.primary-button,.secondary-button){min-height:var(--ui-control-height);padding:8px 13px!important;border:1px solid var(--ui-action)!important;border-radius:var(--ui-radius)!important;font-size:var(--ui-label)!important;font-weight:650!important;line-height:20px;display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;box-shadow:none!important;cursor:pointer}
+html body.app-page .primary-button{background:var(--ui-action)!important;color:#fff!important}
+html body.app-page .secondary-button{background:var(--ui-action-soft)!important;color:var(--ui-action-text)!important;border-color:var(--ui-action-line)!important}
+html body.app-page .primary-button:hover:not(:disabled){background:var(--ui-action-hover)!important}
+html body.app-page .secondary-button:hover:not(:disabled){border-color:var(--ui-action)!important}
+html body.app-page .general-task-shortcut{min-height:38px;padding:8px 13px;background:var(--ui-action-soft);border-color:var(--ui-action-line);color:var(--ui-action-text);font-size:13px;border-radius:10px}
+html[data-theme=dark] body.app-page :is(.inventory-policy-flag.removed,.shelf-life-summary article.blocked b){color:#ef9ca2}
+body.app-page :is(.primary-button,.secondary-button):disabled{opacity:.45;cursor:not-allowed}
+body.app-page :is(button,a,input,select,textarea,summary,[role=button]):focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+/* Shared dialog shell, not floating menus or the huddle composer. */
+html body.app-page dialog.invite-dialog{border:1px solid var(--line);border-radius:24px;background:var(--white);color:var(--ink);box-shadow:0 24px 72px #10243c33;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px)}
+html body.app-page dialog.invite-dialog::backdrop{background:#12243c66;backdrop-filter:blur(3px)}
+html body.app-page dialog.invite-dialog .dialog-header{padding:22px 26px;gap:18px;align-items:center}
+html body.app-page dialog.invite-dialog .dialog-header h2{font-size:var(--ui-dialog-title)!important;line-height:1.25;margin:5px 0;overflow-wrap:anywhere}
+html body.app-page dialog.invite-dialog .dialog-header p{font-size:13px!important;line-height:1.5}
+html body.app-page dialog.invite-dialog .dialog-body:not(.thread-dialog-body){padding:22px 26px}
+html body.app-page dialog.invite-dialog .dialog-actions{padding:16px 26px;gap:10px}
+html body.app-page dialog.invite-dialog label{font-size:var(--ui-label);line-height:1.45}
+html body.app-page dialog.invite-dialog :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),select){font-size:14px;min-height:40px}
+html body.app-page dialog .dialog-close{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--bg);color:var(--muted);font-size:25px;line-height:1;cursor:pointer}
+html body.app-page :is(.table-filter-panel,.table-column-panel) input{font-size:14px!important;min-height:38px}
+html body.app-page .inventory-history-dialog[open]{inset:16px 16px 16px auto;width:min(1120px,calc(100vw - 32px));height:calc(100dvh - 32px);margin:0}
+body.app-page .history-scope-switch button{font-size:12px;min-height:32px}
+body.app-page .history-summary small{font-size:11px}
+body.app-page .history-dates{font-size:12px;flex-wrap:wrap;gap:8px}
+body.app-page .position-section-title{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+body.app-page .position-section-title small{flex-basis:100%;font-size:12px}
+body.app-page .location-picker-trigger,body.app-page .location-picker-popup button{font-size:13px}
+body.app-page .position-sidebar :is(.location-editor-heading small,.location-safety){font-size:12px}
+body.app-page :is(.batch-review,.create-product-dialog){border:1px solid var(--line);border-radius:24px;background:var(--white);color:var(--ink);max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px)}
+body.app-page :is(.batch-review,.create-product-dialog) header h2{font-size:24px;line-height:1.25}
+html body.app-page dialog h2{font-size:var(--ui-dialog-title)!important;line-height:1.25!important}
+html body.app-page :is(.general-task-dialog,#action-suggestion-dialog,.catalog-quick-create-drawer){border:1px solid var(--line);background:var(--white);color:var(--ink);border-radius:24px}
+html body.app-page dialog :is(label,input:not([type=checkbox]):not([type=radio]),select,textarea){font-size:14px}
+html body.app-page dialog :is(.dialog-header,header)>div{min-width:0}
+body.app-page .thread-management :is([data-thread-assign-self],[data-thread-save-assignment],.conversation-close-button){background:var(--ui-action-soft)!important;border:1px solid var(--ui-action-line)!important;color:var(--ui-action-text)!important;border-radius:10px;min-height:38px;font-size:13px}
+/* A product name opens detail; copying is an explicit, separate affordance. */
+html body.app-page [data-ui-product]{cursor:pointer!important;text-decoration:none;text-underline-offset:3px}
+html body.app-page [data-ui-product]:hover{text-decoration:underline;color:var(--blue)}
+.ui-product-heading{display:flex;align-items:center;gap:6px;min-width:0}
+.ui-product-heading>[data-ui-product]{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px!important}
+.ui-copy-title{display:inline-grid;place-items:center;flex:0 0 24px;width:24px;height:24px;padding:4px!important;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer}
+.ui-copy-title:hover{background:var(--ui-action-soft);color:var(--ui-action-text)}
+.ui-copy-title svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7}
+#ui-product-dialog{width:620px;padding:0}
+#ui-product-dialog .ui-product-picture{width:72px;height:80px;object-fit:contain;flex:none;border:1px solid var(--line);border-radius:16px;background:var(--white);padding:5px}
+.ui-record-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:0}
+.ui-record-facts div{min-width:0;padding:12px;background:var(--bg);border:1px solid var(--line);border-radius:12px}
+.ui-record-facts dt{font-size:12px;color:var(--muted);margin-bottom:6px}.ui-record-facts dd{margin:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere;white-space:pre-line}
+.ui-record-links{display:flex;flex-wrap:wrap;gap:10px}.ui-record-links a{font-size:13px;color:var(--blue)}
+.desk-table.table-widget [data-column=record-context]{flex:0 0 132px;min-width:132px;max-width:132px}
+.shipping-record{display:flex;align-items:center;gap:10px}.shipping-record-visual{display:grid;place-items:center;flex:0 0 80px;height:88px;border:1px solid var(--line);border-radius:18px;background:var(--white)}.shipping-record-visual img{width:58px;height:58px;object-fit:contain}
+.shipping-record-rail{display:grid;gap:10px}.shipping-record-rail>button{width:34px;height:34px;padding:3px}.shipping-record-rail>button img{width:28px;height:28px;object-fit:contain}
+.shipping-record-menu{position:fixed;inset:auto;margin:0;width:300px;padding:16px;border:1px solid var(--line);border-radius:18px;background:var(--white);color:var(--ink);box-shadow:0 16px 45px #10243c33}.shipping-record-menu>strong{display:block;font-size:16px;margin-bottom:14px}.shipping-record-menu>a{width:100%}
+@media(max-width:640px){html body.app-page dialog.invite-dialog :is(.dialog-header,.dialog-body:not(.thread-dialog-body),.dialog-actions){padding:16px}.ui-record-facts{grid-template-columns:1fr}.ui-product-picture{display:none}.workspace-header .header-actions{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){body.app-page :is(dialog,.table-widget,.primary-button,.secondary-button){animation:none!important;transition:none!important}}

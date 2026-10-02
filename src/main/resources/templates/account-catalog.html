@@ -13,11 +13,11 @@
 <link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7"><link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2"><link rel="stylesheet" href="/css/collaboration-thread.css?v=20260911-8">
 <script defer src="/js/theme.js?v=20260905-1">
 </script>
-<script defer src="/js/table-preferences.js?v=20260911-2"></script>
+<script defer src="/js/table-preferences.js?v=20261002-perf1"></script>
 <script defer src="/js/catalog-image-sync.js?v=1.2.0"></script>
-<script defer src="/js/collaboration.js?v=20260918-5"></script>
+<script defer src="/js/collaboration.js?v=20261002-tasks1"></script>
 <link rel="stylesheet" href="/css/catalog-inventory-controls.css?v=1.2.0">
-<link rel="stylesheet" href="/css/standard-record-tables.css?v=20260922-32"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31"><script defer src="/js/standard-record-tables.js?v=20260922-31"></script></head>
+<link rel="stylesheet" href="/css/standard-record-tables.css?v=20260922-32"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31"><script defer src="/js/standard-record-tables.js?v=20261002-standards3"></script><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><script defer src="/js/platform-ui.js?v=20261002-5"></script></head>
 <body class="app-page platform-standard-tables">
 <aside class="sidebar">
 <a class="brand brand-lockup" href="/app">
@@ -86,6 +86,7 @@
 <span>⌕</span>
 <input type="search" name="q" th:value="${query}" placeholder="Search catalogue">
 </label></form><div data-column-control="account-catalogue"></div>
+<a th:if="${localDevelopment == true}" class="secondary-button compact-button" href="/app/inventory/replenishment#vendors">Vendors</a>
 <button th:if="${canEditCatalog}" class="secondary-button compact-button" type="button" onclick="document.getElementById('vendor-dialog').showModal()">Add vendor</button>
 <button th:if="${canEditCatalog}" class="secondary-button compact-button" type="button" onclick="document.getElementById('location-dialog').showModal()">Locations</button>
 <button th:if="${canEditCatalog}" class="secondary-button compact-button" type="button" th:disabled="${#lists.isEmpty(vendors)}" th:title="${#lists.isEmpty(vendors) ? 'Add a vendor first' : 'Upload CSV or XLSX'}" onclick="document.getElementById('upload-dialog').showModal()">Upload catalogue</button>
@@ -437,6 +438,6 @@
 <script th:if="${openPanel == 'locations'}">window.addEventListener('DOMContentLoaded',()=>document.getElementById('location-dialog')?.showModal())</script>
 <script>if(new URLSearchParams(location.search).get('addProduct')==='true'){const productDialog=document.getElementById('product-dialog');if(productDialog){productDialog.showModal();productDialog.querySelector('[name=name]')?.focus();}}</script>
 <div th:replace="~{fragments/stock-editor :: editor}"></div>
-<script src="/js/stock-entry-points.js?v=1.2.2"></script>
+<script src="/js/stock-entry-points.js?v=20261002-2"></script>
 </body>
 </html>

@@ -33,7 +33,7 @@ class CollaborationTemplateTest {
         context.setVariables(Map.ofEntries(
             Map.entry("canViewOperations",true),Map.entry("canManageConnections",true),
             Map.entry("canManageUsers",true),Map.entry("canEditCatalog",true),Map.entry("isSuperAdmin",true),
-            Map.entry("selectedAccountName","Ibcore"),Map.entry("signedInEmail","barry@example.com"),
+            Map.entry("selectedAccountName","Ibcore"),Map.entry("conversationPictures",Map.of()),Map.entry("signedInEmail","barry@example.com"),
             Map.entry("roleLabel","Super Admin"),Map.entry("reviews",List.of(review)),
             Map.entry("selectedView","ACTIVE"),Map.entry("selectedEntity","INVENTORY"),
             Map.entry("subjectKey","item|2026-10-01"),
@@ -44,8 +44,7 @@ class CollaborationTemplateTest {
             "People","Created","Last activity","Alex Smith, Barry Guze","Check the cold-chain count",
             "Showing this record’s history","collaboration-open-row","My private notes","Close conversation",
             "Search conversations","Finish / reopen","Quick huddle","General team huddle",
-            "Temporary by default","45-minute idle expiry","Open source","Enter to send","huddle-dock",
-            "Type @ to mention someone here");
+            "Go to original source","Write a message… Type @ to mention a teammate","Create task","Due date");
         assertThat(rendered).doesNotContain("huddle-save-choice","Save &amp; complete");
         assertThat(rendered).doesNotContain("data-column=\"status\"");
     }
@@ -71,11 +70,9 @@ class CollaborationTemplateTest {
             .doesNotContain("count.textContent=summary.activeMessageCount")
             .doesNotContain("thread-overflow-button","openRecordThreadMenu");
         assertThat(javascript).contains("showPicker","formatDate(review.createdAt)",
-            "view=ALL&entityType=","PRIVATE_NOTE","connectHuddles","closeConversation",
-            "wireEnterToSend","type:'JOIN'","filterCollaborationRows","showHuddleInvitation","liveHuddles.clear()",
-            "huddle-person-avatar","Online · invite to huddle","showHuddleDock","closeTemporaryHuddle",
-            "mountFloatingHuddle","field.id==='huddle-message-input'",
-            "$('#huddle-finish-button')?.addEventListener","Number(button.dataset.totalCount||0)>1",
+            "view=ALL&entityType=","PRIVATE_NOTE","connectHuddles",
+            "wireEnterToSend","filterCollaborationRows","window.LiveHuddleUI",
+            "Number(button.dataset.totalCount||0)>1",
             ".sort((left,right)=>Date.parse(right.createdAt)-Date.parse(left.createdAt))",
             "window.prepareRecordCollaboration=button=>",
             "(forcePicker||threads.length>1)&&threads.length", "threads.length===1");
@@ -136,9 +133,10 @@ class CollaborationTemplateTest {
             "Open collaboration and AI teammate","Next AI Commerce AI","Coming soon · Locked","chat-sound-wave inner","chat-sound-wave outer",
             "data-sidebar-huddle-people","selectedAccountName+' only'","Open full collaboration view")
             .doesNotContain("<svg viewBox=\"0 0 24 24\"><path d=\"M5 5h14v10H9l-4 4V5Zm4 4h6m-6 3h4\"/></svg>Collaboration");
-        assertThat(javascript).contains("renderSidebarCollaboration","sidebarPeople()",
-            "participantIds:[person.id]","data-sidebar-huddle-live-slot","closeSidebarHuddleMenu",
-            "playHuddleChime","startHuddleRing","stopHuddleRing");
+        assertThat(javascript).contains("window.LiveHuddleUI","sendHuddle","connectHuddles");
+        String floating=Files.readString(Path.of("src/main/resources/static/js/huddle-floating.js"));
+        assertThat(floating).contains("participantIds:[person.id]","Online teammates","draggable(panel,head)",
+            "Pin chat · stay minimized on new messages","Close without saving","Save as a task","field.rows=1");
         assertThat(styles).contains(".sidebar-collaboration{",".sidebar-huddle-menu{",
             ".sidebar-person-avatar",".huddle-invitation.is-sidebar-mounted",
             "@keyframes huddle-chat-nudge","@keyframes huddle-sound-wave","z-index:3000",

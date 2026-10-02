@@ -24,7 +24,7 @@ function overviewIcon(name){if(window.NextAiIcons)return window.NextAiIcons.crea
 function actionTrigger(element,warning){
   element.classList.add('table-action-trigger');
   element.classList.toggle('needs-attention',Boolean(warning));
-  const image=overviewIcon(warning?'alert':'actions');element.replaceChildren(image);
+  const image=overviewIcon(element.disabled?'actions-inactive':warning?'alert':'actions');element.replaceChildren(image);
 }
 function metadata(el,index){
   const title=el.dataset.title||el.textContent.replace(/[↑↓]/g,'').trim();
@@ -111,11 +111,12 @@ function prepareContextColumn(root){
         action.classList.toggle('needs-attention',Boolean(warning));
         actionTrigger(action,warning);
         action.dataset.warningText=warning?warning.textContent.trim():'';
-        action.title=(warning?warning.textContent.trim()+' · ':'')+'Inventory actions';
-        action.setAttribute('aria-label',(warning?'Review warning and actions for ':'Actions for ')+(row.dataset.product||'this record'));
+        action.title=action.hasAttribute('data-manage-member')?'Manage role and store access':(warning?warning.textContent.trim()+' · ':'')+'Inventory actions';
+        action.setAttribute('aria-label',action.hasAttribute('data-manage-member')?'Manage access for '+action.dataset.name:(warning?'Review warning and actions for ':'Actions for ')+(row.dataset.product||'this record'));
       }else if(warning||row.querySelector('[data-context-menu]')){
         const menu=row.querySelector('[data-context-menu]');
         const details=document.createElement('details');details.className='table-row-warning';
+        details.addEventListener('click',event=>event.stopPropagation());
         const summary=document.createElement('summary');summary.textContent=warning?'!':'⋯';summary.title=menu?'Document actions':'Stock needs attention';summary.setAttribute('aria-label',menu?'Actions for '+(menu.dataset.title||'this record'):'Show stock warning');
         actionTrigger(summary,warning);
         summary.title=warning?'Needs attention · Open actions':'Open actions';
@@ -139,7 +140,7 @@ function prepareContextColumn(root){
           const icon=document.createElement('span');icon.className='table-action-icon';icon.setAttribute('aria-hidden','true');
           icon.textContent=control.dataset.actionIcon||(control.matches('[data-open-selection]')?'⇉':menu?'↗':'±');
           const label=document.createElement('span');label.className='table-action-label';
-          const strong=document.createElement('strong');strong.textContent=control.textContent.trim();
+          const strong=document.createElement('strong');strong.textContent=control.textContent.trim()||control.getAttribute('aria-label')||control.title||'Open';
           const small=document.createElement('small');small.textContent=control.dataset.actionDescription||(control.matches('[data-open-selection]')?'Open your checked documents in one workspace':menu?(document.body.classList.contains('platform-standard-tables')?'Open this record’s settings':'Open only this document; keep your selection'):'Update stock for the mapped products');
           label.append(strong,small);control.replaceChildren(icon,label);
         });
@@ -167,7 +168,7 @@ function prepareOverview(root){
   const header=root.tHead.rows[0];if(!header)return;
   let heading=header.querySelector('[data-column=record-context]');
   if(!heading){heading=document.createElement('th');heading.dataset.column='record-context';header.prepend(heading);root.querySelectorAll('tbody [colspan]').forEach(cell=>cell.colSpan++);}
-  heading.dataset.columnRequired='true';heading.dataset.noSort='true';heading.dataset.title='Overview';heading.textContent='Overview';heading.setAttribute('aria-label','Overview');
+  heading.dataset.columnRequired='true';heading.dataset.noSort='true';heading.dataset.title='Record';heading.textContent='Record';heading.setAttribute('aria-label','Record');
   [...root.tBodies].flatMap(body=>[...body.rows]).filter(row=>!row.querySelector('[colspan]')).forEach(row=>{
     let cell=row.querySelector('[data-column=record-context]');
     if(!cell){cell=document.createElement('td');cell.dataset.column='record-context';row.prepend(cell);}
@@ -185,7 +186,23 @@ function prepareOverview(root){
     else{const button=document.createElement('button');button.type='button';button.disabled=true;button.title='Collaboration unavailable for this record';button.append(overviewIcon('collaboration-no-message-gray'));rail.prepend(button);}
     const action=row.querySelector('[data-context-action]');
     if(action&&!rail.contains(action)){actionTrigger(action,action.dataset.warningText);rail.append(action);}
-    if(!rail.querySelector('.table-action-trigger')){const button=document.createElement('button');button.type='button';button.disabled=true;button.title='No actions available';actionTrigger(button,false);rail.append(button);}
+    if(!rail.querySelector('.table-action-trigger')){
+      // Even a read-only record can contribute an idea; never invent a write action.
+      const label=row.dataset.title||row.dataset.product||row.querySelector('strong')?.textContent||'Record';
+      const details=document.createElement('details');details.className='table-row-warning';
+      const trigger=document.createElement('summary');trigger.setAttribute('aria-label','Actions for '+label);trigger.title='Actions and suggestions';actionTrigger(trigger,false);
+      const panel=document.createElement('div');panel.className='table-warning-panel';panel.dataset.title=label;panel.setAttribute('popover','manual');
+      const header=document.createElement('header');header.className='table-action-heading';
+      const copy=document.createElement('div'),title=document.createElement('strong'),hint=document.createElement('small');title.textContent=label;hint.textContent='Have an idea for this record? Share it with R&D.';copy.append(title,hint);
+      const close=document.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label','Close actions');close.onclick=()=>{details.open=false;trigger.focus()};header.append(copy,close);panel.append(header);
+      details.append(trigger,panel);rail.append(details);details.addEventListener('click',event=>event.stopPropagation());
+      details.addEventListener('toggle',()=>{
+        if(!details.open){if(panel.matches(':popover-open'))panel.hidePopover();return;}
+        panel.style.position='fixed';panel.style.inset='auto';panel.style.margin='0';panel.showPopover();
+        const rect=trigger.getBoundingClientRect();panel.style.left=Math.max(12,Math.min(rect.right+8,innerWidth-panel.offsetWidth-12))+'px';panel.style.top=Math.max(12,Math.min(rect.bottom+6,innerHeight-panel.offsetHeight-12))+'px';
+      });
+      details.addEventListener('keydown',event=>{if(event.key==='Escape'){details.open=false;trigger.focus()}});
+    }
     const layout=document.createElement('div');layout.className='table-overview-layout';
     layout.append(picture,rail);cell.append(layout);
   });
@@ -200,7 +217,7 @@ function prepareSalesBars(root){
     values.forEach((value,index)=>{
       const bar=document.createElement('span');bar.textContent=String(value);bar.dataset.value=String(value);bar.style.height=Math.max(2,32*value/max)+'px';bar.dataset.week=String(index);
       const end=new Date(anchor.getTime()-(3-index)*7*86400000),start=new Date(end.getTime()-7*86400000);
-      bar.title=start.toLocaleDateString()+' – '+end.toLocaleDateString()+': '+value+' units (rolling 7 days)';
+      bar.title=start.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'})+' – '+end.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'})+': '+value+' units (rolling 7 days)';
       bar.setAttribute('aria-label',bar.title);bar.tabIndex=0;el.append(bar);
     });
     el.removeAttribute('title');
@@ -213,7 +230,7 @@ function init(root){
     const fulfillment=header?.querySelector('[data-column=action]');if(fulfillment){fulfillment.dataset.title='Actions';fulfillment.textContent='Actions';}
     const available=header?.querySelector('[data-column=available]'),buyBox=header?.querySelector('[data-column=buy-box]');if(available&&buyBox)header.insertBefore(available,buyBox);
     if(header&&!header.querySelector('[data-column=picture]')){
-      const cell=document.createElement('span');cell.dataset.column='picture';cell.dataset.columnRequired='true';cell.dataset.title='Overview';cell.textContent='Overview';header.prepend(cell);
+      const cell=document.createElement('span');cell.dataset.column='picture';cell.dataset.columnRequired='true';cell.dataset.title='Record';cell.textContent='Record';header.prepend(cell);
     }
     root.querySelectorAll('.order-item').forEach(row=>{
       const stage=row.querySelector('[data-picture-actions]');if(!stage)return;
@@ -227,7 +244,8 @@ function init(root){
     });
   }
   prepareContextColumn(root);
-  prepareOverview(root);
+  if(root.dataset.overviewReady==='true')root.querySelectorAll('.table-overview-rail [data-context-action]').forEach(action=>actionTrigger(action,action.closest('tr')?.querySelector('.shelf-status:not(.healthy):not(.undated)')));
+  else prepareOverview(root);
   prepareSalesBars(root);
   root.classList.add('table-widget');
   const isTable=root.matches('table'),defaults=isTable?tableColumns(root):gridColumns(root);if(!defaults.length)return;
@@ -243,13 +261,9 @@ function init(root){
   function apply(){
     defaults.filter(c=>c.required).forEach(c=>visibility[c.id]=true);
     if(isTable){
-      [...root.rows].forEach(row=>{const cells=[...row.cells],byId=new Map(cells.map((cell,index)=>[cell.dataset.column||defaults[index]?.id,cell]));order.forEach(id=>{const cell=byId.get(id);if(cell){cell.hidden=!visibility[id];row.appendChild(cell)}})});
-      const visible=defaults.filter(c=>visibility[c.id]&&c.id!=='record-context');
-      const weight=id=>Number(root.querySelector('thead [data-column="'+id+'"]')?.dataset.columnWeight)||(['product','listing','vendor','source'].includes(id)?2.5:['action','actions'].includes(id)?1.2:1);
-      const total=visible.reduce((sum,c)=>sum+weight(c.id),0);
-      const context=defaults.some(c=>c.id==='record-context')?Math.min(8,48/Math.max(320,root.getBoundingClientRect().width)*100):0;
-      // Fixed table layout ignores mixed percentage/pixel calc widths in browsers.
-      root.querySelectorAll('thead th').forEach(th=>{th.style.width=(th.dataset.column==='record-context'?context:weight(th.dataset.column)/total*(100-context))+'%'});
+      [...root.rows].forEach(row=>{const cells=[...row.cells],byId=new Map(cells.map((cell,index)=>[cell.dataset.column||defaults[index]?.id,cell]));let position=0;order.forEach(id=>{const cell=byId.get(id);if(cell){const hidden=!visibility[id];if(cell.hidden!==hidden)cell.hidden=hidden;if(row.cells[position]!==cell)row.insertBefore(cell,row.cells[position]||null);position++;}})});
+      // Let content and the standard compact-column styles determine widths.
+      root.querySelectorAll('thead th').forEach(th=>th.style.removeProperty('width'));
     }else{
       root.querySelectorAll('[data-column]').forEach(el=>{el.hidden=!visibility[el.dataset.column];el.style.order=String(order.indexOf(el.dataset.column))});
       root.style.setProperty('--visible-columns',order.filter(id=>visibility[id]).length);
@@ -302,6 +316,7 @@ function init(root){
   requestAnimationFrame(()=>{const scroller=root.closest('.table-wrap');if(scroller)scroller.scrollLeft=0});
 }
 function initPageJump(form){if(form.dataset.pageJumpReady)return;form.dataset.pageJumpReady='true';const input=form.querySelector('[name="goToPage"]');if(!input)return;let starting=input.value;const clean=()=>{input.value=input.value.replace(/\D/g,'')};input.addEventListener('input',clean);form.addEventListener('submit',event=>{clean();const max=Math.max(1,Number(input.dataset.pageMax)||1),value=Number(input.value);if(!Number.isFinite(value)||value<1){event.preventDefault();input.value='1';input.focus();return}input.value=String(Math.min(max,Math.floor(value)))});input.addEventListener('blur',()=>{clean();if(input.value&&input.value!==starting)form.requestSubmit()});input.addEventListener('focus',()=>input.select())}
-function boot(){document.querySelectorAll('.desk-table:not([data-table-widget])').forEach(root=>{root.dataset.tableWidget='shipping-ready';root.dataset.gridRow='.candidate-row';const header=root.querySelector('.desk-table-head');header?.classList.add('table-grid-header');[...header.children].forEach((cell,index)=>{cell.dataset.column=['select','product','order','package','shipping','action'][index];cell.dataset.columnRequired=String(index===0||index===1||index===5);if(index===0)cell.dataset.title='Select'})});document.querySelectorAll('.data-card table:not([data-table-widget])').forEach((root,index)=>{if(root.tHead&&!root.closest('dialog'))root.dataset.tableWidget=location.pathname.replace(/\W+/g,'-')+'-'+index});document.querySelectorAll('[data-table-widget]:not([data-table-widget-ready])').forEach(root=>{root.dataset.tableWidgetReady='true';init(root)});document.querySelectorAll('[data-page-jump]').forEach(initPageJump);window.NextAiTableDataTools?.refresh();window.NextAiStandardTables?.enhance()}
-document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();window.NextAiTableWidget={refresh:boot};
+function boot(){document.querySelectorAll('.desk-table:not([data-table-widget])').forEach(root=>{root.dataset.tableWidget='shipping-ready';root.dataset.gridRow='.candidate-row';const header=root.querySelector('.desk-table-head');header?.classList.add('table-grid-header');[...header.children].forEach((cell,index)=>{cell.dataset.column=['record-context','select','product','order','package','shipping','action'][index];cell.dataset.columnRequired=String(index===0||index===1||index===2||index===6);if(index===1)cell.dataset.title='Select'})});document.querySelectorAll('.data-card table:not([data-table-widget])').forEach((root,index)=>{if(root.tHead&&!root.closest('dialog'))root.dataset.tableWidget=location.pathname.replace(/\W+/g,'-')+'-'+index});document.querySelectorAll('[data-table-widget]:not([data-table-widget-ready])').forEach(root=>{root.dataset.tableWidgetReady='true';init(root)});document.querySelectorAll('[data-page-jump]').forEach(initPageJump);window.NextAiTableDataTools?.refresh();window.NextAiStandardTables?.enhance()}
+function prepareMetricTables(){document.querySelectorAll('[data-rp-sales]').forEach(prepareSalesBars);}
+document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>{boot();prepareMetricTables();}):(boot(),prepareMetricTables());window.NextAiTableWidget={refresh:boot};
 })();

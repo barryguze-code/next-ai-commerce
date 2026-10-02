@@ -51,7 +51,11 @@ public class CollaborationController {
         if(!PageController.addTenantModel(session,model))return "redirect:/app/select-account";
         PageController.addAccessModel(authentication,model);UUID tenantId=tenant(session);String selectedView=normalizeView(view);
         String selectedEntity=blankToNull(entityType!=null?entityType:subjectType);
-        model.addAttribute("reviews",repository.reviews(tenantId,selectedView,selectedEntity,subjectKey,authentication.getName()));
+        UUID storeId=session.getAttribute(AccountSelectionController.STORE_ID) instanceof UUID id?id:null;
+        var reviews=repository.reviews(tenantId,selectedView,selectedEntity,subjectKey,authentication.getName()).stream()
+            .filter(review->review.storeId()==null||storeId==null||storeId.equals(review.storeId())).toList();
+        model.addAttribute("reviews",reviews);
+        model.addAttribute("conversationPictures",repository.pictures(tenantId,reviews,authentication.getName()));
         model.addAttribute("members",repository.members(tenantId));model.addAttribute("selectedView",selectedView);
         model.addAttribute("selectedEntity",selectedEntity);model.addAttribute("subjectKey",subjectKey);model.addAttribute("threadId",threadId);
         var returnTo=UriComponentsBuilder.fromPath("/app/collaboration").queryParam("view",selectedView);
@@ -65,7 +69,7 @@ public class CollaborationController {
             @RequestParam(required=false) String title,@RequestParam(required=false) String message,
             @RequestParam(defaultValue="TEAM_CHAT") String messageType,@RequestParam(required=false) String contextSnapshot,
             @RequestParam(required=false) String parentUrl,@RequestParam(required=false) UUID assignedTo,
-            @RequestParam(required=false) String dueDate,@RequestParam(defaultValue="/app/collaboration") String returnTo,
+            @RequestParam(required=false) String dueDate,@RequestParam(defaultValue="America/Los_Angeles") String timeZone,@RequestParam(defaultValue="/app/collaboration") String returnTo,
             @RequestParam(name="attachments",required=false) List<MultipartFile> attachments,
             HttpSession session,Authentication authentication,RedirectAttributes redirect){
         UUID tenantId=tenant(session);
@@ -74,15 +78,59 @@ public class CollaborationController {
             var files=attachments(attachments);if((message==null||message.isBlank())&&files.isEmpty())throw new IllegalArgumentException("Write a message or attach a file.");
             String type=normalizeMessageType(messageType),safeTitle=title==null||title.isBlank()?"Conversation about "+subjectLabel:title;
             String safeMessage=message==null||message.isBlank()?"Shared an attachment.":clean(message,4000);
-            Instant due=dueDate==null||dueDate.isBlank()?null:LocalDate.parse(dueDate).atTime(17,0).atZone(ZoneId.systemDefault()).toInstant();
-            var posted=repository.create(tenantId,clean(subjectType,40),clean(subjectKey,240),clean(subjectLabel,300),blankToNull(marketplace),
+            LocalDate date=parseDate(dueDate,timeZone);
+            var posted=repository.createDatedConversation(tenantId,clean(subjectType,40),clean(subjectKey,240),clean(subjectLabel,300),blankToNull(marketplace),
                 clean(actionKind,50),clean(safeTitle,240),safeMessage,type,snapshot(contextSnapshot),safeParentUrl(parentUrl),
-                authentication.getName(),assignedTo,due,files);
+                authentication.getName(),assignedTo,date,timeZone,files);
             if("TEAM_CHAT".equals(type))mentions.queue(tenantId,posted,safeMessage,authentication.getName());
             redirect.addFlashAttribute("collaborationSuccess","PRIVATE_NOTE".equals(type)?"Private note saved.":"Conversation started.");
         }catch(IllegalArgumentException ex){redirect.addFlashAttribute("collaborationError",ex.getMessage());}
         catch(Exception ex){redirect.addFlashAttribute("collaborationError","The message could not be saved. Nothing was lost; please try again.");}
         return "redirect:"+safeReturn(returnTo);
+    }
+
+    @PostMapping("/app/collaboration/general-tasks") @ResponseBody
+    ResponseEntity<?> createGeneralTask(@RequestParam String title,@RequestParam(defaultValue="") String description,
+            @RequestParam(required=false) Set<UUID> people,@RequestParam(required=false) String dueDate,
+            @RequestParam(defaultValue="America/Los_Angeles") String timeZone,HttpSession session,Authentication authentication){
+        try{
+            if(title.isBlank()||title.length()>240)throw new IllegalArgumentException("Enter a task title of up to 240 characters.");
+            if(description.length()>4000)throw new IllegalArgumentException("Describe the task in up to 4,000 characters.");
+            LocalDate date=parseDate(dueDate,timeZone);
+            UUID account=tenant(session);
+            UUID storeId=session.getAttribute(AccountSelectionController.STORE_ID) instanceof UUID id?id:null;
+            var posted=repository.createStoreTask(account,storeId,title.trim(),description.trim(),authentication.getName(),people==null?Set.of():people,date,timeZone);
+            mentions.queue(account,posted,description,authentication.getName());
+            return ResponseEntity.ok(Map.of("url","/app/collaboration?threadId="+posted.reviewId()));
+        }catch(IllegalArgumentException ex){return ResponseEntity.badRequest().body(Map.of("error",ex.getMessage()));}
+    }
+
+    @PostMapping("/app/collaboration/reviews/{reviewId}/due-date") @ResponseBody
+    ResponseEntity<?> dueDate(@PathVariable UUID reviewId,@RequestParam(required=false) String dueDate,
+            @RequestParam(defaultValue="America/Los_Angeles") String timeZone,HttpSession session,Authentication authentication){
+        try{return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(repository.setDueDate(tenant(session),reviewId,authentication.getName(),parseDate(dueDate,timeZone),timeZone));}
+        catch(IllegalArgumentException ex){return ResponseEntity.badRequest().body(Map.of("error",ex.getMessage()));}
+    }
+
+    private static LocalDate parseDate(String date,String zone){
+        try{ZoneId.of(zone);return date==null||date.isBlank()?null:LocalDate.parse(date);}
+        catch(java.time.DateTimeException ex){throw new IllegalArgumentException("Choose a valid due date and time zone.");}
+    }
+
+    @PostMapping("/app/collaboration/reviews/{reviewId}/assign")
+    String assign(@PathVariable UUID reviewId,@RequestParam(required=false) Set<UUID> people,
+            HttpSession session,Authentication authentication,RedirectAttributes redirect){
+        try{mentions.assign(tenant(session),reviewId,authentication.getName(),people==null?Set.of():people);redirect.addFlashAttribute("collaborationSuccess","Assignment updated.");}
+        catch(IllegalArgumentException e){redirect.addFlashAttribute("collaborationError",e.getMessage());}
+        return "redirect:/app/collaboration";
+    }
+
+    @PostMapping("/app/collaboration/reviews/{reviewId}/assignees") @ResponseBody
+    ResponseEntity<CollaborationRepository.Review> assignees(@PathVariable UUID reviewId,
+            @RequestParam(required=false) Set<UUID> people,HttpSession session,Authentication authentication){
+        UUID tenantId=tenant(session);
+        mentions.assign(tenantId,reviewId,authentication.getName(),people==null?Set.of():people);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(repository.review(tenantId,reviewId,authentication.getName()));
     }
 
     @PostMapping("/app/collaboration/reviews/{reviewId}/reply")

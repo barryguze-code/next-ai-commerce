@@ -6,11 +6,15 @@
   let mode='adjust',items=[],positions=[],revision=0,changed=false,searchTimer,searchController;
   const get=async(url,signal)=>{const response=await fetch(url,{signal,headers:{Accept:'application/json'}});if(!response.ok)throw new Error('Inventory could not be loaded. Please try again.');return response.json()};
   const balance=()=>{
+    const item=items.find(p=>p.id===form.elements.itemId.value);
+    form.querySelector('[data-stock-selected-detail]').textContent=[item?.itemCode,form.elements.locationId.selectedOptions[0]?.textContent,form.elements.expirationDate.value?'Expires '+window.NextAiShortDates.display(form.elements.expirationDate.value):''].filter(Boolean).join(' · ');
     const p=positions.find(p=>p.itemId===form.elements.itemId.value&&p.locationId===form.elements.locationId.value&&(p.expirationDate||'')===form.elements.expirationDate.value);
     form.querySelector('[data-stock-balance]').textContent=`${p?.onHand||0} on hand · ${p?.reserved||0} reserved · ${p?.available||0} available at this location and date`;
   };
   const selectItem=()=>{
     const item=items.find(p=>p.id===form.elements.itemId.value);if(!item)return;
+    document.getElementById('stock-editor-title').textContent=item.name;
+    form.querySelector('[data-stock-selected-detail]').textContent=item.itemCode||'';
     const options=[...form.elements.locationId.options];form.elements.locationId.value=options.some(o=>o.value===item.defaultLocationId)?item.defaultLocationId:options[0]?.value||'';
     form.elements.expirationDate.required=item.expirationRequired;form.elements.expirationDate.value='';
     form.querySelector('[data-stock-expiration-help]').textContent=item.expirationRequired?'Required for this item.':'Optional for FIFO inventory.';
@@ -28,6 +32,8 @@
       form.elements.locationId.replaceChildren(...options.locations.filter(p=>p.status==='ACTIVE').map(p=>new Option(p.code+' · '+p.name,p.id)));
       if(!form.elements.locationId.options.length)throw new Error('Add an active storage location before adjusting inventory.');
       selectItem();if(context.location)form.elements.locationId.value=context.location;if(context.expiration)form.elements.expirationDate.value=context.expiration;
+      form.querySelector('[data-stock-item-choice]').hidden=items.length===1;
+      window.NextAiPlatformControls?.enhance(form);form.elements.locationId.dispatchEvent(new Event('change',{bubbles:true}));
       balance();fields.disabled=false;save.disabled=false;
     }catch(error){if(request===revision){feedback.textContent=error.message;feedback.className='error';feedback.hidden=false}}
     finally{if(request===revision)loading.hidden=true}
@@ -38,6 +44,8 @@
     form.querySelector('[data-stock-direction-label]').hidden=receive;form.querySelector('[data-stock-reason-label]').hidden=receive;
     form.elements.notes.required=receive;
     document.getElementById('stock-editor-title').textContent=receive?'Receive item':'Adjust Inventory';
+    form.querySelector('[data-stock-picture]').hidden=true;
+    form.querySelector('[data-stock-selected-detail]').textContent='';
     save.textContent=receive?'Receive item':'Save adjustment';
     form.querySelector('[data-stock-note]').textContent=receive?'Received without an invoice at zero cost. The explanation and receipt remain in the ledger.':'Changes are recorded in the inventory ledger. Reserved stock cannot be removed.';
     document.querySelectorAll('details.table-row-warning[open]').forEach(d=>d.open=false);window.closeInventoryActionMenu?.();

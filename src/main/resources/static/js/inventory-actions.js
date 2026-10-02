@@ -124,7 +124,29 @@
     document.getElementById('quick-action-expiration').value = button.dataset.expiration;
     document.getElementById('quick-action-product').textContent = button.dataset.product;
     document.getElementById('quick-action-date').textContent = 'Expiration ' + formatCalendarDate(button.dataset.expiration)
-      + (button.dataset.warningText ? ' · ' + button.dataset.warningText : '');
+      + (button.closest('tr') ? ' · '+[...button.closest('tr').querySelectorAll('[data-column="shelf-life"] > *')].map(el=>el.textContent.trim()).filter(Boolean).join(' · ') : '');
+    let saved=document.getElementById('quick-saved-plan');
+    if(!saved){saved=document.createElement('section');saved.id='quick-saved-plan';document.getElementById('quick-action-clear').before(saved);}
+    saved.hidden=!button.dataset.action;saved.replaceChildren();
+    if(button.dataset.action){
+      const summary=document.createElement('strong');summary.textContent='Current plan';saved.append(summary);
+      const copy=document.createElement('p');copy.textContent='Loading plan…';saved.append(copy);
+      const context={...button.dataset};
+      fetch('/app/inventory/saved-plan?'+new URLSearchParams({itemId:context.item,expirationDate:context.expiration}),{headers:{Accept:'application/json'}}).then(response=>{if(!response.ok)throw new Error();return response.json();}).then(plans=>{
+        if(menuContext.item!==context.item||menuContext.expiration!==context.expiration)return;
+        const plan=plans[0];if(!plan){copy.textContent='No pending plan remains.';return;}
+        const labels={HOLD:'On hold from marketplace sale',REMOVE:'Removal planned',DONATE:'Donation planned',DISCOUNT:'Sale pricing',RETURN_TO_VENDOR:'Awaiting return to vendor',DISPOSE:'Disposal',OTHER:'Other removal'};
+        copy.textContent=[labels[plan.removal_method]||labels[plan.action_type]||'Inventory plan',plan.discount_percent!=null?plan.discount_percent+'% discount':null,plan.starts_at?'From '+new Date(plan.starts_at).toLocaleString():null,plan.ends_at?'Until '+new Date(plan.ends_at).toLocaleString():null,plan.notes].filter(Boolean).join(' · ');
+        const badge=document.createElement('div');badge.className='current-plan-badge';badge.dataset.method=plan.removal_method||plan.action_type;
+        badge.textContent=({DONATE:'♡ Donate',DISPOSE:'⌫ Dispose',RETURN_TO_VENDOR:'↩ Return',OTHER:'⋯ Other',HOLD:'Ⅱ Hold',DISCOUNT:'↘ Sale pricing'}[plan.removal_method||plan.action_type]||'Inventory plan');copy.before(badge);
+        if(plan.removal_method==='RETURN_TO_VENDOR'){
+          const complete=document.createElement('button');complete.type='button';complete.className='secondary-button compact-button';complete.textContent='Mark return completed';
+          complete.onclick=async()=>{if(!await window.NextAiConfirm({title:'Complete this return?',message:context.product+' · '+context.locationCode+' · '+context.onHand+' each. Confirm these units have left this location. The inventory ledger will retain the full history.',accept:'Complete return'}))return;
+            const form=document.querySelector('#inventory-disposition-dialog form');form.elements.itemId.value=context.item;form.elements.locationId.value=context.location;form.elements.expirationDate.value=context.expiration;form.elements.actionType.value='COMPLETE_RETURN';form.elements.notes.value=plan.notes||'';form.submit();};
+          saved.append(complete);
+        }
+      }).catch(()=>copy.textContent='Plan details could not be loaded. Close and reopen this menu to retry.');
+    }
     document.getElementById('quick-action-clear').hidden = !button.dataset.action;
     document.getElementById('quick-action-clear-copy').textContent = button.dataset.actionLabel
       ? 'Clear “' + button.dataset.actionLabel + '” safely'
@@ -281,11 +303,17 @@
     const dialog = document.getElementById('inventory-disposition-dialog'); if (!dialog) return;
     const itemId = form.elements.itemId.value;
     document.getElementById('disposition-item').value = itemId;
+    document.getElementById('disposition-location').value=menuContext.location;
+    dialog.querySelector('[name=notes]').value='';
+    const updateNote=()=>{const f=dialog.querySelector('form');f.querySelector('[data-disposition-note]').hidden=f.elements.availabilityMode.value==='REMOVE'&&['DONATE','DISPOSE'].includes(f.elements.removalMethod.value);};
+    dialog.onchange=updateNote;
     document.getElementById('disposition-expiration').value = form.elements.expirationDate.value;
     document.getElementById('disposition-title').textContent = 'Hold or remove · ' + menuContext.product;
     document.getElementById('disposition-subtitle').textContent = menuContext.locationCode + ' · expires ' + formatCalendarDate(menuContext.expiration) + ' · ' + menuContext.onHand + ' each on hand';
-    dialog.querySelector('input[name="availabilityMode"][value="HOLD"]').checked = true;
-    window.updateDispositionMode('HOLD');
+    dialog.querySelectorAll('input[name="removalMethod"]').forEach(input=>input.disabled=false);
+    dialog.querySelector('input[name="availabilityMode"][value="REMOVE"]').checked = true;
+    window.updateDispositionMode('REMOVE');
+    updateNote();
     document.getElementById('disposition-sku-list').innerHTML = '<div class="operation-loading">Loading related SKUs…</div>';
     window.closeInventoryActionMenu(); dialog.showModal();
     try { renderAwarenessSkus(await loadSkus(itemId)); }
@@ -300,6 +328,13 @@
   window.prepareDisposition = form => {
     const mode = form.elements.availabilityMode.value;
     const method = form.elements.removalMethod.value;
+    if(mode!=='HOLD'&&['DONATE','DISPOSE'].includes(method)&&form.dataset.removalConfirmed!=='true'){
+      if(!form.reportValidity()||form.dataset.confirmPending==='true')return false;
+      form.dataset.confirmPending='true';
+      window.NextAiConfirm({title:method==='DONATE'?'Confirm donation':'Confirm disposal',message:document.getElementById('disposition-title').textContent+' · '+document.getElementById('disposition-subtitle').textContent+'. All units in this location’s batch will be removed. The inventory ledger keeps the history.',accept:method==='DONATE'?'Donate stock':'Dispose stock'}).then(accepted=>{delete form.dataset.confirmPending;if(accepted){form.dataset.removalConfirmed='true';form.requestSubmit();}});
+      return false;
+    }
+    delete form.dataset.removalConfirmed;
     document.getElementById('disposition-action').value = mode === 'HOLD' ? 'HOLD' : (method === 'DONATE' ? 'DONATE' : 'REMOVE');
     [...form.querySelectorAll('input[name="removalMethod"]')].forEach(input => { input.disabled = mode === 'HOLD'; });
     return form.checkValidity();
@@ -393,6 +428,7 @@
     const dialog = document.getElementById('clear-plan-dialog'); if (!dialog) return;
     document.getElementById('clear-plan-item').value = form.elements.itemId.value;
     document.getElementById('clear-plan-expiration').value = form.elements.expirationDate.value;
+    let location=dialog.querySelector('input[name="locationId"]');if(!location){location=document.createElement('input');location.type='hidden';location.name='locationId';dialog.querySelector('form').append(location);}location.value=menuContext.location||'';
     document.getElementById('clear-plan-title').textContent = menuContext.product + ' · expires ' + formatCalendarDate(menuContext.expiration);
     document.getElementById('clear-plan-current').textContent = menuContext.actionLabel || 'Current plan';
     window.closeInventoryActionMenu(); dialog.showModal();

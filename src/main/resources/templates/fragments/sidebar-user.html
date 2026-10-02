@@ -2,15 +2,41 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <body>
 <div class="sidebar-user" th:fragment="user">
+  <link rel="stylesheet" href="/css/short-date-input.css?v=20261002-1">
+  <script defer src="/js/short-date-input.js?v=20261002-2"></script>
+  <link rel="stylesheet" href="/css/huddle-floating.css?v=20261001-10">
+  <script src="/js/huddle-floating.js?v=20261001-12"></script>
+  <link rel="stylesheet" href="/css/chat-composer.css?v=20261001-2">
+  <script defer src="/js/chat-composer.js?v=20261001-2"></script>
+  <link rel="stylesheet" href="/css/general-task.css?v=20261002-3">
+  <script defer src="/js/general-task.js?v=20261002-2"></script>
+  <link rel="stylesheet" href="/css/collaboration-task-dates.css?v=20261002-1">
+  <script defer src="/js/collaboration-task-dates.js?v=20261002-1"></script>
+  <dialog id="general-task-dialog" class="general-task-dialog" th:if="${canEditCatalog}" aria-labelledby="general-task-title">
+    <form method="post" th:action="@{/app/collaboration/general-tasks}">
+      <header><img class="task-store-logo" th:src="${selectedAccountLogoUrl ?: '/images/channels/amazon-seller.png'}" alt="Store logo"><div><small th:text="${selectedStoreName ?: selectedAccountName}">Selected store</small><h2 id="general-task-title">Create task</h2><p>A general task for this store. No item or order link needed.</p></div><button type="button" class="dialog-close" data-task-cancel aria-label="Close new task">×</button></header>
+      <div class="general-task-body">
+        <label>Task title<input name="title" required maxlength="240" placeholder="What needs to be done?" autocomplete="off"></label>
+        <label>Details <small>Optional</small><textarea name="description" maxlength="4000" rows="2" placeholder="What should your teammates know?"></textarea></label>
+        <div class="general-task-fields"><div><label class="task-field-label">Assign to <small>Optional</small></label><details class="general-task-people"><summary><span data-task-assignment-label>Unassigned</span><span aria-hidden="true">⌄</span></summary><div class="general-task-choice"><strong>Assign teammates</strong><div data-task-members></div><small>Select one or more people. You can change this later.</small></div></details></div><label>Due date <small>Optional</small><input type="date" name="dueDate"></label></div>
+        <input type="hidden" name="timeZone" value="America/Los_Angeles">
+        <p class="general-task-error" data-task-error role="alert" hidden></p>
+      </div>
+      <footer><small>Appears in Collaborate for this store.</small><button type="button" class="secondary-button" data-task-cancel>Cancel</button><button type="submit" class="primary-button">Create task</button></footer>
+    </form>
+  </dialog>
+  <script defer src="/js/collaboration.js?v=20261002-tasks1"></script>
   <script src="/js/theme.js?v=20260905-1"></script>
-  <script src="/js/platform-icons.js?v=20260922-26"></script>
-  <link rel="stylesheet" href="/css/table-widget.css?v=20260922-31">
-  <script defer src="/js/table-preferences.js?v=20260911-2"></script>
-  <script defer src="/js/table-widget.js?v=20260922-31"></script>
-  <script defer src="/js/table-data-tools.js?v=20260922-31"></script>
+  <script src="/js/platform-icons.js?v=20261002-perf1"></script>
+  <link rel="stylesheet" href="/css/table-widget.css?v=20261001-5">
+  <script defer src="/js/table-preferences.js?v=20261002-perf1"></script>
+  <script defer src="/js/table-widget.js?v=20261002-standards3"></script>
+  <script defer src="/js/table-data-tools.js?v=20261002-standards3"></script>
   <link rel="stylesheet" href="/css/background-jobs.css?v=1.0.0">
   <script defer src="/js/background-jobs.js?v=1.0.0"></script>
-  <span class="sidebar-user-avatar" th:text="${#strings.toUpperCase(#strings.substring(signedInEmail,0,1))}">B</span>
+  <link rel="stylesheet" href="/css/profile-picture.css">
+  <script defer src="/js/profile-picture.js"></script>
+  <button type="button" class="sidebar-user-avatar profile-picture-trigger" title="Edit your profile picture" aria-label="Edit your profile picture"><span th:text="${#strings.toUpperCase(#strings.substring(signedInEmail,0,1))}">B</span><img src="/app/profile/picture" alt="Your profile picture"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 16-1 4 4-1L20 7l-3-3Z M14 7l3 3"/></svg></button>
   <span class="sidebar-user-copy"><strong th:text="${signedInEmail}" th:title="${signedInEmail}">Signed-in user</strong></span>
   <link rel="stylesheet" href="/css/release-panel.css?v=1.0.3">
   <script defer src="/js/release-panel.js?v=1.0.3"></script>

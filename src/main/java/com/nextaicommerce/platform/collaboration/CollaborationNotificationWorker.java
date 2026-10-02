@@ -44,7 +44,7 @@ public class CollaborationNotificationWorker {
             }
             try {
                 String url=publicUrl+"/app/collaboration?view="+
-                    ("COMPLETED".equals(mention.notificationKind())?"CLOSED":"MENTIONS")+"&threadId="+mention.reviewId();
+                    ("COMPLETED".equals(mention.notificationKind())?"CLOSED":"ASSIGNED".equals(mention.notificationKind())?"ACTIVE":"MENTIONS")+"&threadId="+mention.reviewId();
                 mailer.sendHtml(mention.recipientEmail(),CollaborationEmailContent.subject(mention),
                     CollaborationEmailContent.html(mention,url));
                 repository.mentionSent(tenantId,mention.id());

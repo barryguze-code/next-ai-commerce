@@ -58,6 +58,32 @@ public class InventoryController {
             UUID locationId,String locationCode,String locationName,LocalDate expirationDate,String onHand,String reserved,
             String available,String imageUrl){}
     public record InlineAdjustmentResponse(String message){}
+    public record HistoryPanelContext(List<Map<String,String>> positions,List<CatalogRepository.LocationView> locations){}
+    @GetMapping("/app/inventory/{itemId}/history-panel") @ResponseBody
+    ResponseEntity<HistoryPanelContext> historyPanel(@PathVariable UUID itemId,HttpSession session){
+        UUID tenantId=tenant(session);
+        var products=inventory.adjustmentItems(tenantId,List.of(itemId));
+        if(products.isEmpty())return ResponseEntity.notFound().build();
+        var product=products.getFirst();
+        var rows=inventory.inventory(tenantId,List.of(itemId));var positions=new java.util.ArrayList<Map<String,String>>();
+        for(var row:rows){
+            var data=new LinkedHashMap<String,String>();
+            data.put("item",itemId.toString());data.put("product",row.productName());
+            data.put("sku",row.accountSku()!=null?row.accountSku():row.vendorItemCode()!=null?row.vendorItemCode():"");
+            data.put("image","/app/catalog/products/"+itemId+"/image");data.put("location",row.locationId().toString());
+            data.put("locationCode",row.locationCode());data.put("expiration",row.expirationDate()==null?"":row.expirationDate().toString());
+            data.put("onHand",row.quantityUnits());data.put("reserved",row.reservedUnits());data.put("available",row.availableUnits());
+            data.put("received",row.initiallyReceivedUnits());data.put("firstReceived",row.firstReceivedDisplay());data.put("lastMovement",row.lastMovementDisplay());
+            data.put("totalAvailable",row.totalAvailableUnits());positions.add(data);
+        }
+        if(positions.isEmpty()){
+            var data=new LinkedHashMap<String,String>();data.put("item",itemId.toString());data.put("product",product.name());data.put("sku",product.itemCode()==null?"":product.itemCode());
+            data.put("image","/app/catalog/products/"+itemId+"/image");data.put("location","");data.put("locationCode","");data.put("expiration","");
+            for(String key:List.of("onHand","reserved","available","received","totalAvailable"))data.put(key,"0");
+            data.put("firstReceived","Not recorded");data.put("lastMovement","See movements below");positions.add(data);
+        }
+        return ResponseEntity.ok(new HistoryPanelContext(positions,catalog.getObject().listLocations(tenantId)));
+    }
     public record AdjustmentOptions(List<InventoryRepository.AdjustmentItem> items,List<CatalogRepository.LocationView> locations){}
     @GetMapping("/app/inventory/adjustment-options") @ResponseBody
     ResponseEntity<AdjustmentOptions> adjustmentOptions(@RequestParam(name="itemId") List<UUID> itemIds,HttpSession session){
@@ -170,14 +196,19 @@ public class InventoryController {
         catch(Exception e){log.error("Inventory shelf-life policy update failed",e);redirect.addFlashAttribute("inventoryError","The shelf-life rules could not be saved. Nothing was changed.");}
         return "redirect:/app/inventory";
     }
+    @GetMapping("/app/inventory/saved-plan") @ResponseBody
+    List<Map<String,Object>> savedPlan(HttpSession session,@RequestParam UUID itemId,
+            @RequestParam @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate expirationDate){
+        return inventory.savedDisposition(tenant(session),itemId,expirationDate);
+    }
     @PostMapping("/app/inventory/actions") String action(Authentication auth,HttpSession session,@RequestParam UUID itemId,
             @RequestParam @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate expirationDate,
             @RequestParam String actionType,@RequestParam(required=false) String removalMethod,
-            @RequestParam(required=false) String notes,RedirectAttributes redirect){
+            @RequestParam(required=false) String notes,@RequestParam(required=false) UUID locationId,RedirectAttributes redirect){
         try{
-            inventory.planExpirationAction(tenant(session),auth.getName(),itemId,expirationDate,actionType,removalMethod,notes);
+            inventory.applyDisposition(tenant(session),auth.getName(),itemId,expirationDate,locationId,actionType,removalMethod,notes);
             String message="CLEAR".equals(actionType)?"Current plan cleared. Inventory quantities were not changed."
-                :"Inventory plan saved locally. Physical units remain visible and Amazon inventory was not changed.";
+                :"Inventory action saved. Stock and ledger history are updated.";
             redirect.addFlashAttribute("inventorySuccess",message);
             log.info("Expiration action planned tenantId={} itemId={} expiration={} action={}",tenant(session),itemId,expirationDate,actionType);
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("inventoryError",e.getMessage());}
@@ -355,8 +386,8 @@ public class InventoryController {
             @RequestParam(required=false) UUID locationId,
             @RequestParam(defaultValue="item") String scope,
             @RequestParam(defaultValue="0") int page,HttpSession session){
-        if(!java.util.Set.of("item","batch").contains(scope))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"Choose item or batch history.");
-        return inventory.movements(tenant(session),itemId,expirationDate,locationId,"item".equals(scope),page).stream().map(row->{
+        if(!java.util.Set.of("item","batch","received").contains(scope))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"Choose item, batch, or received history.");
+        return inventory.movements(tenant(session),itemId,expirationDate,locationId,!"batch".equals(scope),page,"received".equals(scope)).stream().map(row->{
             Map<String,Object> view=new LinkedHashMap<>();
             view.put("occurredAt",row.occurredAt());view.put("quantity",row.quantity());
             view.put("currency",row.currency());view.put("unitCost",row.unitCost());

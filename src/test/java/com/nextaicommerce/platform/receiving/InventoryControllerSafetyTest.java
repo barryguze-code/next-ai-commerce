@@ -47,13 +47,13 @@ class InventoryControllerSafetyTest {
     void holdIsSavedLocallyWithoutQueuingAnAmazonQuantityChange(){
         var redirect=new RedirectAttributesModelMap();
         controller.action(authentication,session,UUID.randomUUID(),LocalDate.of(2026,9,15),
-            "HOLD",null,"Check the batch",redirect);
+            "HOLD",null,"Check the batch",null,redirect);
 
-        verify(inventory).planExpirationAction(any(),anyString(),any(),any(),
+        verify(inventory).applyDisposition(any(),anyString(),any(),any(),any(),
             org.mockito.ArgumentMatchers.eq("HOLD"),any(),any());
         verify(inventory,never()).queueMarketplaceAvailabilityZero(any(),anyString(),any(),any(),anyString());
         assertThat(redirect.getFlashAttributes().get("inventorySuccess").toString())
-            .contains("saved locally","Amazon inventory was not changed");
+            .contains("Inventory action saved", "ledger history");
     }
 
     @Test

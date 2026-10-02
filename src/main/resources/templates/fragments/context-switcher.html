@@ -8,7 +8,7 @@
     <span th:if="${canManageUsers != true}" class="context-icon context-account-initials" th:unless="${selectedAccountLogoUrl != null}" th:text="${selectedAccountInitials}">BA</span>
     <img th:if="${canManageUsers != true and selectedAccountLogoUrl != null}" class="context-brand-logo" th:src="${selectedAccountLogoUrl}" alt="Company logo">
     <span class="context-copy"><strong th:text="${selectedStore == null ? selectedAccountName : selectedStore.name}">Selected store</strong><small th:if="${selectedStore == null}">All stores · Account overview</small><small th:if="${selectedStore != null}" th:text="${selectedStore.countryFlag + ' ' + selectedStore.marketplaceLabel}">🇺🇸 Amazon US</small></span>
-    <span class="context-selected-channel" th:if="${selectedStore != null}" th:classappend="${selectedStore.channel == 'WALMART' ? ' walmart-channel' : ' amazon-channel'}"><img th:src="${selectedStore.channel == 'AMAZON' ? '/images/channels/amazon-round-transparent.png' : '/images/channels/walmart-official.png'}" th:alt="${selectedStore.channel}"></span>
+    <span class="context-selected-channel" th:if="${selectedStore != null}" th:classappend="${selectedStore.channel == 'WALMART' ? ' walmart-channel' : ' amazon-channel'}"><img th:src="${selectedStore.channel == 'AMAZON' ? '/images/channels/amazon-seller.png' : '/images/channels/walmart-official.png'}" th:alt="${selectedStore.channel}"></span>
     <span class="chevron">⌄</span>
   </summary>
   <section class="context-popover">
@@ -22,7 +22,7 @@
       <div class="context-stores" th:if="${!#lists.isEmpty(option.stores)}">
         <form method="post" th:action="@{/app/select-store}" th:each="store : ${option.stores}" th:attr="data-store-search=${#strings.toLowerCase(store.name + ' ' + store.channel + ' ' + store.marketplaceLabel)}">
           <input type="hidden" name="tenantId" th:value="${option.id}"><input type="hidden" name="tenantName" th:value="${option.name}"><input type="hidden" name="storeId" th:value="${store.id}"><input type="hidden" name="storeName" th:value="${store.name}"><input type="hidden" name="returnTo" th:value="${currentWorkspacePath}">
-          <button type="submit" th:classappend="${store.id == selectedStoreId ? ' selected' : ''}"><span class="mini-channel" th:classappend="${store.channel == 'WALMART' ? ' walmart-channel' : ' amazon-channel'}"><img th:src="${store.channel == 'AMAZON' ? '/images/channels/amazon-official.png' : '/images/channels/walmart-official.png'}" alt=""></span><span><strong th:text="${store.name}">Store</strong><small th:text="${store.countryFlag + ' ' + store.marketplaceLabel}">Marketplace</small></span></button>
+          <button type="submit" th:classappend="${store.id == selectedStoreId ? ' selected' : ''}"><span class="mini-channel" th:classappend="${store.channel == 'WALMART' ? ' walmart-channel' : ' amazon-channel'}"><img th:src="${store.channel == 'AMAZON' ? '/images/channels/amazon-seller.png' : '/images/channels/walmart-official.png'}" alt=""></span><span><strong th:text="${store.name}">Store</strong><small th:text="${store.countryFlag + ' ' + store.marketplaceLabel}">Marketplace</small></span></button>
         </form>
       </div>
       <p class="context-no-stores" th:if="${#lists.isEmpty(option.stores)}">No connected stores</p>

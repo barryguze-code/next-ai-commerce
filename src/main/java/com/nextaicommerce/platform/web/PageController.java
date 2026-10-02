@@ -43,6 +43,8 @@ public class PageController {
         if (!addTenantModel(session, model)) return "redirect:/app/select-account";
         addAccessModel(authentication, model);
         UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
+        if(!repository.canAdministerAccount(tenantId,authentication.getName(),authentication.getAuthorities().stream().anyMatch(a->a.getAuthority().equals("ROLE_PLATFORM_ADMIN"))))
+            throw new org.springframework.security.access.AccessDeniedException("Only this account's administrators can manage users.");
         String tenantName = (String) session.getAttribute(AccountSelectionController.TENANT_NAME);
         var members = repository.listMembers(tenantId);
         var invitationRows = repository.listInvitations(tenantId);

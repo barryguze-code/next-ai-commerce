@@ -36,14 +36,13 @@ class HuddleServiceTest {
         verify(repository,never()).saveHuddle(any(),any(),any(),any(),any(),any(),any(),any(),eq(false));
     }
 
-    @Test void invitedTeammateMustJoinTheExactRoomBeforeSending(){
+    @Test void invitedTeammateCanReplyWithoutAnAnswerStep(){
         var huddle=service.create(tenant,barry,"INVENTORY","467936|MAIN","Morning Round Cranberry","/app/inventory","{}",List.of(alex));
-        assertThat(huddle.joinedParticipantIds()).containsExactly(barry.id());
-        assertThatThrownBy(()->service.message(tenant,huddle.id(),alex.id(),"Can Barry see this?"))
-            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Join this huddle");
+        assertThat(huddle.joinedParticipantIds()).containsExactlyInAnyOrder(barry.id(),alex.id());
+        assertThat(service.message(tenant,huddle.id(),alex.id(),"Can Barry see this?").messages()).hasSize(1);
         var joined=service.join(tenant,huddle.id(),alex.id());
         assertThat(joined.joinedParticipantIds()).containsExactlyInAnyOrder(barry.id(),alex.id());
-        assertThat(service.message(tenant,huddle.id(),alex.id(),"Now we are in the same room.").messages()).hasSize(1);
+        assertThat(service.message(tenant,huddle.id(),alex.id(),"Now we are in the same room.").messages()).hasSize(2);
     }
 
     @Test void saveForFollowUpCreatesOneRegularActiveConversationAndNotifiesOtherParticipants(){

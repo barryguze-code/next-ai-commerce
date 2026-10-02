@@ -13,7 +13,7 @@
       const add = (url, label, asset) => {
         const link = document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener noreferrer';
         link.title=label;link.setAttribute('aria-label',label);
-        const image=document.createElement('img');image.src=asset==='amazon'?'/images/channels/amazon-seller.png':'/images/channels/'+asset+'.svg';image.alt='';
+        const image=document.createElement('img');image.src=asset==='amazon'?'/images/channels/amazon-seller.png?v=20260922-26':'/images/channels/'+asset+'.svg';image.alt='';
         link.append(image);host.append(link);
       };
       if(asin||sku)add('https://sellercentral.'+domain+'/myinventory/inventory?searchTerm='+encodeURIComponent(asin||sku),'Open '+(asin||sku)+' in Seller Central','amazon');
@@ -50,7 +50,7 @@
       popup.style.width=width+'px';popup.style.left=Math.max(12,Math.min(rect.left,window.innerWidth-width-12))+'px';
       popup.style.maxHeight=Math.min(300,window.innerHeight-32)+'px';
       popup.style.top=Math.max(12,Math.min(rect.bottom+6,window.innerHeight-popup.offsetHeight-12))+'px';
-      trigger.setAttribute('aria-expanded','true');activePicker={trigger,close};
+      trigger.setAttribute('aria-expanded','true');activePicker={trigger,popup,close};
       (popup.querySelector('[aria-selected=true]:not(:disabled)')||popup.querySelector('button:not(:disabled)'))?.focus();
     };
     popup.addEventListener('keydown',event=>{
@@ -61,7 +61,6 @@
     });
     trigger.onclick=()=>popup.hidden?open():close();
     trigger.addEventListener('keydown',event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();open();}});
-    document.addEventListener('pointerdown',event=>{if(!popup.hidden&&!popup.contains(event.target)&&!trigger.contains(event.target))close();});
     select.addEventListener('change',sync);select.addEventListener('invalid',event=>{event.preventDefault();trigger.focus();open();});
     select.form?.addEventListener('reset',()=>setTimeout(sync,0));
     new MutationObserver(sync).observe(select,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','selected']});
@@ -78,6 +77,8 @@
     });
   }
   window.NextAiMarketplaceShortcuts={enhance:shortcuts};window.NextAiPlatformControls={enhance};
+  // One global listener, not one per catalogue row/location picker.
+  document.addEventListener('pointerdown',event=>{if(activePicker&&!activePicker.popup.contains(event.target)&&!activePicker.trigger.contains(event.target))activePicker.close();});
   document.addEventListener('scroll',event=>{if(!event.target.closest?.('.location-picker-popup'))activePicker?.close();},true);window.addEventListener('resize',()=>activePicker?.close());
   enhance();
 })();

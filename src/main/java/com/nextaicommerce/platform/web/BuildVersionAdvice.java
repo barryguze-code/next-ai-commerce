@@ -11,6 +11,7 @@ public class BuildVersionAdvice {
     @Value("${app.build-branch:}") private String buildBranch;
     @Value("${app.local-development:false}") private boolean localDevelopment;
     @ModelAttribute("buildVersion") String buildVersion() { return buildVersion; }
+    @ModelAttribute("localDevelopment") boolean localDevelopment() { return localDevelopment; }
     @ModelAttribute("buildBranch") String buildBranch() {
         return localDevelopment ? checkoutBranch(java.nio.file.Path.of("."),buildBranch) : buildBranch;
     }

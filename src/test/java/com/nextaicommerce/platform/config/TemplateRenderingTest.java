@@ -39,6 +39,11 @@ import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 class TemplateRenderingTest {
+    @Test void actionSuggestionsRenderReviewControlsAndEscapedUserText(){
+        var c=webContext();c.setVariable("suggestions",List.of(Map.of("id",UUID.randomUUID(),"title","<script>bad</script>","explanation","Move stock faster","submitted_by","user@example.com","created_at",Instant.now(),"tenant_id",UUID.randomUUID(),"menu_context","Inventory","page_path","/app/inventory","status","NEW","review_note","")));
+        String html=templateEngine().process("action-suggestions",c);
+        assertThat(html).contains("Save review","UNDER_REVIEW","&lt;script&gt;bad&lt;/script&gt;").doesNotContain("<script>bad</script>");
+    }
     @Test void catalogueImportHasOptionalRememberedBranch(){
         var c=webContext();
         c.setVariable("catalogImport",new com.nextaicommerce.platform.catalog.CatalogImportService.ImportView(
@@ -114,7 +119,7 @@ class TemplateRenderingTest {
             "Item Sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
             "Showing 1–1 of 1","data-order-stream","Sync now","Last Amazon order check",
             "New Amazon orders just arrived","Open this order in Seller Central","Open the Amazon product page",
-            "/images/platform/table/amazon.com-logo.png","amazon.com/dp/B012345678","Orders/Units","Unmapped","Waiting for pickup",
+            "/images/channels/amazon-seller.png","amazon.com/dp/B012345678","Orders/Units","Unmapped","Waiting for pickup",
             "data-copy-sku=","has-issues","aria-current=\"page\"","12 orders / 15 units","status=UNSHIPPED").doesNotContain("order-day",">Historical<","Reporting only","status=PENDING","Stock readiness");
         context.setVariable("selectedStatus","WAITING_FOR_PICKUP");
         context.setVariable("pickupOverrides",java.util.Set.of(order.amazonOrderId()));
@@ -206,11 +211,12 @@ class TemplateRenderingTest {
             new BigDecimal("5.85"),"USD","FEFO","DISCOUNT","Move to promotion","PROVISIONAL",new BigDecimal("24"),
             Instant.parse("2026-08-26T16:15:00Z"),Instant.parse("2026-08-28T16:15:00Z"))));
         assertThat(templateEngine().process("inventory",inventory)).contains("Available Inventory","Inventory on hand",
-            "All inventory","Physical available","Marketplace sellable quantity: 0",
+            "All inventory","Available","Marketplace sellable quantity: 0",
+            "data-overview-ready=\"true\"","table-overview-layout","data-column=\"record-context\"",
             "Inventory Ledger","Search product, brand, ASIN, Item Code, or UPC","Shelf-life rules","Cannot sell","Act soon",
             "Upload Physical Count","Recent files","Uploaded Files","Storage locations","/app/inventory",
             "5 days left","Action","Inventory actions","Plan sale pricing","Adjust inventory",
-            "Plan physical removal","Amazon shelf-life discounts",
+            "Remove or return stock","Amazon shelf-life discounts",
             "Receive an item not on the invoice",
             "Received at zero cost","24 each","Ski Queen Gjetost","FEFO").doesNotContain("inventory-action-dialog");
 
@@ -275,10 +281,10 @@ class TemplateRenderingTest {
                 Instant.parse("2026-08-29T12:00:00Z"),"Standard shipping",new BigDecimal("12.00"))),1,0,100))
         ));
         String rendered=templateEngine().process("marketplace-skus",context);
-        assertThat(rendered).contains("Marketplace SKUs","Ibcore assortment","IB-TEST-SKU","B012345678",
+        assertThat(rendered).contains("Marketplace SKUs","Marketplace listings","IB-TEST-SKU","B012345678",
             "4w sales","1 | 2 | 3 | 4","Profit","Pending","Catalogue","Unmapped","Price (+ shipping)","Buy Box",
             "Available","Shipping template","data-column-control=\"marketplace-skus\"",
-            "Buy Box price match","/images/channels/amazon-seller.png","/images/platform/table/amazon.com-logo.png",
+            "Buy Box price match","/images/channels/amazon-seller.png","/images/channels/amazon-seller.png",
             "https://www.amazon.com/dp/B012345678","sellercentral.amazon.com")
             .doesNotContain(">Seller SKU <","Seller SKU &amp; links","SKU Mapping <small>Planned");
     }
@@ -340,10 +346,11 @@ class TemplateRenderingTest {
             Map.entry("activeUsers", 1L), Map.entry("pendingInvitations", 0),
             Map.entry("connectedStores", 2),
             Map.entry("invitations", List.of()),
-            Map.entry("members", List.of(new MemberView(UUID.randomUUID(), "Barry",
-                "barry.guze@gmail.com", "OWNER", "ACTIVE", 1))),
+            Map.entry("members", List.of(new MemberView(UUID.randomUUID(), "Test Member",
+                "member@example.test", "ADMIN", "ACTIVE", 1,
+                List.of(UUID.fromString("00000000-0000-0000-0000-000000000001")),false))),
             Map.entry("stores", List.of(
-                new ConnectionView(UUID.randomUUID(), UUID.randomUUID(), "Ibcore", "Ibcore Amazon",
+                new ConnectionView(UUID.fromString("00000000-0000-0000-0000-000000000001"), UUID.randomUUID(), "Ibcore", "Ibcore Amazon",
                     "AMAZON", "seller", "ATVPDKIKX0DER", "Amazon US", "🇺🇸", "ACTIVE", null, false),
                 new ConnectionView(UUID.randomUUID(), UUID.randomUUID(), "Ibcore", "Ibcore Walmart",
                     "WALMART", "IBCORE-WALMART", "Walmart-US", "Walmart US", "🇺🇸", "PENDING", null, true)))
@@ -351,8 +358,22 @@ class TemplateRenderingTest {
 
         String rendered = engine.process("users", context);
         assertThat(rendered).contains("Users &amp; Access", "Ibcore", "Amazon US", "Walmart US",
-            "/images/channels/amazon-official.png", "/images/channels/walmart-official.png",
+            "/images/channels/amazon-seller.png", "/images/channels/walmart-official.png",
             "type=\"button\" aria-label=\"Close invitation\"");
+        assertThat(rendered).contains("Granted stores","data-manage-member","data-picture-type=\"USER\"","Revoke account access · all stores","granted-store-list","data-revoke-store","Connection active","/app/profile/picture","global-collaboration-link");
+        assertThat(rendered).doesNotContain("class=\"avatar\"",">Access active<");
+        assertThat(rendered.indexOf("invite-trigger")).isLessThan(rendered.indexOf("class=\"context-menu\""));
+    }
+
+    @Test
+    void collaborationRendersAssignmentAndStandardOverview(){
+        var context=webContext();var now=java.time.Instant.now();
+        var review=new com.nextaicommerce.platform.collaboration.CollaborationRepository.Review(UUID.randomUUID(),"PLATFORM","GENERAL","Team task",null,"CONVERSATION","Check inventory","ACTIVE","barry@example.test","Barry","barry@example.test",null,now,now,null,1,0,"Barry","{}","/app/collaboration",false);
+        context.setVariables(Map.ofEntries(Map.entry("canViewOperations",true),Map.entry("canManageConnections",true),Map.entry("canManageUsers",true),Map.entry("canEditCatalog",true),Map.entry("isSuperAdmin",true),Map.entry("signedInEmail","barry@example.test"),Map.entry("selectedAccountName","Local account"),Map.entry("selectedView","ACTIVE"),Map.entry("currentReturnTo","/app/collaboration"),Map.entry("reviews",List.of(review)),Map.entry("members",List.of(new com.nextaicommerce.platform.collaboration.CollaborationRepository.Member(UUID.randomUUID(),"Barry","barry@example.test","barry")))));
+        var html=templateEngine().process("collaboration",context);
+        assertThat(html).contains("Assigned to","collaboration-assigned-red.png","data-assign-review","Assign teammates","data-context-menu","collaboration-message-count");
+        assertThat(html).doesNotContain("class=\"collaboration-context\"");
+        assertThat(html).contains("data-column=\"due\"","No due date","Create task");
     }
 
     @Test
@@ -389,6 +410,43 @@ class TemplateRenderingTest {
         String rendered = engine.process("app", context);
         assertThat(rendered).contains("sync-loader", "Step 2 of 12", "Products and SKUs",
             "aria-label=\"Complete\">✓", "Amazon is preparing the product file").doesNotContain("sync-panel");
+    }
+
+    @Test void replenishmentDraftShowsRealItemContextAndExplicitUnknownMetrics() {
+        var c=webContext();var id=UUID.randomUUID();
+        var sku=new java.util.HashMap<String,Object>();
+        sku.putAll(Map.of("sku","SHARED-6PACK","store","QA Amazon","quantity",6,"w1",1,"w2",2,"w3",3,"w4",4,"eaches",60));
+        sku.put("bb",null);sku.put("bb_updated",null);sku.put("price",new java.math.BigDecimal("12.99"));sku.put("price_currency","USD");
+        sku.put("orders",8);sku.put("listed_quantity",2);
+        sku.put("title","SKU product title");sku.put("seller_url","https://sellercentral.amazon.com/myinventory/inventory?searchTerm=SHARED-6PACK");
+        var row=new java.util.HashMap<String,Object>();
+        row.putAll(Map.of("id",id,"name","Shared item","code","ITEM-1","vendor","KEHE","dc","41","pack",12,"available",24,"demand",60,"lead",2));
+        row.putAll(Map.of("physical",30,"reserved",6,"skus",List.of(sku)));
+        row.putAll(Map.of("demand_cases",5,"demand_remainder",0));
+        row.putAll(Map.of("available_cases",2,"available_remainder",0));
+        sku.put("asin","B000TEST");
+        sku.put("image_url",null);
+        row.putAll(Map.of("vendor_code","KEHE","cases",2,"suggested_each",24,"status","low","weeks","6 | 12 | 18 | 24","receipt_samples",2,"receipt_days",18));
+        row.putAll(Map.of("in_stock","75.0%","coverage","80%","expired",3,"soon",6));
+        sku.putAll(Map.of("in_stock","75.0%","coverage","80%"));
+        row.putAll(Map.of("cover",4.0,"low_days",2,"target_days",12,"overstock_days",20,"bar_percent",16));
+        c.setVariable("status","forecast");c.setVariable("forecastCount",1);c.setVariable("allCount",1);
+        c.setVariables(Map.of("items",List.of(row),"q","","page",0,"more",false,"localDevelopment",true,"canViewOperations",true,"canEditCatalog",true,"selectedAccountName","QA"));
+        var vendorId=UUID.randomUUID();
+        c.setVariable("configuration",Map.of("low",7,"target",14,"overstock",35,"vendors",Map.of(vendorId.toString(),Map.of("lead","2"))));
+        c.setVariable("vendors",List.of(Map.of("id",vendorId,"name","KEHE","code","KEHE","dc","41")));
+        c.setVariable("pending",false);c.setVariable("counts",Map.of("low",1,"oos",0,"healthy",0,"overstock",0));
+        String html=templateEngine().process("replenishment-draft",c);
+        assertThat(html).contains("inventory-history-dialog","history-position-select","replenishment-inventory-history.js");
+        assertThat(html).contains("75.0%","80% coverage","6 of these soon to expire","rp-sku-details","role=\"listitem\"","Low 2","Target 12","Over 20","To order","5 cases","B000TEST","rp-sku-picture","Download replenishment","rp-sku-toggle","Amazon available","Last synced","Search ASIN in Seller Central","× 6, B000TEST","2 cases");
+        assertThat(html).doesNotContain("QA Amazon");
+        assertThat(html).contains("data-column-weight=\"0.45\"","rp-vendor-badge","data-settings-open=\"vendors\"");
+        assertThat(html).doesNotContain("<dialog id=\"rp-skus-");
+        assertThat(html).contains("Refresh forecast","/app/inventory/replenishment/refresh","rp-week-numbers","$12.99","six hours");
+        assertThat(html).contains("Shared item","SHARED-6PACK","SKU product title","Basket preview","/app/inventory/ledger?itemId=", "Local design draft");
+        assertThat(html).contains("rp-sku-head").doesNotContain("3 expired","OOS · duration unknown","Sessions not collected","Conversions not collected");
+        c.setVariable("items",List.of());
+        assertThat(templateEngine().process("replenishment-draft",c)).contains("No items with sales in the last four weeks");
     }
 
     private static SpringTemplateEngine templateEngine() {

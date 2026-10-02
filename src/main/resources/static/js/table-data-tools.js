@@ -145,7 +145,14 @@ function init(root){
     const previousFooter=card.querySelector('.table-footer:not(.table-pagination)');
     if(previousFooter&&/^Showing\b/.test(normalize(previousFooter.textContent))){previousFooter.querySelectorAll('a').forEach(link=>footer.append(link));previousFooter.hidden=true}
   }
-  function matches(row){const data=values(root,row,cols);return (!saved.query||data.join(' ').toLowerCase().includes(saved.query.toLowerCase()))&&cols.every((col,index)=>filterMatch(data[index],saved.filters[col.id]));}
+  let searchValues=new WeakMap();
+  function matches(row){
+    // The default view needs no text extraction. Filtered views reuse text until
+    // that row changes, instead of cloning every cell on every keystroke.
+    if(!saved.query&&!Object.values(saved.filters).some(Boolean))return true;
+    let data=searchValues.get(row);if(!data){data=values(root,row,cols);searchValues.set(row,data);}
+    return (!saved.query||data.join(' ').toLowerCase().includes(saved.query.toLowerCase()))&&cols.every((col,index)=>filterMatch(data[index],saved.filters[col.id]));
+  }
   function domainVisible(row){return !row.hidden&&row.style.display!=='none'&&!row.closest('[hidden]');}
   function render(){
     if(root.dataset.gridRow){const current=headers(root);rows(root).forEach(row=>[...row.children].forEach((cell,index)=>{const col=cols.find(c=>c.index===index);if(!col)return;cell.dataset.column=col.id;const header=current.find(c=>c.id===col.id)?.el,hidden=!!header?.hidden,order=header?.style.order||String(index);if(cell.hidden!==hidden)cell.hidden=hidden;if(cell.style.order!==order)cell.style.order=order}))}
@@ -157,7 +164,7 @@ function init(root){
     const count=Object.values(saved.filters).filter(Boolean).length;updateActiveFilterState();
     const orderEmpty=root.querySelector('.order-empty-state');
     if(orderEmpty){const hide=filtered.length>0;if(orderEmpty.hidden!==hide)orderEmpty.hidden=hide;root.classList.toggle('orders-is-empty',!hide);if(serverPager&&serverPager.hidden===hide)serverPager.hidden=!hide;}
-    if(!exportButton.disabled)status.textContent=!filtered.length?(orderEmpty?'':'Nothing found. Try another search or change your filters.'):count&&isServer?filtered.length+' matches on this page.':'';
+    if(!exportButton.disabled)status.textContent=!filtered.length?(orderEmpty||!all.length?'':'Nothing found. Try another search or change your filters.'):count&&isServer?filtered.length+' matches on this page.':'';
     if(footer){footer.dataset.pages=String(pages);updatePager(saved.page,pages,saved.size);pageLabel.textContent=filtered.length?'Showing '+((saved.page-1)*saved.size+1)+'–'+Math.min(saved.page*saved.size,filtered.length)+' of '+filtered.length+' · Page '+saved.page+' of '+pages:'0 rows'}
   }
   exportButton.onclick=async()=>{
@@ -197,11 +204,18 @@ function init(root){
     }catch(error){status.textContent='Export failed: '+error.message;progress?.fail(status.textContent)}finally{exportButton.disabled=false}
   };
   // Page-specific search/status handlers can still set hidden without fighting pagination.
-  const observer=new MutationObserver(records=>{if(!root.isConnected){observer.disconnect();return}if(records.some(record=>record.type==='childList'||record.attributeName==='hidden'||record.attributeName==='style'))render()});
-  observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','style']});
-  search.addEventListener('input',()=>{saved.page=1;updateActiveFilterState();queueMicrotask(render)});
+  let renderQueued=false;
+  const scheduleRender=()=>{if(renderQueued)return;renderQueued=true;queueMicrotask(()=>{renderQueued=false;if(root.isConnected)render();});};
+  const rowSelector=root.matches('table')?'tbody tr':root.dataset.gridRow||'.order-item';
+  const invalidate=target=>{const element=target.nodeType===1?target:target.parentElement;const row=element?.closest(rowSelector);if(row)searchValues.delete(row);else searchValues=new WeakMap();};
+  const observer=new MutationObserver(records=>{if(!root.isConnected){observer.disconnect();return}records.forEach(record=>invalidate(record.target));scheduleRender();});
+  observer.observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['hidden','style','data-export-value']});
+  for(const event of ['input','change'])root.addEventListener(event,e=>{invalidate(e.target);scheduleRender();});
+  search.addEventListener('input',()=>{saved.page=1;updateActiveFilterState();scheduleRender()});
   root.addEventListener('table:filter',()=>{saved.page=1;render()});
   root.addEventListener('table:reset-filters',()=>{saved.filters={};saved.query='';saved.page=1;panel.querySelectorAll('input').forEach(input=>input.value='');render()});
+  const sourceQuery=new URL(location.href).searchParams.get('q');
+  if(!isServer&&sourceQuery){saved.query=sourceQuery;search.value=sourceQuery;search.dispatchEvent(new Event('input',{bubbles:true}));}
   render();
 }
 function refresh(){document.querySelectorAll('[data-table-widget-ready]').forEach(init)}

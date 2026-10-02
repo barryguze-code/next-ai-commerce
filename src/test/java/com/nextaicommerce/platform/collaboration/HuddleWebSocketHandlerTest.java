@@ -23,6 +23,23 @@ import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.ObjectMapper;
 
 class HuddleWebSocketHandlerTest {
+    @Test void commonAccountPresenceIsSymmetricAndDirectHuddleUsesSharedAccount() throws Exception {
+        UUID pantry=UUID.randomUUID(),ibcore=UUID.randomUUID(),barryId=UUID.randomUUID(),memberId=UUID.randomUUID();
+        var repository=mock(CollaborationRepository.class);var json=new ObjectMapper();
+        var handler=new HuddleWebSocketHandler(new HuddleService(repository,mock(CollaborationNotificationWorker.class),json),repository,json);
+        var barry=session("barry-shared",pantry,"barry@example.test");var member=session("member-shared",ibcore,"member@example.test");
+        when(repository.huddleTenants("barry@example.test")).thenReturn(java.util.Set.of(pantry,ibcore));
+        when(repository.huddleTenants("member@example.test")).thenReturn(java.util.Set.of(ibcore));
+        when(repository.currentMember(pantry,"barry@example.test")).thenReturn(new CollaborationRepository.Member(barryId,"Barry","barry@example.test","barry"));
+        when(repository.currentMember(ibcore,"member@example.test")).thenReturn(new CollaborationRepository.Member(memberId,"Ibcore","member@example.test","ibcore"));
+        handler.afterConnectionEstablished(barry);handler.afterConnectionEstablished(member);
+        var presence=ArgumentCaptor.forClass(TextMessage.class);verify(barry,atLeastOnce()).sendMessage(presence.capture());
+        assertThat(presence.getAllValues()).anyMatch(m->m.getPayload().contains("PRESENCE")&&m.getPayload().contains(memberId.toString()));
+        clearInvocations(barry,member);
+        handler.handleTextMessage(barry,new TextMessage("{\"type\":\"CREATE\",\"participantIds\":[\""+memberId+"\"],\"subjectType\":\"PLATFORM\",\"subjectKey\":\"DIRECT:test\",\"subjectLabel\":\"Team huddle\",\"contextSnapshot\":\"{}\"}"));
+        var delivered=ArgumentCaptor.forClass(TextMessage.class);verify(member).sendMessage(delivered.capture());
+        assertThat(delivered.getValue().getPayload()).contains("HUDDLE_STARTED",ibcore.toString());
+    }
     @Test
     void startingAHuddleDeliversTheSameRoomToBothBrowserSessions() throws Exception {
         UUID tenant=UUID.randomUUID(),barryId=UUID.randomUUID(),ibcoreId=UUID.randomUUID();
@@ -33,7 +50,9 @@ class HuddleWebSocketHandlerTest {
         var handler=new HuddleWebSocketHandler(service,repository,mapper);
         var barry=session("barry-session",tenant,"barry@example.com");
         var ibcore=session("ibcore-session",tenant,"ibcore@example.com");
+        when(repository.huddleTenants("barry@example.com")).thenReturn(java.util.Set.of(tenant));
         when(repository.currentMember(tenant,"barry@example.com")).thenReturn(new CollaborationRepository.Member(barryId,"Barry Guze","barry@example.com","barry"));
+        when(repository.huddleTenants("ibcore@example.com")).thenReturn(java.util.Set.of(tenant));
         when(repository.currentMember(tenant,"ibcore@example.com")).thenReturn(new CollaborationRepository.Member(ibcoreId,"Ibcore","ibcore@example.com","ibcore"));
         handler.afterConnectionEstablished(barry);
         handler.afterConnectionEstablished(ibcore);
@@ -57,7 +76,9 @@ class HuddleWebSocketHandlerTest {
         var handler=new HuddleWebSocketHandler(new HuddleService(repository,mock(CollaborationNotificationWorker.class),mapper),repository,mapper);
         var outsider=session("outside-session",otherTenant,"outside@example.com");
         var barry=session("barry-session",ibcoreTenant,"barry@example.com");
+        when(repository.huddleTenants("outside@example.com")).thenReturn(java.util.Set.of(otherTenant));
         when(repository.currentMember(otherTenant,"outside@example.com")).thenReturn(new CollaborationRepository.Member(outsiderId,"Outside User","outside@example.com","outside"));
+        when(repository.huddleTenants("barry@example.com")).thenReturn(java.util.Set.of(ibcoreTenant));
         when(repository.currentMember(ibcoreTenant,"barry@example.com")).thenReturn(new CollaborationRepository.Member(barryId,"Barry Guze","barry@example.com","barry"));
         handler.afterConnectionEstablished(outsider);
         handler.afterConnectionEstablished(barry);
@@ -83,5 +104,28 @@ class HuddleWebSocketHandlerTest {
         when(session.getAttributes()).thenReturn(Map.of(AccountSelectionController.TENANT_ID,tenant));
         when(session.isOpen()).thenReturn(true);
         return session;
+    }
+
+    @Test void sharedTenantMemberCanReplyWhileWorkingInAnotherAccountAndRevocationStopsDelivery() throws Exception {
+        UUID pantry=UUID.randomUUID(),ibcore=UUID.randomUUID(),jackId=UUID.randomUUID(),barryId=UUID.randomUUID();
+        var repository=mock(CollaborationRepository.class);var json=new ObjectMapper();
+        var service=new HuddleService(repository,mock(CollaborationNotificationWorker.class),json);
+        var handler=new HuddleWebSocketHandler(service,repository,json);
+        var jack=session("jack",ibcore,"jack@example.test");var barry=session("barry",pantry,"barry@example.test");
+        when(repository.huddleTenants("jack@example.test")).thenReturn(java.util.Set.of(pantry,ibcore));
+        when(repository.huddleTenants("barry@example.test")).thenReturn(java.util.Set.of(pantry,ibcore));
+        when(repository.currentMember(ibcore,"jack@example.test")).thenReturn(new CollaborationRepository.Member(jackId,"Jack","jack@example.test","jack"));
+        when(repository.currentMember(pantry,"barry@example.test")).thenReturn(new CollaborationRepository.Member(barryId,"Barry","barry@example.test","barry"));
+        handler.afterConnectionEstablished(jack);handler.afterConnectionEstablished(barry);clearInvocations(jack,barry);
+        handler.handleTextMessage(barry,new TextMessage("{\"type\":\"CREATE\",\"participantIds\":[\""+jackId+"\"],\"subjectType\":\"PLATFORM\",\"subjectKey\":\"DIRECT\"}"));
+        var delivered=ArgumentCaptor.forClass(TextMessage.class);verify(jack).sendMessage(delivered.capture());
+        assertThat(delivered.getValue().getPayload()).contains("HUDDLE_STARTED",pantry.toString());
+        UUID room=service.forParticipant(pantry,jackId).getFirst().id();clearInvocations(jack,barry);
+        handler.handleTextMessage(jack,new TextMessage("{\"type\":\"MESSAGE\",\"huddleId\":\""+room+"\",\"body\":\"Hello from Ibcore\"}"));
+        var reply=ArgumentCaptor.forClass(TextMessage.class);verify(barry).sendMessage(reply.capture());
+        assertThat(reply.getValue().getPayload()).contains("Hello from Ibcore");
+        when(repository.huddleTenants("jack@example.test")).thenReturn(java.util.Set.of(ibcore));clearInvocations(jack,barry);
+        handler.handleTextMessage(barry,new TextMessage("{\"type\":\"MESSAGE\",\"huddleId\":\""+room+"\",\"body\":\"Not delivered after revocation\"}"));
+        verify(jack,never()).sendMessage(any(TextMessage.class));
     }
 }

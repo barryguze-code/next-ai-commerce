@@ -61,7 +61,7 @@ public class HuddleService {
                 String contextSnapshot,Participant startedBy,Collection<Participant> invited){
             this.tenantId=tenantId;this.subjectType=subjectType;this.subjectKey=subjectKey;
             this.subjectLabel=subjectLabel;this.parentUrl=parentUrl;this.contextSnapshot=contextSnapshot;this.startedBy=startedBy;
-            participants.put(startedBy.id(),startedBy);joinedParticipantIds.add(startedBy.id());invited.forEach(person->participants.put(person.id(),person));
+            participants.put(startedBy.id(),startedBy);joinedParticipantIds.add(startedBy.id());invited.forEach(person->{participants.put(person.id(),person);joinedParticipantIds.add(person.id());});
         }
     }
 
@@ -86,7 +86,7 @@ public class HuddleService {
                     &&existing.subjectKey.equals(safeKey)&&existing.participants.containsKey(creator.id())){
                 long additional=unique.keySet().stream().filter(id->!existing.participants.containsKey(id)).count();
                 if(existing.participants.size()+additional>MAX_PARTICIPANTS)throw new IllegalArgumentException("Invite up to two teammates to a huddle.");
-                unique.values().forEach(person->existing.participants.putIfAbsent(person.id(),person));
+                unique.values().forEach(person->{existing.participants.putIfAbsent(person.id(),person);existing.joinedParticipantIds.add(person.id());});
                 existing.expiresAt=Instant.now().plus(IDLE_TTL);return view(existing);
             }
         }
@@ -115,6 +115,23 @@ public class HuddleService {
     public HuddleView join(UUID tenantId,UUID huddleId,UUID participantId){
         HuddleState state=required(tenantId,huddleId);
         synchronized(state){requireActiveParticipant(state,participantId);state.joinedParticipantIds.add(participantId);state.expiresAt=Instant.now().plus(IDLE_TTL);return view(state);}
+    }
+
+    public UUID tenantForParticipant(UUID huddleId,UUID participantId){
+        HuddleState state=huddles.get(huddleId);if(state==null)return null;
+        synchronized(state){return state.participants.containsKey(participantId)?state.tenantId:null;}
+    }
+
+    public HuddleView invite(UUID tenantId,UUID huddleId,UUID actor,List<Participant> people){
+        HuddleState state=required(tenantId,huddleId);
+        synchronized(state){
+            requireActiveParticipant(state,actor);
+            var unique=new LinkedHashMap<UUID,Participant>();people.forEach(p->unique.put(p.id(),p));
+            long added=unique.keySet().stream().filter(id->!state.participants.containsKey(id)).count();
+            if(state.participants.size()+added>MAX_PARTICIPANTS)throw new IllegalArgumentException("A huddle supports up to three people.");
+            unique.values().forEach(p->{state.participants.putIfAbsent(p.id(),p);state.joinedParticipantIds.add(p.id());});
+            state.expiresAt=Instant.now().plus(IDLE_TTL);return view(state);
+        }
     }
 
     public HuddleView leave(UUID tenantId,UUID huddleId,UUID participantId){

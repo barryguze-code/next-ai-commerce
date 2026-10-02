@@ -1,0 +1,23 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),vm=require('node:vm');
+test('SKU details expand inline, track parent visibility and remain attached after sorting',()=>{
+ const section={id:'rp-skus-item',hidden:true},button={dataset:{skusOpen:'item'},setAttribute(k,v){this[k]=v;}};
+ let click,observe,load;
+ const parent={dataset:{item:'item'},parentElement:{},cells:Array(7),hidden:false,style:{},classList:{contains(){return this.filtered||false;}},querySelector(){return button;},closest(){return {tHead:{rows:[{cells:Array(7)}]}}},after(child){this.nextElementSibling=child;}};
+ const document={querySelectorAll(s){return s==='[data-replenishment-row]'?[parent]:s==='[data-skus-open]'?[button]:[];},getElementById(){return section;},addEventListener(event,fn){if(event==='click')click=fn;},createElement(tag){return {cells:[],after(node){this.nextElementSibling=node;},append(node){if(tag==='tr')this.cells.push(node);this.content=node;}};}};
+ vm.runInNewContext(fs.readFileSync('src/main/resources/static/js/replenishment-draft.js','utf8'),{document,window:{addEventListener(event,fn){if(event==='load')load=fn;}},location:{hash:''},MutationObserver:class{constructor(fn){observe=fn;}observe(){}}});
+ const event={target:{closest(s){return s==='[data-skus-open]'?button:null;}}};
+ load();const control=parent.nextElementSibling,child=control.nextElementSibling;
+ assert.equal(control.cells[0].content,button);assert.equal(control.hidden,false);
+ assert.equal(section.hidden,false);assert.equal(child.hidden,false);assert.equal(child.cells[0].content,section);assert.equal(button['aria-expanded'],'true');
+ parent.classList.filtered=true;observe();assert.equal(child.hidden,true);
+ parent.classList.filtered=false;parent.nextElementSibling=null;observe();assert.equal(parent.nextElementSibling,control);assert.equal(child.hidden,false);
+ click(event);assert.equal(section.hidden,true);assert.equal(child.hidden,true);assert.equal(button['aria-expanded'],'false');assert.equal(control.hidden,false,'Expand control stays visible');assert.equal(button['aria-label'],'Expand SKU rows');
+ click(event);assert.equal(parent.nextElementSibling,control);assert.equal(child.hidden,false);
+ const tableClick={target:{closest(s){return s==='.rp-sku-details'?section:null;}}};
+ click(tableClick);assert.equal(child.hidden,true);
+ click(event);assert.equal(child.hidden,false);
+ const linkClick={target:{closest(s){return s==='.rp-sku-details'?section:s==='a,button,input,select,textarea'?{}:null;}}};
+ click(linkClick);assert.equal(child.hidden,false,'Seller Central links do not collapse the table');
+});

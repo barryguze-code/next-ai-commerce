@@ -11,6 +11,8 @@ import org.springframework.web.socket.server.support.HttpSessionHandshakeInterce
 public class HuddleWebSocketConfig implements WebSocketConfigurer {
     private final HuddleWebSocketHandler handler;
     public HuddleWebSocketConfig(HuddleWebSocketHandler handler){this.handler=handler;}
+    @org.springframework.context.annotation.Bean
+    org.springframework.security.web.session.HttpSessionEventPublisher huddleSessionEvents(){return new org.springframework.security.web.session.HttpSessionEventPublisher();}
     @Override public void registerWebSocketHandlers(WebSocketHandlerRegistry registry){
         registry.addHandler(handler,"/ws/huddles").addInterceptors(new HttpSessionHandshakeInterceptor());
     }

@@ -620,6 +620,68 @@ class ReceivingWorkflowDatabaseTest {
         });
     }
 
+    @Test void replenishmentSoonStockIsASubsetOfSellableStock(){
+        var f=fixture("INVOICE");mappedOrder(f,1,"Shipped");
+        inventory.saveShelfLifePolicy(tenant,actor,10,20);
+        var today=LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"));
+        work.receive(tenant,actor,f.line(),new BigDecimal("6"),today.plusDays(15),"SELLABLE",f.location(),"Soon sellable");
+        work.receive(tenant,actor,f.line(),new BigDecimal("4"),today.plusDays(5),"SELLABLE",f.location(),"Cutoff stock");
+        var row=tx.execute(s->new ReplenishmentDataLoader(jdbc,inventory).load(tenant,0).stream().filter(r->r.get("id").equals(f.product())).findFirst().orElseThrow());
+        assertThat((BigDecimal)row.get("available")).isEqualByComparingTo("6");
+        assertThat((BigDecimal)row.get("soon")).isEqualByComparingTo("6");
+        assertThat((BigDecimal)row.get("physical")).isEqualByComparingTo("10");
+    }
+    @Test void replenishmentCombinesSkuComponentsExcludesCancelledAndCachesPerTenant(){
+        var f=fixture("INVOICE");UUID connection=mappedOrder(f,3,"Shipped - Delivered to Buyer");
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE marketplace_sku_mapping_components SET quantity=6 WHERE tenant_id=? AND account_catalog_item_id=?",tenant,f.product());
+            UUID mapping=UUID.randomUUID();
+            jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,account_catalog_item_id,marketplace_sku) VALUES (?,?,?,?,'SECOND-SKU')",mapping,tenant,connection,f.product());
+            jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,2)",tenant,mapping,f.product());
+            jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,'SHELF-ORDER','SECOND','SECOND-SKU',4)",tenant,connection);
+        });
+        var loader=new ReplenishmentDataLoader(jdbc,inventory);
+        var service=new ReplenishmentSuggestions(jdbc,tx,loader,new tools.jackson.databind.ObjectMapper());
+        service.save(tenant,actor,7,14,35,Map.of(vendor+"_lead","12",vendor+"_low","8"));
+        assertThat(service.pending(tenant)).isTrue();service.refresh();
+        var snapshot=service.snapshot(tenant);assertThat(snapshot).isNotNull();
+        var row=snapshot.items().stream().filter(r->r.get("id").equals(f.product())).findFirst().orElseThrow();
+        assertThat((BigDecimal)row.get("demand")).isEqualByComparingTo("26");
+        assertThat(row.get("weeks").toString()).endsWith("26.0000");
+        assertThat(service.snapshot(UUID.randomUUID())).isNull();assertThat(service.pending(tenant)).isFalse();
+        assertThat(ReplenishmentSuggestions.REFRESH_SECONDS).isEqualTo(21600);
+        service.refresh();assertThat(service.snapshot(tenant)).isSameAs(snapshot);
+        service.requestRefresh(tenant);assertThat(service.pending(tenant)).isTrue();
+        service.requestRefresh(tenant);service.refresh();assertThat(service.pending(tenant)).isFalse();
+        assertThat(service.snapshot(tenant)).isNotSameAs(snapshot);
+        // Cancellation removes demand after the next requested rebuild.
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE amazon_orders SET order_status='Canceled' WHERE tenant_id=? AND marketplace_connection_id=?",tenant,connection);});
+        service.save(tenant,actor,7,14,35,Map.of());service.refresh();
+        assertThat(service.snapshot(tenant).items()).noneMatch(r->r.get("id").equals(f.product()));
+        // A previous snapshot remains stable for requests already using it.
+        assertThat(snapshot.items()).anyMatch(r->r.get("id").equals(f.product()));
+    }
+    @Test void replenishmentSettingsRejectInvalidOverrideWithoutSaving(){
+        var service=new ReplenishmentSuggestions(jdbc,tx,new ReplenishmentDataLoader(jdbc,inventory),new tools.jackson.databind.ObjectMapper());
+        assertThatThrownBy(()->service.save(tenant,actor,7,14,35,Map.of(vendor+"_low","25"))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(service.configuration(tenant).get("low")).isEqualTo(7);
+        service.save(tenant,actor,5,12,30,Map.of(vendor+"_lead","9"));
+        var fresh=new ReplenishmentSuggestions(jdbc,tx,new ReplenishmentDataLoader(jdbc,inventory),new tools.jackson.databind.ObjectMapper());
+        assertThat(fresh.configuration(tenant).get("low")).isEqualTo(5);
+        assertThat(ReplenishmentSuggestions.policy(fresh.configuration(tenant),vendor,"Synthetic supplier").lead()).isEqualTo(9);
+    }
+    @Test void replenishmentIncludesDeliveredSalesInEveryWeeklyBucket(){
+        var f=fixture("INVOICE");UUID connection=mappedOrder(f,3,"Shipped - Delivered to Buyer");
+        var loader=new ReplenishmentDataLoader(jdbc,inventory);
+        for(int week=0;week<4;week++){
+            final int days=week*7+2;
+            tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE amazon_orders SET purchase_date=now()-make_interval(days=>?) WHERE tenant_id=? AND marketplace_connection_id=?",days,tenant,connection);
+                var row=loader.load(tenant,0).stream().filter(r->r.get("id").equals(f.product())).findFirst().orElseThrow();
+                String[] buckets=row.get("weeks").toString().split(" \\| ");
+                for(int i=0;i<4;i++)assertThat(new BigDecimal(buckets[i])).isEqualByComparingTo(i==3-(days/7)?"3":"0");
+            });
+        }
+    }
     UUID mappedOrder(Fixture f,int quantity,String status){
         UUID connection=UUID.randomUUID(),mapping=UUID.randomUUID();
         tx.executeWithoutResult(s->{setTenant();

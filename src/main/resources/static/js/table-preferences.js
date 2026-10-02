@@ -12,12 +12,12 @@
   function parse(text){try{const value=JSON.parse(text);return valid(value)?value:null}catch(_){return null}}
   function read(key){
     if(memory.has(key))return memory.get(key);
-    try{return parse(window.localStorage.getItem(storagePrefix+key))}catch(_){return null}
+    try{const value=parse(window.localStorage.getItem(storagePrefix+key));memory.set(key,value);return value}catch(_){return null}
   }
   function write(key,value){
     if(!valid(value))return;
-    memory.set(key,value);
-    try{window.localStorage.setItem(storagePrefix+key,JSON.stringify(value))}catch(_){
+    const serialized=JSON.stringify(value);memory.set(key,value);
+    try{if(window.localStorage.getItem(storagePrefix+key)!==serialized)window.localStorage.setItem(storagePrefix+key,serialized)}catch(_){
       // Disabled/full storage must not break tables or recreate oversized cookies.
     }
   }
@@ -38,6 +38,7 @@
     }
   }
   window.NextAiTablePreferences={read,write,migrate};
+  window.addEventListener('storage',event=>{if(event.key?.startsWith(storagePrefix))memory.delete(event.key.slice(storagePrefix.length));else if(event.key===null)memory.clear();});
   migrate();
   // An older open tab may still create legacy cookies until it is refreshed.
   window.addEventListener('pageshow',migrate);

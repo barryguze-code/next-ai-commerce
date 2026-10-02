@@ -53,7 +53,7 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
   const total=document.createElement("div");total.className="history-product-total";
   total.innerHTML='<small>Total available</small><strong id="history-total-available">0 each</strong>';summary.append(total);
   const scope=document.createElement("nav");scope.className="history-scope-switch";scope.setAttribute("aria-label","Movement scope");
-  scope.innerHTML='<button type="button" data-history-scope="batch" aria-pressed="false">Selected batch</button><button class="active" type="button" data-history-scope="item" aria-pressed="true">All item movements</button>';title.append(scope);
+  scope.innerHTML='<button type="button" data-history-scope="batch" aria-pressed="false">Selected batch</button><button class="active" type="button" data-history-scope="item" aria-pressed="true">All item movements</button><button type="button" data-history-scope="received" aria-pressed="false">Received</button>';title.append(scope);
   let currentRow,selectedScope="item",request;
   const originalOpen=openInventoryHistory;
   openInventoryHistory=async function(row,focusLocation=false){
@@ -86,7 +86,7 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
         upload.append(form);
       }
     }
-    document.getElementById("history-total-available").textContent=[...document.querySelectorAll('.inventory-row')].filter(x=>x.dataset.item===row.dataset.item).reduce((sum,x)=>sum+(Number(x.dataset.available)||0),0).toLocaleString()+" each";
+    document.getElementById("history-total-available").textContent=(row.dataset.totalAvailable!==undefined?Number(row.dataset.totalAvailable):[...document.querySelectorAll('.inventory-row')].filter(x=>x.dataset.item===row.dataset.item).reduce((sum,x)=>sum+(Number(x.dataset.available)||0),0)).toLocaleString()+" each";
     return opened;
   };
   window.loadInventoryMovements=async function(row,mode="item",page=0){
@@ -109,7 +109,7 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
         article.innerHTML='<span>'+escapeHistory(m.movementLabel)+'</span><div><strong>'+escapeHistory(m.description||m.sourceLabel)+'</strong><small>'+formatHistoryDate(m.occurredAt)+batch+reference+'</small></div><b>'+(Number(m.quantity)>0?'+':'')+Math.round(Number(m.quantity))+' each</b><em>'+(m.currency&&m.unitCost!=null?escapeHistory(m.currency)+' '+Number(m.unitCost).toFixed(2):'Not valued')+'</em>';
         target.append(article);
       }
-      if(!target.children.length){feedback.textContent="No movements recorded for "+(mode==="item"?"this item.":"this batch.");target.append(feedback);}
+      if(!target.children.length){feedback.textContent=mode==="received"?"No receipts recorded for this item.":"No movements recorded for "+(mode==="item"?"this item.":"this batch.");target.append(feedback);}
       if(rows.length===100){const more=document.createElement("button");more.type="button";more.className="secondary-button history-load-more";more.dataset.historyMore="";more.textContent="Load more movements";more.onclick=()=>window.loadInventoryMovements(row,mode,page+1);target.append(more);}
     }catch(error){
       if(error.name==="AbortError")return;

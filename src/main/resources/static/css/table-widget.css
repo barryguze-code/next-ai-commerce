@@ -16,7 +16,9 @@
 html[data-theme=dark] .platform-pickup-label,html[data-theme=dark] .order-action-summary{color:#fbbf64!important;background:#3d2e1e!important}
 .background-job-card.local-job .background-job-phase{display:block}
 .background-sync-notice[hidden]{display:none!important}
-.data-card table.table-widget{width:100%;min-width:var(--table-min-width,0px)!important;table-layout:fixed}
+.data-card table.table-widget{width:100%;min-width:var(--table-min-width,0px)!important;table-layout:auto}
+.data-card .table-widget :is(th,td):is([data-column=account-role],[data-column=role],[data-column=status]){width:1%!important;min-width:max-content;white-space:nowrap}
+.data-card .table-widget .table-overview-layout{flex-wrap:nowrap!important;min-width:max-content!important}
 /* Contain absolutely positioned accessible inputs inside the scroll viewport. */
 .table-wrap:has(>.table-widget){position:relative}
 .table-context-cell .table-context-action{display:block;margin:5px auto 0;width:24px;height:24px;min-width:24px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:1rem}

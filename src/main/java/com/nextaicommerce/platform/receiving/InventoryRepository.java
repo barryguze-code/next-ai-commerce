@@ -115,6 +115,7 @@ public class InventoryRepository {
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())return "Physical count";
             return switch(entryType){
             case "RECEIPT" -> "Received";
+            case "INVENTORY_PLAN" -> "Plan updated";
             case "SALE","SHIPMENT" -> "Order shipped";
             case "SHIPMENT_UNRECORDED" -> "Shipped";
             case "SHARED_STOCK_SALES" -> "Shared-stock sales";
@@ -216,7 +217,10 @@ public class InventoryRepository {
         return jdbc.query("""
             WITH positions AS MATERIALIZED (
                 SELECT ledger.tenant_id,ledger.account_catalog_item_id,ledger.location_id,ledger.expiration_date,
-                       sum(ledger.quantity) quantity,max(ledger.unit_cost) unit_cost,max(ledger.currency) currency,
+                       sum(ledger.quantity) quantity,
+                       CASE WHEN bool_or(ledger.source_type NOT IN ('MANUAL','ADJUSTMENT'))
+                         THEN max(ledger.unit_cost) ELSE nullif(max(ledger.unit_cost),0) END unit_cost,
+                       max(ledger.currency) currency,
                        CASE WHEN bool_or(ledger.cost_status='PROVISIONAL') THEN 'PROVISIONAL' ELSE 'FINAL' END cost_status,
                        coalesce(sum(ledger.quantity) FILTER (WHERE ledger.entry_type='RECEIPT' AND ledger.quantity>0),0) initially_received,
                        min(ledger.occurred_at) FILTER (WHERE ledger.entry_type='RECEIPT' AND ledger.quantity>0) first_received,
@@ -285,7 +289,8 @@ public class InventoryRepository {
             )
             SELECT item.id,coalesce(item.display_name,product.canonical_name),item.account_sku,identifier.identifier_value,
                    position.expiration_date,position.quantity,coalesce(reserved.quantity,0)+position.uncovered_demand,
-                   position.unit_cost,position.currency,
+                   coalesce(position.unit_cost,offer.buying_cost),
+                   CASE WHEN position.unit_cost IS NOT NULL THEN position.currency ELSE offer.currency END,
                    CASE WHEN position.expiration_date IS NULL THEN 'FIFO' ELSE 'FEFO' END,
                    action.action_type,action.notes,
                    position.cost_status,position.initially_received,position.first_received,position.last_movement,
@@ -304,7 +309,7 @@ public class InventoryRepository {
             LEFT JOIN account_catalog_product_images uploaded ON uploaded.tenant_id=item.tenant_id AND uploaded.account_catalog_item_id=item.id
             LEFT JOIN LATERAL (SELECT identifier_value FROM global_product_identifiers gi
                 WHERE gi.global_product_id=product.id ORDER BY is_primary DESC,created_at LIMIT 1) identifier ON true
-            LEFT JOIN LATERAL (SELECT vendor_item_code FROM vendor_catalog_offers current_offer
+            LEFT JOIN LATERAL (SELECT vendor_item_code,round(list_cost*(1-coalesce(discount_rate,0)/100),4) buying_cost,currency FROM vendor_catalog_offers current_offer
                 WHERE current_offer.tenant_id=item.tenant_id AND current_offer.account_catalog_item_id=item.id
                   AND current_offer.effective_to IS NULL
                 ORDER BY current_offer.is_default DESC,current_offer.updated_at DESC LIMIT 1) offer ON true
@@ -431,6 +436,40 @@ public class InventoryRepository {
             """,tenantId,itemId,expirationDate,actionType,removalMethod,clean(notes),actorEmail);
     }
 
+    @Transactional(readOnly=true)
+    public List<Map<String,Object>> savedDisposition(UUID tenantId,UUID item,LocalDate expiry){
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        return jdbc.queryForList("SELECT action_type,removal_method,notes,discount_percent,starts_at,ends_at FROM inventory_expiration_actions WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=? AND status='PLANNED'",tenantId,item,expiry);
+    }
+    @Transactional
+    public void applyDisposition(UUID tenantId,String actor,UUID item,LocalDate expiry,UUID location,String action,String method,String notes){
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        lockStockCorrection(tenantId);
+        UUID resolved=resolveItemLocation(tenantId,item,location);
+        boolean complete="COMPLETE_RETURN".equals(action);
+        if(complete){
+            Integer pending=jdbc.queryForObject("SELECT count(*) FROM inventory_expiration_actions WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=? AND status='PLANNED' AND removal_method='RETURN_TO_VENDOR'",Integer.class,tenantId,item,expiry);
+            if(pending==null||pending==0)throw new IllegalArgumentException("No pending return remains for this batch.");
+            method="RETURN_TO_VENDOR";
+        }
+        boolean remove=complete||(("REMOVE".equals(action)||"DONATE".equals(action))&&List.of("DONATE","DISPOSE").contains(method==null?"":method));
+        if(remove){
+            BigDecimal quantity=jdbc.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=? AND expiration_date IS NOT DISTINCT FROM ?",BigDecimal.class,tenantId,item,resolved,expiry);
+            if(quantity.signum()<=0)throw new IllegalArgumentException("This batch has already been removed.");
+            String reason="DONATE".equals(method)?"DONATION":complete?"RETURN_TO_VENDOR":"REMOVAL";
+            adjustInventory(tenantId,actor,item,expiry,resolved,quantity.negate(),reason,(complete?"Return completed":"DONATE".equals(method)?"Donated":"Disposed")+(clean(notes)==null?"":" · "+clean(notes)));
+            BigDecimal remaining=jdbc.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date IS NOT DISTINCT FROM ?",BigDecimal.class,tenantId,item,expiry);
+            // Plans cover the expiration batch across locations; retain them for remaining stock.
+            if(remaining.signum()<=0)jdbc.update("UPDATE inventory_expiration_actions SET status='CANCELLED',updated_at=now() WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=? AND status='PLANNED'",tenantId,item,expiry);
+        }else{
+            planExpirationAction(tenantId,actor,item,expiry,action,method,notes);
+            jdbc.update("""
+                INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,source_type,occurred_at,notes,created_by,idempotency_key)
+                VALUES (?,?,?,'INVENTORY_PLAN',0,?,'INVENTORY_PLAN',now(),?,(SELECT id FROM app_users WHERE lower(email)=lower(?)),'inventory-plan:'||gen_random_uuid())
+                """,tenantId,item,resolved,expiry,("CLEAR".equals(action)?"Plan cleared":action+(method==null?"":" · "+method))+(clean(notes)==null?"":" · "+clean(notes)),actor);
+        }
+    }
+
     @Transactional
     public int saveSalePlan(UUID tenantId,String actorEmail,UUID itemId,LocalDate expirationDate,
             BigDecimal discountPercent,int startDays,int durationDays,boolean rememberForProduct,
@@ -529,18 +568,18 @@ public class InventoryRepository {
         if(quantity==null||quantity.signum()<=0||quantity.stripTrailingZeros().scale()>0)
             throw new IllegalArgumentException("Enter a positive whole number of eaches received.");
         ProductReceiptTarget target=jdbc.query("""
-            SELECT product.requires_expiration_date,coalesce(offer.currency,'USD')
+            SELECT product.requires_expiration_date,coalesce(offer.currency,'USD'),offer.buying_cost
             FROM account_catalog_items item
             JOIN global_catalog_products product ON product.id=item.global_product_id
             LEFT JOIN LATERAL (
-                SELECT currency FROM vendor_catalog_offers current_offer
+                SELECT currency,round(list_cost*(1-coalesce(discount_rate,0)/100),4) buying_cost FROM vendor_catalog_offers current_offer
                 WHERE current_offer.tenant_id=item.tenant_id
                   AND current_offer.account_catalog_item_id=item.id
                   AND current_offer.effective_to IS NULL
                 ORDER BY current_offer.is_default DESC,current_offer.updated_at DESC LIMIT 1
             ) offer ON true
             WHERE item.tenant_id=? AND item.id=? AND item.status='ACTIVE'
-            """,rs->rs.next()?new ProductReceiptTarget(rs.getBoolean(1),rs.getString(2)):null,tenantId,itemId);
+            """,rs->rs.next()?new ProductReceiptTarget(rs.getBoolean(1),rs.getString(2),rs.getBigDecimal(3)):null,tenantId,itemId);
         if(target==null)throw new IllegalArgumentException("This account catalogue product is no longer active.");
         if(target.expirationRequired()&&expirationDate==null)
             throw new IllegalArgumentException("Enter the expiration date required for this product.");
@@ -550,10 +589,10 @@ public class InventoryRepository {
             INSERT INTO inventory_ledger_entries (tenant_id,account_catalog_item_id,location_id,entry_type,quantity,
                 expiration_date,unit_cost,currency,source_type,source_id,occurred_at,idempotency_key,
                 notes,created_by,cost_status)
-            VALUES (?,?,?,'RECEIPT',?,?,0,?,'MANUAL',?,now(),?,
+            VALUES (?,?,?,'RECEIPT',?,?,?,?, 'MANUAL',?,now(),?,
                 coalesce(?, 'Unexpected vendor item received without an invoice'),
                 (SELECT id FROM app_users WHERE lower(email)=lower(?)),'FINAL')
-            """,tenantId,itemId,resolvedLocation,quantity,expirationDate,target.currency(),sourceId,
+            """,tenantId,itemId,resolvedLocation,quantity,expirationDate,target.unitCost(),target.currency(),sourceId,
             "manual-uninvoiced-receipt:"+sourceId,clean(notes),actorEmail);
     }
 
@@ -585,13 +624,13 @@ public class InventoryRepository {
         if(!List.of("COUNT_CORRECTION","DAMAGE","LOSS","DONATION","REMOVAL","RETURN_TO_VENDOR","OTHER").contains(reason))
             throw new IllegalArgumentException("Choose a reason for this inventory adjustment.");
         ProductReceiptTarget target=jdbc.query("""
-            SELECT product.requires_expiration_date,coalesce(offer.currency,'USD')
+            SELECT product.requires_expiration_date,coalesce(offer.currency,'USD'),offer.buying_cost
             FROM account_catalog_items item JOIN global_catalog_products product ON product.id=item.global_product_id
-            LEFT JOIN LATERAL (SELECT currency FROM vendor_catalog_offers offer
+            LEFT JOIN LATERAL (SELECT currency,round(list_cost*(1-coalesce(discount_rate,0)/100),4) buying_cost FROM vendor_catalog_offers offer
               WHERE offer.tenant_id=item.tenant_id AND offer.account_catalog_item_id=item.id
                 AND offer.effective_to IS NULL ORDER BY offer.is_default DESC,offer.updated_at DESC LIMIT 1) offer ON true
             WHERE item.tenant_id=? AND item.id=? AND item.status='ACTIVE'
-            """,rs->rs.next()?new ProductReceiptTarget(rs.getBoolean(1),rs.getString(2)):null,tenantId,itemId);
+            """,rs->rs.next()?new ProductReceiptTarget(rs.getBoolean(1),rs.getString(2),rs.getBigDecimal(3)):null,tenantId,itemId);
         if(target==null)throw new IllegalArgumentException("This account catalogue product is no longer active.");
         if(target.expirationRequired()&&expirationDate==null)
             throw new IllegalArgumentException("Choose the expiration batch for this product.");
@@ -616,9 +655,9 @@ public class InventoryRepository {
         jdbc.update("""
             INSERT INTO inventory_ledger_entries (tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,
               unit_cost,currency,source_type,source_id,occurred_at,idempotency_key,notes,created_by,cost_status)
-            VALUES (?,?,?,'ADJUSTMENT',?,?,NULL,?,'ADJUSTMENT',?,now(),?, ?,
+            VALUES (?,?,?,'ADJUSTMENT',?,?,?,?,'ADJUSTMENT',?,now(),?, ?,
               (SELECT id FROM app_users WHERE lower(email)=lower(?)),'FINAL')
-            """,tenantId,itemId,resolvedLocation,quantityChange,expirationDate,target.currency(),sourceId,
+            """,tenantId,itemId,resolvedLocation,quantityChange,expirationDate,quantityChange.signum()>0?target.unitCost():null,target.currency(),sourceId,
             "manual-adjustment:"+sourceId,clean(notes)==null?"Inventory adjustment: "+detail:detail+" · "+clean(notes),actorEmail);
     }
 
@@ -731,7 +770,7 @@ public class InventoryRepository {
             LEFT JOIN account_catalog_item_locations assignment ON assignment.tenant_id=location.tenant_id
               AND assignment.location_id=location.id AND assignment.account_catalog_item_id=?
             WHERE location.tenant_id=? AND location.status='ACTIVE'
-              AND ((? IS NULL AND assignment.is_default) OR location.id=?) LIMIT 1
+              AND ((CAST(? AS uuid) IS NULL AND assignment.is_default) OR location.id=?) LIMIT 1
             """,rs->rs.next()?rs.getObject(1,UUID.class):null,itemId,tenantId,requested,requested);
         if(resolved==null)throw new IllegalArgumentException("Choose an active inventory location.");
         jdbc.update("""
@@ -1048,8 +1087,12 @@ public class InventoryRepository {
     /** Item scope includes dated and FIFO batches; page before joining audit details. */
     @Transactional(readOnly=true)
     public List<LedgerView> movements(UUID tenantId,UUID itemId,LocalDate expirationDate,UUID locationId,boolean allItems,int page){
+        return movements(tenantId,itemId,expirationDate,locationId,allItems,page,false);
+    }
+    @Transactional(readOnly=true)
+    public List<LedgerView> movements(UUID tenantId,UUID itemId,LocalDate expirationDate,UUID locationId,boolean allItems,int page,boolean receivedOnly){
         var args=new java.util.ArrayList<Object>();args.add(tenantId);args.add(itemId);
-        String filter="";
+        String filter=receivedOnly?" AND entry_type='RECEIPT'":"";
         if(!allItems){filter+=" AND expiration_date IS NOT DISTINCT FROM ?";args.add(expirationDate);}
         if(!allItems&&locationId!=null){filter+=" AND location_id=?";args.add(locationId);}
         args.add((long)Math.max(0,Math.min(10000,page))*100);
@@ -1136,6 +1179,6 @@ public class InventoryRepository {
             tenantId,itemId,expirationDate,expirationDate,locationId,locationId);
     }
     private static String clean(String value){return value==null||value.isBlank()?null:value.trim();}
-    private record ProductReceiptTarget(boolean expirationRequired,String currency){}
+    private record ProductReceiptTarget(boolean expirationRequired,String currency,BigDecimal unitCost){}
     private record MarketplaceListingTarget(UUID connectionId,String sellerSku,String marketplaceId,boolean fba){}
 }

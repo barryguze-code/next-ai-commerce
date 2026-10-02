@@ -86,10 +86,10 @@ public class JdbcInvitationRepository implements InvitationRepository {
         setTenant(invitation.tenantId());
         jdbc.update("""
             INSERT INTO tenant_memberships
-                (tenant_id, user_id, role, created_by, updated_by)
-            VALUES (?, ?, ?, ?, ?)
+                (tenant_id, user_id, role, created_by, updated_by, stores_restricted)
+            VALUES (?, ?, ?, ?, ?, true)
             ON CONFLICT (tenant_id, user_id) DO UPDATE
-                SET role = EXCLUDED.role, updated_by = EXCLUDED.updated_by
+                SET role = EXCLUDED.role, updated_by = EXCLUDED.updated_by, stores_restricted = true
             """, invitation.tenantId(), acceptingUserId, invitation.role().name(), actorUserId, actorUserId);
 
         jdbc.update("""

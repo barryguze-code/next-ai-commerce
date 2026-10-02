@@ -13,8 +13,9 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 public class SecurityConfig {
     @Bean
-    SecurityFilterChain security(HttpSecurity http) throws Exception {
+    SecurityFilterChain security(HttpSecurity http, org.springframework.beans.factory.ObjectProvider<com.nextaicommerce.platform.web.MemberAccessService> memberAccess) throws Exception {
         return http
+            .addFilterBefore(new CurrentMembershipFilter(memberAccess), org.springframework.security.web.access.intercept.AuthorizationFilter.class)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/login", "/activate", "/css/**", "/js/**", "/images/**", "/actuator/health").permitAll()
                 // Workspace members need the selected account's logo in the header.  The controller

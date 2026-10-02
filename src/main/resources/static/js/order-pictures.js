@@ -5,7 +5,7 @@
  let noticeTimer;
  function notify(message){let notice=document.querySelector('[data-picture-notice]');if(!notice){notice=document.createElement('div');notice.className='stream-toast';notice.dataset.pictureNotice='';notice.setAttribute('role','status');document.body.append(notice);}notice.textContent=message;notice.classList.add('show');clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>notice.classList.remove('show'),5500);}
  function close(restore=true){menu?.remove();menu=null;owner?.setAttribute('aria-expanded','false');if(restore&&owner?.isConnected)owner.focus();owner=null;}
- function init(){document.querySelectorAll('[data-picture-actions]:not([data-picture-ready])').forEach(stage=>{
+ function init(root=document){const selector='[data-picture-actions]:not([data-picture-ready])';[...(root.matches?.(selector)?[root]:[]),...root.querySelectorAll(selector)].forEach(stage=>{
   stage.dataset.pictureReady='true';
   // Keep existing fallback markup, but expose one consistent actions launcher.
   stage.querySelectorAll('.order-stage-actions').forEach(el=>el.hidden=true);
@@ -24,6 +24,7 @@
  function open(trigger){
   if(owner===trigger){close();return;}close(false);owner=trigger;trigger.setAttribute('aria-expanded','true');
   const stage=trigger.closest('.order-item').querySelector('[data-picture-actions]'),editing=trigger.dataset.pictureMenu==='edit';stage.dataset.image=stage.querySelector(':scope > img')?.src||'';menu=document.createElement('section');menu.className='order-picture-menu';menu.setAttribute('role','dialog');menu.setAttribute('aria-label',editing?'Edit SKU picture':'Actions');
+  menu.dataset.title=(editing?'Picture · ':'Actions · ')+(stage.dataset.productTitle||stage.dataset.sellerSku||'Order item');
   const heading=document.createElement('header'),title=document.createElement('strong'),dismiss=document.createElement('button');title.textContent=editing?'Edit SKU picture':'Actions';dismiss.type='button';dismiss.textContent='×';dismiss.setAttribute('aria-label','Close menu');dismiss.onclick=()=>close();heading.append(title,dismiss);menu.append(heading);
   if(!editing&&stage.dataset.actionSummary){const summary=document.createElement('p');summary.className='order-action-summary';summary.textContent=stage.dataset.actionSummary;menu.append(summary);}
   const status=document.createElement('p');status.className='order-picture-status';status.setAttribute('role','status');
@@ -48,10 +49,10 @@
    if(sellerLink){const pricing=()=>window.open(sellerLink,'_blank','noopener,noreferrer');actions.push(entry('Change SKU price','Edit this listing in Seller Central ↗','price',pricing));actions.push(entry('Set sale price','Set a promotional price in Seller Central ↗','sale',pricing));}
   }
   function place(){const r=trigger.getBoundingClientRect();menu.style.left=Math.max(12,Math.min(r.left,innerWidth-menu.offsetWidth-12))+'px';menu.style.top=Math.max(12,Math.min(r.bottom+10,innerHeight-menu.offsetHeight-12))+'px';}
-  menu.append(status);document.body.append(menu);place();menu.querySelector('button').focus();
+  menu.append(status);document.body.append(menu);window.prepareActionSuggestionMenu?.(menu);place();menu.querySelector('button').focus();
  }
  document.addEventListener('click',e=>{const trigger=e.target.closest('[data-picture-menu]');if(trigger){open(trigger);return;}if(menu&&!menu.contains(e.target))close(false);});
  document.addEventListener('keydown',e=>{if(!menu)return;if(e.key==='Escape'){e.preventDefault();close();}if(e.key==='Tab'){const buttons=[...menu.querySelectorAll('button:not(:disabled):not([hidden])')],first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
  window.addEventListener('resize',()=>close(false));window.addEventListener('scroll',e=>{if(menu&&!menu.contains(e.target))close(false);},true);
- new MutationObserver(()=>{if(owner&&!owner.isConnected)close(false);init();}).observe(document.querySelector('[data-order-stream]')?.parentElement||document.body,{childList:true,subtree:true});init();
+ new MutationObserver(records=>{if(owner&&!owner.isConnected)close(false);const roots=new Set();for(const record of records)for(const node of record.addedNodes)if(node.nodeType===1&&(node.matches('[data-picture-actions]')||node.querySelector('[data-picture-actions]')))roots.add(node);for(const node of roots)if(node.isConnected)init(node);}).observe(document.querySelector('[data-order-stream]')?.parentElement||document.body,{childList:true,subtree:true});init();
 })();

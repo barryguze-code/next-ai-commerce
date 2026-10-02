@@ -15,7 +15,7 @@ class SellerCentralBrandingTest {
         }
         try(var input=getClass().getResourceAsStream("/static/js/platform-controls.js")){
             assertThat(new String(input.readAllBytes(),StandardCharsets.UTF_8))
-                .contains("asset==='amazon'?'/images/channels/amazon-seller.png'","'amazon-product'");
+                .contains("asset==='amazon'?'/images/channels/amazon-seller.png?v=","'amazon-product'");
         }
         try(var input=getClass().getResourceAsStream("/static/images/channels/amazon-seller.png")){
             assertThat(javax.imageio.ImageIO.read(input).getWidth()).isEqualTo(200);

@@ -20,7 +20,14 @@ public class CollaborationRepository {
     public record Review(UUID id,String subjectType,String subjectKey,String subjectLabel,String marketplace,
             String actionKind,String title,String status,String requester,String assigneeName,String assigneeEmail,
             Instant dueAt,Instant createdAt,Instant updatedAt,Instant closedAt,int messageCount,int privateNoteCount,
-            String participants,String contextSnapshot,String parentUrl,boolean mentionedMe) {}
+            String participants,String contextSnapshot,String parentUrl,boolean mentionedMe,
+            java.time.LocalDate dueDate,String dueTimeZone,UUID storeId) {
+        public Review(UUID id,String subjectType,String subjectKey,String subjectLabel,String marketplace,String actionKind,String title,String status,String requester,String assigneeName,String assigneeEmail,Instant dueAt,Instant createdAt,Instant updatedAt,Instant closedAt,int messageCount,int privateNoteCount,String participants,String contextSnapshot,String parentUrl,boolean mentionedMe){
+            this(id,subjectType,subjectKey,subjectLabel,marketplace,actionKind,title,status,requester,assigneeName,assigneeEmail,dueAt,createdAt,updatedAt,closedAt,messageCount,privateNoteCount,participants,contextSnapshot,parentUrl,mentionedMe,null,null,null);
+        }
+        public boolean overdue(){return "ACTIVE".equals(status)&&dueAt!=null&&!dueAt.isAfter(Instant.now());}
+        public boolean assignedTo(String email){return assigneeEmail!=null&&java.util.Arrays.stream(assigneeEmail.split(",")).anyMatch(e->e.equalsIgnoreCase(email));}
+    }
     public record Attachment(UUID id,String fileName,String contentType,long sizeBytes,Instant createdAt) {}
     public record AttachmentData(String fileName,String contentType,byte[] bytes) {}
     public record AttachmentUpload(String fileName,String contentType,byte[] bytes) {}
@@ -43,7 +50,9 @@ public class CollaborationRepository {
         """.formatted(VIEWER);
     private static final String REVIEW_COLUMNS="""
         review.id,review.subject_type,review.subject_key,review.subject_label,review.marketplace,
-        review.action_kind,review.title,review.status,review.requested_by,assignee.display_name,assignee.email,
+        review.action_kind,review.title,review.status,review.requested_by,
+        coalesce((SELECT string_agg(u.display_name,', ' ORDER BY u.display_name) FROM collaboration_assignments a JOIN app_users u ON u.id=a.user_id WHERE a.tenant_id=review.tenant_id AND a.review_id=review.id),assignee.display_name),
+        coalesce((SELECT string_agg(u.email,',' ORDER BY u.email) FROM collaboration_assignments a JOIN app_users u ON u.id=a.user_id WHERE a.tenant_id=review.tenant_id AND a.review_id=review.id),assignee.email),
         review.due_at,review.created_at,review.updated_at,review.closed_at,
         (SELECT count(*) FROM collaboration_messages visible_count WHERE visible_count.review_id=review.id AND
           (visible_count.message_type='TEAM_CHAT' OR (visible_count.message_type='PRIVATE_NOTE' AND lower(visible_count.author_email)=lower(%s)))),
@@ -60,19 +69,37 @@ public class CollaborationRepository {
         ) participant),review.requested_by),
         review.context_snapshot::text,review.parent_url,
         EXISTS (SELECT 1 FROM collaboration_mentions mine JOIN app_users me ON me.id=mine.mentioned_user_id
-                WHERE mine.review_id=review.id AND mine.notification_kind='MENTION' AND lower(me.email)=lower(%s))
+                WHERE mine.review_id=review.id AND mine.notification_kind='MENTION' AND lower(me.email)=lower(%s)),
+        review.due_date,review.due_time_zone,review.marketplace_connection_id
         """.formatted(VIEWER,VIEWER,VIEWER);
 
     private final JdbcTemplate jdbc;
     public CollaborationRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
 
+    /** Accepted memberships, not the account currently selected in another browser tab. */
+    @Transactional(readOnly=true)
+    public java.util.Set<UUID> huddleTenants(String email){
+        var result=new java.util.LinkedHashSet<UUID>();
+        var tenants=jdbc.query("SELECT id FROM tenants WHERE status='ACTIVE'",(rs,n)->rs.getObject(1,UUID.class));
+        if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM app_users u JOIN platform_administrators p ON p.user_id=u.id AND p.active WHERE lower(u.email)=lower(?) AND u.status='ACTIVE')",Boolean.class,email)))return java.util.Set.copyOf(tenants);
+        for(UUID tenant:tenants){
+            setContext(tenant,email);
+            if(Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM app_users u WHERE lower(u.email)=lower(?) AND u.status='ACTIVE'
+                  AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)
+                    OR EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=? AND m.user_id=u.id
+                      AND m.role IN ('OWNER','ADMIN','OPERATOR','VIEWER'))))
+                """,Boolean.class,email,tenant)))result.add(tenant);
+        }
+        return java.util.Set.copyOf(result);
+    }
+
     @Transactional(readOnly=true)
     public List<Member> members(UUID tenantId){
         setContext(tenantId,null);
         var rows=jdbc.query("""
-            SELECT user_account.id,user_account.display_name,user_account.email FROM tenant_memberships membership
-            JOIN app_users user_account ON user_account.id=membership.user_id
-            WHERE membership.tenant_id=? AND user_account.status='ACTIVE'
+            SELECT user_account.id,user_account.display_name,user_account.email FROM app_users user_account
+            WHERE user_account.status='ACTIVE' AND (EXISTS(SELECT 1 FROM tenant_memberships membership WHERE membership.tenant_id=? AND membership.user_id=user_account.id) OR EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=user_account.id AND p.active))
             ORDER BY lower(user_account.display_name),lower(user_account.email),user_account.id
             """,(rs,row)->new Member(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),null),tenantId);
         var counts=new java.util.HashMap<String,Integer>();rows.forEach(member->counts.merge(baseHandle(member),1,Integer::sum));
@@ -155,7 +182,7 @@ public class CollaborationRepository {
         String sql="WITH requested(key) AS (VALUES "+placeholders+"), kind AS (SELECT ?::text AS value), visible AS ("
             +" SELECT requested.key,review.id,review.status,review.updated_at,"
             +" (review.subject_type=kind.value AND review.subject_key=requested.key) AS origin,"
-            +" (lower(review.requested_by)=lower("+VIEWER+") OR lower(assignee.email)=lower("+VIEWER+") OR EXISTS "
+            +" (lower(review.requested_by)=lower("+VIEWER+") OR EXISTS(SELECT 1 FROM collaboration_assignments a JOIN app_users assigned_user ON assigned_user.id=a.user_id WHERE a.tenant_id=review.tenant_id AND a.review_id=review.id AND lower(assigned_user.email)=lower("+VIEWER+")) OR lower(assignee.email)=lower("+VIEWER+") OR EXISTS "
             +" (SELECT 1 FROM collaboration_mentions mention JOIN app_users mentioned ON mentioned.id=mention.mentioned_user_id"
             +" WHERE mention.review_id=review.id AND lower(mentioned.email)=lower("+VIEWER+"))) AS mine,"
             +" (SELECT count(*) FROM collaboration_messages message WHERE message.review_id=review.id AND "
@@ -202,12 +229,80 @@ public class CollaborationRepository {
               requested_by,created_by,assigned_to,due_at,context_snapshot,parent_url)
             VALUES (?,?,?,?,?,?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?) LIMIT 1),?,?,CAST(? AS jsonb),?) RETURNING id
             """,UUID.class,tenantId,subjectType.toUpperCase(Locale.ROOT),subjectKey,subjectLabel,marketplace,actionKind,title,
-            authorEmail,authorEmail,assigneeId,dueAt,contextSnapshot,parentUrl);
+            authorEmail,authorEmail,assigneeId,dueAt==null?null:java.sql.Timestamp.from(dueAt),contextSnapshot,parentUrl);
         UUID messageId=jdbc.queryForObject("""
             INSERT INTO collaboration_messages(tenant_id,review_id,author_email,sender_id,message_type,body)
             VALUES (?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?) LIMIT 1),?,?) RETURNING id
             """,UUID.class,tenantId,reviewId,authorEmail,authorEmail,type,message.trim());
         saveAttachmentsInternal(tenantId,reviewId,messageId,authorEmail,attachments);return new PostedMessage(reviewId,messageId);
+    }
+
+    @Transactional
+    public PostedMessage createGeneralTask(UUID tenantId,String title,String description,String authorEmail,Set<UUID> people,Instant dueAt){
+        var posted=create(tenantId,"PLATFORM","GENERAL:"+UUID.randomUUID(),title,null,"TASK",title,description,
+            "TEAM_CHAT","{}",null,authorEmail,null,dueAt,List.of());
+        // Create and assign atomically: invalid/cross-account assignees must not leave an orphan task.
+        assign(tenantId,posted.reviewId(),authorEmail,people,true);
+        return posted;
+    }
+
+    @Transactional
+    public PostedMessage createStoreTask(UUID tenantId,UUID storeId,String title,String description,String actor,Set<UUID> people,java.time.LocalDate date,String zone){
+        setContext(tenantId,actor);
+        if(storeId!=null&&!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM marketplace_connections WHERE tenant_id=? AND id=?)",Boolean.class,tenantId,storeId)))throw new IllegalArgumentException("Choose a store from this account.");
+        var posted=createGeneralTask(tenantId,title,description.isBlank()?title:description,actor,people,deadline(date,zone));
+        jdbc.update("UPDATE collaboration_reviews SET marketplace_connection_id=?,due_date=?,due_time_zone=? WHERE tenant_id=? AND id=?",storeId,date==null?null:java.sql.Date.valueOf(date),date==null?null:zone,tenantId,posted.reviewId());
+        return posted;
+    }
+
+    public static Instant deadline(java.time.LocalDate date,String zone){return date==null?null:date.plusDays(1).atStartOfDay(java.time.ZoneId.of(zone)).toInstant();}
+
+    @Transactional
+    public PostedMessage createDatedConversation(UUID tenantId,String subjectType,String subjectKey,String subjectLabel,String marketplace,
+            String actionKind,String title,String message,String messageType,String contextSnapshot,String parentUrl,
+            String actor,UUID assignee,java.time.LocalDate date,String zone,List<AttachmentUpload> attachments){
+        var posted=create(tenantId,subjectType,subjectKey,subjectLabel,marketplace,actionKind,title,message,messageType,contextSnapshot,parentUrl,actor,assignee,deadline(date,zone),attachments);
+        if(date!=null)setDueDate(tenantId,posted.reviewId(),actor,date,zone);
+        return posted;
+    }
+
+    @Transactional
+    public Review setDueDate(UUID tenantId,UUID reviewId,String actor,java.time.LocalDate date,String zone){
+        setContext(tenantId,actor);
+        var current=review(tenantId,reviewId,actor);
+        if(current==null)throw new IllegalArgumentException("This conversation is no longer available.");
+        if(!"ACTIVE".equals(current.status()))throw new IllegalArgumentException("Reopen this conversation before changing its due date.");
+        Instant due=deadline(date,zone);
+        jdbc.update("UPDATE collaboration_reviews SET due_at=?,due_date=?,due_time_zone=?,updated_at=now() WHERE tenant_id=? AND id=?",due==null?null:java.sql.Timestamp.from(due),date==null?null:java.sql.Date.valueOf(date),date==null?null:zone,tenantId,reviewId);
+        return review(tenantId,reviewId,actor);
+    }
+
+    /** Resolve existing artwork in one query, without fetching Amazon or decoding pictures. */
+    @Transactional(readOnly=true)
+    public Map<UUID,String> pictures(UUID tenantId,List<Review> reviews,String actor){
+        if(reviews.isEmpty())return Map.of();setContext(tenantId,actor);
+        String slots=String.join(",",Collections.nCopies(reviews.size(),"?"));
+        Map<UUID,String> result=new LinkedHashMap<>();
+        jdbc.query("""
+            SELECT r.id,coalesce(
+              CASE WHEN uploaded.account_catalog_item_id IS NOT NULL THEN '/app/catalog/products/'||item.id||'/image' END,
+              artwork.image_url,nullif(r.context_snapshot->>'image',''))
+            FROM collaboration_reviews r
+            LEFT JOIN account_catalog_items item ON item.tenant_id=r.tenant_id
+              AND item.id::text=CASE WHEN r.subject_type='INVENTORY' THEN split_part(r.subject_key,'|',1) WHEN r.subject_type='CATALOG' THEN r.subject_key END
+            LEFT JOIN account_catalog_product_images uploaded ON uploaded.tenant_id=item.tenant_id AND uploaded.account_catalog_item_id=item.id
+            LEFT JOIN LATERAL (
+              SELECT listing.image_url FROM amazon_listings listing
+              WHERE listing.tenant_id=r.tenant_id AND listing.image_url IS NOT NULL
+                AND (r.marketplace_connection_id IS NULL OR listing.marketplace_connection_id=r.marketplace_connection_id)
+                AND ((r.subject_type='MARKETPLACE_SKU' AND listing.seller_sku=r.subject_key)
+                  OR (r.subject_type='ORDER' AND EXISTS(SELECT 1 FROM amazon_order_items oi WHERE oi.tenant_id=r.tenant_id AND oi.amazon_order_id=r.subject_key AND oi.marketplace_connection_id=listing.marketplace_connection_id AND oi.seller_sku=listing.seller_sku))
+                  OR (item.id IS NOT NULL AND EXISTS(SELECT 1 FROM marketplace_sku_mappings m JOIN marketplace_sku_mapping_components c ON c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id WHERE m.tenant_id=r.tenant_id AND m.marketplace_connection_id=listing.marketplace_connection_id AND m.marketplace_sku=listing.seller_sku AND m.status='ACTIVE' AND c.account_catalog_item_id=item.id AND (SELECT count(*) FROM marketplace_sku_mapping_components all_c WHERE all_c.tenant_id=m.tenant_id AND all_c.marketplace_sku_mapping_id=m.id)=1)))
+              ORDER BY listing.last_seen_at DESC LIMIT 1
+            ) artwork ON true
+            WHERE r.tenant_id=? AND r.id IN (
+            """+slots+")",rs->{while(rs.next()){String url=rs.getString(2);if(url!=null&&(url.startsWith("/app/")||url.startsWith("https://")))result.put(rs.getObject(1,UUID.class),url);}return null;},join(tenantId,reviews.stream().map(Review::id).toList()));
+        return result;
     }
 
     @Transactional
@@ -295,11 +390,34 @@ public class CollaborationRepository {
         return rows.isEmpty()?null:rows.getFirst();
     }
 
+    @Transactional
+    public PostedMessage assign(UUID tenantId,UUID reviewId,String actor,Set<UUID> requested,boolean replace){
+        setContext(tenantId,actor);
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM app_users u WHERE lower(u.email)=lower(?) AND u.status='ACTIVE' AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active) OR EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.user_id=u.id AND m.tenant_id=? AND m.role IN ('OWNER','ADMIN','OPERATOR'))))",Boolean.class,actor,tenantId)))throw new org.springframework.security.access.AccessDeniedException("Your role cannot assign tasks.");
+        var review=review(tenantId,reviewId,actor);if(review==null||review.messageCount()==review.privateNoteCount())throw new IllegalArgumentException("Choose a team conversation.");
+        jdbc.queryForObject("SELECT id FROM collaboration_reviews WHERE tenant_id=? AND id=? FOR UPDATE",UUID.class,tenantId,reviewId);
+        var team=members(tenantId);var valid=team.stream().map(Member::id).collect(java.util.stream.Collectors.toSet());
+        if(!valid.containsAll(requested))throw new IllegalArgumentException("Choose active teammates from this account.");
+        var before=new LinkedHashSet<>(jdbc.queryForList("SELECT user_id FROM collaboration_assignments WHERE tenant_id=? AND review_id=?",UUID.class,tenantId,reviewId));
+        UUID legacy=jdbc.queryForObject("SELECT assigned_to FROM collaboration_reviews WHERE tenant_id=? AND id=?",UUID.class,tenantId,reviewId);if(legacy!=null)before.add(legacy);
+        var after=new LinkedHashSet<>(replace?requested:before);after.addAll(requested);
+        if(before.equals(after))return null;
+        jdbc.update("DELETE FROM collaboration_assignments WHERE tenant_id=? AND review_id=?",tenantId,reviewId);
+        for(UUID id:after)jdbc.update("INSERT INTO collaboration_assignments(tenant_id,review_id,user_id,assigned_by) VALUES (?,?,?,?)",tenantId,reviewId,id,actor);
+        jdbc.update("UPDATE collaboration_reviews SET assigned_to=NULL,updated_at=now() WHERE tenant_id=? AND id=?",tenantId,reviewId);
+        var actorName=currentMember(tenantId,actor).name();
+        String oldNames=team.stream().filter(m->before.contains(m.id())).map(Member::name).collect(java.util.stream.Collectors.joining(", "));
+        String newNames=team.stream().filter(m->after.contains(m.id())).map(Member::name).collect(java.util.stream.Collectors.joining(", "));
+        UUID message=jdbc.queryForObject("INSERT INTO collaboration_messages(tenant_id,review_id,author_email,sender_id,message_type,body) VALUES (?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?)),'TEAM_CHAT',?) RETURNING id",UUID.class,tenantId,reviewId,actor,actor,actorName+" changed assignment from "+(oldNames.isEmpty()?"unassigned":oldNames)+" to "+(newNames.isEmpty()?"unassigned":newNames)+".");
+        var added=new LinkedHashSet<>(after);added.removeAll(before);queueNotifications(tenantId,reviewId,message,added,"ASSIGNED");
+        return new PostedMessage(reviewId,message);
+    }
+
     @Transactional public int queueMentions(UUID tenantId,UUID reviewId,UUID messageId,Set<UUID> memberIds){return queueNotifications(tenantId,reviewId,messageId,memberIds,"MENTION");}
     @Transactional public int queueNotifications(UUID tenantId,UUID reviewId,UUID messageId,Set<UUID> memberIds,String kind){if(messageId==null||memberIds.isEmpty())return 0;setContext(tenantId,null);int queued=0;for(UUID memberId:memberIds)queued+=jdbc.update("""
         INSERT INTO collaboration_mentions(tenant_id,review_id,message_id,mentioned_user_id,notification_kind)
-        SELECT ?,?,?,membership.user_id,? FROM tenant_memberships membership JOIN app_users member ON member.id=membership.user_id
-        WHERE membership.tenant_id=? AND membership.user_id=? AND member.status='ACTIVE'
+        SELECT ?,?,?,member.id,? FROM app_users member
+        WHERE (EXISTS(SELECT 1 FROM tenant_memberships membership WHERE membership.tenant_id=? AND membership.user_id=member.id) OR EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=member.id AND p.active)) AND member.id=? AND member.status='ACTIVE'
         ON CONFLICT (message_id,mentioned_user_id,notification_kind) DO NOTHING
         """,tenantId,reviewId,messageId,kind,tenantId,memberId);return queued;}
 
@@ -331,7 +449,7 @@ public class CollaborationRepository {
         INSERT INTO collaboration_attachments(tenant_id,review_id,message_id,uploaded_by,uploaded_by_email,file_name,content_type,size_bytes,content)
         VALUES (?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?) LIMIT 1),?,?,?,?,?)
         """,tenantId,reviewId,messageId,authorEmail,authorEmail,upload.fileName(),upload.contentType(),upload.bytes().length,upload.bytes());}
-    private static Review review(java.sql.ResultSet rs)throws java.sql.SQLException{return new Review(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7),rs.getString(8),rs.getString(9),rs.getString(10),rs.getString(11),instant(rs,12),instant(rs,13),instant(rs,14),instant(rs,15),rs.getInt(16),rs.getInt(17),rs.getString(18),rs.getString(19),rs.getString(20),rs.getBoolean(21));}
+    private static Review review(java.sql.ResultSet rs)throws java.sql.SQLException{return new Review(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7),rs.getString(8),rs.getString(9),rs.getString(10),rs.getString(11),instant(rs,12),instant(rs,13),instant(rs,14),instant(rs,15),rs.getInt(16),rs.getInt(17),rs.getString(18),rs.getString(19),rs.getString(20),rs.getBoolean(21),rs.getObject(22,java.time.LocalDate.class),rs.getString(23),rs.getObject(24,UUID.class));}
     private static String normalizeMessageType(String value){return "PRIVATE_NOTE".equalsIgnoreCase(value)?"PRIVATE_NOTE":"TEAM_CHAT";}
     private static Object[] join(Object first,List<?> rest){var values=new ArrayList<>();values.add(first);values.addAll(rest);return values.toArray();}
     private static Object[] append(List<?> values,Object last){var result=new ArrayList<Object>(values);result.add(last);return result.toArray();}

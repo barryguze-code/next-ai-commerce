@@ -1,0 +1,54 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const path=require('node:path');
+const {chromium}=require('playwright');
+test('header presence opens a floating huddle, protects text, pins, minimizes, and sends',async()=>{
+ const browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})});
+ try{
+  const page=await browser.newPage();
+  await page.setContent('<main><header class="workspace-header"><h1>Orders</h1><div class="header-actions"></div></header><button id="work">Work on order</button></main>');
+  await page.addStyleTag({path:path.resolve('src/main/resources/static/css/huddle-floating.css')});
+  await page.addStyleTag({path:path.resolve('src/main/resources/static/css/chat-composer.css')});
+  await page.addScriptTag({path:path.resolve('src/main/resources/static/js/huddle-floating.js')});
+  await page.evaluate(()=>{
+   window.sent=[];window.sender=x=>{sent.push(x);return true;};
+   window.people=[{id:'me',name:'Barry'},{id:'jack',name:'Jack'},{id:'ecem',name:'Ecem'}];
+   LiveHuddleUI.event({type:'WELCOME',self:people[0],canHuddle:true,online:people,huddles:[]},sender);
+  });
+  await page.getByRole('button',{name:'Open huddle and online teammates'}).hover();
+  await page.getByRole('button',{name:'● Jack',exact:true}).click();
+  assert.deepEqual(await page.evaluate(()=>sent[0].participantIds),['jack']);
+  await page.evaluate(()=>{window.room={id:'room',status:'ACTIVE',participants:people.slice(0,2),messages:[{senderId:'jack',senderName:'Jack',body:'<img src=x onerror=alert(1)>'}]};LiveHuddleUI.event({type:'HUDDLE_STARTED',huddle:room},sender);});
+  assert.equal(await page.locator('.floating-huddle').count(),1);
+  assert.equal(await page.locator('.floating-huddle-messages img').count(),0);
+  assert.match(await page.locator('.floating-huddle-messages').innerText(),/<img/);
+  await page.getByRole('button',{name:'Pin',exact:true}).click();
+  await page.locator('#work').click();assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).isVisible(),true);
+  await page.getByRole('textbox',{name:'Huddle message'}).fill('Hello Jack');
+  await page.getByRole('button',{name:'Send',exact:true}).click();
+  assert.equal(await page.evaluate(()=>sent.at(-1).body),'Hello Jack');
+  await page.getByRole('button',{name:'Unpin chat',exact:true}).click();await page.locator('#work').click();
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).isVisible(),true,'Working elsewhere does not hide incoming chat');
+  await page.getByRole('button',{name:'Minimize chat',exact:true}).click();
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).isVisible(),false);
+  await page.evaluate(()=>LiveHuddleUI.event({type:'ROOM_PEOPLE',huddleId:'room',online:people},sender));
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).isVisible(),false,'Presence updates do not reopen minimized windows');
+  await page.evaluate(()=>LiveHuddleUI.open(room));
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).getAttribute('rows'),'1');
+  await page.getByRole('button',{name:'Pin chat · stay minimized on new messages',exact:true}).click();
+  await page.getByRole('button',{name:'Minimize chat',exact:true}).click();
+  await page.evaluate(()=>{room={...room,messages:[...room.messages,{senderId:'jack',senderName:'Jack',body:'Unread check'}]};LiveHuddleUI.event({type:'HUDDLE_UPDATED',huddle:room},sender);});
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).isVisible(),false);
+  assert.equal(await page.locator('.huddle-unread').innerText(),'1');
+  const head=await page.locator('.floating-huddle header').boundingBox();
+  await page.mouse.move(head.x+40,head.y+15);await page.mouse.down();await page.mouse.move(head.x-100,head.y-100);await page.mouse.up();
+  assert.equal(await page.locator('.floating-huddle').evaluate(el=>el.style.position),'fixed');
+  await page.getByRole('button',{name:'Restore chat',exact:true}).click();
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).evaluate(el=>el===document.activeElement),true);
+  await page.getByRole('button',{name:'Close huddle',exact:true}).click();
+  assert.equal(await page.getByRole('button',{name:'Save as a task',exact:true}).isVisible(),true);
+  await page.getByRole('button',{name:'Keep chatting',exact:true}).click();
+  await page.evaluate(()=>LiveHuddleUI.event({type:'OFFLINE'},sender));
+  assert.equal(await page.getByRole('button',{name:'Send',exact:true}).isDisabled(),true);
+ }finally{await browser.close();}
+});

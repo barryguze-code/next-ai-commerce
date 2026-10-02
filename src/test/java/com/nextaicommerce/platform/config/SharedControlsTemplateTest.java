@@ -8,8 +8,10 @@ import org.junit.jupiter.api.Test;
 class SharedControlsTemplateTest {
     private String read(String path)throws Exception{return Files.readString(Path.of("src/main/resources/"+path));}
     @Test void inventoryDrawerUsesSharedLinksAndInlineLocationCreation()throws Exception{
-        assertThat(read("templates/inventory.html")).contains("location-add-button","Add a storage location","window.loadInventoryMovements(row,\"item\")")
+        assertThat(read("templates/inventory.html")).contains("fragments/inventory-history-panel :: panel","/js/inventory-history-panel.js");
+        assertThat(read("templates/fragments/inventory-history-panel.html")).contains("location-add-button","Add a storage location")
             .doesNotContain("Open full ledger","location-manage-link");
+        assertThat(read("static/js/inventory-history-panel.js")).contains("window.loadInventoryMovements(row,\"item\")");
         assertThat(read("static/js/inventory-related-skus.js")).contains("data-marketplace-shortcuts","AbortController","Load more movements","Try again")
             .doesNotContain("Manage SKU</a>","The full ledger remains available");
     }

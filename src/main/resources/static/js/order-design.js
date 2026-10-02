@@ -4,12 +4,13 @@
  function statusIcon(name){const frame=document.createElement('span');frame.className='order-status-art';frame.dataset.asset=name;frame.setAttribute('aria-hidden','true');frame.append(icon(name));return frame;}
  function filterButton(value){const b=document.createElement('button');b.type='button';b.className='order-identifier-lock';const active=new URL(location.href).searchParams.get('q')===value;b.setAttribute('aria-pressed',String(active));b.setAttribute('aria-label',(active?'Clear filter for ':'Filter orders by ')+value);b.title=active?'Filter locked — click to clear':'Not locked — click to filter';b.append(icon(active?'06-locked':'05-unlocked'));b.onclick=()=>{const url=new URL(location.href);if(active)url.searchParams.delete('q');else url.searchParams.set('q',value);url.searchParams.delete('page');url.searchParams.delete('goToPage');location.assign(url);};return b;}
  function copyButton(value){const b=document.createElement('button');b.type='button';b.dataset.orderCopy=value;b.textContent=value;b.className='order-copy-value';b.setAttribute('aria-label','Copy '+value);return b;}
- function init(){
-  document.querySelectorAll('.orders-workspace .order-summary strong:not([data-currency-ready])').forEach(el=>{
+ function init(root=document){
+  const find=selector=>[...(root.matches?.(selector)?[root]:[]),...root.querySelectorAll(selector)];
+  find('.orders-workspace .order-summary strong:not([data-currency-ready])').forEach(el=>{
    el.dataset.currencyReady='true';
    el.textContent=el.textContent.replace(/\b(USD|CAD|AUD|EUR|GBP|JPY|MXN)\s+([\d,]+\.\d{2})/g,(_,currency,amount)=>new Intl.NumberFormat('en-US',{style:'currency',currency}).format(Number(amount.replaceAll(',',''))));
   });
-  document.querySelectorAll('.order-item').forEach(row=>{
+  find('.order-item').forEach(row=>{
    const stage=row.querySelector('[data-picture-actions]'),order=row.closest('.order-row');
    if(stage&&!row.dataset.alertsReady){
     row.dataset.alertsReady='true';const reasons=[];
@@ -21,7 +22,7 @@
    }
    const product=row.querySelector('.item-product-copy');
    if(product&&!product.dataset.designReady){product.dataset.designReady='true';
-    const title=product.querySelector(':scope > strong');if(title){title.dataset.orderCopy=title.textContent;title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label','Copy product title: '+title.textContent);}
+    // Shared product-detail handling owns the title. Identifiers retain copy/lock controls.
     const sku=product.querySelector('.order-sku-copy');if(sku){const line=document.createElement('div');line.className='order-identifier-line';sku.before(line);line.append(sku,filterButton(sku.dataset.copySku));const link=row.querySelector('.order-marketplace-links a');if(link){const a=link.cloneNode(true);a.className='order-identifier-market';line.prepend(a);}}
    }
    row.querySelectorAll('.order-reference-options > button:not([data-lock-ready])').forEach(button=>{
@@ -75,8 +76,8 @@
     }
    }
   });
-  for(const [selector,name] of [['.order-picture-edit','edit'],['.order-picture-more','actions-ai-human']])document.querySelectorAll(selector+':not([data-library-icon])').forEach(button=>{button.dataset.libraryIcon='true';button.querySelector('svg')?.remove();const stage=button.closest('.order-item')?.querySelector('[data-picture-actions]'),alert=button.matches('.order-picture-more')&&stage?.dataset.actionRequired==='true';button.prepend(icon(alert?'actions-ai-human-alert':name));if(button.matches('.order-picture-more')){button.setAttribute('aria-label','Actions');button.title=alert?'Actions — '+stage.dataset.actionSummary:'Actions';}});
-  document.querySelectorAll('.orders-workspace .order-list[data-table-widget-ready]').forEach(root=>{root.dataset.orderDesignReady='true';});
+  for(const [selector,name] of [['.order-picture-edit','edit'],['.order-picture-more','actions-ai-human']])find(selector+':not([data-library-icon])').forEach(button=>{button.dataset.libraryIcon='true';button.querySelector('svg')?.remove();const stage=button.closest('.order-item')?.querySelector('[data-picture-actions]'),alert=button.matches('.order-picture-more')&&stage?.dataset.actionRequired==='true';button.prepend(icon(alert?'actions-ai-human-alert':name));if(button.matches('.order-picture-more')){button.setAttribute('aria-label','Actions');button.title=alert?'Actions — '+stage.dataset.actionSummary:'Actions';}});
+  find('.orders-workspace .order-list[data-table-widget-ready]').forEach(root=>{root.dataset.orderDesignReady='true';});
  }
  const tip=document.createElement('div');tip.className='order-design-tooltip';tip.setAttribute('role','tooltip');tip.id='order-design-tooltip';tip.hidden=true;document.body.append(tip);
  function show(e){const target=e.target.closest('[data-order-copy]');if(!target)return;tip.textContent=target.dataset.orderCopy+'  ⧉';tip.hidden=false;target.setAttribute('aria-describedby',tip.id);const r=target.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(r.left,innerWidth-tip.offsetWidth-8))+'px';tip.style.top=Math.max(8,Math.min(r.bottom+7,innerHeight-tip.offsetHeight-8))+'px';}
@@ -86,5 +87,13 @@
  });
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){tip.hidden=true;document.querySelectorAll('.order-compact-actions[open]').forEach(d=>{d.open=false;d.querySelector('summary').focus();});}if((e.key==='Enter'||e.key===' ')&&e.target.matches('strong[data-order-copy]')){e.preventDefault();e.target.click();}});
  window.addEventListener('scroll',()=>tip.hidden=true,true);
- new MutationObserver(init).observe(document.querySelector('.orders-workspace')||document.body,{childList:true,subtree:true});init();
+ const pending=new Set();let scheduled=false;
+ new MutationObserver(records=>{
+  for(const record of records)for(const added of record.addedNodes){
+   if(added.nodeType!==1)continue;
+   const scope=added.closest('.order-item,.order-summary');
+   if(scope)pending.add(scope);else if(added.matches('.order-item,.order-summary,.order-list')||added.querySelector('.order-item,.order-summary'))pending.add(added);
+  }
+  if(!pending.size||scheduled)return;scheduled=true;queueMicrotask(()=>{scheduled=false;for(const root of pending)if(root.isConnected)init(root);pending.clear()});
+ }).observe(document.querySelector('.orders-workspace')||document.body,{childList:true,subtree:true});init();
 })();

@@ -21,7 +21,7 @@ public class InventoryPublicationRepository {
   var dirty=jdbc.query("DELETE FROM inventory_publication_dirty WHERE tenant_id=? RETURNING item_id",(r,n)->r.getObject(1,UUID.class).toString(),tenant);
   if(dirty.isEmpty())return 0;
   String dirtyIds="{"+String.join(",",dirty)+"}";
-  // Item-only events expand through the reverse mapping; configuration changes and periodic sweeps cover all mappings.
+  // Item-only events expand through the reverse mapping; full sweeps include never-mapped FBM listings.
   int count=jdbc.update("""
    WITH dirty_items AS (SELECT unnest(?::uuid[]) item_id)
    INSERT INTO inventory_publications(tenant_id,connection_id,marketplace_id,seller_sku,desired_quantity)
@@ -34,7 +34,6 @@ public class InventoryPublicationRepository {
    """+LOCAL_MAPPING_AVAILABILITY+"""
    WHERE listing.tenant_id=? AND connection.channel='AMAZON' AND connection.status='ACTIVE'
      AND upper(coalesce(listing.fulfillment_channel,'')) IN ('MFN','FBM','DEFAULT','MERCHANT')
-     AND (mapping.id IS NOT NULL OR EXISTS(SELECT 1 FROM inventory_publications old WHERE old.tenant_id=listing.tenant_id AND old.connection_id=listing.marketplace_connection_id AND old.marketplace_id=listing.marketplace_id AND old.seller_sku=listing.seller_sku))
      AND EXISTS(SELECT 1 FROM dirty_items dirty WHERE
        (dirty.item_id='00000000-0000-0000-0000-000000000000' OR dirty.item_id=mapping.account_catalog_item_id OR EXISTS(
          SELECT 1 FROM marketplace_sku_mapping_components component WHERE component.tenant_id=mapping.tenant_id AND component.marketplace_sku_mapping_id=mapping.id AND component.account_catalog_item_id=dirty.item_id)))

@@ -17,6 +17,7 @@
    if(token)data.append('_csrf',token.value);
    try{const response=await fetch(url+(sync?'/amazon':product?'/upload':''),{method:'POST',body:data,headers});const result=await response.json();if(!response.ok)throw Error(result.error||'Picture could not be saved.');
     document.querySelectorAll('[data-standard-picture-url]').forEach(tile=>{if(tile.dataset.standardPictureUrl!==url)return;let img=tile.querySelector('img');if(!img){img=node('img');img.alt='';tile.prepend(img)}img.hidden=false;img.src=result.imageUrl+(result.imageUrl.includes('?')?'&':'?')+'v='+Date.now();tile.querySelectorAll('b').forEach(b=>b.hidden=true)});
+    if(url.includes('/record-pictures/USER/'))window.dispatchEvent(new Event('user-profile-picture-updated'));
     close();
    }catch(e){status.textContent=e.message;menu.querySelectorAll('.order-picture-entry').forEach(b=>b.disabled=false)}
   };
@@ -45,11 +46,11 @@
    row.querySelectorAll('td').forEach(cell=>{
     if(/cost|quantity|available|reserved|on-hand|freight|discount|expected|received|products/.test(cell.dataset.column||'')){cell.classList.add('standard-number');cell.querySelectorAll('strong').forEach(el=>el.classList.add('standard-number'))}
     if(cell.dataset.column==='record-context')return;
-    const walker=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode())){if(text.parentElement.closest('input,select,button,script,style'))continue;text.nodeValue=text.nodeValue.replace(/\bUSD\s+(?=[\d-])/g,'$').replace(/^USD$/,'$')}
+    const walker=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode())){if(text.parentElement.closest('input,select,button,script,style'))continue;const value=text.nodeValue.replace(/\bUSD\s+(?=[\d-])/g,'$').replace(/^USD$/,'$');if(value!==text.nodeValue)text.nodeValue=value}
    });
   });
   document.querySelectorAll('.table-action-icon:not([data-art-ready])').forEach(icon=>{icon.dataset.artReady='true';icon.replaceChildren(window.NextAiIcons.create(artwork(icon.parentElement.textContent)));});
-  document.querySelectorAll('#inventory-action-menu button>span,#inventory-action-menu a>span').forEach(icon=>{if(icon.dataset.artReady)return;icon.dataset.artReady='true';icon.replaceChildren(window.NextAiIcons.create(artwork(icon.parentElement.textContent)))});
+  document.querySelectorAll('#inventory-action-menu button:not([data-suggest-action])>span,#inventory-action-menu a>span').forEach(icon=>{if(icon.dataset.artReady)return;icon.dataset.artReady='true';icon.replaceChildren(window.NextAiIcons.create(artwork(icon.parentElement.textContent)))});
  }
  window.NextAiStandardTables={enhance,editPicture:(trigger,holder,url)=>imageMenu(trigger,holder,url,true)};
  document.addEventListener('DOMContentLoaded',()=>requestAnimationFrame(enhance));

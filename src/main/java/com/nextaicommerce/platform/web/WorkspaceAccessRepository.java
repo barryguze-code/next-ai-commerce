@@ -43,7 +43,12 @@ public class WorkspaceAccessRepository {
     }
     public record SyncJobView(UUID connectionId, int sequence, String jobType, String label,
         String status, long recordsProcessed, String detail) {}
-    public record MemberView(UUID id, String displayName, String email, String role, String status, int stores) {}
+    public record MemberView(UUID id, String displayName, String email, String role, String status, int stores,
+            List<UUID> storeIds, boolean protectedMember) {
+        public MemberView(UUID id, String displayName, String email, String role, String status, int stores) {
+            this(id, displayName, email, role, status, stores, List.of(), "OWNER".equals(role));
+        }
+    }
     public record InvitationView(UUID id, String email, String role, String status, int stores,
         Instant sentAt, Instant expiresAt, String invitedBy) {
         private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a")
@@ -155,7 +160,11 @@ public class WorkspaceAccessRepository {
             SELECT m.role FROM tenant_memberships m JOIN app_users u ON u.id=m.user_id
             WHERE m.tenant_id=? AND lower(u.email)=lower(?)
             """, rs -> rs.next() ? rs.getString(1) : "", account.id(), email);
-        if ("OWNER".equals(role) || "ADMIN".equals(role)) return all;
+        boolean restricted = Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT coalesce(bool_or(m.stores_restricted),false) FROM tenant_memberships m
+            JOIN app_users u ON u.id=m.user_id WHERE m.tenant_id=? AND lower(u.email)=lower(?)
+            """, Boolean.class, account.id(), email));
+        if ("OWNER".equals(role) || ("ADMIN".equals(role) && !restricted)) return all;
         Set<UUID> allowed = Set.copyOf(jdbc.query("""
             SELECT msa.marketplace_connection_id FROM membership_store_access msa
             JOIN app_users u ON u.id=msa.user_id
@@ -403,17 +412,27 @@ public class WorkspaceAccessRepository {
     @Transactional(readOnly = true)
     public List<MemberView> listMembers(UUID tenantId) {
         setTenant(tenantId);
+        var grants = new java.util.HashMap<UUID, List<UUID>>();
+        jdbc.query("""
+            SELECT m.user_id,c.id FROM tenant_memberships m
+            JOIN marketplace_connections c ON c.tenant_id=m.tenant_id AND c.status<>'DISABLED'
+            WHERE m.tenant_id=? AND (m.role='OWNER' OR (m.role='ADMIN' AND NOT m.stores_restricted)
+              OR EXISTS(SELECT 1 FROM membership_store_access a WHERE a.tenant_id=m.tenant_id
+                AND a.user_id=m.user_id AND a.marketplace_connection_id=c.id))
+            """, rs -> { grants.computeIfAbsent(rs.getObject(1,UUID.class), k -> new ArrayList<>()).add(rs.getObject(2,UUID.class)); }, tenantId);
+        var allStores=jdbc.queryForList("SELECT id FROM marketplace_connections WHERE tenant_id=? AND status<>'DISABLED'",UUID.class,tenantId);
         return jdbc.query("""
-            SELECT u.id, u.display_name, u.email, m.role, u.status,
-                   (SELECT count(*) FROM membership_store_access msa
-                    WHERE msa.tenant_id = m.tenant_id AND msa.user_id = m.user_id) AS stores
-            FROM tenant_memberships m
-            JOIN app_users u ON u.id = m.user_id
-            WHERE m.tenant_id = ?
+            SELECT u.id, u.display_name, u.email, CASE WHEN EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active) THEN 'SUPER ADMIN' ELSE m.role END AS role, u.status,
+                   EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active) AS platform_admin
+            FROM app_users u
+            LEFT JOIN tenant_memberships m ON u.id = m.user_id AND m.tenant_id=?
+            WHERE m.user_id IS NOT NULL OR (u.status='ACTIVE' AND EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active))
             ORDER BY lower(u.display_name), lower(u.email)
             """, (rs, row) -> new MemberView(
                 rs.getObject("id", UUID.class), rs.getString("display_name"), rs.getString("email"),
-                rs.getString("role"), rs.getString("status"), rs.getInt("stores")), tenantId);
+                rs.getString("role"), rs.getString("status"), (rs.getBoolean("platform_admin")?allStores:grants.getOrDefault(rs.getObject("id",UUID.class),List.of())).size(),
+                List.copyOf(rs.getBoolean("platform_admin")?allStores:grants.getOrDefault(rs.getObject("id",UUID.class),List.of())),
+                "OWNER".equals(rs.getString("role")) || rs.getBoolean("platform_admin")), tenantId);
     }
 
     @Transactional(readOnly = true)

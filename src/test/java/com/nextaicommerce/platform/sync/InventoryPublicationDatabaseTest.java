@@ -30,6 +30,69 @@ class InventoryPublicationDatabaseTest {
   jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,1)",tenant,bundle,second);
   mapping("FBA",item,1);jdbc.update("UPDATE amazon_listings SET fulfillment_channel='AFN' WHERE tenant_id=? AND seller_sku='FBA'",tenant);
  });}
+ @Test void manualStockUsesDefaultCatalogueCostWithoutReplacingRecordedCosts(){tx.executeWithoutResult(s->{
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);UUID vendor=UUID.randomUUID();
+  jdbc.update("INSERT INTO vendors(id,tenant_id,name) VALUES (?,?,'Cost test')",vendor,tenant);
+  jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,list_cost,discount_rate,currency,is_default) VALUES (?,?,?,10,20,'USD',true)",tenant,vendor,item);
+  assertThat(inventory.inventory(tenant,List.of(item)).getFirst().unitCost()).isEqualByComparingTo("8");
+  var expiry=java.time.LocalDate.now().plusDays(60);
+  inventory.receiveUninvoicedItem(tenant,user+"@example.test",item,new java.math.BigDecimal("2"),expiry,null,"Received without invoice");
+  assertThat(jdbc.queryForObject("SELECT unit_cost FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND entry_type='RECEIPT'",java.math.BigDecimal.class,tenant,item)).isEqualByComparingTo("8");
+  inventory.adjustInventory(tenant,user+"@example.test",item,expiry,null,java.math.BigDecimal.ONE,"COUNT_CORRECTION","Extra unit");
+  assertThat(inventory.inventory(tenant,List.of(item)).stream().filter(p->expiry.equals(p.expirationDate())).findFirst().orElseThrow().unitCost()).isEqualByComparingTo("8");
+  jdbc.update("UPDATE inventory_ledger_entries SET unit_cost=3,currency='USD' WHERE tenant_id=? AND account_catalog_item_id=?",tenant,item);
+  assertThat(inventory.inventory(tenant,List.of(item))).allSatisfy(p->assertThat(p.unitCost()).isEqualByComparingTo("3"));
+ });}
+ @Test void disposalRemovesPhysicalStockAndPreservesLedger(){tx.executeWithoutResult(s->{
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);
+  var expiry=java.time.LocalDate.now().plusDays(40);
+  UUID location=jdbc.queryForObject("SELECT location_id FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? LIMIT 1",UUID.class,tenant,item);
+  inventory.applyDisposition(tenant,user+"@example.test",item,expiry,location,"REMOVE","DISPOSE",null);
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",java.math.BigDecimal.class,tenant,item)).isEqualByComparingTo("0");
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND notes LIKE '%Disposed%'",Integer.class,tenant,item)).isEqualTo(1);
+ });}
+ @Test void clearPlanWithNoLocationUsesDefaultAndPreservesStock(){tx.executeWithoutResult(s->{
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);var expiry=java.time.LocalDate.now().plusDays(40);
+  UUID location=jdbc.queryForObject("SELECT location_id FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? LIMIT 1",UUID.class,tenant,item);
+  jdbc.update("INSERT INTO account_catalog_item_locations(tenant_id,account_catalog_item_id,location_id,is_default) VALUES (?,?,?,true) ON CONFLICT (tenant_id,account_catalog_item_id,location_id) DO UPDATE SET is_default=true",tenant,item,location);
+  inventory.applyDisposition(tenant,user+"@example.test",item,expiry,location,"HOLD",null,null);
+  inventory.applyDisposition(tenant,user+"@example.test",item,expiry,null,"CLEAR",null,null);
+  assertThat(inventory.savedDisposition(tenant,item,expiry)).isEmpty();
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",java.math.BigDecimal.class,tenant,item)).isEqualByComparingTo("12");
+ });}
+ @Test void returnStaysUntilCompletedAndAuditsNotes(){tx.executeWithoutResult(s->{
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);
+  var expiry=java.time.LocalDate.now().plusDays(40);
+  UUID location=jdbc.queryForObject("SELECT location_id FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? LIMIT 1",UUID.class,tenant,item);
+  inventory.applyDisposition(tenant,user+"@example.test",item,expiry,location,"REMOVE","RETURN_TO_VENDOR","Vendor pickup Friday");
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",java.math.BigDecimal.class,tenant,item)).isEqualByComparingTo("12");
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND notes LIKE '%Vendor pickup Friday%'",Integer.class,tenant,item)).isEqualTo(1);
+  inventory.applyDisposition(tenant,user+"@example.test",item,expiry,location,"COMPLETE_RETURN",null,"Pickup done");
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",java.math.BigDecimal.class,tenant,item)).isEqualByComparingTo("0");
+ });}
+ @Test void neverMappedMerchantListingsGetZeroButFbaAndUnknownAreUntouched(){tx.executeWithoutResult(s->{
+  for(String channel:List.of("MFN","FBM","DEFAULT","MERCHANT","AFN","UNKNOWN"))
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_channel,listing_status) VALUES (?,?,'ATVPDKIKX0DER',?,?,'Active')",tenant,connection,"UNMAPPED-"+channel,channel);
+  repo.plan(tenant);
+  for(String channel:List.of("MFN","FBM","DEFAULT","MERCHANT"))assertThat(quantity("UNMAPPED-"+channel)).isZero();
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_publications WHERE tenant_id=? AND seller_sku IN ('UNMAPPED-AFN','UNMAPPED-UNKNOWN')",Integer.class,tenant)).isZero();
+ });}
+ @Test void huddlePresenceUsesAcceptedMembershipsAndGlobalAdministrators(){tx.executeWithoutResult(s->{
+  var collaboration=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc);
+  String email=user+"@example.test";UUID other=UUID.randomUUID();
+  jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,'Other huddle account')",other,other.toString());
+  assertThat(collaboration.huddleTenants(email)).isEmpty();
+  repo.scope(tenant);jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'OPERATOR')",tenant,user);
+  assertThat(collaboration.huddleTenants(email)).containsExactly(tenant);
+  repo.scope(other);jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'ADMIN')",other,user);
+  assertThat(collaboration.huddleTenants(email)).containsExactlyInAnyOrder(tenant,other);
+  jdbc.update("DELETE FROM tenant_memberships WHERE tenant_id=? AND user_id=?",other,user);
+  assertThat(collaboration.huddleTenants(email)).containsExactly(tenant);
+  jdbc.update("INSERT INTO platform_administrators(user_id) VALUES (?)",user);
+  assertThat(collaboration.huddleTenants(email)).contains(tenant,other);
+  jdbc.update("UPDATE app_users SET status='DISABLED' WHERE id=?",user);
+  assertThat(collaboration.huddleTenants(email)).isEmpty();
+ });}
  @Test void newConnectionsInitializeInventoryBoundaryWithoutActivation(){tx.executeWithoutResult(s->{
   repo.scope(tenant);
   var access=new com.nextaicommerce.platform.web.WorkspaceAccessRepository(jdbc);

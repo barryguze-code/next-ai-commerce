@@ -1,7 +1,7 @@
 (()=>{
   const root=document.querySelector('.shipping-workspace');if(!root)return;
   const csrf=document.getElementById('shipping-desk-csrf'),dialog=document.querySelector('[data-batch-dialog]');
-  let workspace=null,currentBatch=null,poll=null,labelThreads={};
+  let workspace=null,currentBatch=null,poll=null,labelThreads={},candidateSignature='';
   const $=(selector,scope=document)=>scope.querySelector(selector),$$=(selector,scope=document)=>[...scope.querySelectorAll(selector)];
   const headers=(json=false)=>{const value={Accept:'application/json'};if(json)value['Content-Type']='application/json';if(csrf)value[csrf.dataset.header||'X-CSRF-TOKEN']=csrf.value;return value;};
   async function request(url,options={}){const response=await fetch(url,{cache:'no-store',...options,headers:{...headers(options.body?.startsWith?.('{')),...options.headers}});const type=response.headers.get('content-type')||'';const data=type.includes('json')?await response.json():await response.text();if(!response.ok)throw new Error(data?.message||'The shipping request could not be completed.');return data;}
@@ -18,13 +18,36 @@
   }
   function renderCandidates(){
     const list=$('[data-candidates]'),ordered=[...workspace.candidates].sort((a,b)=>(Number(b.expedited)-Number(a.expedited))||String(a.primarySku||'').localeCompare(String(b.primarySku||'')));
+    $('[data-address-warning]').hidden=workspace.hasDefaultAddress;
+    const signature=JSON.stringify(ordered);
+    // Background batch polling must not rebuild unchanged rows or clear selections.
+    if(signature===candidateSignature){updateSelection();return;}candidateSignature=signature;
+    const selected=new Set($$('[data-order-select]:checked').map(input=>input.value));
     list.innerHTML='';$('[data-address-warning]').hidden=workspace.hasDefaultAddress;
     if(!ordered.length){list.innerHTML='<div class="desk-empty">No package-ready open orders. Save a package and weight from an order’s Buy Shipping drawer first.</div>';updateSelection();return;}
     for(const item of ordered){const row=document.createElement('div');row.className='candidate-row';row.innerHTML=`<label><input type="checkbox" data-order-select></label><div class="candidate-product"><span class="priority-badge${item.expedited?' expedited':''}">${item.expedited?'Expedited':'Standard'}</span><div><strong></strong><code></code></div></div><div class="candidate-order"><strong></strong><small></small></div><div class="candidate-package"><strong></strong><small></small></div><div class="customer-paid${Number(item.customerShipping)>0?' yes':''}"></div><a>Edit package</a>`;
       $('[data-order-select]',row).value=item.orderId;$('.candidate-product strong',row).textContent=item.primaryTitle||item.primarySku;$('.candidate-product code',row).textContent=item.primarySku||'No SKU';
       $('.candidate-order strong',row).textContent=item.orderId;$('.candidate-order small',row).textContent=`Ship by ${date(item.latestShip)} · ${item.serviceLevel||'Standard'}`;
       $('.candidate-package strong',row).textContent=item.profile.name;$('.candidate-package small',row).textContent=`${item.profile.length} × ${item.profile.width} × ${item.profile.height} ${item.profile.dimensionUnit} · ${item.profile.weight} ${item.profile.weightUnit} · ${item.profile.temperatureClass.toLowerCase()}`;
-      $('.customer-paid',row).textContent=money(item.customerShipping,item.currency);$('a',row).href=`/app/orders?q=${encodeURIComponent(item.orderId)}`;list.append(row);
+      $('.customer-paid',row).textContent=money(item.customerShipping,item.currency);$('a',row).href=`/app/orders?q=${encodeURIComponent(item.orderId)}`;
+      $('[data-order-select]',row).checked=selected.has(item.orderId);
+      const record=document.createElement('div');record.className='shipping-record';record.dataset.column='record-context';
+      const visual=document.createElement('span');visual.className='shipping-record-visual';visual.append(window.NextAiIcons.create('shipped'));visual.title='Package-ready order';
+      const rail=document.createElement('div');rail.className='shipping-record-rail';
+      const chat=document.createElement('button');chat.type='button';chat.className='collaboration-row-button';
+      Object.assign(chat.dataset,{entityType:'ORDER',entityId:item.orderId,title:'Amazon order '+item.orderId,identifier:item.orderId,parentUrl:'/app/orders?q='+encodeURIComponent(item.orderId),marketplace:'Amazon',canCollaborate:root.dataset.canCollaborate});
+      window.prepareRecordCollaboration?.(chat);chat.onclick=()=>window.openRecordCollaboration(chat);
+      const actions=document.createElement('button');actions.type='button';actions.className='table-action-trigger';actions.setAttribute('aria-label','Actions for order '+item.orderId);actions.title='Actions';actions.append(window.NextAiIcons.create('actions'));
+      actions.onclick=()=>{
+        document.querySelector('.shipping-record-menu')?.remove();
+        const menu=document.createElement('div');menu.className='shipping-record-menu';menu.setAttribute('popover','auto');menu.dataset.actionSuggestionMenu='';menu.dataset.title='Amazon order '+item.orderId;
+        const heading=document.createElement('strong');heading.textContent='Order actions';const link=document.createElement('a');link.className='secondary-button';link.href='/app/orders?q='+encodeURIComponent(item.orderId);link.textContent='Review order & edit package';menu.append(heading,link);document.body.append(menu);menu.showPopover();
+        const bounds=actions.getBoundingClientRect();menu.style.left=Math.max(12,Math.min(bounds.left,innerWidth-320))+'px';menu.style.top=Math.max(12,Math.min(bounds.bottom+8,innerHeight-200))+'px';
+        menu.addEventListener('toggle',event=>{if(event.newState==='closed')menu.remove()});
+      };
+      rail.append(chat,actions);record.append(visual,rail);row.prepend(record);
+      ['record-context','select','product','order','package','shipping','action'].forEach((key,index)=>row.children[index].dataset.column=key);
+      list.append(row);
     }
     $$('[data-order-select]').forEach(input=>input.addEventListener('change',updateSelection));updateSelection();
   }

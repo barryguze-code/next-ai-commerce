@@ -25,7 +25,7 @@
   });
   document.querySelectorAll('.inventory-row').forEach(row=>{
     if(row.querySelector('[data-context-action]'))return;
-    const holder=row.querySelector('.inventory-stage-actions');if(!holder)return;
+    const holder=row.querySelector('.table-overview-rail,.inventory-stage-actions');if(!holder)return;
     holder.querySelector('.action-unavailable')?.remove();
     const button=menuFor({...row.dataset});button.dataset.contextAction='';holder.append(button);
   });
@@ -49,9 +49,18 @@
           const cell=document.createElement('td'),stage=document.createElement('div');stage.className='stock-zero-result';cell.append(stage);row.append(cell);
           if(product.imageUrl){const image=document.createElement('img');image.src=product.imageUrl;image.alt='';image.onerror=()=>image.hidden=true;stage.append(image)}
           const copy=document.createElement('div'),name=document.createElement('strong'),detail=document.createElement('small');name.textContent=product.name;name.className='inventory-product-detail-link';name.tabIndex=0;name.setAttribute('role','button');name.setAttribute('aria-label','Open inventory details for '+product.name);const openHistory=event=>{event.preventDefault();event.stopPropagation();window.openInventoryHistory(row)};name.addEventListener('click',openHistory);name.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){openHistory(event)}});detail.textContent=[product.vendorItemCode||product.accountSku,'No inventory recorded'].filter(Boolean).join(' · ');copy.append(name,detail);stage.append(copy);
-          stage.prepend(menuFor({item:product.id}));
-          ['—','0 each','0 each','0 each','—','No stock','Not valued'].forEach(value=>{const td=document.createElement('td');td.textContent=value;row.append(td)});
-          [...table.querySelectorAll('thead th')].forEach((heading,i)=>{const td=row.cells[i];if(td){td.dataset.column=heading.dataset.column||'';td.style.display=heading.style.display;td.style.order=heading.style.order}});
+          // The shared table has already inserted Overview. Keep product copy in Product,
+          // not in that narrow image/action column, and retain the original data-column order.
+          const overview=document.createElement('td'),layout=document.createElement('div'),picture=document.createElement('span'),rail=document.createElement('div');
+          overview.dataset.column='record-context';overview.className='table-context-cell table-overview-cell';layout.className='table-overview-layout';picture.className='table-overview-picture';rail.className='table-overview-rail';
+          const image=stage.querySelector('img');if(image)picture.append(image);rail.append(menuFor({item:product.id}));layout.append(picture,rail);overview.append(layout);
+          const cells=new Map([['record-context',overview],['product',cell]]);
+          [['location','—'],['on-hand','0 each'],['reserved','0 each'],['physical-available','0 each'],['expiration','—'],['shelf-life','No stock'],['unit-cost','Not valued']].forEach(([key,value])=>{const td=document.createElement('td');td.textContent=value;cells.set(key,td)});
+          // Match IDs, not offsets: users can reorder or hide columns before searching.
+          [...table.querySelectorAll('thead th')].forEach(heading=>{
+            const key=heading.dataset.column,td=cells.get(key);if(!td)return;
+            td.dataset.column=key;td.hidden=heading.hidden;td.style.display=heading.style.display;td.style.order=heading.style.order;row.append(td);
+          });
           table.tBodies[0].append(row);
         });window.applyInventoryFilters?.();table.dispatchEvent(new Event('table:filter'));
       }catch(error){if(error.name!=='AbortError')console.warn('Zero-stock catalogue lookup unavailable');}

@@ -1,0 +1,52 @@
+/* Shared compact conversation controls; colors follow the platform theme. */
+#contextual-thread-dialog{width:min(820px,calc(100vw - 32px));max-height:90dvh}
+#contextual-thread-dialog .dialog-shell{max-height:90dvh}
+#contextual-thread-dialog .thread-dialog-header{padding:20px 24px;gap:16px}
+#contextual-thread-dialog .thread-record{gap:16px;min-width:0}
+#contextual-thread-dialog .thread-record h2{font-size:1.15rem;line-height:1.4;overflow-wrap:anywhere}
+#contextual-thread-dialog .thread-record p{font-size:.8rem;margin:4px 0 8px}
+#contextual-thread-dialog .thread-management{padding:0 24px 16px;align-items:center;gap:8px}
+#contextual-thread-dialog .thread-management button,#contextual-thread-dialog .thread-assignment summary{font:inherit;font-size:.75rem;padding:8px 12px;border:1px solid var(--line,#dce4ee);border-radius:10px;background:var(--white,#fff);color:var(--ink,#17283e);cursor:pointer}
+#contextual-thread-dialog .thread-assignment{position:relative;max-width:min(320px,100%)}
+#contextual-thread-dialog .thread-assignment[open]{padding:0;border:0;background:transparent}
+#contextual-thread-dialog .thread-assignment summary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;list-style:none}
+#contextual-thread-dialog .thread-assignment summary::after{content:'⌄';margin-left:10px}
+#contextual-thread-dialog .thread-assignment-popover{position:absolute;top:calc(100% + 6px);left:0;z-index:12;width:280px;max-width:calc(100vw - 80px);padding:14px;background:var(--white,#fff);color:var(--ink,#17283e);border:1px solid var(--line,#dce4ee);border-radius:14px;box-shadow:0 12px 32px #142a4926}
+#contextual-thread-dialog .thread-assignment-popover>strong{font-size:.75rem}
+#contextual-thread-dialog [data-thread-assignment-options]{max-height:200px;margin:10px 0;display:grid;gap:2px}
+#contextual-thread-dialog [data-thread-assignment-options] label{display:flex;align-items:center;gap:10px;padding:9px 6px;min-width:0;white-space:normal;word-break:normal;overflow-wrap:normal;font-size:.8rem;line-height:1.3}
+#contextual-thread-dialog [data-thread-assignment-options] input{width:16px;height:16px;min-width:16px;margin:0;accent-color:#2e6be6}
+#contextual-thread-dialog [data-thread-save-assignment]{width:100%;color:#2865bd;background:#edf4ff}
+#contextual-thread-dialog .thread-mode-switch{margin:0 24px;padding:4px;border-radius:12px}
+#contextual-thread-dialog .thread-mode-switch button{padding:10px 12px;gap:8px;border-radius:9px}
+#contextual-thread-dialog .thread-mode-switch svg{width:18px;height:18px}
+#contextual-thread-dialog .thread-mode-switch small{display:none}
+#contextual-thread-dialog .thread-mode-switch strong{font-size:.8rem}
+#contextual-thread-dialog .thread-dialog-body{padding:18px 24px;gap:16px}
+#contextual-thread-dialog .conversation-list{min-height:160px;max-height:42dvh;overflow:auto}
+#contextual-thread-dialog .collaboration-composer{padding:12px 0 0;margin:0;background:transparent}
+#contextual-thread-dialog .chat-compose-shell{display:flex;align-items:flex-end;gap:6px;padding:6px;border:1px solid var(--line,#dce4ee);border-radius:13px;background:var(--white,#fff)}
+#contextual-thread-dialog .chat-compose-shell:focus-within{border-color:#2e6be6;box-shadow:0 0 0 3px #2e6be612}
+#contextual-thread-dialog textarea{box-sizing:border-box;min-height:38px;max-height:160px;width:100%;min-width:0;flex:1;padding:9px 8px;margin:0;border:0;box-shadow:none;outline:0;resize:none;font:inherit;font-size:.85rem;line-height:20px;background:transparent;color:inherit}
+#contextual-thread-dialog .thread-compose-tools{display:flex;align-items:center;gap:3px;position:relative;padding:0;margin:0}
+#contextual-thread-dialog .thread-compose-tools button,#contextual-thread-dialog .thread-attachment-button{display:grid;place-items:center;box-sizing:border-box;width:34px;height:36px;min-width:34px;padding:7px;margin:0;border:0;border-radius:8px;background:transparent;color:var(--muted,#728198);cursor:pointer}
+#contextual-thread-dialog .thread-compose-tools button[type=submit]{color:#2e6be6;border-left:1px solid var(--line,#dce4ee);border-radius:0}
+#contextual-thread-dialog .thread-compose-tools svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#contextual-thread-dialog .thread-attachment-button span{display:none}
+#contextual-thread-dialog .chat-file-status{position:absolute;right:0;bottom:calc(100% + 12px);max-width:260px;font-size:.65rem;color:var(--muted,#728198);background:var(--white,#fff)}
+#contextual-thread-dialog .chat-compose-hint{display:block;padding:6px 4px 0;color:var(--muted,#728198);font-size:.625rem;text-align:right}
+.floating-huddle form{display:flex;align-items:flex-end;gap:4px;margin:0 10px 10px;padding:5px;border:1px solid var(--line,#dce4ee);border-radius:12px;background:var(--white,#fff)}
+.floating-huddle form:focus-within{border-color:#2e6be6;box-shadow:0 0 0 3px #2e6be612}
+.floating-huddle form textarea{width:100%;flex:1;min-height:36px;max-height:150px;padding:8px 6px;line-height:20px;border:0;border-radius:0;background:transparent;box-shadow:none;outline:0}
+.floating-huddle .huddle-composer-tools{padding:0;gap:0;flex-shrink:0}
+.floating-huddle .huddle-composer-tools button{width:29px;height:36px;padding:5px;background:transparent;color:var(--muted,#728198)}
+.floating-huddle .huddle-composer-tools button[type=submit]{color:#2e6be6;border-left:1px solid var(--line,#dce4ee);border-radius:0}
+.floating-huddle footer[hidden]{display:none}
+.huddle-unread{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 4px;border-radius:12px;background:#c43e46;color:white;font-size:.65rem}.huddle-unread[hidden]{display:none}
+.huddle-saved-notice{position:fixed;bottom:20px;right:20px;z-index:1200;display:flex;align-items:center;gap:16px;padding:16px;border:1px solid var(--line,#dce4ee);border-radius:14px;background:var(--white,#fff);box-shadow:0 8px 30px #142a4926;font-size:.85rem}.huddle-saved-notice a{color:#2865bd}.huddle-saved-notice button{border:0;background:transparent;color:inherit;font-size:20px;cursor:pointer}
+.huddle-close-dialog{width:min(440px,calc(100vw - 32px));padding:24px;border:1px solid var(--line,#dce4ee);border-radius:22px;background:var(--white,#fff);color:var(--ink,#17283e);font:inherit;box-shadow:0 20px 70px #142a4933}
+.huddle-close-dialog::backdrop{background:#17283e66;backdrop-filter:blur(3px)}
+.huddle-close-dialog h2{font-size:1.15rem;margin:0 0 12px}.huddle-close-dialog p{font-size:.85rem;line-height:1.6;color:var(--muted,#728198)}
+.huddle-close-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:20px}.huddle-close-actions button{font:inherit;font-size:.8rem;padding:10px 12px;border:1px solid var(--line,#dce4ee);border-radius:10px;background:transparent;color:inherit;cursor:pointer}.huddle-close-actions button:last-child{background:#2e6be6;color:#fff;border-color:#2e6be6}
+html[data-theme=dark] #contextual-thread-dialog .thread-assignment-popover,html[data-theme=dark] #contextual-thread-dialog .thread-management button,html[data-theme=dark] #contextual-thread-dialog .thread-assignment summary,html[data-theme=dark] #contextual-thread-dialog .chat-compose-shell,html[data-theme=dark] .floating-huddle form,html[data-theme=dark] .huddle-close-dialog{background:#17283d;color:#e2e9f3}
+html[data-theme=dark] .floating-huddle form textarea{background:transparent;color:#e2e9f3}

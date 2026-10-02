@@ -4,6 +4,7 @@ final class CollaborationEmailContent {
     private CollaborationEmailContent() {}
 
     static String subject(CollaborationRepository.PendingMention mention) {
+        if("ASSIGNED".equals(mention.notificationKind()))return "Task assigned to you · "+mention.subjectLabel();
         return "COMPLETED".equals(mention.notificationKind())
             ? "Conversation completed · "+mention.subjectLabel()
             : mention.authorEmail()+" mentioned you · "+mention.subjectLabel();
@@ -19,7 +20,7 @@ final class CollaborationEmailContent {
               <p style="margin:24px 0 10px"><a href="%s" style="background:#2d6cdf;color:white;text-decoration:none;padding:11px 16px;border-radius:9px;font-weight:650">Open conversation</a></p>
               <p style="font-size:12px;color:#7b8795">Reply in the platform so the complete history remains attached to the record.</p>
             </div>
-            """.formatted(escape(mention.accountName()),escape("COMPLETED".equals(mention.notificationKind())
+            """.formatted(escape(mention.accountName()),escape("ASSIGNED".equals(mention.notificationKind())?"Task assigned by "+mention.authorEmail():"COMPLETED".equals(mention.notificationKind())
                     ? "Conversation completed by "+mention.authorEmail() : mention.authorEmail()+" mentioned you"),escape(mention.subjectLabel()),
                 escape(mention.body()).replace("\n","<br>"),escape(conversationUrl));
     }
