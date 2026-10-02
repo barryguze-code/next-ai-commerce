@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.4.3",
+ "title":"Compact collaboration and inline due dates",
+ "sections":[{"title":"Collaboration","items":["Edit optional due dates directly in the table or conversation toolbar, with automatic date separators, save and cancel controls, and no extra modal.","Compact conversation headers, blue toolbar controls and smaller visibility tabs match the workspace in both themes.","Consistent search-field height and a themed record-type chooser replace oversized and system-native controls.","Isolated teammate styles keep the small green online indicator beside the name instead of inside an avatar box."]}]
+},
+{
  "version":"1.4.2",
  "title":"Clearer collaboration icons and teammate presence",
  "sections":[{"title":"Workspace polish","items":["Use the supplied collaboration artwork for new tasks and original-record links, with a transparent sidebar shortcut in both themes.","Compact teammate rows show a small green online indicator, with search and offline teammates still available.","Seller Central links use Seller Central artwork; Amazon product-page links use the brown Amazon box."]}]

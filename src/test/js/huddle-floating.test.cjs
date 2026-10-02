@@ -11,6 +11,7 @@ test('header presence opens a floating huddle, protects text, pins, minimizes, a
   await page.goto('http://huddle.test/');
   await page.setContent('<main><header class="workspace-header"><h1>Orders</h1><div class="header-actions"></div></header><button id="work">Work on order</button></main>');
   await page.addStyleTag({content:'.workspace-header{display:flex;align-items:center;justify-content:space-between}'});
+  await page.addStyleTag({path:path.resolve('src/main/resources/static/css/collaboration-thread.css')});
   await page.addStyleTag({path:path.resolve('src/main/resources/static/css/huddle-floating.css')});
   await page.addStyleTag({path:path.resolve('src/main/resources/static/css/chat-composer.css')});
   await page.addScriptTag({path:path.resolve('src/main/resources/static/js/huddle-floating.js')});
@@ -26,9 +27,11 @@ test('header presence opens a floating huddle, protects text, pins, minimizes, a
   await page.getByRole('button',{name:'○ Alex Offline',exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'○ Alex Offline',exact:true}).isDisabled(),true);
   await page.getByRole('searchbox',{name:'Search teammates'}).fill('alex@example.com');
-  assert.equal(await page.locator('.huddle-person').count(),1);
+  assert.equal(await page.locator('.huddle-directory-person').count(),1);
   await page.getByRole('searchbox',{name:'Search teammates'}).fill('');
   await page.getByRole('tab',{name:'Online',exact:true}).click();
+  assert.equal(await page.locator('.huddle-presence-dot').first().evaluate(el=>getComputedStyle(el).width),'6px');
+  assert.equal(await page.locator('.huddle-person-identity').first().evaluate(el=>getComputedStyle(el).display),'flex');
   await page.getByRole('button',{name:'● Jack',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>sent[0].participantIds),['jack']);
   await page.evaluate(()=>{window.room={id:'room',status:'ACTIVE',participants:people.slice(0,2),messages:[{senderId:'jack',senderName:'Jack',body:'<img src=x onerror=alert(1)>'}]};LiveHuddleUI.event({type:'HUDDLE_STARTED',huddle:room},sender);});

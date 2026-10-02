@@ -180,7 +180,7 @@
   }
   function setHeader(button){
     $('#thread-record-type').textContent=(button.dataset.entityType||button.dataset.type||'Record').replaceAll('_',' ')+' collaboration';$('#thread-record-title').textContent=button.dataset.title||button.dataset.product||'Record conversation';
-    const context=[button.dataset.identifier,button.dataset.locationLabel].filter(Boolean).join(' · ');$('#thread-record-context').textContent=context||'Conversation attached to this record';
+    const identifier=button.dataset.identifier||'',opaque=/^[0-9a-f]{8}-[0-9a-f-]{27,}(?:\||$)/i.test(identifier),context=[opaque?'':identifier,button.dataset.locationLabel].filter(Boolean).join(' · ');$('#thread-record-context').textContent=context;$('#thread-record-context').hidden=!context;
     const badges=$('#thread-record-badges');badges.innerHTML='';[['expiration',button.dataset.expiration?'Expires '+button.dataset.expiration:null],['status',button.dataset.status],['marketplace',button.dataset.marketplace]].forEach(([kind,text])=>{if(!text)return;const badge=document.createElement('span');badge.className=kind;badge.textContent=text;badges.append(badge);});
     setParentLink(button.dataset.parentUrl,(button.dataset.entityType||button.dataset.type||'record'));
   }

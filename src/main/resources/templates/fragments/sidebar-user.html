@@ -4,14 +4,14 @@
 <div class="sidebar-user" th:fragment="user">
   <link rel="stylesheet" href="/css/short-date-input.css?v=20261002-1">
   <script defer src="/js/short-date-input.js?v=20261002-2"></script>
-  <link rel="stylesheet" href="/css/huddle-floating.css?v=20261002-2">
-  <script src="/js/huddle-floating.js?v=20261002-2"></script>
+  <link rel="stylesheet" href="/css/huddle-floating.css?v=20261002-3">
+  <script src="/js/huddle-floating.js?v=20261002-3"></script>
   <link rel="stylesheet" href="/css/chat-composer.css?v=20261001-2">
   <script defer src="/js/chat-composer.js?v=20261001-2"></script>
   <link rel="stylesheet" href="/css/general-task.css?v=20261002-5">
   <script defer src="/js/general-task.js?v=20261002-2"></script>
-  <link rel="stylesheet" href="/css/collaboration-task-dates.css?v=20261002-1">
-  <script defer src="/js/collaboration-task-dates.js?v=20261002-1"></script>
+  <link rel="stylesheet" href="/css/collaboration-task-dates.css?v=20261002-2">
+  <script defer src="/js/collaboration-task-dates.js?v=20261002-2"></script>
   <dialog id="general-task-dialog" class="general-task-dialog" th:if="${canEditCatalog}" aria-labelledby="general-task-title">
     <form method="post" th:action="@{/app/collaboration/general-tasks}">
       <header><img class="task-store-logo" th:src="${selectedAccountLogoUrl ?: '/images/channels/amazon-seller.png'}" alt="Store logo"><div><small th:text="${selectedStoreName ?: selectedAccountName}">Selected store</small><h2 id="general-task-title">Create task</h2><p>A general task for this store. No item or order link needed.</p></div><button type="button" class="dialog-close" data-task-cancel aria-label="Close new task">×</button></header>
@@ -25,7 +25,7 @@
       <footer><small>Appears in Collaborate for this store.</small><button type="button" class="secondary-button" data-task-cancel>Cancel</button><button type="submit" class="primary-button">Create task</button></footer>
     </form>
   </dialog>
-  <script defer src="/js/collaboration.js?v=20261002-tasks1"></script>
+  <script defer src="/js/collaboration.js?v=20261002-tasks2"></script>
   <script src="/js/theme.js?v=20260905-1"></script>
   <script src="/js/platform-icons.js?v=20261002-hotfix1"></script>
   <link rel="stylesheet" href="/css/table-widget.css?v=20261001-5">

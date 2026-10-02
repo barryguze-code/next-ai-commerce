@@ -15,25 +15,27 @@
     });
   }
   function boot(){
-    const dialog=document.getElementById('collaboration-due-dialog');if(!dialog)return;
-    document.body.append(dialog);const form=dialog.querySelector('form'),error=dialog.querySelector('[data-date-error]'),submit=form.querySelector('[type=submit]');let busy=false;
+    const editor=document.getElementById('collaboration-due-editor');if(!editor)return;
+    const home=editor.parentElement,form=editor.querySelector('form'),error=editor.querySelector('[data-date-error]'),submit=form.querySelector('[type=submit]');let busy=false,active=null;
+    function close(){if(busy)return;editor.hidden=true;home.append(editor);if(active){active.hidden=false;active.setAttribute('aria-expanded','false');active.focus();active=null;}}
     const start=document.querySelector('#thread-conversation-start [name=timeZone]');if(start)start.value=zone();
     document.addEventListener('click',event=>{
       const trigger=event.target.closest('[data-edit-due]');if(!trigger||trigger.disabled||!trigger.dataset.reviewId)return;
-      event.preventDefault();event.stopPropagation();form.action='/app/collaboration/reviews/'+encodeURIComponent(trigger.dataset.reviewId)+'/due-date';
+      event.preventDefault();event.stopPropagation();if(busy)return;if(active)close();active=trigger;form.action='/app/collaboration/reviews/'+encodeURIComponent(trigger.dataset.reviewId)+'/due-date';
       form.elements.dueDate.value=trigger.dataset.dueDate||'';form.elements.timeZone.value=trigger.dataset.timeZone||zone();
-      dialog.querySelector('[data-date-subject]').textContent=trigger.dataset.reviewTitle||'Conversation';dialog.querySelector('[data-date-zone]').textContent=form.elements.timeZone.value.replaceAll('_',' ');error.hidden=true;dialog.showModal();(form.elements.dueDate.closest('.short-date-control')?.querySelector('.short-date-text')||form.elements.dueDate).focus();
+      error.hidden=true;trigger.after(editor);trigger.hidden=true;trigger.setAttribute('aria-expanded','true');editor.hidden=false;(form.elements.dueDate.closest('.short-date-control')?.querySelector('.short-date-text')||form.elements.dueDate).focus();
     });
-    dialog.querySelectorAll('[data-date-cancel]').forEach(button=>button.onclick=()=>{if(!busy)dialog.close();});
-    dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});
-    dialog.querySelector('[data-date-clear]').onclick=()=>{form.elements.dueDate.value='';form.requestSubmit(submit);};
+    editor.querySelector('[data-date-cancel]').onclick=close;
+    editor.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}});
+    editor.addEventListener('click',event=>event.stopPropagation());
+    document.getElementById('contextual-thread-dialog')?.addEventListener('close',close);
     form.addEventListener('submit',async event=>{
       event.preventDefault();if(busy||!form.reportValidity())return;busy=true;submit.disabled=true;error.hidden=true;
       try{
         const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{Accept:'application/json'}}),result=await response.json().catch(()=>({}));
         if(!response.ok)throw new Error(response.status<500&&result.error?result.error:'The date could not be saved. Please try again.');
         document.querySelectorAll('tr[data-review-id]').forEach(row=>{if(row.dataset.reviewId!==String(result.id))return;row.dataset.dueAt=result.dueAt||'';const button=row.querySelector('[data-edit-due]');if(button){button.dataset.dueDate=result.dueDate||'';button.dataset.timeZone=result.dueTimeZone||zone();button.querySelector('span').textContent=label(result.dueDate);}});
-        prepare(result);overdueRows();dialog.close();
+        prepare(result);overdueRows();busy=false;close();
       }catch(ex){error.textContent=ex.message;error.hidden=false;}finally{busy=false;submit.disabled=false;}
     });
     overdueRows();setInterval(overdueRows,60000);

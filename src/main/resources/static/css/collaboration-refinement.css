@@ -28,3 +28,13 @@
 .assignment-choices [data-assignment-error]{color:#c43144;font-size:.72rem}
 
 .collaboration-table th{width:auto!important}
+/* Match Orders' 42px search shell; the inner input must not add another 40px. */
+html body.app-page .collaboration-search input[type=search]{height:24px!important;padding:0!important;min-height:24px!important}
+.collaboration-record-filter{position:relative;font-size:13px;min-width:155px}
+.collaboration-record-filter summary{display:flex;align-items:center;justify-content:space-between;gap:16px;height:36px;box-sizing:border-box;padding:0 11px;list-style:none;border:1px solid var(--line);border-radius:9px;background:var(--white);color:var(--ink);cursor:pointer}
+.collaboration-record-filter summary::-webkit-details-marker{display:none}.collaboration-record-filter summary::after{content:'⌄';color:var(--muted)}
+.collaboration-record-choices{position:absolute;right:0;top:calc(100% + 6px);z-index:120;min-width:190px;padding:5px;border:1px solid var(--line);border-radius:10px;background:var(--white);box-shadow:0 8px 24px #10284220;display:grid;gap:2px}
+.collaboration-record-choices button{border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;padding:8px 10px;border-radius:6px;cursor:pointer}
+.collaboration-record-choices button:hover,.collaboration-record-choices button[aria-pressed=true]{background:var(--ui-action-soft);color:var(--ui-action-text)}
+.collaboration-record-filter summary:focus-visible,.collaboration-record-choices button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.collaboration-card:has(.collaboration-record-filter[open]){overflow:visible}

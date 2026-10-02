@@ -13,7 +13,7 @@
     <div id="thread-management" class="thread-management" th:attr="data-current-email=${signedInEmail}" hidden>
       <details class="thread-assignment"><summary>Assigned to · <span data-thread-assignees>Unassigned</span></summary><div class="thread-assignment-popover"><strong>Assign teammates</strong><div data-thread-assignment-options></div><button type="button" data-thread-save-assignment>Apply assignment</button></div></details>
       <button type="button" data-thread-assign-self>Assign to me</button>
-      <button type="button" class="task-due-button" data-edit-due data-thread-due aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4M16 3v4M4 11h16"/></svg><span>Add due date</span></button>
+      <button type="button" class="task-due-button" data-edit-due data-thread-due aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4M16 3v4M4 11h16"/></svg><span>Add due date</span></button>
       <button class="conversation-close-button" type="submit" form="thread-conversation-reply" name="status" value="CLOSED" formnovalidate onclick="return confirm('Close this conversation? Everyone involved will be notified by email.')">✓ Close conversation</button>
       <span data-thread-management-error role="status"></span>
     </div>
@@ -39,12 +39,12 @@
     </div>
   </section>
 </dialog>
-<dialog id="collaboration-due-dialog" class="task-date-dialog" aria-labelledby="task-date-title">
+<div id="collaboration-due-editor" class="task-date-inline" hidden>
   <form method="post" th:action="@{/app/collaboration/reviews/placeholder/due-date}">
-    <header><div><small>Task timing</small><h2 id="task-date-title">Due date</h2></div><button class="dialog-close" type="button" data-date-cancel aria-label="Close due date">×</button></header>
-    <div class="task-date-body"><p data-date-subject></p><label>Due date <small>Optional</small><input type="date" name="dueDate"></label><input type="hidden" name="timeZone"><p class="task-date-hint">The task becomes overdue after this date ends in <span data-date-zone></span>.</p><p data-date-error role="alert" hidden></p></div>
-    <footer><button type="button" class="secondary-button" data-date-clear>Remove date</button><button type="button" class="secondary-button" data-date-cancel>Cancel</button><button type="submit" class="primary-button">Save date</button></footer>
+    <input type="date" name="dueDate" aria-label="Due date"><input type="hidden" name="timeZone">
+    <button type="submit" aria-label="Save due date" title="Save date">✓</button><button type="button" data-date-cancel aria-label="Cancel date edit" title="Cancel">×</button>
+    <p data-date-error role="alert" hidden></p>
   </form>
-</dialog>
+</div>
 </th:block>
 </body></html>
