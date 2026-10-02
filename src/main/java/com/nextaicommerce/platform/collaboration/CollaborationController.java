@@ -164,6 +164,15 @@ public class CollaborationController {
     @GetMapping("/app/collaboration/members") @ResponseBody
     List<CollaborationRepository.Member> members(HttpSession session){return repository.members(tenant(session));}
 
+    @GetMapping("/app/collaboration/teammates") @ResponseBody
+    ResponseEntity<List<CollaborationRepository.Member>> teammates(Authentication authentication){
+        var people=new java.util.LinkedHashMap<UUID,CollaborationRepository.Member>();
+        repository.huddleTenants(authentication.getName()).forEach(account->repository.members(account)
+            .forEach(person->people.putIfAbsent(person.id(),person)));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(people.values().stream()
+            .sorted(java.util.Comparator.comparing(person->person.name()==null?person.email():person.name(),String.CASE_INSENSITIVE_ORDER)).toList());
+    }
+
     @GetMapping("/app/collaboration/subject") @ResponseBody
     List<Conversation> subject(@RequestParam String subjectType,@RequestParam String subjectKey,HttpSession session,Authentication authentication){
         return repository.subjectReviews(tenant(session),subjectType,subjectKey,true,authentication.getName()).stream()

@@ -6,6 +6,9 @@ test('header presence opens a floating huddle, protects text, pins, minimizes, a
  const browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})});
  try{
   const page=await browser.newPage();
+  await page.route('**/app/collaboration/teammates',route=>route.fulfill({contentType:'application/json',body:JSON.stringify([{id:'me',name:'Barry'},{id:'jack',name:'Jack'},{id:'ecem',name:'Ecem'},{id:'alex',name:'Alex Offline',email:'alex@example.com'}])}));
+  await page.route('http://huddle.test/',route=>route.fulfill({contentType:'text/html',body:'<main></main>'}));
+  await page.goto('http://huddle.test/');
   await page.setContent('<main><header class="workspace-header"><h1>Orders</h1><div class="header-actions"></div></header><button id="work">Work on order</button></main>');
   await page.addStyleTag({path:path.resolve('src/main/resources/static/css/huddle-floating.css')});
   await page.addStyleTag({path:path.resolve('src/main/resources/static/css/chat-composer.css')});
@@ -16,6 +19,15 @@ test('header presence opens a floating huddle, protects text, pins, minimizes, a
    LiveHuddleUI.event({type:'WELCOME',self:people[0],canHuddle:true,online:people,huddles:[]},sender);
   });
   await page.getByRole('button',{name:'Open huddle and online teammates'}).hover();
+  assert.equal(await page.getByRole('tab',{name:'Online',exact:true}).getAttribute('aria-selected'),'true');
+  assert.equal(await page.getByRole('button',{name:'○ Alex Offline',exact:true}).count(),0);
+  await page.getByRole('tab',{name:'All teammates',exact:true}).click();
+  await page.getByRole('button',{name:'○ Alex Offline',exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'○ Alex Offline',exact:true}).isDisabled(),true);
+  await page.getByRole('searchbox',{name:'Search teammates'}).fill('alex@example.com');
+  assert.equal(await page.locator('.huddle-person').count(),1);
+  await page.getByRole('searchbox',{name:'Search teammates'}).fill('');
+  await page.getByRole('tab',{name:'Online',exact:true}).click();
   await page.getByRole('button',{name:'● Jack',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>sent[0].participantIds),['jack']);
   await page.evaluate(()=>{window.room={id:'room',status:'ACTIVE',participants:people.slice(0,2),messages:[{senderId:'jack',senderName:'Jack',body:'<img src=x onerror=alert(1)>'}]};LiveHuddleUI.event({type:'HUDDLE_STARTED',huddle:room},sender);});

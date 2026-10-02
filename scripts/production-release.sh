@@ -71,6 +71,47 @@ rollback() {
   exit 1
 }
 trap rollback ERR
+# Preserve the existing TLS site and add WebSocket forwarding only for huddles.
+# The endpoint still uses the application's session authentication and origin checks.
+nginx_site=$(readlink -f /etc/nginx/sites-enabled/next-ai-commerce)
+test -f "$nginx_site"
+cp -p "$nginx_site" "$backup_dir/nginx-site"
+restore_proxy() {
+  cp -p "$backup_dir/nginx-site" "$nginx_site"
+  nginx -t && systemctl reload nginx
+}
+if ! python3 - "$nginx_site" <<'PY'
+import pathlib, sys
+site = pathlib.Path(sys.argv[1])
+source = site.read_text()
+assert 'server_name app.nextaicommerce.com;' in source
+if 'location = /ws/huddles {' not in source:
+    anchor = ' location / {'
+    assert source.count(anchor) == 1, 'Unexpected proxy layout; refusing to rewrite it'
+    block = ''' location = /ws/huddles {
+  proxy_pass http://127.0.0.1:8080;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection "upgrade";
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_read_timeout 90s;
+  proxy_send_timeout 90s;
+ }
+'''
+    site.write_text(source.replace(anchor, block + anchor, 1))
+PY
+then
+  restore_proxy
+  exit 1
+fi
+if ! nginx -t || ! systemctl reload nginx; then
+  restore_proxy
+  exit 1
+fi
+echo "Authenticated huddle WebSocket proxy validated and reloaded."
 sed -i -E "s/APP_BUILD_VERSION=[0-9]+\.[0-9]+\.[0-9]+/APP_BUILD_VERSION=$version/" "$runtime_config"
 # Restore the approved read-only, guarded history recovery. The original startup
 # configuration is included in the rollback backup above.

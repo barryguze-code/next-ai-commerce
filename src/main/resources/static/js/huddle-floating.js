@@ -1,6 +1,13 @@
 (()=>{
   if(window.LiveHuddleUI)return;
   const rooms=new Map(),windows=new Map();let self,people=[],connected=false,allowed=false,send=()=>false,menu,launcher,tray;
+  let directory=[],directoryLoadedAt=0,directoryLoading=false,directoryError=false,peopleTab='online',peopleQuery='',peopleList,peopleHint;
+  async function loadDirectory(){
+    if(directoryLoading||Date.now()-directoryLoadedAt<60000)return;
+    directoryLoading=true;directoryError=false;
+    try{const response=await fetch('/app/collaboration/teammates',{headers:{Accept:'application/json'},cache:'no-store'});if(!response.ok)throw new Error();directory=await response.json();directoryLoadedAt=Date.now();}
+    catch(_){directoryError=true;}finally{directoryLoading=false;renderPeople();}
+  }
   const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text)n.textContent=text;if(cls)n.className=cls;return n;};
   const button=(label,action)=>{const b=node('button',label);b.type='button';b.addEventListener('click',action);return b;};
   const icon=(b,label,path)=>{b.setAttribute('aria-label',label);b.title=label;b.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+path+'"/></svg>';};
@@ -13,25 +20,35 @@
   }
   function mount(){
     if(launcher)return;const header=document.querySelector('.workspace-header');if(!header)return;
-    launcher=node('div',null,'huddle-launcher');const trigger=button('ϟ',()=>{menu.hidden=false;trigger.setAttribute('aria-expanded','true');});
+    launcher=node('div',null,'huddle-launcher');const trigger=button('ϟ',()=>{menu.hidden=false;trigger.setAttribute('aria-expanded','true');loadDirectory();});
     trigger.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/></svg>';
     trigger.className='huddle-top-icon';trigger.title='Collaborate · online teammates';trigger.setAttribute('aria-label','Open huddle and online teammates');trigger.setAttribute('aria-expanded','false');
-    menu=node('section',null,'huddle-people-panel');menu.hidden=true;menu.setAttribute('aria-label','Online teammates');
+    menu=node('section',null,'huddle-people-panel');menu.hidden=true;menu.setAttribute('aria-label','Teammates');
+    peopleHint=node('small');const tabs=node('div',null,'huddle-people-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Teammate status');
+    for(const [value,label] of [['online','Online'],['all','All teammates']]){const tab=button(label,()=>{peopleTab=value;renderPeople();loadDirectory();});tab.dataset.peopleTab=value;tab.setAttribute('role','tab');tabs.append(tab);}
+    const search=node('input');search.type='search';search.placeholder='Search teammates';search.setAttribute('aria-label','Search teammates');search.addEventListener('input',()=>{peopleQuery=search.value;renderPeople();});
+    peopleList=node('div',null,'huddle-people-list');peopleList.setAttribute('role','region');peopleList.setAttribute('aria-label','Teammate results');
+    menu.append(node('strong','Collaborate'),peopleHint,tabs,search,peopleList);
     launcher.append(trigger,menu);
     const picker=header.querySelector('.context-menu');
     if(picker)picker.before(launcher);else (header.querySelector('.header-actions')||header).append(launcher);
-    let timer;launcher.addEventListener('pointerenter',()=>{clearTimeout(timer);menu.hidden=false;trigger.setAttribute('aria-expanded','true');});
+    let timer;launcher.addEventListener('pointerenter',()=>{clearTimeout(timer);menu.hidden=false;trigger.setAttribute('aria-expanded','true');loadDirectory();});
     launcher.addEventListener('pointerleave',()=>{timer=setTimeout(()=>{if(!launcher.contains(document.activeElement)){menu.hidden=true;trigger.setAttribute('aria-expanded','false');}},250);});
     document.addEventListener('keydown',e=>{if(e.key==='Escape'){menu.hidden=true;trigger.setAttribute('aria-expanded','false');}});
     document.addEventListener('click',e=>{if(!launcher.contains(e.target)){menu.hidden=true;trigger.setAttribute('aria-expanded','false');}});
     tray=node('div',null,'floating-huddle-tray');tray.setAttribute('popover','manual');document.body.append(tray);renderPeople();
   }
   function renderPeople(){
-    if(!menu)return;menu.replaceChildren(node('strong','Collaborate'),node('small',connected?'Online across shared accounts':'Reconnecting…'));
-    const others=people.filter(p=>p.id!==self?.id);
-    if(!others.length)menu.append(node('p','No teammates online right now.'));
-    for(const person of others){const b=button('● '+(person.name||person.email),()=>start(person));b.disabled=!connected||!allowed;menu.append(b);}
-    for(const room of rooms.values())if(room.status==='ACTIVE')menu.append(button('↗ '+roomName(room),()=>open(room)));
+    if(!menu)return;peopleHint.textContent=connected?'Across your shared accounts':'Reconnecting… live status unavailable';
+    menu.querySelectorAll('[data-people-tab]').forEach(tab=>tab.setAttribute('aria-selected',String(tab.dataset.peopleTab===peopleTab)));
+    const onlineIds=new Set(people.map(p=>p.id)),all=new Map(directory.map(p=>[p.id,p]));people.forEach(p=>all.set(p.id,p));
+    const query=peopleQuery.trim().toLowerCase(),others=(peopleTab==='online'?people:[...all.values()]).filter(p=>p.id!==self?.id&&((p.name||'')+' '+(p.email||'')).toLowerCase().includes(query))
+      .sort((a,b)=>Number(onlineIds.has(b.id))-Number(onlineIds.has(a.id))||(a.name||a.email).localeCompare(b.name||b.email));
+    peopleList.replaceChildren();
+    if(!others.length)peopleList.append(node('p',query?'No matching teammates.':peopleTab==='online'?(connected?'No teammates online right now.':'Connecting to live chat…'):directoryLoading?'Loading teammates…':directoryError?'Teammates could not be loaded. Try again.':'No teammates available.'));
+    for(const person of others){const online=connected&&onlineIds.has(person.id),label=(online?'● ':'○ ')+(person.name||person.email),b=button(label,()=>start(person));b.setAttribute('aria-label',label);b.disabled=!online||!allowed;b.className='huddle-person';b.append(node('small',online?'Online':connected?'Offline':'Status unavailable'));b.title=online?'Start a live chat':'Offline follow-up: create a saved task in Collaborate';peopleList.append(b);}
+    if(peopleTab==='all'){const hint=node('small','Offline follow-up is available through saved tasks in '),link=node('a','Collaborate');link.href='/app/collaboration';hint.append(link);peopleList.append(hint);}
+    for(const room of rooms.values())if(room.status==='ACTIVE')peopleList.append(button('↗ '+roomName(room),()=>open(room)));
   }
   function roomName(room){return room.participants.filter(p=>p.id!==self?.id).map(p=>p.name||p.email).join(', ')||'Huddle';}
   function start(person){
@@ -112,6 +129,6 @@
     else if(e.type==='HUDDLE_ENDED'||e.type==='HUDDLE_SAVED'){rooms.delete(e.huddle.id);windows.get(e.huddle.id)?.remove();windows.delete(e.huddle.id);renderPeople();if(e.type==='HUDDLE_SAVED'){const notice=node('div',null,'huddle-saved-notice');notice.setAttribute('role','status');const link=node('a','Messages saved · Open Collaboration');link.href='/app/collaboration';notice.append(link,button('×',()=>notice.remove()));document.body.append(notice);}}
     else if(e.type==='ERROR'){windows.forEach(p=>{p.querySelector('.floating-huddle-error').textContent=e.message;});}
   }
-  window.LiveHuddleUI={event,open,start,showPeople:()=>{mount();menu.hidden=false;launcher.querySelector('button').setAttribute('aria-expanded','true');}};document.readyState==='loading'?document.addEventListener('DOMContentLoaded',mount):mount();
+  window.LiveHuddleUI={event,open,start,showPeople:()=>{mount();menu.hidden=false;launcher.querySelector('button').setAttribute('aria-expanded','true');loadDirectory();}};document.readyState==='loading'?document.addEventListener('DOMContentLoaded',mount):mount();
   // Only an explicit minimize action collapses a chat; incoming messages stay visible.
 })();

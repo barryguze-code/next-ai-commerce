@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.4.1",
+ "title":"Live chat connectivity and searchable teammates",
+ "sections":[{"title":"Team collaboration","items":["Restore production live-chat connections through the existing secure proxy, including online presence and huddle messages across platform pages.","The compact teammate picker opens on Online by default. Switch to All teammates and search names or email addresses to see offline teammates from your shared accounts. Offline follow-up remains available through saved collaboration tasks.","Keep existing authentication, account access, publishing and notification settings unchanged."]}]
+},
+{
  "version":"1.4.0",
  "title":"A consistent workspace and better team collaboration",
  "sections":[
