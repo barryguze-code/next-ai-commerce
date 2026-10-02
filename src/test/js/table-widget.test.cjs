@@ -123,7 +123,8 @@ test('context column is pinned without consuming textual Conversation data',asyn
   assert.equal(await page.locator('thead th').first().getAttribute('data-column'),'record-context');
   const overview=page.locator('tbody td').first();
   assert.equal(await overview.getByRole('button',{name:'Open chat',exact:true}).count(),1);
-  assert.equal(await overview.getByTitle('No actions available',{exact:true}).isDisabled(),true);
+  assert.equal(await overview.getByTitle('Actions and suggestions',{exact:true}).count(),1);
+  assert.match(await overview.locator('.table-warning-panel').textContent(),/Have an idea for this record\? Share it with R&D\./);
   assert.equal(await overview.locator('.table-overview-picture').count(),1);
   assert.equal(await page.locator('[data-column=conversation]').last().innerText(),'Keep this text in exports');
   await page.locator('.table-filter-control summary').click();

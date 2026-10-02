@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync('src/main/resources/static/js/collaboration.js','utf8');
-function element(tag){return {tag,dataset:{},style:{},children:[],attrs:{},classList:{toggle(){},remove(){}},setAttribute(k,v){this.attrs[k]=v},getAttribute(k){return this.attrs[k]},prepend(n){n.parent=this;this.children.unshift(n)},append(n){n.parent=this;this.children.push(n)},remove(){this.parent.children=this.parent.children.filter(n=>n!==this)},querySelector(selector){return this.children.find(n=>selector==='svg'?n.tag==='svg':selector==='b'?n.tag==='b':n.tag==='img'&&'collaborationIcon' in n.dataset)}};}
+function element(tag){return {tag,dataset:{},style:{},children:[],attrs:{},classList:{toggle(){},remove(){}},setAttribute(k,v){this.attrs[k]=v},getAttribute(k){return this.attrs[k]},hasAttribute(k){return Object.hasOwn(this.attrs,k)},prepend(n){n.parent=this;this.children.unshift(n)},append(n){n.parent=this;this.children.push(n)},remove(){this.parent.children=this.parent.children.filter(n=>n!==this)},querySelector(selector){return this.children.find(n=>selector==='svg'?n.tag==='svg':selector==='b'?n.tag==='b':n.tag==='img'&&'collaborationIcon' in n.dataset)}};}
 const decorate=vm.runInNewContext('('+source.slice(source.indexOf('function decorateRecordConversationButton'),source.indexOf('  async function refreshRecordSummaries'))+')',{window:{},document:{createElement:element}});
 test('collaboration PNG state follows origin, assignment, unread and related counts',()=>{
   for(const [counts,file,badge] of [
