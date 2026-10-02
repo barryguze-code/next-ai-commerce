@@ -10,6 +10,7 @@ test('header presence opens a floating huddle, protects text, pins, minimizes, a
   await page.route('http://huddle.test/',route=>route.fulfill({contentType:'text/html',body:'<main></main>'}));
   await page.goto('http://huddle.test/');
   await page.setContent('<main><header class="workspace-header"><h1>Orders</h1><div class="header-actions"></div></header><button id="work">Work on order</button></main>');
+  await page.addStyleTag({content:'.workspace-header{display:flex;align-items:center;justify-content:space-between}'});
   await page.addStyleTag({path:path.resolve('src/main/resources/static/css/huddle-floating.css')});
   await page.addStyleTag({path:path.resolve('src/main/resources/static/css/chat-composer.css')});
   await page.addScriptTag({path:path.resolve('src/main/resources/static/js/huddle-floating.js')});
