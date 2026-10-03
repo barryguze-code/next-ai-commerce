@@ -4,11 +4,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
-import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-/** Local, read-only design evaluation. Basket/PO previews do not write operational data. */
-@org.springframework.stereotype.Component @Profile("local")
+/** Read-only draft planning. Basket/PO previews do not write operational data. */
+@org.springframework.stereotype.Component
 public class ReplenishmentDataLoader {
     private final JdbcTemplate jdbc;
     private final InventoryRepository inventory;

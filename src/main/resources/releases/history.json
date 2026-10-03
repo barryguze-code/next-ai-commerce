@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.5.0",
+ "title":"Replenishment draft available in production",
+ "sections":[{"title":"Draft replenishment planning","items":["Open Replenishment from Inventory to review account-wide item demand, stock coverage, vendor planning and suggested case quantities.","Configure account stock-day targets and vendor lead times, refresh forecasts, and download suggestions using existing account permissions.","Forecasts refresh on a separate background worker and retain the last completed snapshot. Initial preparation starts after application startup.","Basket and draft purchase orders remain previews only: they are not saved or submitted. No supplier orders or Amazon updates are sent by this module."]}]
+},
+{
  "version":"1.4.3",
  "title":"Compact collaboration and inline due dates",
  "sections":[{"title":"Collaboration","items":["Edit optional due dates directly in the table or conversation toolbar, with automatic date separators, save and cancel controls, and no extra modal.","Compact conversation headers, blue toolbar controls and smaller visibility tabs match the workspace in both themes.","Consistent search-field height and a themed record-type chooser replace oversized and system-native controls.","Isolated teammate styles keep the small green online indicator beside the name instead of inside an avatar box."]}]

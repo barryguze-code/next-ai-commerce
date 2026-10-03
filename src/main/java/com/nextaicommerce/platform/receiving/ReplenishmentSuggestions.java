@@ -6,14 +6,13 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Tenant-isolated, immutable last-good snapshots. A page request never aggregates order history. */
-@Service @Profile("local")
+@Service
 public class ReplenishmentSuggestions {
  static final long REFRESH_SECONDS=6*60*60;
  public record Snapshot(List<Map<String,Object>> items,Instant generatedAt) {}
@@ -23,6 +22,8 @@ public class ReplenishmentSuggestions {
  private final Map<UUID,Long> revisions=new ConcurrentHashMap<>(),builtRevisions=new ConcurrentHashMap<>();
  private final Set<UUID> building=ConcurrentHashMap.newKeySet();
  private final Map<UUID,String> errors=new ConcurrentHashMap<>();
+ private final java.util.concurrent.atomic.AtomicBoolean refreshQueued=new java.util.concurrent.atomic.AtomicBoolean();
+ private final java.util.concurrent.ExecutorService worker=java.util.concurrent.Executors.newSingleThreadExecutor(task->{var thread=new Thread(task,"replenishment-draft");thread.setDaemon(true);return thread;});
  public ReplenishmentSuggestions(JdbcTemplate jdbc,TransactionTemplate tx,ReplenishmentDataLoader loader,ObjectMapper json){this.jdbc=jdbc;this.tx=tx;this.loader=loader;this.json=json;}
  private void context(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
  public Snapshot snapshot(UUID tenant){return snapshots.get(tenant);}
@@ -53,6 +54,14 @@ public class ReplenishmentSuggestions {
   revisions.merge(tenant,1L,Long::sum);
  }
  @Scheduled(initialDelay=10000,fixedDelay=60000)
+ public void queueRefresh(){
+  if(!refreshQueued.compareAndSet(false,true))return;
+  try{worker.execute(()->{try{refresh();}catch(Exception e){LoggerFactory.getLogger(getClass()).error("Replenishment refresh failed; retrying on the next schedule.",e);}finally{refreshQueued.set(false);}});}
+  catch(java.util.concurrent.RejectedExecutionException e){refreshQueued.set(false);}
+ }
+ @jakarta.annotation.PreDestroy
+ public void stopWorker(){worker.shutdownNow();}
+ /** Runs on its own bounded worker so forecasts never occupy the shared scheduler. */
  public void refresh(){
   for(UUID tenant:jdbc.queryForList("SELECT id FROM tenants WHERE status='ACTIVE' ORDER BY id",UUID.class)){
    Snapshot previous=snapshots.get(tenant);long revision=revisions.getOrDefault(tenant,0L);

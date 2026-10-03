@@ -431,7 +431,7 @@ class TemplateRenderingTest {
         sku.putAll(Map.of("in_stock","75.0%","coverage","80%"));
         row.putAll(Map.of("cover",4.0,"low_days",2,"target_days",12,"overstock_days",20,"bar_percent",16));
         c.setVariable("status","forecast");c.setVariable("forecastCount",1);c.setVariable("allCount",1);
-        c.setVariables(Map.of("items",List.of(row),"q","","page",0,"more",false,"localDevelopment",true,"canViewOperations",true,"canEditCatalog",true,"selectedAccountName","QA"));
+        c.setVariables(Map.of("items",List.of(row),"q","","page",0,"more",false,"localDevelopment",false,"canViewOperations",true,"canEditCatalog",true,"selectedAccountName","QA"));
         var vendorId=UUID.randomUUID();
         c.setVariable("configuration",Map.of("low",7,"target",14,"overstock",35,"vendors",Map.of(vendorId.toString(),Map.of("lead","2"))));
         c.setVariable("vendors",List.of(Map.of("id",vendorId,"name","KEHE","code","KEHE","dc","41")));
@@ -443,7 +443,7 @@ class TemplateRenderingTest {
         assertThat(html).contains("data-column-weight=\"0.45\"","rp-vendor-badge","data-settings-open=\"vendors\"");
         assertThat(html).doesNotContain("<dialog id=\"rp-skus-");
         assertThat(html).contains("Refresh forecast","/app/inventory/replenishment/refresh","rp-week-numbers","$12.99","six hours");
-        assertThat(html).contains("Shared item","SHARED-6PACK","SKU product title","Basket preview","/app/inventory/ledger?itemId=", "Local design draft");
+        assertThat(html).contains("Shared item","SHARED-6PACK","SKU product title","Basket preview","/app/inventory/ledger?itemId=", "Draft planning", "Replenishment <small>Draft</small>").doesNotContain("Local design draft");
         assertThat(html).contains("rp-sku-head").doesNotContain("3 expired","OOS · duration unknown","Sessions not collected","Conversions not collected");
         c.setVariable("items",List.of());
         assertThat(templateEngine().process("replenishment-draft",c)).contains("No items with sales in the last four weeks");

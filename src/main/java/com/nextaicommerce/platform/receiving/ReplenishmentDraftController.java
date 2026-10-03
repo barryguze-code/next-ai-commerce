@@ -3,7 +3,6 @@ package com.nextaicommerce.platform.receiving;
 import com.nextaicommerce.platform.web.PageController;
 import jakarta.servlet.http.HttpSession;
 import java.util.*;
-import org.springframework.context.annotation.Profile;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -12,7 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-@Controller @Profile("local")
+@Controller
 public class ReplenishmentDraftController {
  private final ReplenishmentSuggestions suggestions;
  private final com.nextaicommerce.platform.catalog.CatalogRepository catalog;

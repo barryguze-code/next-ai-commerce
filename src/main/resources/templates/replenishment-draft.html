@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Replenishment · Local draft | Next AI Commerce</title>
+<title>Replenishment · Draft | Next AI Commerce</title>
 <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css"><link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/inventory.css"><link rel="stylesheet" href="/css/standard-record-tables.css"><link rel="stylesheet" href="/css/order-pictures.css"><link rel="stylesheet" href="/css/replenishment-draft.css">
 <script defer src="/js/theme.js"></script><script defer src="/js/table-preferences.js"></script><script defer src="/js/standard-record-tables.js"></script><script defer src="/js/replenishment-draft.js"></script>
 <th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block>
@@ -9,7 +9,7 @@
 <aside class="sidebar"><a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a><div th:replace="~{fragments/sidebar-nav :: nav('replenishment')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
 <main class="workspace">
 <header class="workspace-header"><div><h1>Replenishment</h1><p class="page-intro">Shared item demand. Vendor-based planning.</p></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
-<p class="notice rp-notice">Local design draft · all stores in this account · no supplier orders or Amazon updates.</p>
+<p class="notice rp-notice">Draft planning · all stores in this account · review suggestions before purchasing. Basket and PO previews are not saved; no supplier orders or Amazon updates are sent.</p>
 <p th:if="${planningMessage!=null}" class="notice" th:text="${planningMessage}"></p>
 <section class="catalog-readiness shelf-life-summary rp-summary" aria-label="All sales-history items in this account">
 <article class="blocked"><span>!</span><div><strong>Out of stock</strong></div><b th:text="${counts.oos}">—</b></article>
