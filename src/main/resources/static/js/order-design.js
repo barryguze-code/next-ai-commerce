@@ -52,7 +52,7 @@
      b.title=pack?(b.dataset.packingClicked?'Packing slip opened — click to reprint':'Print packing slip'):b.getAttribute('aria-label');
     });
    }
-   row.querySelectorAll('.item-number strong,.order-customer-shipping').forEach(el=>{
+   row.querySelectorAll('.item-number strong,.item-number .profit-price-link,.order-customer-shipping').forEach(el=>{
     if(el.dataset.currencyReady)return;el.dataset.currencyReady='true';
     el.textContent=el.textContent.replace(/\b(USD|CAD|AUD|EUR|GBP|JPY|MXN)\s+([\d,]+\.\d{2})/g,(_,code,amount)=>{
       try{return new Intl.NumberFormat('en-US',{style:'currency',currency:code}).format(Number(amount.replaceAll(',','')));}catch(_){return code+' '+amount;}

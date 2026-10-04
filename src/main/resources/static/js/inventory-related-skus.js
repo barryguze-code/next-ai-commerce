@@ -21,8 +21,10 @@ async function loadRelatedSkus(itemId) {
         <div><strong title="${escapeHistory(row.sku)}">${escapeHistory(row.sku)}</strong><small>${escapeHistory(row.channel || "Marketplace")}${row.asin ? ` · ASIN ${escapeHistory(row.asin)}` : ""}</small></div>
         <span class="related-sku-status ${escapeHistory(rawStatus.toLowerCase())}">${escapeHistory(statusLabel)}</span>
         <dl>
-          <div><dt>Eaches per SKU</dt><dd>${Number(row.quantity).toLocaleString()}</dd></div>
-          <div><dt>${escapeHistory(row.channel || "Marketplace")} listed</dt><dd>${row.marketplaceQuantity == null ? "—" : row.marketplaceQuantity}</dd></div>
+          <div><dt>Item</dt><dd>${escapeHistory(row.itemCode || 'Item')} × ${Number(row.quantity).toLocaleString()}</dd></div>
+          <div><dt>Available</dt><dd>${row.marketplaceQuantity == null ? "—" : row.marketplaceQuantity}</dd></div>
+          <div><dt>Price / Buy Box</dt><dd>${[['My price',row.price],['Buy Box',row.buyBoxPrice]].map(([label,amount])=>amount==null?'—':`<button type="button" class="profit-price-link" data-profit-price-link data-profit-kind="SKU" data-profit-key="${escapeHistory(row.sku)}" data-profit-connection="${escapeHistory(row.connectionId||'')}" data-profit-preview="${Number(amount)}" data-profit-currency="${escapeHistory(row.currency||'USD')}" title="Calculate profit at ${label}">${Number(amount).toFixed(2)}</button>`).join(' / ')}</dd></div>
+          <div><dt>Profit / SKU</dt><dd><button type="button" class="profit-open" data-profit-kind="SKU" data-profit-key="${escapeHistory(row.sku)}" data-profit-connection="${escapeHistory(row.connectionId||'')}">Review costs</button></dd></div>
         </dl>
         <nav class="marketplace-links related-sku-actions" data-marketplace-shortcuts data-sku="${escapeHistory(row.sku)}" data-asin="${escapeHistory(row.asin || "")}" data-channel="${escapeHistory(row.channel || "")}" data-amazon-domain="${escapeHistory(row.amazonDomain || "amazon.com")}"></nav>
       </article>`}).join("") : '<div class="related-sku-empty">No marketplace SKU is mapped to this product yet.</div>';

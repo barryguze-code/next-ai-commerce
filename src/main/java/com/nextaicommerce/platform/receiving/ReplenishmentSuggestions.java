@@ -27,6 +27,11 @@ public class ReplenishmentSuggestions {
  public ReplenishmentSuggestions(JdbcTemplate jdbc,TransactionTemplate tx,ReplenishmentDataLoader loader,ObjectMapper json){this.jdbc=jdbc;this.tx=tx;this.loader=loader;this.json=json;}
  private void context(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
  public Snapshot snapshot(UUID tenant){return snapshots.get(tenant);}
+ public void saveCaseSize(UUID tenant,UUID item,Integer units){
+  if(units!=null&&(units<1||units>100000))throw new IllegalArgumentException("Case size must be between 1 and 100,000");
+  tx.executeWithoutResult(s->{context(tenant);if(jdbc.update("UPDATE account_catalog_items SET replenishment_units_per_case=? WHERE tenant_id=? AND id=?",units,tenant,item)!=1)throw new IllegalArgumentException("Catalogue item not found");});
+  revisions.merge(tenant,1L,Long::sum);
+ }
  public boolean pending(UUID tenant){var previous=snapshot(tenant);return building.contains(tenant)||previous==null||!previous.generatedAt().isAfter(Instant.now().minusSeconds(REFRESH_SECONDS))||!Objects.equals(revisions.getOrDefault(tenant,0L),builtRevisions.getOrDefault(tenant,0L));}
  public String error(UUID tenant){return errors.get(tenant);}
  public synchronized void requestRefresh(UUID tenant){if(!pending(tenant))revisions.merge(tenant,1L,Long::sum);}

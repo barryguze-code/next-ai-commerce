@@ -69,6 +69,14 @@ public class ReplenishmentDraftController {
   }
   return result.toString();
  }
+ @PostMapping("/app/inventory/replenishment/case-size")
+ String caseSize(HttpSession session,Authentication auth,Model model,@RequestParam UUID itemId,@RequestParam(required=false) Integer units,RedirectAttributes redirect){
+  UUID tenant=(UUID)session.getAttribute("selectedTenantId");if(tenant==null)return "redirect:/app/select-account";
+  PageController.addAccessModel(auth,model);if(!Boolean.TRUE.equals(model.getAttribute("canEditCatalog")))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+  try{suggestions.saveCaseSize(tenant,itemId,units);redirect.addFlashAttribute("planningMessage","Account case size saved. Forecast refreshes within a minute; master catalogue is unchanged.");}
+  catch(IllegalArgumentException e){redirect.addFlashAttribute("planningMessage",e.getMessage());}
+  return "redirect:/app/inventory/replenishment";
+ }
  @PostMapping("/app/inventory/replenishment/settings")
  String settings(HttpSession session,Authentication auth,Model model,@RequestParam int low,@RequestParam int target,@RequestParam int overstock,@RequestParam Map<String,String> form,RedirectAttributes redirect){
   UUID tenant=(UUID)session.getAttribute("selectedTenantId");if(tenant==null)return "redirect:/app/select-account";

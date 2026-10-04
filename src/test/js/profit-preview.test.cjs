@@ -1,0 +1,10 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const source=fs.readFileSync('src/main/resources/static/js/profit.js','utf8');
+const preview=vm.runInNewContext('('+source.slice(source.indexOf('function previewPrices('),source.indexOf(' function render('))+')');
+const order={kind:'ORDER',currency:'USD',lines:[{sku:'A',unitPrice:20},{sku:'B',unitPrice:30}]};
+test('Buy Box preview changes only the selected SKU, not historical data',()=>{assert.deepEqual([...preview(order,{profitPreview:'15',profitSku:'B'})],[20,15]);assert.equal(order.lines[1].unitPrice,30);});
+test('SKU price preview accepts its selected unit price',()=>{assert.deepEqual([...preview({...order,kind:'SKU',lines:[order.lines[0]]},{profitPreview:'12.08'})],[12.08]);});
+test('missing, invalid, or mismatched-currency prices are not substituted',()=>{for(const data of [{},{profitPreview:'bad'},{profitPreview:'-1'},{profitPreview:'15',profitCurrency:'CAD'}])assert.equal(preview(order,data),null);});

@@ -1,5 +1,28 @@
 [
 {
+ "version": "1.6.0",
+ "title": "Replenishment planning and estimated profit",
+ "sections": [
+  {
+   "title": "Replenishment",
+   "items": [
+    "Replenishment graduates from its draft label with red out-of-stock and orange low-inventory tabs, compact stock quantities and clearer basket confirmations.",
+    "Review product pictures, edit cases or whole each quantities with automatic conversion, and see estimated catalogue-cost totals in the basket. Whole cases display without decimals; calculated fractional cases display two decimals.",
+    "Account-specific case sizes can be edited without changing master packaging. Download replenishment from Basket Preview. Baskets remain page-only plans, not saved purchase orders or vendor submissions."
+   ]
+  },
+  {
+   "title": "Estimated profit",
+   "items": [
+    "Review estimated FBM profit beside Item Sales and across Marketplace SKUs, related listings and Replenishment, with compact price and Buy Box calculators.",
+    "Apply $1 other cost per sold SKU unit, 8% referral fees up to $15 and 15% above $15, and effective-dated FedEx/UPS shipping defaults from January 1, 2025.",
+    "Reuse packing information, account for multiple packages and flag missing costs. Estimates use current catalogue costs and are not historical accounting results; FBA calculations remain unavailable.",
+    "Buy Box prices differing from your listing price appear red in Replenishment. Price equality does not confirm Buy Box ownership. Existing Amazon publishing policies remain unchanged; price submission requires separately enabled, explicitly confirmed access."
+   ]
+  }
+ ]
+},
+{
  "version":"1.5.0",
  "title":"Replenishment draft available in production",
  "sections":[{"title":"Draft replenishment planning","items":["Open Replenishment from Inventory to review account-wide item demand, stock coverage, vendor planning and suggested case quantities.","Configure account stock-day targets and vendor lead times, refresh forecasts, and download suggestions using existing account permissions.","Forecasts refresh on a separate background worker and retain the last completed snapshot. Initial preparation starts after application startup.","Basket and draft purchase orders remain previews only: they are not saved or submitted. No supplier orders or Amazon updates are sent by this module."]}]

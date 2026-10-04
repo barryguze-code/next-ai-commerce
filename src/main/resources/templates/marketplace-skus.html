@@ -103,7 +103,7 @@
               <td data-label="4w sales"><div class="sku-sales-total" th:text="${row.fourWeekOrders+' / '+row.fourWeekUnits()}" title="Orders / Units · last four weeks"></div><strong class="weekly-sales" th:text="${row.weeklySalesLabel()}" title="Oldest week → latest week">0 | 0 | 0 | 0</strong></td>
               <td data-column="shipping-template" data-label="Shipping template"><strong th:text="${row.shippingTemplate ?: 'Not supplied'}">Template</strong></td><td data-column="condition" data-label="Condition" th:text="${row.conditionType ?: 'Not supplied'}">New</td><td data-column="fnsku" data-label="FNSKU" th:text="${row.fnsku ?: 'Not applicable'}">FNSKU</td><td data-column="inbound" data-label="Inbound" th:text="${row.safeInboundQuantity()}">0</td><td data-column="reserved" data-label="Reserved" th:text="${row.safeReservedQuantity()}">0</td><td data-column="unfulfillable" data-label="Unfulfillable" th:text="${row.safeUnfulfillableQuantity()}">0</td>
               <td data-label="Estimated fees"><strong th:if="${row.estimatedFees != null}" th:text="${row.currencySymbol(row.feeCurrency ?: row.currency)+#numbers.formatDecimal(row.estimatedFees,1,'COMMA',2,'POINT')}">USD 0.00</strong><span th:if="${row.estimatedFees == null}" class="cell-note">Pending</span></td>
-              <td data-label="Profit"><span class="pending-value" title="Available after landed cost and marketplace fees are finalized">Pending</span></td>
+              <td data-label="Profit"><button class="profit-open" type="button" data-profit-kind="SKU" th:attr="data-profit-key=${row.sellerSku}">Review costs</button></td>
 
             </tr>
             <tr th:if="${#lists.isEmpty(skuPage.rows)}"><td colspan="10"><div class="table-empty"><strong>No marketplace SKUs match this view</strong><span th:text="${#strings.isEmpty(query) ? 'Amazon has not supplied listings for this filter yet.' : 'Try a different SKU, ASIN, title, or status.'}">Try another search.</span></div></td></tr>
@@ -141,5 +141,5 @@
 <script src="/js/marketplace-sku-mapping.js?v=20260922-29"></script>
 <div th:replace="~{fragments/stock-editor :: editor}"></div>
 <script src="/js/stock-entry-points.js?v=20261002-2"></script>
-</body>
+<div th:replace="~{fragments/profit :: runtime}"></div></body>
 </html>

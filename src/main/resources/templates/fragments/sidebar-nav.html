@@ -46,7 +46,7 @@
       <a th:if="${canViewOperations}" th:classappend="${active == 'inventory-ledger' ? 'active' : ''}" href="/app/inventory/ledger">Inventory Ledger</a>
       <a th:classappend="${active == 'receiving' ? 'active' : ''}" href="/app/receiving">Receiving</a>
       <span class="nav-coming">Lots &amp; Expiration <small>Planned</small></span>
-      <a th:if="${canViewOperations}" th:classappend="${active == 'replenishment' ? 'active' : ''}" href="/app/inventory/replenishment">Replenishment <small>Draft</small></a>
+      <a th:if="${canViewOperations}" th:classappend="${active == 'replenishment' ? 'active' : ''}" href="/app/inventory/replenishment">Replenishment</a>
     </div>
   </details>
 

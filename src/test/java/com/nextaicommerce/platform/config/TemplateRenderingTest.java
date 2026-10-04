@@ -282,7 +282,7 @@ class TemplateRenderingTest {
         ));
         String rendered=templateEngine().process("marketplace-skus",context);
         assertThat(rendered).contains("Marketplace SKUs","Marketplace listings","IB-TEST-SKU","B012345678",
-            "4w sales","1 | 2 | 3 | 4","Profit","Pending","Catalogue","Unmapped","Price (+ shipping)","Buy Box",
+            "4w sales","1 | 2 | 3 | 4","Profit","Review costs","Catalogue","Unmapped","Price (+ shipping)","Buy Box",
             "Available","Shipping template","data-column-control=\"marketplace-skus\"",
             "Buy Box price match","/images/channels/amazon-seller.png","/images/channels/amazon-seller.png",
             "https://www.amazon.com/dp/B012345678","sellercentral.amazon.com")
@@ -417,10 +417,11 @@ class TemplateRenderingTest {
         var sku=new java.util.HashMap<String,Object>();
         sku.putAll(Map.of("sku","SHARED-6PACK","store","QA Amazon","quantity",6,"w1",1,"w2",2,"w3",3,"w4",4,"eaches",60));
         sku.put("bb",null);sku.put("bb_updated",null);sku.put("price",new java.math.BigDecimal("12.99"));sku.put("price_currency","USD");
-        sku.put("orders",8);sku.put("listed_quantity",2);
+        sku.put("orders",8);sku.put("listed_quantity",2);sku.put("connection_id",UUID.randomUUID());
         sku.put("title","SKU product title");sku.put("seller_url","https://sellercentral.amazon.com/myinventory/inventory?searchTerm=SHARED-6PACK");
         var row=new java.util.HashMap<String,Object>();
         row.putAll(Map.of("id",id,"name","Shared item","code","ITEM-1","vendor","KEHE","dc","41","pack",12,"available",24,"demand",60,"lead",2));
+        row.put("pack",new BigDecimal("12.0000"));
         row.putAll(Map.of("physical",30,"reserved",6,"skus",List.of(sku)));
         row.putAll(Map.of("demand_cases",5,"demand_remainder",0));
         row.putAll(Map.of("available_cases",2,"available_remainder",0));
@@ -438,12 +439,15 @@ class TemplateRenderingTest {
         c.setVariable("pending",false);c.setVariable("counts",Map.of("low",1,"oos",0,"healthy",0,"overstock",0));
         String html=templateEngine().process("replenishment-draft",c);
         assertThat(html).contains("inventory-history-dialog","history-position-select","replenishment-inventory-history.js");
-        assertThat(html).contains("75.0%","80% coverage","6 of these soon to expire","rp-sku-details","role=\"listitem\"","Low 2","Target 12","Over 20","To order","5 cases","B000TEST","rp-sku-picture","Download replenishment","rp-sku-toggle","Amazon available","Last synced","Search ASIN in Seller Central","× 6, B000TEST","2 cases");
+        assertThat(html).contains("75.0%","80% coverage","6 of these soon to expire","rp-sku-details","role=\"listitem\"","Low 2","Target 12","Over 20","To order","5 cases","B000TEST","rp-sku-picture","Download replenishment","rp-sku-toggle","Available","Last synced","Search ASIN in Seller Central","× 6, B000TEST","2 cases");
         assertThat(html).doesNotContain("QA Amazon");
+        assertThat(html).contains("2 cases / 0 each", "data-status=\"oos\"", "data-status=\"low\"").doesNotContain("sellable each");
+        assertThat(html.indexOf("Download replenishment")).isGreaterThan(html.indexOf("id=\"rp-basket\""));
+        assertThat(html).contains("step=\"1\"","inputmode=\"numeric\"","value=\"12\"","12 / case").doesNotContain("value=\"12.0000\"");
         assertThat(html).contains("data-column-weight=\"0.45\"","rp-vendor-badge","data-settings-open=\"vendors\"");
         assertThat(html).doesNotContain("<dialog id=\"rp-skus-");
         assertThat(html).contains("Refresh forecast","/app/inventory/replenishment/refresh","rp-week-numbers","$12.99","six hours");
-        assertThat(html).contains("Shared item","SHARED-6PACK","SKU product title","Basket preview","/app/inventory/ledger?itemId=", "Draft planning", "Replenishment <small>Draft</small>").doesNotContain("Local design draft");
+        assertThat(html).contains("Shared item","SHARED-6PACK","SKU product title","Basket preview","/app/inventory/ledger?itemId=", "Account-wide planning", "Review by vendor").doesNotContain("Local design draft", "Replenishment <small>Draft</small>", "Replenishment · Draft");
         assertThat(html).contains("rp-sku-head").doesNotContain("3 expired","OOS · duration unknown","Sessions not collected","Conversions not collected");
         c.setVariable("items",List.of());
         assertThat(templateEngine().process("replenishment-draft",c)).contains("No items with sales in the last four weeks");

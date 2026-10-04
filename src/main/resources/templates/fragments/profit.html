@@ -1,0 +1,17 @@
+<!doctype html><html xmlns:th="http://www.thymeleaf.org"><body>
+<th:block th:fragment="runtime">
+<link rel="stylesheet" href="/css/profit.css?v=20261003-4"><script defer src="/js/profit.js?v=20261003-4"></script>
+<dialog id="profit-dialog" class="invite-dialog profit-dialog" aria-labelledby="profit-title" th:attr="data-can-edit=${canEditCatalog}">
+ <section class="dialog-shell">
+  <header class="dialog-header"><div><small>Estimated profit · USD</small><h2 id="profit-title">Profit breakdown</h2><p data-profit-subtitle></p></div><button type="button" class="dialog-close" data-profit-close aria-label="Close profit breakdown">×</button></header>
+  <div class="dialog-body"><details class="profit-assumptions"><summary>Estimate details</summary><p data-profit-note class="cell-note"></p></details><div data-profit-lines></div>
+   <section class="profit-packages"><div class="profit-section-title"><strong>Shipping packages</strong><button type="button" class="secondary-button" data-profit-add>+ Package</button></div><div data-profit-packages></div></section>
+   <dl class="profit-totals" aria-live="polite" data-profit-totals></dl>
+   <details class="profit-rate-settings"><summary>Shipping rate schedule</summary><p class="cell-note">USD estimates from 01/01/25. Add a new effective date when prices change.</p><div data-profit-rate-history></div><form data-profit-rate-form th:if="${canEditCatalog}"><label>Package<select name="packageType" required></select></label><label>From<input name="effectiveFrom" type="date" min="2025-01-01" required></label><label>Cost<input name="amount" type="number" min="0" step="0.01" required></label><button class="primary-button" type="submit">Add rate</button></form></details>
+   <div data-profit-publish role="status"></div><p data-profit-feedback role="status"></p>
+  </div>
+  <footer class="dialog-actions"><small>Save costs does not publish prices. Historical sales stay unchanged.</small><button type="button" class="primary-button" data-profit-save th:if="${canEditCatalog}">Save costs</button></footer>
+ </section>
+ <input th:if="${_csrf != null}" type="hidden" data-profit-csrf th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
+</dialog>
+</th:block></body></html>

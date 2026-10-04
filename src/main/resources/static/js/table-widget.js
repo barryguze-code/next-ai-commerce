@@ -251,6 +251,7 @@ function init(root){
   const isTable=root.matches('table'),defaults=isTable?tableColumns(root):gridColumns(root);if(!defaults.length)return;
   const stored=read(key)||{},saved=stored.schema===2&&(!root.dataset.layoutVersion||stored.layoutVersion===root.dataset.layoutVersion)?stored:{},valid=id=>defaults.some(c=>c.id===id);
   let order=[...(saved.order||[])].filter(valid);defaults.forEach(c=>{if(!order.includes(c.id))order.push(c.id)});
+  if(key==='orders'&&order.includes('profit')&&order.includes('sales')){order=order.filter(id=>id!=='profit');order.splice(order.indexOf('sales')+1,0,'profit');}
   const pinned=id=>id==='record-context'||(key==='orders'&&id==='picture');
   order=[...order.filter(pinned),...order.filter(id=>!pinned(id))];
   const visibility=Object.fromEntries(defaults.map(c=>[c.id,c.required?true:(saved.visibility?.[c.id]??c.defaultVisible)]));

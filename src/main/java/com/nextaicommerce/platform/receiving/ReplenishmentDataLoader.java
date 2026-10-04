@@ -17,16 +17,16 @@ public class ReplenishmentDataLoader {
     List<Map<String,Object>> load(UUID tenant, int offset) {
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());
         var rows=jdbc.queryForList("""
-            SELECT item.id,coalesce(item.display_name,product.canonical_name) name,
+            SELECT offer.unit_cost,item.id,coalesce(item.display_name,product.canonical_name) name,
                    coalesce(offer.vendor_item_code,item.account_sku,'—') code,
                    offer.vendor_id,coalesce(offer.vendor_name,'Choose vendor') vendor,coalesce(offer.vendor_code,'—') vendor_code,coalesce(offer.dc,'') dc,
-                   coalesce(offer.units_per_case,product.units_per_case,1) pack,
+                   coalesce(item.replenishment_units_per_case,offer.units_per_case,product.units_per_case,1) pack,
                    (SELECT identifier_value FROM global_product_identifiers WHERE global_product_id=product.id
                     AND identifier_type IN ('UPC','EAN','GTIN') ORDER BY is_primary DESC,identifier_type,identifier_value LIMIT 1) upc
             FROM account_catalog_items item
             JOIN global_catalog_products product ON product.id=item.global_product_id
             LEFT JOIN LATERAL (
-                SELECT o.vendor_item_code,v.id vendor_id,v.vendor_code,v.name vendor_name,v.distribution_center dc,p.units_per_case
+                SELECT CASE WHEN o.currency='USD' THEN round(o.list_cost*(1-o.discount_rate/100),4) END unit_cost,o.vendor_item_code,v.id vendor_id,v.vendor_code,v.name vendor_name,v.distribution_center dc,p.units_per_case
                 FROM vendor_catalog_offers o JOIN vendors v ON v.tenant_id=o.tenant_id AND v.id=o.vendor_id
                 LEFT JOIN global_product_packaging_versions p ON p.id=o.packaging_version_id
                 WHERE o.tenant_id=item.tenant_id AND o.account_catalog_item_id=item.id
@@ -80,11 +80,19 @@ public class ReplenishmentDataLoader {
                 SELECT s.item_id,s.marketplace_connection_id connection_id,mc.marketplace_identifier marketplace_id,mc.reporting_timezone,s.marketplace_sku sku,s.quantity,coalesce(mc.display_name,'Amazon') store,
                   coalesce(sales.w1,0) w1,coalesce(sales.w2,0) w2,coalesce(sales.w3,0) w3,coalesce(sales.w4,0) w4,
                   coalesce(sales.orders,0) orders,listing.quantity listed_quantity,listing.item_name title,listing.image_url,listing.asin,
-                  listing.price price,listing.currency price_currency,listing.buy_box_price bb,listing.buy_box_currency currency,listing.buy_box_updated_at bb_updated
+                  listing.price price,coalesce(nullif(trim(listing.currency),''),md.currency_code) price_currency,
+                  listing.buy_box_price bb,listing.buy_box_currency currency,listing.buy_box_updated_at bb_updated,
+                  CASE WHEN sale.status='CONFIRMED'
+                    AND (sale.owned_discount#>>'{0,schedule,0,start_at}')::timestamptz<=now()
+                    AND (sale.owned_discount#>>'{0,schedule,0,end_at}')::timestamptz>now()
+                    THEN (sale.owned_discount#>>'{0,schedule,0,value_with_tax}')::numeric END sale_price
                 FROM selected s JOIN marketplace_connections mc ON mc.tenant_id=s.tenant_id AND mc.id=s.marketplace_connection_id
+                LEFT JOIN marketplace_definitions md ON md.channel=mc.channel AND md.marketplace_identifier=mc.marketplace_identifier
                 LEFT JOIN sales ON sales.marketplace_connection_id=s.marketplace_connection_id AND sales.seller_sku=s.marketplace_sku
                 LEFT JOIN amazon_listings listing ON listing.tenant_id=s.tenant_id
                   AND listing.marketplace_connection_id=s.marketplace_connection_id AND listing.seller_sku=s.marketplace_sku
+                LEFT JOIN shelf_sale_publications sale ON sale.tenant_id=s.tenant_id AND sale.connection_id=s.marketplace_connection_id
+                  AND sale.marketplace_id=listing.marketplace_id AND sale.seller_sku=s.marketplace_sku
                 ORDER BY s.item_id,s.marketplace_sku
                 """,args.toArray());
             for(var sku:details)skus.computeIfAbsent((UUID)sku.get("item_id"),ignored->new ArrayList<>()).add(sku);

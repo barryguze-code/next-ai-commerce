@@ -56,7 +56,10 @@ public class CatalogRepository {
     public record LocationView(UUID id,String code,String name,String status) {}
     public record MarketplaceSkuRef(UUID itemId,String sku,BigDecimal quantity,String status,
             String channel,Integer marketplaceQuantity,String fulfillment,String asin,
-            BigDecimal price,String currency,String amazonDomain) {
+            BigDecimal price,String currency,String amazonDomain,UUID connectionId,BigDecimal buyBoxPrice,String itemCode) {
+        public MarketplaceSkuRef(UUID itemId,String sku,BigDecimal quantity,String status,String channel,Integer marketplaceQuantity,String fulfillment,String asin,BigDecimal price,String currency,String amazonDomain){
+            this(itemId,sku,quantity,status,channel,marketplaceQuantity,fulfillment,asin,price,currency,amazonDomain,null,null,null);
+        }
         public MarketplaceSkuRef(UUID itemId,String sku,BigDecimal quantity,String status,String channel,Integer marketplaceQuantity,String fulfillment,String asin,BigDecimal price,String currency){
             this(itemId,sku,quantity,status,channel,marketplaceQuantity,fulfillment,asin,price,currency,"amazon.com");
         }
@@ -87,7 +90,13 @@ public class CatalogRepository {
             SELECT component.account_catalog_item_id,mapping.marketplace_sku,component.quantity,
               coalesce(listing.platform_status,listing.listing_status,mapping.status),connection.channel,
               listing.quantity,listing.fulfillment_channel,coalesce(listing.asin,mapping.asin),
-              listing.price,listing.currency,connection.marketplace_identifier
+              listing.price,listing.currency,connection.marketplace_identifier,mapping.marketplace_connection_id,
+              CASE WHEN listing.buy_box_currency=listing.currency THEN listing.buy_box_price END,
+              (SELECT coalesce(o.vendor_item_code,a.account_sku) FROM account_catalog_items a
+               LEFT JOIN LATERAL (SELECT vendor_item_code FROM vendor_catalog_offers v WHERE v.tenant_id=a.tenant_id
+                 AND v.account_catalog_item_id=a.id AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)
+                 ORDER BY v.is_default DESC,v.effective_from DESC LIMIT 1) o ON true
+               WHERE a.tenant_id=component.tenant_id AND a.id=component.account_catalog_item_id)
             FROM effective_component component
             JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=component.tenant_id
               AND mapping.id=component.marketplace_sku_mapping_id
@@ -100,7 +109,7 @@ public class CatalogRepository {
               AND component.account_catalog_item_id IN ("""+placeholders+") ORDER BY upper(mapping.marketplace_sku)",
             (rs,row)->new MarketplaceSkuRef(rs.getObject(1,UUID.class),rs.getString(2),rs.getBigDecimal(3),
                 rs.getString(4),rs.getString(5),(Integer)rs.getObject(6),rs.getString(7),rs.getString(8),
-                rs.getBigDecimal(9),rs.getString(10),com.nextaicommerce.platform.marketplace.MarketplaceLinks.amazonDomain(rs.getString(11))),
+                rs.getBigDecimal(9),rs.getString(10),com.nextaicommerce.platform.marketplace.MarketplaceLinks.amazonDomain(rs.getString(11)),rs.getObject(12,UUID.class),rs.getBigDecimal(13),rs.getString(14)),
                 java.util.stream.Stream.concat(java.util.stream.Stream.of(tenantId,tenantId),parameters.stream()).toArray());
     }
 
