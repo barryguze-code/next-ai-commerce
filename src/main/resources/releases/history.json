@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.6.1",
+ "title":"Reliable FBM inventory queue processing",
+ "sections":[{"title":"Inventory synchronization","items":["New stock updates no longer wait behind routine checks of confirmed zero-stock listings. Overdue updates are processed oldest-first while fresh zero-stock changes retain priority.","Active accounts receive fair processing turns under the shared Amazon request limit. Order freshness, inventory holds and Amazon quantity verification remain required.","Inventory sync errors now identify the Amazon HTTP status and whether submission or verification failed, without exposing credentials."]}]
+},
+{
  "version": "1.6.0",
  "title": "Replenishment planning and estimated profit",
  "sections": [
