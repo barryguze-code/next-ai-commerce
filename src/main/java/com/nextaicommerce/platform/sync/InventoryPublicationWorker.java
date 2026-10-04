@@ -22,6 +22,7 @@ public class InventoryPublicationWorker {
  private final java.util.Set<java.util.UUID> allowedConnections;
  private final java.util.Set<String> allowedSkus;
  private final java.time.Instant startup=java.time.Instant.now();
+ private int nextTenant;
  public InventoryPublicationWorker(InventoryPublicationRepository repository,TransactionTemplate tx,AmazonSpApiClient amazon,ObjectMapper json,
   @Value("${app.amazon.inventory-publication-mode:DRY_RUN}") String mode,
   @Value("${app.local-development:false}") boolean local,
@@ -39,14 +40,23 @@ public class InventoryPublicationWorker {
  @Scheduled(fixedDelayString="${app.amazon.inventory-publication-delay-ms:1000}",initialDelayString="${app.amazon.inventory-publication-initial-delay-ms:30000}")
  public void tick(){
   // One request-bearing transaction per tick, globally (including multiple application instances).
-  for(var tenant:repository.tenants()){
+  var tenants=repository.tenants();
+  // Plan every account even when another account has a continuously busy publication queue.
+  for(var tenant:tenants){
    try{
     tx.executeWithoutResult(s->{repository.plan(tenant);if(dryRun)repository.simulate(tenant);});
-    if(!dryRun){Boolean sent=tx.execute(s->{
+   }catch(RuntimeException e){log.error("Inventory publication planning failed for tenant {}",tenant,e);}
+  }
+  if(dryRun||tenants.isEmpty())return;
+  int start=Math.floorMod(nextTenant,tenants.size());
+  for(int offset=0;offset<tenants.size();offset++){
+   int index=(start+offset)%tenants.size();var tenant=tenants.get(index);
+   try{
+    Boolean sent=tx.execute(s->{
      repository.scope(tenant);
      var pending=repository.next(tenant,startup,allowedConnections,String.join(",",allowedSkus));if(pending.isEmpty()||!repository.acquireRequestSlot())return false;
      process(pending.get());return true;
-    });if(Boolean.TRUE.equals(sent))break;}
+    });if(Boolean.TRUE.equals(sent)){nextTenant=(index+1)%tenants.size();break;}
    }catch(RuntimeException e){log.error("Inventory publication failed for tenant {}",tenant,e);}
   }
  }
@@ -80,9 +90,11 @@ public class InventoryPublicationWorker {
    if(!"ACCEPTED".equals(response.json().path("status").asText()))throw new IllegalStateException("Amazon did not accept inventory submission");
    repository.result(p,"VERIFYING",attempt,10,null,null);
   }catch(Exception e){
-   String message="Inventory request failed; "+e.getClass().getSimpleName()+". Verification/retry pending.";
+   String message=e instanceof AmazonSpApiClient.AmazonApiException api
+     ? "Amazon HTTP "+api.status()+" during "+(p.status().equals("PENDING")?"quantity submission":"quantity verification")+". Verification/retry pending."
+     : "Inventory request failed; "+e.getClass().getSimpleName()+". Verification/retry pending.";
    repository.result(p,attempt>=3?"ATTENTION":"RETRY",attempt,retryDelay(attempt),message,null);
-   log.warn("Inventory update unconfirmed: tenant={} sku={} revision={} attempt={}",p.tenant(),p.sku(),p.revision(),attempt);
+   log.warn("Inventory update unconfirmed: tenant={} sku={} revision={} attempt={} details={}",p.tenant(),p.sku(),p.revision(),attempt,message);
   }
  }
  static int retryDelay(int attempt){return Math.min(900,10*(1<<Math.min(6,Math.max(0,attempt))))+ThreadLocalRandom.current().nextInt(5);}

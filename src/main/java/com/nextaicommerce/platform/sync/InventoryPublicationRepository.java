@@ -77,7 +77,10 @@ public class InventoryPublicationRepository {
          AND j.marketplace_connection_id=p.connection_id AND j.job_type IN ('ORDERS_API_DELTA','ORDERS_30_DAY','ORDER_ITEMS_30_DAY','FINAL_RECONCILIATION')
          AND j.status IN ('QUEUED','RUNNING','WAITING'))
      ))
-   ORDER BY (p.desired_quantity=0) DESC,p.next_attempt_at FOR UPDATE OF p SKIP LOCKED LIMIT 1
+   ORDER BY CASE WHEN p.status='CONFIRMED' THEN 2
+                 WHEN p.next_attempt_at<now()-interval '2 minutes' THEN 0 ELSE 1 END,
+     CASE WHEN p.next_attempt_at>=now()-interval '2 minutes' THEN p.desired_quantity=0 ELSE false END DESC,
+     p.next_attempt_at,p.seller_sku FOR UPDATE OF p SKIP LOCKED LIMIT 1
    """,(r,n)->new Pending(tenant,r.getObject("connection_id",UUID.class),r.getString("marketplace_id"),r.getString("seller_sku"),r.getInt("desired_quantity"),r.getLong("revision"),r.getString("status"),r.getInt("attempts"),r.getString("seller_identifier")),tenant,connectionArray(allowedConnections),connectionArray(allowedConnections),allowedSkus,allowedSkus,startup==null?null:java.sql.Timestamp.from(startup),startup==null?null:java.sql.Timestamp.from(startup)).stream().findFirst();
  }
  private static String connectionArray(Set<UUID> ids){return ids==null?null:"{"+String.join(",",ids.stream().map(UUID::toString).toList())+"}";}

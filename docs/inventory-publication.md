@@ -1,5 +1,15 @@
 # Inventory publication — local simulation (2026-09-22)
 
+## v1.6.1 scheduling correction
+
+The original absolute zero-quantity ordering also prioritized periodic checks of already-confirmed
+zero listings. A sufficiently busy account could indefinitely delay positive stock changes and
+later accounts. Pending changes now precede confirmed polling; unconfirmed work overdue by two
+minutes is oldest-first, while fresh zero changes retain priority. Publication rotates accounts,
+and planning runs for every account independently of which account sends a request. Existing
+fresh-order and revision safeguards remain unchanged. Production activation is still an explicit
+operational allowlist decision, not an implicit consequence of deploying code.
+
 Production publishing remains disabled by default. Local configuration enables the worker in
 `DRY_RUN` mode and keeps `app.amazon.write-enabled=false`. No Amazon reads or writes are made
 by the simulation worker. The existing order import worker can continue its normal reads.

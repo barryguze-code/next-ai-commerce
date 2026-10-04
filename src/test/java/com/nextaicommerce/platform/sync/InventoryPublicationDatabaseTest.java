@@ -188,6 +188,22 @@ class InventoryPublicationDatabaseTest {
   jdbc.update("UPDATE amazon_orders SET order_status='Canceled' WHERE tenant_id=?",tenant);orders.reconcile(tenant,connection);repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(12);
  });}
  void order(String id,String sku,int qty){jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status,fulfillment_channel,operational_scope) VALUES (?,?,'ATVPDKIKX0DER',?,now(),'Unshipped','MFN','LIVE')",tenant,connection,id);jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,?,?,?)",tenant,connection,id,id,sku,qty);}
+ @Test void confirmedZeroPollingCannotStarvePendingRestock(){tx.executeWithoutResult(s->{
+  repo.plan(tenant);
+  jdbc.update("UPDATE inventory_publications SET desired_quantity=0,status='CONFIRMED',next_attempt_at=now()-interval '1 day' WHERE tenant_id=? AND seller_sku<>'PACK'",tenant);
+  assertThat(repo.next(tenant).orElseThrow().sku()).isEqualTo("PACK");
+ });}
+ @Test void overdueRestockCannotBeStarvedByRepeatingZeroRetries(){tx.executeWithoutResult(s->{
+  repo.plan(tenant);
+  jdbc.update("UPDATE inventory_publications SET desired_quantity=0,next_attempt_at=now()-interval '3 minutes' WHERE tenant_id=?",tenant);
+  jdbc.update("UPDATE inventory_publications SET desired_quantity=1,next_attempt_at=now()-interval '1 day' WHERE tenant_id=? AND seller_sku='PACK'",tenant);
+  assertThat(repo.next(tenant).orElseThrow().sku()).isEqualTo("PACK");
+ });}
+ @Test void freshZeroStillHasPriorityOverFreshRestock(){tx.executeWithoutResult(s->{
+  repo.plan(tenant);
+  jdbc.update("UPDATE inventory_publications SET desired_quantity=0 WHERE tenant_id=? AND seller_sku='SINGLE'",tenant);
+  assertThat(repo.next(tenant).orElseThrow().sku()).isEqualTo("SINGLE");
+ });}
  @Test void dryRunStateAndStaleRevisionCannotConfirmNewQuantity(){tx.executeWithoutResult(s->{repo.plan(tenant);var old=repo.next(tenant).orElseThrow();stock(item,-12,40);repo.plan(tenant);repo.result(old,"CONFIRMED",0,900,null,old.quantity());assertThat(jdbc.queryForObject("SELECT status FROM inventory_publications WHERE tenant_id=? AND seller_sku=?",String.class,tenant,old.sku())).isEqualTo("PENDING");repo.simulate(tenant);assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_publications WHERE tenant_id=? AND status='DRY_RUN'",Integer.class,tenant)).isEqualTo(3);});}
  @Test void rollbackDoesNotLeakDirtyEvents(){tx.executeWithoutResult(s->repo.plan(tenant));tx.executeWithoutResult(s->{repo.scope(tenant);stock(item,-2,40);s.setRollbackOnly();});tx.executeWithoutResult(s->{repo.scope(tenant);assertThat(repo.plan(tenant)).isZero();assertThat(quantity("SINGLE")).isEqualTo(12);});}
  @Test void oldPendingMissingOrderKeepsReservationAndAuditIsIdempotent(){tx.executeWithoutResult(s->{
