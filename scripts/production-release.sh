@@ -132,5 +132,10 @@ for attempt in $(seq 1 36); do
   sleep 5
 done
 test "$healthy" = true
+# Do not declare this release healthy if its additive profit/planning schema
+# did not finish migrating. No business rows or credentials are printed.
+migration_count=$(sudo -u postgres psql -XAtqc "SELECT count(*) FROM flyway_schema_history WHERE version IN ('91','92','93','94','95') AND success")
+test "$migration_count" = 5
+echo "Profit and replenishment schema migrations V91–V95 verified."
 trap - ERR
 echo "Release v$version completed; existing Amazon publishing policies unchanged."
