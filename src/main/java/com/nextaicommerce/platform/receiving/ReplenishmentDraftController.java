@@ -20,6 +20,7 @@ public class ReplenishmentDraftController {
  String draft(HttpSession session,Authentication auth,Model model,@RequestParam(defaultValue="") String q,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="25") int size,@RequestParam(defaultValue="forecast") String status){
   if(!PageController.addTenantModel(session,model))return "redirect:/app/select-account";
   PageController.addAccessModel(auth,model);UUID tenant=(UUID)session.getAttribute("selectedTenantId");
+  model.addAttribute("basketScope",tenant+":"+auth.getName());
   var snapshot=suggestions.snapshot(tenant);String search=q.trim().toLowerCase(Locale.ROOT);
   var all=snapshot==null?List.<Map<String,Object>>of():snapshot.items();
   String selected=Set.of("forecast","all","oos","low","healthy","overstock").contains(status)?status:"forecast";
@@ -76,6 +77,16 @@ public class ReplenishmentDraftController {
   try{suggestions.saveCaseSize(tenant,itemId,units);redirect.addFlashAttribute("planningMessage","Account case size saved. Forecast refreshes within a minute; master catalogue is unchanged.");}
   catch(IllegalArgumentException e){redirect.addFlashAttribute("planningMessage",e.getMessage());}
   return "redirect:/app/inventory/replenishment";
+ }
+ @PostMapping(value="/app/inventory/replenishment/case-size",params="inline=true")
+ @ResponseBody
+ Map<String,Object> inlineCaseSize(HttpSession session,Authentication auth,Model model,@RequestParam UUID itemId,@RequestParam(required=false) Integer units){
+  UUID tenant=(UUID)session.getAttribute("selectedTenantId");
+  if(tenant==null)throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+  PageController.addAccessModel(auth,model);
+  if(!Boolean.TRUE.equals(model.getAttribute("canEditCatalog")))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+  try{suggestions.saveCaseSize(tenant,itemId,units);return suggestions.caseSizePreview(tenant,itemId);}
+  catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
  }
  @PostMapping("/app/inventory/replenishment/settings")
  String settings(HttpSession session,Authentication auth,Model model,@RequestParam int low,@RequestParam int target,@RequestParam int overstock,@RequestParam Map<String,String> form,RedirectAttributes redirect){

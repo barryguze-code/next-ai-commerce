@@ -27,6 +27,28 @@ public class ReplenishmentSuggestions {
  public ReplenishmentSuggestions(JdbcTemplate jdbc,TransactionTemplate tx,ReplenishmentDataLoader loader,ObjectMapper json){this.jdbc=jdbc;this.tx=tx;this.loader=loader;this.json=json;}
  private void context(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
  public Snapshot snapshot(UUID tenant){return snapshots.get(tenant);}
+ public Map<String,Object> caseSizePreview(UUID tenant,UUID item){
+  Number pack=caseSize(tenant,item);var result=new HashMap<String,Object>();result.put("pack",pack);
+  var snapshot=snapshot(tenant);
+  if(snapshot!=null)snapshot.items().stream().filter(row->item.toString().equals(row.get("id").toString())).findFirst().ifPresent(row->{
+   var policy=new ReplenishmentPlanning.Policy(((Number)row.get("lead")).intValue(),((Number)row.get("low_days")).intValue(),((Number)row.get("target_days")).intValue(),((Number)row.get("overstock_days")).intValue());
+   var estimate=ReplenishmentPlanning.estimate(((Number)row.get("available")).doubleValue(),((Number)row.get("demand")).doubleValue(),pack.doubleValue(),policy,((Number)row.get("minimum_each")).doubleValue());
+   result.put("cases",estimate.cases());result.put("each",estimate.cases()*pack.doubleValue());
+  });
+  return result;
+ }
+ public Number caseSize(UUID tenant,UUID item){return tx.execute(s->{context(tenant);return jdbc.queryForObject("""
+  SELECT coalesce(i.replenishment_units_per_case,offer.units_per_case,p.units_per_case,1)
+  FROM account_catalog_items i JOIN global_catalog_products p ON p.id=i.global_product_id
+  LEFT JOIN LATERAL (
+   SELECT pack.units_per_case FROM vendor_catalog_offers o
+   JOIN vendors v ON v.tenant_id=o.tenant_id AND v.id=o.vendor_id
+   LEFT JOIN global_product_packaging_versions pack ON pack.id=o.packaging_version_id
+   WHERE o.tenant_id=i.tenant_id AND o.account_catalog_item_id=i.id
+    AND o.effective_from<=current_date AND (o.effective_to IS NULL OR o.effective_to>=current_date)
+   ORDER BY o.is_default DESC,o.updated_at DESC,o.id LIMIT 1
+  ) offer ON true WHERE i.tenant_id=? AND i.id=?
+  """,java.math.BigDecimal.class,tenant,item);});}
  public void saveCaseSize(UUID tenant,UUID item,Integer units){
   if(units!=null&&(units<1||units>100000))throw new IllegalArgumentException("Case size must be between 1 and 100,000");
   tx.executeWithoutResult(s->{context(tenant);if(jdbc.update("UPDATE account_catalog_items SET replenishment_units_per_case=? WHERE tenant_id=? AND id=?",units,tenant,item)!=1)throw new IllegalArgumentException("Catalogue item not found");});

@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.6.2",
+ "title":"Persistent replenishment baskets",
+ "sections":[{"title":"Replenishment hotfix","items":["Your basket survives pagination, refreshes and menu navigation in the same browser tab, separated by user and account. Closing the tab ends this browser-session basket; no purchase order is submitted.","Case-size changes save in place without returning to page one or resetting the table. Recommendations recalculate while basket each quantities stay unchanged."]}]
+},
+{
  "version":"1.6.1",
  "title":"Reliable FBM inventory queue processing",
  "sections":[{"title":"Inventory synchronization","items":["New stock updates no longer wait behind routine checks of confirmed zero-stock listings. Overdue updates are processed oldest-first while fresh zero-stock changes retain priority.","Active accounts receive fair processing turns under the shared Amazon request limit. Order freshness, inventory holds and Amazon quantity verification remain required.","Inventory sync errors now identify the Amazon HTTP status and whether submission or verification failed, without exposing credentials."]}]

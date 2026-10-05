@@ -6,6 +6,13 @@
  const $=s=>document.querySelector(s),text=(tag,value)=>{const n=document.createElement(tag);n.textContent=value;return n;};
  const formatCases=value=>Number.isInteger(value)?String(value):value.toFixed(2);
  const money=value=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(value);
+ const scope=$('[data-basket-scope]')?.dataset.basketScope;
+ const storageKey=scope?'replenishment-basket:v1:'+scope:null;
+ function persistBasket(){try{if(storageKey)sessionStorage.setItem(storageKey,JSON.stringify([...basket.values()]));}catch{const notice=$('.rp-notice');if(notice)notice.textContent='Browser storage is unavailable. Keep this page open to retain your basket.';}}
+ try{const saved=storageKey?JSON.parse(sessionStorage.getItem(storageKey)||'[]'):[];
+  if(Array.isArray(saved))saved.forEach(item=>{if(item&&typeof item.id==='string'&&Number.isFinite(item.pack)&&item.pack>0&&Number.isSafeInteger(item.each)&&item.each>=0)basket.set(item.id,item);});
+ }catch{/* A damaged or unavailable browser cache must not prevent planning. */}
+ // Case edits preserve ordered each, not the old number of cases.
  let toastTimer;
  function notifyAdded(item,existing){
   let toast=$('.rp-basket-toast');if(!toast){toast=text('div','');toast.className='rp-basket-toast';toast.setAttribute('role','status');toast.setAttribute('aria-live','polite');document.body.append(toast);}
@@ -60,7 +67,7 @@
     const field=(label,step)=>{const wrap=text('label',label),input=document.createElement('input');input.type='number';input.min='0';input.max='100000000';input.step=step;input.setAttribute('aria-label',label+' for '+item.name);wrap.append(input);line.append(wrap);return input;};
     const cases=field('Cases','0.01'),each=field('Each','1'),cost=text('strong','');line.append(cost);
     const sync=()=>{cases.value=formatCases(item.each/item.pack);each.value=item.each;cost.textContent=item.cost==null?'Cost pending':money(Math.round(item.each*item.cost*100)/100);updateSummary();};sync();
-    const change=(input,isCases)=>{const value=Number(input.value);if(input.value===''||!Number.isFinite(value)||value<0||value>100000000||(!isCases&&!Number.isInteger(value))){input.setCustomValidity('Enter a valid '+(isCases?'case quantity':'whole number of each')+'.');input.reportValidity();return;}input.setCustomValidity('');item.each=isCases?Math.round(value*item.pack):value;sync();};
+    const change=(input,isCases)=>{const value=Number(input.value);if(input.value===''||!Number.isFinite(value)||value<0||value>100000000||(!isCases&&!Number.isInteger(value))){input.setCustomValidity('Enter a valid '+(isCases?'case quantity':'whole number of each')+'.');input.reportValidity();return;}input.setCustomValidity('');item.each=isCases?Math.round(value*item.pack):value;persistBasket();sync();};
     cases.onchange=()=>change(cases,true);each.onchange=()=>change(each,false);
     const remove=text('button','Remove');remove.type='button';remove.className='rp-text-button';remove.setAttribute('aria-label','Remove '+item.name);remove.onclick=()=>{basket.delete(item.id);basketView(po);};line.append(remove);host.append(line);
    });
@@ -68,7 +75,42 @@
   if(basket.size){updateSummary();host.append(summary,text('small','Each is a whole unit; fractional cases display to 2 decimals. Case edits round to the nearest whole each.'));}
   if(po&&basket.size)host.append(text('p','Preview only — nothing is ordered or sent to a vendor.'));
   $('[data-basket-count]').textContent=basket.size;$('[data-po-preview]').disabled=!basket.size;
+  persistBasket();
  }
+ document.addEventListener('submit',async event=>{
+  const form=event.target.closest('.rp-case-edit form');if(!form)return;
+  event.preventDefault();const row=form.closest('[data-replenishment-row]'),button=form.querySelector('[type="submit"]');
+  if(button.disabled)return;
+  let message=form.querySelector('[role="status"]');if(!message){message=text('small','');message.setAttribute('role','status');form.append(message);}
+  button.disabled=true;message.textContent='Saving…';
+  try{
+   const data=new FormData(form);data.set('inline','true');
+   const response=await fetch(form.action,{method:'POST',body:data,headers:{Accept:'application/json'}});
+   if(!response.ok)throw new Error('Save failed');
+   const result=await response.json(),pack=Number(result.pack);
+   if(!Number.isFinite(pack)||pack<=0)throw new Error('Invalid case size');
+   row.dataset.pack=String(pack);
+   form.querySelector('[name="units"]').value=String(pack);
+   form.closest('details').querySelector('summary span').textContent=pack+' / case';
+   const item=basket.get(row.dataset.item);if(item){item.pack=pack;persistBasket();}
+   // Update only this recommendation; preserve sorting, filters, expansion and scroll.
+   if(Number.isFinite(result.cases)&&Number.isFinite(result.each)){
+    row.dataset.cases=String(result.cases);
+    form.closest('td').querySelector('strong').textContent=result.cases+' cases';
+    form.closest('.rp-case-line').querySelector('.cell-note').textContent=result.each+' each · ';
+    row.querySelector('[data-add-basket]').disabled=result.cases<=0;
+   }
+   message.textContent='Case size saved. Basket quantities are unchanged.';
+  }catch{message.textContent='Could not save case size. Your basket and table position are unchanged. Please retry.';}
+  finally{button.disabled=false;}
+ });
+ if($('[data-basket-count]'))basketView();
+ window.addEventListener('pageshow',event=>{
+  if(!event.persisted||!storageKey)return;
+  try{const saved=JSON.parse(sessionStorage.getItem(storageKey)||'[]');if(!Array.isArray(saved))return;
+   basket.clear();saved.forEach(item=>{if(item&&typeof item.id==='string'&&Number.isFinite(item.pack)&&item.pack>0&&Number.isSafeInteger(item.each)&&item.each>=0)basket.set(item.id,item);});basketView();
+  }catch{/* Keep the currently visible basket when browser storage is unavailable. */}
+ });
  document.addEventListener('click',event=>{
   const open=event.target.closest('[data-skus-open]');if(open){toggleSkus(open.dataset.skusOpen);return;}
   const skuTable=event.target.closest('.rp-sku-details');
