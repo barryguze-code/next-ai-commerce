@@ -65,7 +65,7 @@ public class ProfitRepository {
                 AND (sale.owned_discount#>>'{0,schedule,0,end_at}')::timestamptz>now()
                 THEN (sale.owned_discount#>>'{0,schedule,0,value_with_tax}')::numeric END,l.price) price,
               coalesce(nullif(trim(l.currency),''),md.currency_code) currency,l.fulfillment_channel,l.other_cost_per_sku,
-              l.profit_package_type,product.cost,coalesce(profile.name,packing.packaging) package_name,profile.preferred_carrier carrier
+              l.profit_package_type,coalesce(l.product_cost_override,product.cost) cost,coalesce(profile.name,packing.packaging) package_name,profile.preferred_carrier carrier
             FROM amazon_listings l
             JOIN marketplace_connections mc ON mc.tenant_id=l.tenant_id AND mc.id=l.marketplace_connection_id
             LEFT JOIN marketplace_definitions md ON md.channel=mc.channel AND md.marketplace_identifier=mc.marketplace_identifier
@@ -106,7 +106,7 @@ public class ProfitRepository {
               i.seller_sku,i.title,i.quantity_ordered,
               (i.item_price-coalesce(i.promotion_discount,0))/nullif(i.quantity_ordered,0) unit_price,
               coalesce(i.shipping_price,0)-coalesce(i.shipping_discount,0) customer_shipping,
-              coalesce(l.other_cost_per_sku,1.00) other_cost_per_sku,product.cost,
+              coalesce(l.other_cost_per_sku,1.00) other_cost_per_sku,coalesce(l.product_cost_override,product.cost) cost,
               l.profit_package_type,profile.name package_name,profile.preferred_carrier carrier,packing.packaging order_package
             FROM amazon_orders o JOIN amazon_order_items i ON i.tenant_id=o.tenant_id
               AND i.marketplace_connection_id=o.marketplace_connection_id AND i.amazon_order_id=o.amazon_order_id
@@ -186,6 +186,69 @@ public class ProfitRepository {
         jdbc.update("DELETE FROM profit_sku_packages WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?",tenant,connection,sku);
         int sequence=0;
         for(var p:packages)jdbc.update("INSERT INTO profit_sku_packages(tenant_id,marketplace_connection_id,seller_sku,sequence,description,amount) VALUES (?,?,?,?,?,?)",tenant,connection,sku,++sequence,p.description(),p.amount());
+    }
+    public record ItemCost(UUID id,String name,BigDecimal quantity,BigDecimal cost,String currency){}
+    public record Defaults(String sku,BigDecimal override,List<ItemCost> items){}
+    public record SkuCostChange(String sku,BigDecimal amount){}
+    public record ItemCostChange(UUID id,BigDecimal amount){}
+    @Transactional(readOnly=true)
+    public List<Defaults> defaults(UUID tenant,UUID connection,List<String> skus){
+        scope(tenant);if(skus.isEmpty())return List.of();
+        var args=Map.of("tenant",tenant,"connection",connection,"skus",skus);
+        var parts=named.queryForList("""
+            SELECT m.marketplace_sku,a.id,coalesce(a.display_name,g.canonical_name) name,part.quantity,
+              offer.cost,offer.currency
+            FROM marketplace_sku_mappings m
+            CROSS JOIN LATERAL (
+              SELECT c.account_catalog_item_id item,c.quantity FROM marketplace_sku_mapping_components c
+                WHERE c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id
+              UNION ALL SELECT m.account_catalog_item_id,greatest(m.quantity_per_marketplace_unit,1)
+                WHERE m.account_catalog_item_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM marketplace_sku_mapping_components c
+                  WHERE c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id)
+            ) part
+            JOIN account_catalog_items a ON a.tenant_id=m.tenant_id AND a.id=part.item
+            JOIN global_catalog_products g ON g.id=a.global_product_id
+            LEFT JOIN LATERAL (SELECT v.list_cost*(1-v.discount_rate/100) cost,v.currency
+              FROM vendor_catalog_offers v WHERE v.tenant_id=a.tenant_id AND v.account_catalog_item_id=a.id
+                AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)
+              ORDER BY v.is_default DESC,v.effective_from DESC,v.id LIMIT 1) offer ON true
+            WHERE m.tenant_id=:tenant AND m.marketplace_connection_id=:connection AND m.marketplace_sku IN (:skus) AND m.status='ACTIVE'
+            ORDER BY m.marketplace_sku,a.id
+            """,args);
+        return named.query("SELECT seller_sku,product_cost_override FROM amazon_listings WHERE tenant_id=:tenant AND marketplace_connection_id=:connection AND seller_sku IN (:skus)",args,
+            (rs,n)->{String sku=rs.getString(1);return new Defaults(sku,rs.getBigDecimal(2),parts.stream().filter(p->sku.equals(p.get("marketplace_sku")))
+                .map(p->new ItemCost((UUID)p.get("id"),text(p,"name"),decimal(p,"quantity"),decimal(p,"cost"),text(p,"currency"))).toList());});
+    }
+    /** One transaction for a calculator save; only explicitly edited fields are persisted. */
+    @Transactional
+    public void saveDefaults(UUID tenant,UUID connection,String kind,String key,List<SkuCostChange> skuChanges,
+            List<ItemCostChange> itemChanges,List<PackageCost> packages,BigDecimal other,String packageType,String actor){
+        scope(tenant);
+        if(actor==null||actor.isBlank()||skuChanges==null||itemChanges==null||skuChanges.size()>100||itemChanges.size()>100)
+            throw new IllegalArgumentException("Choose up to 100 costs to save.");
+        var view="SKU".equals(kind)?skus(tenant,connection,List.of(key)).get(key):"ORDER".equals(kind)?orders(tenant,connection,List.of(key)).get(key):null;
+        if(view==null||!"USD".equals(view.currency()))throw new IllegalArgumentException("Choose a USD listing or order in this store.");
+        var allowed=view.lines().stream().map(Line::sku).distinct().toList();
+        var items=defaults(tenant,connection,allowed).stream().flatMap(d->d.items().stream()).toList();
+        for(var change:itemChanges){
+            if(change==null||items.stream().noneMatch(i->i.id().equals(change.id())&&"USD".equals(i.currency())))
+                throw new IllegalArgumentException("Choose a mapped USD catalogue item; set missing vendor pricing in Account catalogue.");
+            new com.nextaicommerce.platform.catalog.CatalogRepository(jdbc).saveItemCost(tenant,actor,change.id(),change.amount(),null);
+        }
+        for(var change:skuChanges){
+            if(change==null||!allowed.contains(change.sku())||change.amount()!=null&&(change.amount().signum()<0||change.amount().scale()>4||change.amount().compareTo(new BigDecimal("100000"))>0))
+                throw new IllegalArgumentException("Enter a valid SKU cost, or use catalogue costs.");
+            var found=jdbc.queryForList("SELECT product_cost_override FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=? FOR UPDATE",tenant,connection,change.sku());
+            if(found.isEmpty())throw new IllegalArgumentException("SKU not found in this store.");
+            jdbc.update("INSERT INTO sku_product_cost_history(tenant_id,marketplace_connection_id,seller_sku,previous_cost,new_cost,changed_by) VALUES (?,?,?,?,?,?)",tenant,connection,change.sku(),found.getFirst().get("product_cost_override"),change.amount(),actor);
+            jdbc.update("UPDATE amazon_listings SET product_cost_override=? WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?",change.amount(),tenant,connection,change.sku());
+        }
+        if("ORDER".equals(kind)){if(packages!=null)savePackages(tenant,connection,key,packages,actor);}
+        else {
+            var type=packageType==null||packageType.isBlank()?null:ProfitShippingRates.PackageType.valueOf(packageType);
+            if(packages!=null)saveSku(tenant,connection,key,type,other,packages);
+            else saveSku(tenant,connection,key,type,other);
+        }
     }
     static ProfitShippingRates.PackageType packageType(String explicit,String name,String carrier){
         if(!explicit.isBlank())return ProfitShippingRates.PackageType.valueOf(explicit);

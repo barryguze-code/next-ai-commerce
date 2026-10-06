@@ -155,11 +155,12 @@ public class CatalogController {
     }
 
     @PostMapping("/app/catalog/products/{itemId}")
-    String updateAccountProduct(@PathVariable UUID itemId,HttpSession session,
+    String updateAccountProduct(@PathVariable UUID itemId,HttpSession session,Authentication authentication,
             @RequestParam(required=false) String displayName,@RequestParam(required=false) String accountSku,
-            @RequestParam(defaultValue="ACTIVE") String status,RedirectAttributes redirect){
+            @RequestParam(defaultValue="ACTIVE") String status,@RequestParam(required=false) BigDecimal itemCost,
+            @RequestParam(required=false) UUID costVendorId,RedirectAttributes redirect){
         try{
-            catalog.updateAccountProduct(requiredTenantId(session),itemId,displayName,accountSku,status);
+            catalog.updateAccountProductWithCost(requiredTenantId(session),itemId,displayName,accountSku,status,itemCost,costVendorId,authentication.getName());
             redirect.addFlashAttribute("catalogSuccess","Account product details updated.");
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("catalogError",e.getMessage());}
         catch(Exception e){log.error("Account product update failed itemId={}",itemId,e);redirect.addFlashAttribute("catalogError","The account product could not be updated. Nothing was changed.");}

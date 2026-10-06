@@ -203,7 +203,10 @@ public class ReceivingWorkflowRepository {
             FROM receiving_documents d JOIN receiving_sessions s ON s.tenant_id=d.tenant_id AND s.id=d.receiving_session_id
             JOIN vendors v ON v.tenant_id=d.tenant_id AND v.id=d.vendor_id
             WHERE d.tenant_id=:tenant AND d.removed_at IS NULL AND s.status<>'CANCELLED'
-              AND (:query='' OR concat_ws(' ',d.document_number,d.original_filename,v.name,replace(d.document_type,'_',' ')) ILIKE '%'||:query||'%')
+              AND (:query='' OR concat_ws(' ',d.document_number,d.original_filename,v.name,replace(d.document_type,'_',' ')) ILIKE '%'||:query||'%'
+                OR EXISTS (SELECT 1 FROM receiving_document_lines line
+                  WHERE line.tenant_id=d.tenant_id AND line.receiving_document_id=d.id
+                    AND line.vendor_item_code ILIKE '%'||:query||'%'))
             """;
         Map<String,Object> args=new HashMap<>(Map.of("tenant",tenant,"query",q,"size",size));
         long count=sql.queryForObject("SELECT count(*) "+from,args,Long.class);

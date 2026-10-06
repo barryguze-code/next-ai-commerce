@@ -33,6 +33,36 @@ class ProfitDatabaseTest {
   jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,fulfillment_channel,currency) VALUES (?,?,'ATVPDKIKX0DER','ORDER','2025-06-01T12:00:00Z','MFN','USD')",tenant,connection);
   jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered,item_price,currency) VALUES (?,?,'ORDER','LINE','SKU',3,45,'USD')",tenant,connection);
  });}
+ @Test void skuOverridePersistsAndResetUsesCatalogueWithoutChangingItemOrSale(){tx.executeWithoutResult(s->{
+  repo.saveDefaults(tenant,connection,"SKU","SKU",List.of(new ProfitRepository.SkuCostChange("SKU",new BigDecimal("6.25"))),List.of(),null,BigDecimal.ONE,"FEDEX_XSMALL","tester");
+  assertThat(repo.skus(tenant,connection,List.of("SKU")).get("SKU").lines().getFirst().productCost()).isEqualByComparingTo("6.25");
+  assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").lines().getFirst().productCost()).isEqualByComparingTo("6.25");
+  assertThat(repo.defaults(tenant,connection,List.of("SKU")).getFirst().items().getFirst().cost()).isEqualByComparingTo("2");
+  repo.saveDefaults(tenant,connection,"SKU","SKU",List.of(new ProfitRepository.SkuCostChange("SKU",null)),List.of(),null,BigDecimal.ONE,"FEDEX_XSMALL","tester");
+  assertThat(repo.skus(tenant,connection,List.of("SKU")).get("SKU").lines().getFirst().productCost()).isEqualByComparingTo("4");
+  assertThat(jdbc.queryForObject("SELECT price FROM amazon_listings WHERE tenant_id=?",BigDecimal.class,tenant)).isEqualByComparingTo("20");
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM sku_product_cost_history WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
+ });}
+ @Test void itemEditorRecalculatesPackCostAndAuditsVendorCost(){tx.executeWithoutResult(s->{
+  String actor=tenant+"@test.invalid";jdbc.update("INSERT INTO app_users(email,display_name) VALUES (?,'Cost editor')",actor);
+  var item=repo.defaults(tenant,connection,List.of("SKU")).getFirst().items().getFirst();
+  assertThat(item.quantity()).isEqualByComparingTo("2");
+  repo.saveDefaults(tenant,connection,"SKU","SKU",List.of(),List.of(new ProfitRepository.ItemCostChange(item.id(),new BigDecimal("3.125"))),null,BigDecimal.ONE,"FEDEX_XSMALL",actor);
+  assertThat(repo.skus(tenant,connection,List.of("SKU")).get("SKU").lines().getFirst().productCost()).isEqualByComparingTo("6.25");
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_cost_history WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+ });}
+ @Test void calculatorSaveRollsBackAllChangesIfPackagesAreInvalid(){
+  assertThatThrownBy(()->tx.executeWithoutResult(s->repo.saveDefaults(tenant,connection,"SKU","SKU",
+    List.of(new ProfitRepository.SkuCostChange("SKU",new BigDecimal("9.00"))),List.of(),List.of(),BigDecimal.ONE,null,"tester")))
+    .isInstanceOf(IllegalArgumentException.class);
+  tx.executeWithoutResult(s->{assertThat(repo.defaults(tenant,connection,List.of("SKU")).getFirst().override()).isNull();
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM sku_product_cost_history WHERE tenant_id=?",Integer.class,tenant)).isZero();});
+ }
+ @Test void defaultsRejectUnrelatedSkuAndItem(){tx.executeWithoutResult(s->{
+  assertThatThrownBy(()->repo.saveDefaults(tenant,connection,"SKU","SKU",List.of(new ProfitRepository.SkuCostChange("FOREIGN",BigDecimal.ONE)),List.of(),null,BigDecimal.ONE,null,"test")).isInstanceOf(IllegalArgumentException.class);
+  assertThatThrownBy(()->repo.saveDefaults(tenant,connection,"SKU","SKU",List.of(),List.of(new ProfitRepository.ItemCostChange(UUID.randomUUID(),BigDecimal.ONE)),null,BigDecimal.ONE,null,"test")).isInstanceOf(IllegalArgumentException.class);
+  assertThat(repo.defaults(UUID.randomUUID(),connection,List.of("SKU"))).isEmpty();
+ });}
  @Test void skuIncludesAllMappedUnitsAndOnlyOneOtherCost(){tx.executeWithoutResult(s->{var v=repo.skus(tenant,connection,List.of("SKU")).get("SKU");assertThat(v.totals().productCost()).isEqualByComparingTo("4.00");assertThat(v.totals().otherCost()).isEqualByComparingTo("1.00");assertThat(v.totals().profit()).isEqualByComparingTo("2.01");});}
  @Test void multipleUnitsNeedPackageConfirmationAndCanAddAnother(){tx.executeWithoutResult(s->{
   assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").totals().profit()).isNull();

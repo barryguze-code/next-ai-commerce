@@ -284,6 +284,42 @@ class ReceivingWorkflowDatabaseTest {
     BigDecimal stock(Fixture f){return tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,f.product());});}
     UUID receipt(Fixture f){return work.receipts(tenant,f.line()).getFirst().id();}
 
+    @Test void documentSearchIncludesInvoiceItemCodesWithoutDuplicatingDocuments(){
+        var a=fixture("INVOICE");var b=fixture("INVOICE");
+        tx.execute(s->{setTenant();
+            jdbc.update("UPDATE receiving_document_lines SET vendor_item_code='299405' WHERE tenant_id=? AND receiving_document_id=?",tenant,a.document());
+            jdbc.update("INSERT INTO receiving_document_lines(tenant_id,receiving_document_id,vendor_item_code) VALUES (?,?,'299405')",tenant,a.document());
+            return null;
+        });
+        var page=work.documentPage(tenant," 299405 ",0,25);
+        assertThat(page.items()).extracting(ReceivingWorkflowRepository.Document::id).containsExactly(a.document());
+        assertThat(work.documentPage(tenant,"9940",0,25).items()).hasSize(1);
+        assertThat(work.documentPage(tenant,"no-such-item",0,25).items()).isEmpty();
+    }
+
+    @Test void confirmedInvoiceSeedsOnlyMissingDefaultAndKeepsEachBasis(){
+        var a=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET unit_cost=5.07,vendor_item_code='299405' WHERE id=?",a.line());});
+        receive(a,2);
+        tx.executeWithoutResult(s->{setTenant();
+            assertThat(jdbc.queryForObject("SELECT list_cost FROM vendor_catalog_offers WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,a.product())).isEqualByComparingTo("5.07");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_cost_history WHERE tenant_id=? AND source_type='INVOICE'",Integer.class,tenant)).isEqualTo(1);
+            jdbc.update("UPDATE purchase_order_items SET unit_cost=8 WHERE id=?",a.line());
+        });
+        receive(a,1);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.queryForObject("SELECT initialize_received_item_cost(?,?)",Object.class,tenant,a.product());
+            assertThat(jdbc.queryForObject("SELECT list_cost FROM vendor_catalog_offers WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,a.product())).isEqualByComparingTo("5.07");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_cost_history WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+        });
+    }
+    @Test void packingListOrUnknownInvoiceCostDoesNotSeedDefault(){
+        var packing=fixture("PACKING_LIST");var unknown=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE receiving_document_lines SET invoice_unit_cost=NULL WHERE tenant_id=? AND receiving_document_id=?",tenant,unknown.document());});
+        receive(packing,1);receive(unknown,1);
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_catalog_offers WHERE tenant_id=?",Integer.class,tenant)).isZero();});
+    }
+
     @Test void separateDocumentsPartialContinuationAndIdempotency(){
         var a=fixture("INVOICE");var b=fixture("PACKING_LIST");
         assertThat(work.documentPage(tenant,"packing list",0,25).items()).extracting(ReceivingWorkflowRepository.Document::id).containsExactly(b.document());

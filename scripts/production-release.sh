@@ -134,8 +134,8 @@ done
 test "$healthy" = true
 # Do not declare this release healthy if its additive profit/planning schema
 # did not finish migrating. No business rows or credentials are printed.
-migration_count=$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM public.flyway_schema_history WHERE version IN ('91','92','93','94','95','96','97','98','99','100') AND success")
-test "$migration_count" = 10
-echo "Profit and refund schema migrations V91–V100 verified."
+migration_count=$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM public.flyway_schema_history WHERE version IN ('91','92','93','94','95','96','97','98','99','100','101','102') AND success")
+test "$migration_count" = 12
+echo "Profit, refund and cost-default schema migrations V91–V102 verified."
 trap - ERR
 echo "Release v$version completed; existing Amazon publishing policies unchanged."

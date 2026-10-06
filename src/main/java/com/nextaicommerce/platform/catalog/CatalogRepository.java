@@ -629,6 +629,41 @@ public class CatalogRepository {
         if(updated==0)throw new IllegalArgumentException("Account product was not found.");
     }
 
+    /** Net cost per individual catalogue unit, never the marketplace pack cost. */
+    @Transactional
+    public void saveItemCost(UUID tenantId,String actor,UUID itemId,BigDecimal amount,UUID fallbackVendor){
+        setTenant(tenantId);
+        if(amount==null||amount.signum()<0||amount.scale()>4||amount.compareTo(new BigDecimal("100000"))>0)
+            throw new IllegalArgumentException("Enter an item cost between 0 and 100,000 with up to four decimals.");
+        CatalogIdentity.lock(jdbc);
+        var item=jdbc.queryForList("SELECT id FROM account_catalog_items WHERE tenant_id=? AND id=? FOR UPDATE",tenantId,itemId);
+        if(item.isEmpty())throw new IllegalArgumentException("Item not found in this account.");
+        var offers=jdbc.queryForList("""
+            SELECT vendor_id,vendor_item_code,currency,list_cost*(1-discount_rate/100) cost
+            FROM vendor_catalog_offers WHERE tenant_id=? AND account_catalog_item_id=?
+              AND effective_from<=current_date AND (effective_to IS NULL OR effective_to>=current_date)
+            ORDER BY is_default DESC,effective_from DESC,id LIMIT 1
+            """,tenantId,itemId);
+        UUID vendor=fallbackVendor;String code=null,currency="USD";
+        if(!offers.isEmpty()){
+            var offer=offers.getFirst();
+            if(amount.compareTo((BigDecimal)offer.get("cost"))==0)return;
+            vendor=(UUID)offer.get("vendor_id");code=(String)offer.get("vendor_item_code");currency=(String)offer.get("currency");
+        }
+        if(vendor==null)throw new IllegalArgumentException("Choose a vendor in Account catalogue before saving this item's cost.");
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM vendors WHERE tenant_id=? AND id=?)",Boolean.class,tenantId,vendor)))
+            throw new IllegalArgumentException("Vendor not found in this account.");
+        saveVendorOffer(tenantId,actor,itemId,vendor,code,amount,BigDecimal.ZERO,currency,"MANUAL","Item cost editor");
+    }
+
+    @Transactional
+    public void updateAccountProductWithCost(UUID tenant,UUID item,String name,String code,String status,
+            BigDecimal cost,UUID vendor,String actor){
+        if(cost==null)throw new IllegalArgumentException("Default item cost is required. Enter the cost per each.");
+        updateAccountProduct(tenant,item,name,code,status);
+        saveItemCost(tenant,actor,item,cost,vendor);
+    }
+
     /** Reuses an account SKU that is already present but hidden from active operational lookups. */
     private UUID reactivateAccountSkuIfPresent(UUID tenantId,String accountSku,String name,String brand,
             String identifierType,String identifier,boolean expirationRequired){

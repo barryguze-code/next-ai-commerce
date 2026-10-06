@@ -1,8 +1,8 @@
 [
 {
  "version":"1.6.4",
- "title":"Order filters and refund details",
- "sections":[{"title":"Orders hotfix","items":["Switch reliably between All, FBM and FBA without a previous saved filter overriding your selection.","Order item prices not yet supplied by Amazon display Pending rather than a misleading zero-dollar sale.","Click SKU refund totals, weekly refund bars or the 30-day refund summary to review imported refunded orders in a paginated side panel, without leaving your table. Refund amounts and unknown units remain separate from profit estimates."]}]
+ "title":"Order details and reliable cost defaults",
+ "sections":[{"title":"Orders hotfix","items":["Switch reliably between All, FBM and FBA without a previous saved filter overriding your selection.","Order item prices not yet supplied by Amazon display Pending rather than a misleading zero-dollar sale.","Click SKU refund totals, weekly refund bars or the 30-day refund summary to review imported refunded orders in a paginated side panel, without leaving your table. Refund amounts and unknown units remain separate from profit estimates."]},{"title":"Catalogue and calculator costs","items":["Search receiving documents by invoice item code.","Missing catalogue buying costs are initialized from confirmed received invoice lines, preserving existing vendor prices and historical receipt costs.","Edit required per-each catalogue costs or save SKU-specific calculator overrides. Mapped pack costs recalculate from item quantities; use catalogue costs to remove an override. Cost saves do not publish Amazon prices."]}]
 },
 {
  "version":"1.6.3",

@@ -68,6 +68,18 @@ public class ProfitController {
         else profit.saveSku(tenant(session),store(session,change.connection()),change.key(),change.packageType(),change.otherCost(),change.packages());
         return Map.of("message","Cost defaults saved. Amazon price is unchanged.");
     }
+    @GetMapping("/defaults") @ResponseBody
+    List<ProfitRepository.Defaults> defaults(HttpSession session,@RequestParam List<String> sku,@RequestParam(required=false) UUID connection){
+        if(sku.isEmpty()||sku.size()>100||sku.stream().anyMatch(s->s.length()>240))throw new IllegalArgumentException("Choose up to 100 SKUs.");
+        return profit.defaults(tenant(session),store(session,connection),sku);
+    }
+    public record DefaultsChange(String kind,String key,UUID connection,List<ProfitRepository.SkuCostChange> skuChanges,
+        List<ProfitRepository.ItemCostChange> itemChanges,List<ProfitRepository.PackageCost> packages,BigDecimal otherCost,String packageType){}
+    @PostMapping("/defaults") @ResponseBody
+    Map<String,String> defaults(HttpSession session,Authentication auth,Model model,@RequestBody DefaultsChange change){
+        edit(auth,model);profit.saveDefaults(tenant(session),store(session,change.connection()),change.kind(),change.key(),change.skuChanges(),change.itemChanges(),change.packages(),change.otherCost(),change.packageType(),auth.getName());
+        return Map.of("message","Costs saved. Amazon prices and historical receipt costs are unchanged.");
+    }
     @ExceptionHandler(IllegalArgumentException.class) @ResponseBody
     org.springframework.http.ResponseEntity<Map<String,String>> invalid(IllegalArgumentException e){
         return org.springframework.http.ResponseEntity.badRequest().body(Map.of("message",e.getMessage()));
