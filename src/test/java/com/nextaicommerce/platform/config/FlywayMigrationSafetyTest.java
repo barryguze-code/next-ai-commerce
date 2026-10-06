@@ -7,6 +7,19 @@ import org.junit.jupiter.api.Test;
 
 class FlywayMigrationSafetyTest {
     @Test
+    void refundProjectionAvoidsPerItemJitCompilationWithoutChangingGlobalSettings() throws Exception {
+        try(var input=getClass().getResourceAsStream("/application.yml")){
+            assertThat(new String(input.readAllBytes(),StandardCharsets.UTF_8))
+                .contains("init-sqls: SET jit = off");
+        }
+        try(var input=getClass().getResourceAsStream("/db/migration/V100__refund_projection_query_budget.sql")){
+            assertThat(new String(input.readAllBytes(),StandardCharsets.UTF_8))
+                .contains("ALTER FUNCTION project_amazon_sku_refunds(amazon_financial_transactions) SET jit = off")
+                .doesNotContain("ALTER SYSTEM", "ALTER DATABASE");
+        }
+    }
+
+    @Test
     void liveOrderBoundaryBackfillsLegacyRowsOutsideTenantRls() throws Exception {
         try(var input=getClass().getResourceAsStream("/db/migration/V31__live_order_fulfillment.sql")){
             assertThat(input).isNotNull();

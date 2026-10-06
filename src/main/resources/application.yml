@@ -7,6 +7,8 @@ spring:
     password: ${DB_PASSWORD:local-only-password}
   flyway:
     enabled: true
+    # JSON history backfills are many tiny queries, not analytical scans.
+    init-sqls: SET jit = off
   thymeleaf:
     cache: false
   servlet:
