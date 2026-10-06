@@ -47,6 +47,14 @@ public class OrderRepository {
     }
     public record FilteredSummary(long orders,long units,List<FilteredMoney> amounts){}
     @Transactional(readOnly=true)
+    public List<String> profitOrderKeys(UUID tenant,UUID connection,String status,String search,Map<String,String> filters){
+        setTenant(tenant);var smart=smartFilters(tenant,connection,filters);
+        var args=new ArrayList<Object>();args.add(tenant);args.add(connection);
+        String q="%"+(search==null?"":search.trim().toLowerCase(java.util.Locale.ROOT))+"%";
+        for(int i=0;i<6;i++)args.add(q);args.addAll(smart.args());
+        return jdbc.queryForList("SELECT DISTINCT orders.amazon_order_id "+OrderSmartFilters.FROM+" WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND ("+tabPredicate(status)+") AND "+SEARCH_SQL+" AND "+smart.sql()+" AND upper(coalesce(orders.order_status,'')) NOT IN ('CANCELLED','CANCELED')",String.class,args.toArray());
+    }
+    @Transactional(readOnly=true)
     public FilteredSummary filteredSummary(UUID tenant,UUID connection,String status,String search,Map<String,String> filters){
         setTenant(tenant);var smart=smartFilters(tenant,connection,filters);
         var args=new ArrayList<Object>();args.add(tenant);args.add(connection);
@@ -86,6 +94,13 @@ public class OrderRepository {
             BigDecimal itemPrice,BigDecimal shippingPrice,String currency,BigDecimal buyBoxPrice,
             String buyBoxCurrency,Instant buyBoxUpdatedAt){
         public BigDecimal safeItemPrice(){return itemPrice==null?BigDecimal.ZERO:itemPrice;}
+        public String buyBoxComparison(){
+            if(itemPrice==null||buyBoxPrice==null||ordered<=0)return "buy-box-unknown";
+            String saleCurrency=currency==null?"USD":currency;
+            if(!saleCurrency.equalsIgnoreCase(buyBoxCurrency==null?saleCurrency:buyBoxCurrency))return "buy-box-unknown";
+            return itemPrice.divide(BigDecimal.valueOf(ordered),2,java.math.RoundingMode.HALF_UP)
+                .compareTo(buyBoxPrice.setScale(2,java.math.RoundingMode.HALF_UP))==0?"buy-box-match":"buy-box-different";
+        }
         public BigDecimal safeShippingPrice(){return shippingPrice==null?BigDecimal.ZERO:shippingPrice;}
         public String inventoryUrl(String marketplaceId){return asin==null||asin.isBlank()?null:
             "https://"+sellerCentralDomain(marketplaceId)+"/myinventory/inventory?searchTerm="+

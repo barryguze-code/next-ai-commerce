@@ -82,12 +82,15 @@ public class ProfitRepository {
             """+COST_JOIN+" WHERE l.tenant_id=:tenant AND l.marketplace_connection_id=:connection AND l.seller_sku IN (:keys)",
             Map.of("tenant",tenant,"connection",connection,"keys",keys));
         var rates=costs.rates(tenant);var result=new LinkedHashMap<String,View>();
+        Map<String,List<PackageCost>> skuPackages=new HashMap<>();
+        for(var saved:named.queryForList("SELECT seller_sku,description,amount FROM profit_sku_packages WHERE tenant_id=:tenant AND marketplace_connection_id=:connection AND seller_sku IN (:keys) ORDER BY sequence",Map.of("tenant",tenant,"connection",connection,"keys",keys)))
+            skuPackages.computeIfAbsent(text(saved,"seller_sku"),k->new ArrayList<>()).add(new PackageCost(text(saved,"description"),decimal(saved,"amount")));
         LocalDate today=LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"));
         for(var r:rows){
             String key=text(r,"seller_sku"),currency=text(r,"currency");
             var type=packageType(text(r,"profit_package_type"),text(r,"package_name"),text(r,"carrier"));
             BigDecimal amount=ProfitShippingRates.cost(rates,type,today);
-            var packages=amount==null?List.<PackageCost>of():List.of(new PackageCost(type.name(),amount));
+            var packages=skuPackages.getOrDefault(key,amount==null?List.<PackageCost>of():List.of(new PackageCost(type.name(),amount)));
             var lines=List.of(new Line(key,text(r,"item_name"),1,decimal(r,"price"),decimal(r,"cost"),decimal(r,"other_cost_per_sku"),BigDecimal.ZERO));
             result.put(key,view(key,"SKU",text(r,"item_name"),currency,today,lines,packages,text(r,"fulfillment_channel"),type));
         }
@@ -175,6 +178,14 @@ public class ProfitRepository {
         scope(tenant);
         if(jdbc.update("UPDATE amazon_listings SET profit_package_type=?,other_cost_per_sku=? WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?",type==null?null:type.name(),other,tenant,connection,sku)==0)
             throw new IllegalArgumentException("SKU not found in this store");
+    }
+    @Transactional
+    public void saveSku(UUID tenant,UUID connection,String sku,ProfitShippingRates.PackageType type,BigDecimal other,List<PackageCost> packages){
+        if(packages==null||packages.isEmpty()||packages.size()>50||packages.stream().anyMatch(Objects::isNull))throw new IllegalArgumentException("Confirm between 1 and 50 packages");
+        saveSku(tenant,connection,sku,type,other);
+        jdbc.update("DELETE FROM profit_sku_packages WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?",tenant,connection,sku);
+        int sequence=0;
+        for(var p:packages)jdbc.update("INSERT INTO profit_sku_packages(tenant_id,marketplace_connection_id,seller_sku,sequence,description,amount) VALUES (?,?,?,?,?,?)",tenant,connection,sku,++sequence,p.description(),p.amount());
     }
     static ProfitShippingRates.PackageType packageType(String explicit,String name,String carrier){
         if(!explicit.isBlank())return ProfitShippingRates.PackageType.valueOf(explicit);

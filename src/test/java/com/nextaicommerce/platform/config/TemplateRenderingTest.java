@@ -114,7 +114,7 @@ class TemplateRenderingTest {
             Map.entry("orderStreamKey","test-key")
         ));
         assertThat(templateEngine().process("orders",context)).contains("Today’s orders","Today’s sales","Sales · 30 days","Live",
-            "113-1234567-1234567","Unshipped","/js/mapping-widget.js","/css/mapping-widget.css","Buy shipping label","Profit · margin · markup",
+            "113-1234567-1234567","Unshipped","/js/mapping-widget.js","/css/mapping-widget.css","Buy shipping label","Today’s estimated profit",
             "https://images.example.test/product.jpg","sellercentral.amazon.com/orders-v3/order/","Available",
             "Item Sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
             "Showing 1–1 of 1","data-order-stream","Sync now","Last Amazon order check",
@@ -439,9 +439,9 @@ class TemplateRenderingTest {
         c.setVariable("pending",false);c.setVariable("counts",Map.of("low",1,"oos",0,"healthy",0,"overstock",0));
         String html=templateEngine().process("replenishment-draft",c);
         assertThat(html).contains("inventory-history-dialog","history-position-select","replenishment-inventory-history.js");
-        assertThat(html).contains("75.0%","80% coverage","6 of these soon to expire","rp-sku-details","role=\"listitem\"","Low 2","Target 12","Over 20","To order","5 cases","B000TEST","rp-sku-picture","Download replenishment","rp-sku-toggle","Available","Last synced","Search ASIN in Seller Central","× 6, B000TEST","2 cases");
+        assertThat(html).contains("75.0%","Observed time: 80%","6 of these soon to expire","rp-sku-details","role=\"listitem\"","Low 2","Target 12","Over 20","To order","5 cases","B000TEST","rp-sku-picture","Download replenishment","rp-sku-toggle","Available","Last synced","Search ASIN in Seller Central","× 6, B000TEST","2 cases");
         assertThat(html).doesNotContain("QA Amazon");
-        assertThat(html).contains("2 cases / 0 each", "data-status=\"oos\"", "data-status=\"low\"").doesNotContain("sellable each");
+        assertThat(html).contains("2 cases + 0 each / Total: 24 each", "data-status=\"oos\"", "data-status=\"low\"").doesNotContain("sellable each");
         assertThat(html.indexOf("Download replenishment")).isGreaterThan(html.indexOf("id=\"rp-basket\""));
         assertThat(html).contains("step=\"1\"","inputmode=\"numeric\"","value=\"12\"","12 / case").doesNotContain("value=\"12.0000\"");
         assertThat(html).contains("data-column-weight=\"0.45\"","rp-vendor-badge","data-settings-open=\"vendors\"");

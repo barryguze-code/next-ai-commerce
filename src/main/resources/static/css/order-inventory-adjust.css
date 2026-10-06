@@ -47,3 +47,6 @@ html[data-theme=dark] .order-inline-adjust-close,html[data-theme=dark] .order-in
 html[data-theme=dark] .order-inline-adjust-position-note b{color:#d7e2ee}
 @keyframes inline-adjust-spin{to{transform:rotate(360deg)}}
 @media(max-width:650px){.order-inline-adjust-header,.order-inline-adjust-body{padding-right:18px;padding-left:18px}.order-inline-adjust-card{grid-template-columns:40px minmax(0,1fr)}.order-inline-adjust-picture{width:40px;height:40px}.order-inline-adjust-fields{grid-template-columns:1fr 1fr}.order-inline-adjust-fields label:first-child{grid-column:1/-1}.order-inline-adjust-actions{align-items:stretch;flex-direction:column}.order-inline-adjust-save{width:100%}}
+.order-inline-adjust-position-note{display:flex!important;flex-wrap:wrap;gap:8px 18px!important;align-items:center;padding:10px 0;font-size:12px!important}
+.order-inline-adjust-position-note>span,.order-inline-adjust-position-note>b{white-space:nowrap}
+.order-inline-adjust-fields .location-picker-trigger{height:38px;width:100%;font-size:13px;text-align:left}

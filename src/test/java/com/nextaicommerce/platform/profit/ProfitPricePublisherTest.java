@@ -9,6 +9,15 @@ import static org.assertj.core.api.Assertions.*;
 
 class ProfitPricePublisherTest {
  private final ObjectMapper json=new ObjectMapper();
+ @Test void salePatchLeavesBasePriceUntouched(){
+  var start=java.time.LocalDate.now().plusDays(1);var end=start.plusDays(7);
+  var body=json.readTree(ProfitPricePublisher.patch(json,json.readTree(LISTING),new BigDecimal("15.00"),start,end));
+  var offer=body.path("patches").path(0).path("value").path(0);
+  assertThat(offer.has("our_price")).isFalse();
+  assertThat(offer.path("discounted_price").path(0).path("schedule").path(0).path("start_at").asText()).isEqualTo(start.toString());
+  assertThatThrownBy(()->ProfitPricePublisher.validateSale(new BigDecimal("21"),new BigDecimal("20"),start,end)).isInstanceOf(IllegalArgumentException.class);
+  assertThatThrownBy(()->ProfitPricePublisher.validateSale(new BigDecimal("15"),new BigDecimal("20"),end,start)).isInstanceOf(IllegalArgumentException.class);
+ }
  static final String LISTING="""
   {"productTypes":[{"productType":"GROCERY"}],"attributes":{"purchasable_offer":[
    {"marketplace_id":"ATVPDKIKX0DER","currency":"USD","audience":"ALL",

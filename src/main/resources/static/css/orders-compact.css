@@ -1,0 +1,35 @@
+.orders-workspace .workspace-header>div:first-child{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.orders-workspace .workspace-header .page-intro{margin:0;font-size:12px}
+.orders-workspace .workspace-header{padding-bottom:12px;min-height:40px}
+.orders-workspace .context-switcher{min-height:38px;height:38px;padding:3px 9px;gap:8px;box-sizing:border-box}
+.orders-workspace .context-brand-logo,.orders-workspace .context-icon,.orders-workspace .context-selected-channel,.orders-workspace .context-selected-channel img{width:28px;height:28px;min-width:28px}
+.orders-workspace .context-copy strong{font-size:12px}.orders-workspace .context-copy small{font-size:10px}
+.orders-workspace .stream-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.orders-workspace .stream-heading .order-heading-note{margin:0;font-size:11px;color:var(--muted);font-weight:400}
+.orders-workspace .order-fulfillment-tabs{display:inline-flex;padding:0;gap:2px;align-items:center;white-space:nowrap}
+.orders-workspace .order-fulfillment-tabs a{padding:5px 8px;font-size:11px}
+.orders-workspace .order-profit-summary .summary-filtered{min-width:135px}
+.orders-workspace [data-profit-coverage],.orders-workspace [data-filtered-profit-coverage]{font-size:10px}
+.orders-workspace .order-profit-summary>div,.orders-workspace .order-period-summary>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:10px;align-items:center;min-width:0;width:100%}
+.orders-workspace .order-profit-summary>div>small,.orders-workspace .order-profit-summary>div>strong,.orders-workspace .order-period-summary>div>small,.orders-workspace .order-period-summary>div>strong{grid-column:1;min-width:0;white-space:normal;overflow-wrap:anywhere}
+.orders-workspace .order-profit-summary .summary-filtered,.orders-workspace .period-financials{position:static;transform:none;grid-column:2;grid-row:1 / span 3;min-width:0;max-width:none;width:auto;max-height:none;overflow:visible;margin:0;padding:7px 8px;border-radius:9px;box-sizing:border-box}
+.orders-workspace .period-financials{background:var(--surface,#f4f7fb)}
+.orders-workspace .period-financials small{display:block;font-size:10px;line-height:1.35}
+.orders-workspace .period-financials b{display:block;font-size:16px;line-height:1.4}
+.orders-workspace .period-refunds{color:#c73547;margin-top:3px;overflow-wrap:anywhere}
+.orders-workspace .order-profit-summary>span,.orders-workspace .order-period-summary>span{flex-shrink:0}
+@media(max-width:1450px){.orders-workspace .order-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.orders-workspace .order-summary{grid-template-columns:1fr}}
+.orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=profit]{flex:0 0 108px;min-width:max-content;box-sizing:border-box;padding-inline:2px}
+.orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=quantity]{flex:0 0 32px;min-width:32px}
+.orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=available]{flex:0 0 65px;min-width:65px}
+.orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header){gap:10px}
+.orders-workspace .item-profit .profit-open{justify-content:center;column-gap:3px;padding-inline:0}
+.orders-workspace .item-profit .profit-calculator-art{width:22px;height:22px}
+.orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=fees]{flex:0 0 155px;min-width:max-content;box-sizing:border-box;padding-inline:8px}
+.orders-workspace .item-profit .profit-open{max-width:100%;box-sizing:border-box}
+.orders-workspace .item-fees{display:flex;align-items:center;gap:5px}
+.orders-workspace .item-fees dl{display:grid;grid-template-columns:auto auto;gap:2px 8px;margin:0;font-size:10px;line-height:14px}
+.orders-workspace .item-fees dt{color:var(--muted,#718096);white-space:nowrap}
+.orders-workspace .item-fees dd{margin:0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.orders-workspace .fee-default-edit{border:0;background:transparent;color:#2c6ce5;padding:4px;cursor:pointer;font-size:16px}

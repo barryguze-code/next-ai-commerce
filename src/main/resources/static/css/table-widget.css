@@ -160,9 +160,9 @@ html[data-theme=dark] .table-standard-toolbar.table-has-active-filters{backgroun
 .table-widget tbody tr{transition:background .15s ease}
 .table-widget tbody td{border-top:1px solid #e3e9f1}
 .table-widget-empty{padding:36px!important;text-align:center}
-.table-wrap:has(>.table-widget){max-height:clamp(360px,64vh,760px);overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable}
+.table-wrap:has(>.table-widget){max-height:none;overflow-x:auto;overscroll-behavior:auto}
 .table-grid-header{position:sticky;z-index:6;top:0;display:grid;align-items:center;padding:10px 18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#f7f9fc;color:#718096;font-size:0.5625rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
-.table-widget.table-widget-scroll{max-height:clamp(360px,64vh,760px);overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable}
+.table-widget.table-widget-scroll{max-height:none;overflow-x:auto;overscroll-behavior:auto}
 .table-pagination nav{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .table-pagination .page-jump,.table-pagination .page-jump label{display:flex;align-items:center;gap:7px}
 .table-pagination .page-jump{margin:0 3px}

@@ -5,6 +5,8 @@
  function filterButton(value){const b=document.createElement('button');b.type='button';b.className='order-identifier-lock';const active=new URL(location.href).searchParams.get('q')===value;b.setAttribute('aria-pressed',String(active));b.setAttribute('aria-label',(active?'Clear filter for ':'Filter orders by ')+value);b.title=active?'Filter locked — click to clear':'Not locked — click to filter';b.append(icon(active?'06-locked':'05-unlocked'));b.onclick=()=>{const url=new URL(location.href);if(active)url.searchParams.delete('q');else url.searchParams.set('q',value);url.searchParams.delete('page');url.searchParams.delete('goToPage');location.assign(url);};return b;}
  function copyButton(value){const b=document.createElement('button');b.type='button';b.dataset.orderCopy=value;b.textContent=value;b.className='order-copy-value';b.setAttribute('aria-label','Copy '+value);return b;}
  function init(root=document){
+  const channel=new URL(location.href).searchParams.get('f_channel');
+  if(channel){document.querySelectorAll('.order-filters a').forEach(link=>{const url=new URL(link.href);url.searchParams.set('f_channel',channel);link.href=url;});const search=document.querySelector('.order-search');if(search&&!search.querySelector('[name=f_channel]')){const input=document.createElement('input');input.type='hidden';input.name='f_channel';input.value=channel;search.append(input);}}
   const find=selector=>[...(root.matches?.(selector)?[root]:[]),...root.querySelectorAll(selector)];
   find('.orders-workspace .order-summary strong:not([data-currency-ready])').forEach(el=>{
    el.dataset.currencyReady='true';

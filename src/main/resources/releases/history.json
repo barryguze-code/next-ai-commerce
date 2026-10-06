@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.6.3",
+ "title":"Consistent profit and refund insights",
+ "sections":[{"title":"Profit and refunds","items":["Orders, Marketplace SKUs and replenishment share compact price, Buy Box, profit and estimated-cost views with SKU cost editing.","Review 30-day sales, order and unit totals, estimated profit before refunds, and imported refund amounts with distinct order counts.","Four-week SKU refund history appears in Orders and Marketplace SKUs. Refunds use posting dates; imported records may be incomplete and are shown separately from estimated profit."]},{"title":"Everyday workflow","items":["Keep table page sizes and your position when changing row counts. Cancelled order rows omit financial and fulfillment actions.","Use compact price and scheduled-sale dialogs, standard inventory-adjustment choices, and consistent calculator icons. Amazon publishing still requires explicit confirmation and existing permissions."]}]
+},
+{
  "version":"1.6.2",
  "title":"Persistent replenishment baskets",
  "sections":[{"title":"Replenishment hotfix","items":["Your basket survives pagination, refreshes and menu navigation in the same browser tab, separated by user and account. Closing the tab ends this browser-session basket; no purchase order is submitted.","Case-size changes save in place without returning to page one or resetting the table. Recommendations recalculate while basket each quantities stay unchanged."]}]

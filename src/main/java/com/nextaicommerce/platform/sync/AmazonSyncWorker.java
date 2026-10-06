@@ -138,7 +138,8 @@ public class AmazonSyncWorker {
         String nextToken=null;long total=0;
         for(int page=1;page<=250;page++){
             String path="/finances/2024-06-19/transactions?postedAfter="+encode(job.windowStart().toString())+
-                "&postedBefore="+encode(job.windowEnd().toString())+"&marketplaceId="+encode(job.marketplaceId());
+                "&postedBefore="+encode(job.windowEnd().toString())+
+                ("ATVPDKIKX0DER".equals(job.marketplaceId())?"":"&marketplaceId="+encode(job.marketplaceId()));
             if(nextToken!=null)path+="&nextToken="+encode(nextToken);
             var response=amazon.get(job.tenantId(),job.connectionId(),path);
             int currentPage=page;

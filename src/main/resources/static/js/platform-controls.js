@@ -42,7 +42,7 @@
         const choice=document.createElement('button');choice.type='button';choice.setAttribute('role','option');
         choice.setAttribute('aria-selected',String(option.selected));choice.disabled=option.disabled;
         const badge=document.createElement('span');badge.className='location-option-code';badge.textContent=option.textContent.trim().split(' · ')[0].substring(0,2).toUpperCase();
-        const label=document.createElement('span');label.textContent=option.textContent.trim();choice.append(badge,label);
+        const label=document.createElement('span');label.textContent=option.textContent.trim();if(!select.hasAttribute('data-standard-choice'))choice.append(badge);choice.append(label);
         choice.onclick=()=>{select.value=option.value;sync();close(true);select.dispatchEvent(new Event('change',{bubbles:true}));};popup.append(choice);
       });
       (select.closest('dialog')||document.body).append(popup);popup.hidden=false;
@@ -69,7 +69,7 @@
   locationPicker.counter=0;
   function enhance(root=document) {
     shortcuts(root);
-    root.querySelectorAll('select[name="locationId"],select[name="destinationLocationId"],.receipt-location-select').forEach(locationPicker);
+    root.querySelectorAll('select[name="locationId"],select[name="destinationLocationId"],.receipt-location-select,select[data-standard-choice]').forEach(locationPicker);
     root.querySelectorAll('td .location-chip:not(button):not([data-location-badge])').forEach(chip=>{
       const code=chip.querySelector('strong'),detail=chip.querySelector('small');if(!code)return;
       chip.title=[code.textContent,detail?.textContent].filter(Boolean).join(' · ');chip.setAttribute('aria-label',chip.title);

@@ -4,3 +4,43 @@
 .rp-case-edit form{background:var(--white)!important;color:var(--ink)!important}
 .profit-price-link{border:0;background:transparent;padding:0;color:inherit;font:inherit;font-weight:700;cursor:pointer}.profit-price-link:hover{text-decoration:underline;text-underline-offset:3px;color:var(--blue)}.profit-price-link:focus-visible{outline:2px solid var(--blue);outline-offset:3px;border-radius:3px}.profit-dialog{width:min(580px,calc(100vw - 24px))}.profit-dialog .dialog-header{padding:12px 16px}.profit-dialog .dialog-header h2{font-size:18px}.profit-dialog .dialog-body{padding:12px 16px;gap:8px}.profit-dialog .dialog-actions{padding:10px 16px}.profit-dialog .profit-line{gap:8px;margin-bottom:8px;grid-template-columns:minmax(105px,1fr) 85px 80px 70px}.profit-dialog .profit-section-title{margin:6px 0}.profit-dialog .profit-totals{gap:5px;margin:6px 0;padding-top:10px}.profit-dialog .profit-result{font-size:18px}.profit-assumptions{font-size:11px;color:var(--muted)}.profit-assumptions summary{cursor:pointer}.profit-dialog [data-profit-feedback]:empty,.profit-dialog [data-profit-publish]:empty{display:none}@media(max-width:500px){.profit-dialog .profit-line{grid-template-columns:1fr 1fr}}
 .rp-cart-add{border:0;background:transparent;padding:4px;cursor:pointer;vertical-align:middle}.rp-cart-add img{width:34px;height:34px;object-fit:contain}.rp-cart-add:disabled{opacity:.4;cursor:default}.rp-case-line{display:flex;justify-content:center;align-items:baseline;gap:4px;flex-wrap:wrap}.rp-case-edit{display:inline-block;font-size:12px;position:relative}.rp-case-edit summary{color:var(--blue,#2e6be6);cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:5px}.rp-case-edit summary::-webkit-details-marker{display:none}.rp-case-edit summary:hover{text-decoration:underline}.rp-case-edit form{position:absolute;right:0;top:calc(100% + 6px);z-index:5;background:var(--surface,#fff);color:var(--text,#17263c);display:grid;gap:6px;width:170px;padding:10px;border:1px solid var(--line,#dce4ee);border-radius:10px;box-shadow:0 5px 20px #0002}.rp-case-edit input{width:100%;min-width:0}
+.orders-workspace .item-sales>.profit-price-link,.orders-workspace .item-profit .profit-open>span{font-size:20px;font-weight:700}
+.item-sales .item-buy-box{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:6px;font-size:12px}
+.item-sales .item-buy-box small{display:inline!important;font-size:11px}
+.item-buy-box.buy-box-match .profit-price-link{color:#16865a}
+.item-buy-box.buy-box-different .profit-price-link{color:#c53a44}
+.profit-calculator-art{width:24px;height:24px;object-fit:contain;vertical-align:middle;margin-left:5px}
+.order-fulfillment-tabs{display:flex;gap:6px;padding:8px 16px}
+.order-fulfillment-tabs a{padding:6px 12px;border-radius:8px;color:var(--primary,#2e6be6);text-decoration:none;font-size:12px}
+.order-fulfillment-tabs a[aria-current=page]{background:#eaf2ff;font-weight:700}
+.sku-pricing-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sku-pricing-dialog [hidden]{display:none!important}
+.item-profit .profit-open{display:inline-grid;grid-template-columns:auto 24px;align-items:center;column-gap:5px}
+.item-profit .profit-open>span{grid-column:1;grid-row:1}
+.item-profit .profit-open>small{grid-column:1/-1;grid-row:2}
+.item-profit .profit-calculator-art{grid-column:2;grid-row:1;margin-left:0}
+.item-buy-box.buy-box-match .profit-calculator-art{display:none}
+.profit-single-sku .profit-line{grid-template-columns:repeat(3,minmax(0,1fr))}
+.profit-dialog [data-profit-image]{object-fit:contain;border:1px solid var(--line);border-radius:10px;flex-shrink:0}
+.profit-dialog [data-profit-image][hidden]{display:none}
+.profit-dialog .location-choice{min-width:0;width:100%}
+.profit-dialog .location-picker-trigger{width:100%;min-height:34px;font-size:12px}
+.profit-package{grid-template-columns:minmax(0,1fr) 85px 28px 28px;gap:6px}
+.app-page .rp-sku-line{grid-template-columns:minmax(240px,3fr) 140px 95px 135px 65px 125px 100px;gap:12px}
+.app-page .rp-sku-table{min-width:1000px}
+.rp-buybox-line{margin-top:5px;font-size:11px}.rp-buybox-line .rp-buybox{font-size:12px}
+.rp-sku-line .profit-open{display:inline-grid;grid-template-columns:auto 20px;align-items:center;justify-content:center;gap:2px 3px;padding:0;font-size:14px}
+.rp-sku-line .profit-open small{grid-row:2;grid-column:1/-1}
+.rp-sku-line .profit-open .profit-calculator-art{grid-column:2;grid-row:1;width:20px;height:20px;margin:0}
+.rp-sku-line .profit-open>span{grid-column:1;grid-row:1}
+.app-page .rp-sku-line .rp-sku-price{font-size:14px;font-weight:700}
+.app-page .rp-buybox-line{display:flex;align-items:center;justify-content:center;gap:4px}
+.rp-buybox-label{font-size:9px;text-transform:uppercase;color:var(--muted)}
+.app-page .rp-buybox-line .rp-buybox{color:#16865b;font-size:11px;font-weight:650}
+.app-page .rp-buybox-line .rp-buybox-mismatch{color:#c73547!important}
+.rp-sku-line .profit-calculator-art{width:20px;height:20px;margin-left:3px}
+.rp-sku-fees{display:flex;align-items:center;justify-content:center;gap:4px}
+.rp-sku-fees dl{display:grid;grid-template-columns:auto auto;gap:1px 6px;margin:0;font-size:9px;line-height:13px}
+.rp-sku-fees dt{color:var(--muted);text-align:left;white-space:nowrap}
+.rp-sku-fees dd{margin:0;text-align:right;font-weight:600}
+.rp-sku-fees button{border:0;background:transparent;color:#2c6ce5;cursor:pointer;padding:3px;font-size:14px}

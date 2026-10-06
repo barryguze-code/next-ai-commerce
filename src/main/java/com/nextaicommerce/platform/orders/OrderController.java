@@ -28,6 +28,15 @@ public class OrderController {
     private final OrderRepository orders;private final WorkspaceAccessRepository workspace;private final AmazonManualOrderSync manualSync;private final PackingSlipRepository packingSlips;private CollaborationRepository collaboration;
     public OrderController(OrderRepository orders,WorkspaceAccessRepository workspace,AmazonManualOrderSync manualSync,PackingSlipRepository packingSlips){this.orders=orders;this.workspace=workspace;this.manualSync=manualSync;this.packingSlips=packingSlips;}
     @Autowired(required=false) void configureCollaboration(CollaborationRepository repository){this.collaboration=repository;}
+    @Autowired private OrderProfitSummary profitSummary;
+    @Autowired private SkuRefundHistory refundHistory;
+    @GetMapping("/app/orders/profit-summary") @ResponseBody
+    OrderProfitSummary.Result profitSummary(@RequestParam(defaultValue="ALL") String status,@RequestParam(defaultValue="") String q,@RequestParam Map<String,String> parameters,HttpSession session){
+        Object store=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(store instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a store");
+        try{return profitSummary.get(tenant(session),connection,OrderRepository.TAB_KEYS.contains(status.toUpperCase(java.util.Locale.ROOT))?status.toUpperCase(java.util.Locale.ROOT):"ALL",q,OrderSmartFilters.clean(parameters));}
+        catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
 
     @GetMapping("/app/orders") String orders(@RequestParam(defaultValue="ALL") String status,
             @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="0") int page,
@@ -56,6 +65,7 @@ public class OrderController {
         model.addAttribute("soldTotals",orders.soldTotals(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).distinct().toList()));
         model.addAttribute("buyBoxLostItems",orders.buyBoxLostItems(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList()));
         model.addAttribute("fourWeekSales",orders.fourWeekSales(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).toList()));
+        model.addAttribute("refundHistory",refundHistory.fourWeeks(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).toList()));
         model.addAttribute("orders",rows);model.addAttribute("orderPage",orderPage);model.addAttribute("itemsByOrder",items);var summary=orders.summary(tenant,connection);
         model.addAttribute("threadsByOrder",collaboration==null?java.util.Map.of():collaboration.openSubjectSummaries(
             tenant,"ORDER",rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList(),auth.getName()));

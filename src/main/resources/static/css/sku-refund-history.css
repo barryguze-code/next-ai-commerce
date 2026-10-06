@@ -1,0 +1,10 @@
+.item-weekly-sales.has-sku-refunds{position:relative;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:0;height:auto;min-height:78px;max-height:none;overflow:visible}
+.item-weekly-sales.has-sku-refunds .weekly-sold-totals{margin:0 0 4px;font-size:11px;line-height:16px;white-space:nowrap;flex-shrink:0}
+.item-weekly-sales.has-sku-refunds .weekly-sold-totals small{display:inline;white-space:nowrap;font-size:9px}
+.table-widget .has-sku-refunds .weekly-sales-bars{height:31px;min-height:31px;padding-top:10px;box-sizing:border-box;width:88px;min-width:88px;align-self:center}
+.has-sku-refunds .weekly-sales-bars>span{max-height:20px}
+.sku-refund-bars{display:flex;align-items:flex-start;gap:4px;height:10px;min-height:10px;width:88px;align-self:center;border-top:1px solid #c95b6440;box-sizing:border-box}
+.sku-refund-bars>span{flex:1;background:#d94a5b44;border:0;border-bottom:1px solid #d94a5b;border-radius:0 0 2px 2px}
+.sku-refund-bars>span[style="height: 0px;"]{border:0}
+.sku-refund-total{display:block;flex-shrink:0;color:#c73547;font-size:11px;font-weight:700;line-height:16px;min-height:16px;margin-top:3px;white-space:nowrap;overflow:visible}
+html[data-theme=dark] .sku-refund-total{color:#ff8c9a}

@@ -38,7 +38,7 @@ function gridColumns(root){
   if(root.dataset.tableWidget==='orders')root.querySelectorAll('.order-item').forEach(row=>{
     const set=(el,id)=>{if(el){el.dataset.column=id;el.dataset.title=id}};
     set(row.querySelector('.item-product'),'product');set(row.querySelector('.item-order-reference'),'order');
-    const numbers=row.querySelectorAll('.item-number');['quantity','sales','buy-box','available'].forEach((id,index)=>set(numbers[index],id));
+    const numbers=row.querySelectorAll(':scope > .item-number');['quantity','sales','available'].forEach((id,index)=>set(numbers[index],id));
     set(row.querySelector('.item-actions'),'action');
   });
   const seen=new Map();root.querySelectorAll('.table-grid-header [data-column]').forEach((el,index)=>seen.set(el.dataset.column,metadata(el,index)));
@@ -252,7 +252,9 @@ function init(root){
   const stored=read(key)||{},saved=stored.schema===2&&(!root.dataset.layoutVersion||stored.layoutVersion===root.dataset.layoutVersion)?stored:{},valid=id=>defaults.some(c=>c.id===id);
   let order=[...(saved.order||[])].filter(valid);defaults.forEach(c=>{if(!order.includes(c.id))order.push(c.id)});
   if(key==='orders'&&order.includes('profit')&&order.includes('sales')){order=order.filter(id=>id!=='profit');order.splice(order.indexOf('sales')+1,0,'profit');}
+  if(key==='orders'&&order.includes('fees')){order=order.filter(id=>id!=='fees');order.splice(order.indexOf('profit')+1,0,'fees');}
   const pinned=id=>id==='record-context'||(key==='orders'&&id==='picture');
+  if(key==='marketplace-skus'){const financial=['profit','est-fees','available','4w-sales'];order=order.filter(id=>!financial.includes(id)).concat(financial.filter(valid));}
   order=[...order.filter(pinned),...order.filter(id=>!pinned(id))];
   const visibility=Object.fromEntries(defaults.map(c=>[c.id,c.required?true:(saved.visibility?.[c.id]??c.defaultVisible)]));
   let host=document.querySelector('[data-column-control="'+key+'"]');

@@ -27,6 +27,13 @@ public class ProfitController {
         edit(auth,model);return prices.prepare(tenant(session),store(session,preview.connection()),preview.sku(),preview.amount(),auth.getName());
     }
     public record PriceSubmission(UUID confirmation,UUID connection){}
+    public record SalePreview(String sku,UUID connection,BigDecimal amount,LocalDate start,LocalDate end){}
+    @PostMapping("/sale-preview") @ResponseBody
+    ProfitPricePublisher.Confirmation salePreview(HttpSession session,Authentication auth,Model model,@RequestBody SalePreview preview){
+        edit(auth,model);
+        if(preview.start()==null||preview.end()==null)throw new IllegalArgumentException("Choose both sale dates.");
+        return prices.prepare(tenant(session),store(session,preview.connection()),preview.sku(),preview.amount(),auth.getName(),preview.start(),preview.end());
+    }
     @PostMapping("/price") @ResponseBody
     Map<String,String> price(HttpSession session,Authentication auth,Model model,@RequestBody PriceSubmission submission){
         edit(auth,model);return Map.of("message",prices.submit(tenant(session),store(session,submission.connection()),submission.confirmation(),auth.getName()));
@@ -54,10 +61,11 @@ public class ProfitController {
         edit(auth,model);profit.savePackages(tenant(session),store(session,change.connection()),change.key(),change.packages(),auth.getName());
         return Map.of("message","Shipping costs saved. No label purchased; Amazon is unchanged.");
     }
-    public record SkuChange(String key,UUID connection,ProfitShippingRates.PackageType packageType,BigDecimal otherCost){}
+    public record SkuChange(String key,UUID connection,ProfitShippingRates.PackageType packageType,BigDecimal otherCost,List<ProfitRepository.PackageCost> packages){}
     @PostMapping("/sku") @ResponseBody
     Map<String,String> sku(HttpSession session,Authentication auth,Model model,@RequestBody SkuChange change){
-        edit(auth,model);profit.saveSku(tenant(session),store(session,change.connection()),change.key(),change.packageType(),change.otherCost());
+        edit(auth,model);if(change.packages()==null)profit.saveSku(tenant(session),store(session,change.connection()),change.key(),change.packageType(),change.otherCost());
+        else profit.saveSku(tenant(session),store(session,change.connection()),change.key(),change.packageType(),change.otherCost(),change.packages());
         return Map.of("message","Cost defaults saved. Amazon price is unchanged.");
     }
     @ExceptionHandler(IllegalArgumentException.class) @ResponseBody

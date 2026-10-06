@@ -22,12 +22,25 @@ function textOf(cell){
   return normalize(copy.textContent);
 }
 function values(root,row,cols){return cols.map(col=>textOf([...row.children].find(cell=>cell.dataset.column===col.id)||row.children[col.index]));}
+// Keep the first visible record at the same viewport offset when page size changes.
+function pageSizeAnchor(elements){
+  const visible=elements.filter(el=>el.getClientRects().length&&!el.classList.contains('table-data-hidden'));
+  const element=visible.find(el=>el.getBoundingClientRect().bottom>0)||visible.at(-1);
+  return {element,index:Math.max(0,elements.indexOf(element)),top:element?.getBoundingClientRect().top||0};
+}
+function restoreRowOffset(element,top){
+  if(!element)return;
+  let scroller=element.parentElement;
+  while(scroller&&scroller!==document.body){if(/auto|scroll/.test(getComputedStyle(scroller).overflowY)&&scroller.scrollHeight>scroller.clientHeight+1)break;scroller=scroller.parentElement;}
+  const delta=element.getBoundingClientRect().top-top;
+  if(scroller&&scroller!==document.body)scroller.scrollTop+=delta;else window.scrollBy(0,delta);
+}
 // One pager presentation for both local collections and server-backed lists.
 function paginationControls(nav,onSize,onPage){
   nav.setAttribute('aria-label','Table pages');
-  const sizeLabel=document.createElement('label');sizeLabel.textContent='Rows ';
+  const sizeLabel=document.createElement('label');sizeLabel.textContent='Showing ';
   const select=document.createElement('select');select.setAttribute('aria-label','Rows per page');
-  [25,50,100].forEach(size=>select.add(new Option(String(size),String(size))));sizeLabel.append(select);nav.append(sizeLabel);
+  [25,50,100].forEach(size=>select.add(new Option(String(size),String(size))));sizeLabel.append(select,' rows');nav.append(sizeLabel);
   select.onchange=()=>onSize(Number(select.value));
   let current=1,last=1;
   const buttons=[];
@@ -62,7 +75,16 @@ function init(root){
   let serverPager=card.querySelector('.table-pagination');
   if(root.dataset.tableWidget==='receiving-lines'){serverPager?.remove();serverPager=null;root.querySelectorAll('tbody tr').forEach(row=>row.hidden=false)}
   const isServer=!!serverPager&&(serverPager.dataset.page!==undefined||!!serverPager.querySelector('a[href],form[data-page-jump]'));
+  const sizeKey='nextai.table.rows.'+root.dataset.tableWidget;
+  const positionKey=sizeKey+'.position';
+  const serverRows=()=>root.matches('table')?rows(root):[...root.querySelectorAll('.order-row')].length?[...root.querySelectorAll('.order-row')]:rows(root);
+  const rememberSize=value=>{document.cookie=encodeURIComponent(sizeKey)+'='+value+'; Max-Age=31536000; Path=/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');try{localStorage.setItem(sizeKey,String(value))}catch{}};
+  let storedSize=Number(document.cookie.split('; ').find(value=>value.startsWith(encodeURIComponent(sizeKey)+'='))?.split('=')[1]);
+  if(![25,50,100].includes(storedSize)){try{storedSize=Number(localStorage.getItem(sizeKey))}catch{}}
+  const hasPreference=[25,50,100].includes(storedSize),preferredSize=hasPreference?storedSize:25;
+  if(hasPreference)rememberSize(preferredSize);
   const saved=states.get(root.dataset.tableWidget)||{page:1,size:25,query:'',filters:{}};
+  saved.size=preferredSize;
   states.set(root.dataset.tableWidget,saved);
   const toolbar=document.createElement('div');toolbar.className='table-standard-toolbar';
   const container=root.closest('.table-wrap,.receive-table-wrap')||root;
@@ -133,15 +155,33 @@ function init(root){
     const page=serverPager.dataset.page!==undefined?Number(serverPager.dataset.page)+1:Number(oldJump?.value)||1;
     const pages=Number(serverPager.dataset.pageMax)||Number(oldJump?.dataset.pageMax)||1;
     const size=Number(serverPager.dataset.pageSize)||Number(new URL(location.href).searchParams.get('size'))||25;
+    if(hasPreference&&size!==preferredSize){const url=new URL(location.href);url.searchParams.set('size',String(preferredSize));url.searchParams.set('page','0');url.searchParams.delete('goToPage');location.replace(url);return;}
     const summary=serverPager.firstElementChild,nav=document.createElement('nav');
+    if(summary){const total=summary.textContent.match(/\bof\s+([\d,]+)\s*$/);if(total)summary.textContent='Total: '+Number(total[1].replace(/,/g,'')).toLocaleString()+(root.dataset.tableWidget==='orders'?' orders':' results');}
     serverPager.replaceChildren(...(summary?[summary]:[]),nav);
     const navigate=(page,size)=>{const url=new URL(location.href);url.searchParams.set('size',String(size));url.searchParams.set('page',String(page-1));url.searchParams.delete('goToPage');location.assign(url)};
-    paginationControls(nav,value=>navigate(1,value),value=>navigate(value,size))(page,pages,size);
+    paginationControls(nav,value=>{
+      const anchor=pageSizeAnchor(serverRows()),absolute=(page-1)*size+anchor.index,nextPage=Math.floor(absolute/value)+1;
+      const next=new URL(location.href);next.searchParams.set('size',String(value));next.searchParams.set('page',String(nextPage-1));next.searchParams.delete('goToPage');
+      try{sessionStorage.setItem(positionKey,JSON.stringify({url:next.href,index:absolute%value,top:anchor.top,at:Date.now()}));}catch{}
+      rememberSize(value);navigate(nextPage,value);
+    },value=>navigate(value,size))(page,pages,size);
+    try{
+      const position=JSON.parse(sessionStorage.getItem(positionKey)||'null');
+      if(position){sessionStorage.removeItem(positionKey);if(position.url===location.href&&Date.now()-position.at<30000){
+        const restore=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>restoreRowOffset(serverRows()[position.index],position.top)));
+        if(document.readyState==='complete')restore();else window.addEventListener('load',restore,{once:true});
+      }}
+    }catch{}
   }else if(!serverPager){
     footer=document.createElement('div');footer.className='table-footer table-pagination table-standard-pagination';container.after(footer);
     pageLabel=document.createElement('span');pageLabel.setAttribute('aria-live','polite');footer.append(pageLabel);
     const nav=document.createElement('nav');footer.append(nav);
-    updatePager=paginationControls(nav,size=>{saved.size=size;saved.page=1;render()},page=>{saved.page=page;render()});
+    updatePager=paginationControls(nav,size=>{
+      const filtered=rows(root).filter(row=>domainVisible(row)&&matches(row)),anchor=pageSizeAnchor(filtered);
+      rememberSize(size);saved.size=size;saved.page=Math.floor(anchor.index/size)+1;render();
+      requestAnimationFrame(()=>restoreRowOffset(anchor.element,anchor.top));
+    },page=>{saved.page=page;render()});
     const previousFooter=card.querySelector('.table-footer:not(.table-pagination)');
     if(previousFooter&&/^Showing\b/.test(normalize(previousFooter.textContent))){previousFooter.querySelectorAll('a').forEach(link=>footer.append(link));previousFooter.hidden=true}
   }
@@ -165,7 +205,7 @@ function init(root){
     const orderEmpty=root.querySelector('.order-empty-state');
     if(orderEmpty){const hide=filtered.length>0;if(orderEmpty.hidden!==hide)orderEmpty.hidden=hide;root.classList.toggle('orders-is-empty',!hide);if(serverPager&&serverPager.hidden===hide)serverPager.hidden=!hide;}
     if(!exportButton.disabled)status.textContent=!filtered.length?(orderEmpty||!all.length?'':'Nothing found. Try another search or change your filters.'):count&&isServer?filtered.length+' matches on this page.':'';
-    if(footer){footer.dataset.pages=String(pages);updatePager(saved.page,pages,saved.size);pageLabel.textContent=filtered.length?'Showing '+((saved.page-1)*saved.size+1)+'–'+Math.min(saved.page*saved.size,filtered.length)+' of '+filtered.length+' · Page '+saved.page+' of '+pages:'0 rows'}
+    if(footer){footer.dataset.pages=String(pages);updatePager(saved.page,pages,saved.size);pageLabel.textContent=filtered.length+' matching results'}
   }
   exportButton.onclick=async()=>{
     exportButton.disabled=true;status.textContent='Preparing CSV…';

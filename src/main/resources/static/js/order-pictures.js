@@ -46,7 +46,7 @@
    actions.push(entry('SKU mapping',stage.dataset.mapping==='MAPPED'?'Review catalogue products and quantities':'Choose catalogue products',stage.dataset.mapping==='MAPPED'?'mapping':'unmapped',()=>{close(false);window.openOrderMapping(stage);}));
    if(stage.dataset.mapping==='MAPPED')actions.push(entry('Adjust inventory','Review mapped stock for this order','inventory',()=>{close(false);window.openOrderInventoryAdjustment(stage);}));
    const sellerLink=stage.closest('.order-item').querySelector('.order-marketplace-links a')?.href;
-   if(sellerLink){const pricing=()=>window.open(sellerLink,'_blank','noopener,noreferrer');actions.push(entry('Change SKU price','Edit this listing in Seller Central ↗','price',pricing));actions.push(entry('Set sale price','Set a promotional price in Seller Central ↗','sale',pricing));}
+   if(sellerLink){actions.push(entry('Change SKU price','Preview and confirm a new listing price','price',()=>{close(false);window.openSkuPricing?.(stage,false);}));actions.push(entry('Set sale price','Choose a discount and sale dates','sale',()=>{close(false);window.openSkuPricing?.(stage,true);}));}
   }
   function place(){const r=trigger.getBoundingClientRect();menu.style.left=Math.max(12,Math.min(r.left,innerWidth-menu.offsetWidth-12))+'px';menu.style.top=Math.max(12,Math.min(r.bottom+10,innerHeight-menu.offsetHeight-12))+'px';}
   menu.append(status);document.body.append(menu);window.prepareActionSuggestionMenu?.(menu);place();menu.querySelector('button').focus();

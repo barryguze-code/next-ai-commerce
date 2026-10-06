@@ -13,9 +13,9 @@ function orderAdjustmentPayload(position,values){
   const positionOption=position=>JSON.stringify({itemId:position.itemId,locationId:position.locationId,
     expirationDate:position.expirationDate||'',onHand:position.onHand,reserved:position.reserved,available:position.available});
   const showPosition=(card,position)=>{
-    card.querySelector('[data-on-hand]').textContent=position.onHand+' each on hand';
-    card.querySelector('[data-reserved]').textContent=position.reserved+' reserved';
-    card.querySelector('[data-available]').textContent=position.available+' available';
+    card.querySelector('[data-on-hand]').textContent='On hand: '+position.onHand+' each';
+    card.querySelector('[data-reserved]').textContent='Reserved: '+position.reserved+' each';
+    card.querySelector('[data-available]').textContent='Available: '+position.available+' each';
     const expirationField=card.querySelector('[data-expiration-field]'),expirationInput=card.elements.expirationDate;
     expirationField.hidden=false;expirationInput.required=Boolean(position.expirationDate);
     expirationInput.value=position.expirationDate||'';
@@ -33,6 +33,17 @@ function orderAdjustmentPayload(position,values){
     if(positions.length){positions.forEach(position=>select.add(new Option(positionLabel(position),positionOption(position))));showPosition(card,positions[0])}
     else{select.add(new Option('No inventory position found',''));select.disabled=true;card.elements.quantityChange.disabled=true;card.querySelector('button').disabled=true}
     select.addEventListener('change',()=>{if(select.value)showPosition(card,JSON.parse(select.value))});
+    card.elements.reason.setAttribute('data-standard-choice','');card.elements.reason.setAttribute('aria-label','Adjustment reason');
+    const preview=()=>{
+      if(!select.value)return;
+      const selected=JSON.parse(select.value),date=card.elements.expirationDate.value;
+      const position=positions.find(p=>p.locationId===selected.locationId&&(p.expirationDate||'')===date)||{onHand:0,reserved:0,available:0};
+      const raw=card.elements.quantityChange.value,change=Number(raw)||0;
+      card.querySelector('[data-on-hand]').textContent='On hand: '+position.onHand+(raw?' → '+(Number(position.onHand)+change):'')+' each';
+      card.querySelector('[data-reserved]').textContent='Reserved: '+position.reserved+' each';
+      card.querySelector('[data-available]').textContent='Available: '+position.available+(raw?' → '+(Number(position.available)+change):'')+' each';
+    };
+    card.addEventListener('input',preview);card.addEventListener('change',preview);
     card.elements.expirationDate.addEventListener('input',()=>{
       if(!select.value)return;
       const selected=JSON.parse(select.value),date=card.elements.expirationDate.value;
@@ -45,7 +56,7 @@ function orderAdjustmentPayload(position,values){
     return card;
   };
   const saveAdjustment=async event=>{
-    event.preventDefault();const form=event.currentTarget,position=JSON.parse(form.elements.position.value),button=form.querySelector('button');
+    event.preventDefault();const form=event.currentTarget,position=JSON.parse(form.elements.position.value),button=form.querySelector('button[type="submit"]');
     const data=orderAdjustmentPayload(position,{quantityChange:form.elements.quantityChange.value,
       reason:form.elements.reason.value,expirationDate:form.elements.expirationDate.value});
     const csrf=document.getElementById('buy-shipping-csrf'),headers={Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'};
@@ -75,7 +86,8 @@ function orderAdjustmentPayload(position,values){
       const params=new URLSearchParams();components.forEach(component=>params.append('itemId',component.itemId));
       const response=await fetch('/app/inventory/adjustment-positions?'+params,{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();
       const positions=await response.json();list().replaceChildren(...components.map(component=>cardFor(component,positions.filter(position=>position.itemId===component.itemId))));
-      list().hidden=false;
+      list().hidden=false;window.NextAiPlatformControls?.enhance(list());
+      const art=modal.querySelector('.order-inline-adjust-title>span');if(art){const image=document.createElement('img');image.src='/images/platform/table/adjust-inventory.png';image.alt='';image.style.cssText='width:36px;height:36px;object-fit:contain';art.replaceChildren(image);}
     }catch(_){feedback().classList.add('error');feedback().textContent='Inventory positions could not be loaded. Nothing was changed.';feedback().hidden=false}
     finally{document.querySelector('[data-inline-adjust-loading]').hidden=true}
   };

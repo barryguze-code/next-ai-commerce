@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.time.LocalDate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,7 +29,9 @@ public class ProfitPricePublisher {
   allowed=Arrays.stream(connections.split(",")).map(String::trim).filter(s->!s.isEmpty()).map(UUID::fromString).collect(java.util.stream.Collectors.toUnmodifiableSet());
  }
  public boolean available(UUID connection){return enabled&&allowed.contains(connection);}
- public record Confirmation(UUID id,String sku,BigDecimal oldPrice,BigDecimal newPrice){}
+ public record Confirmation(UUID id,String sku,BigDecimal oldPrice,BigDecimal newPrice,LocalDate saleStart,LocalDate saleEnd){
+  public Confirmation(UUID id,String sku,BigDecimal oldPrice,BigDecimal newPrice){this(id,sku,oldPrice,newPrice,null,null);}
+ }
  private record Listing(String seller,String sku,String marketplace){}
  private void guard(UUID connection){if(!available(connection))throw new IllegalArgumentException("Amazon price publishing is disabled here. Preview and cost editing remain available.");}
  private void scope(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
@@ -69,24 +72,34 @@ public class ProfitPricePublisher {
   }
  }
  public Confirmation prepare(UUID tenant,UUID connection,String sku,BigDecimal amount,String actor){
+  return prepare(tenant,connection,sku,amount,actor,null,null);
+ }
+ public Confirmation prepare(UUID tenant,UUID connection,String sku,BigDecimal amount,String actor,LocalDate start,LocalDate end){
   guard(connection);var listing=listing(tenant,connection,sku);var offer=offer(live(tenant,connection,listing));validate(amount,offer);
   var old=price(offer);if(old.compareTo(amount)==0)throw new IllegalArgumentException("Amazon already has this price.");
-  UUID id=UUID.randomUUID();tx.executeWithoutResult(s->{scope(tenant);jdbc.update("INSERT INTO profit_price_confirmations(id,tenant_id,connection_id,seller_sku,old_price,new_price,requested_by) VALUES (?,?,?,?,?,?,?)",id,tenant,connection,sku,old,amount,actor);});
-  return new Confirmation(id,sku,old,amount);
+  validateSale(amount,old,start,end);
+  UUID id=UUID.randomUUID();tx.executeWithoutResult(s->{scope(tenant);jdbc.update("INSERT INTO profit_price_confirmations(id,tenant_id,connection_id,seller_sku,old_price,new_price,requested_by,sale_start,sale_end) VALUES (?,?,?,?,?,?,?,?,?)",id,tenant,connection,sku,old,amount,actor,start,end);});
+  return new Confirmation(id,sku,old,amount,start,end);
+ }
+ static void validateSale(BigDecimal amount,BigDecimal base,LocalDate start,LocalDate end){
+  if(start==null&&end==null)return;
+  if(start==null||end==null||end.isBefore(start)||start.isBefore(LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")))||amount.compareTo(base)>=0)
+   throw new IllegalArgumentException("Choose a sale price below the current price and valid start/end dates, starting today or later (Pacific time).");
  }
  public String submit(UUID tenant,UUID connection,UUID id,String actor){
   guard(connection);
   Confirmation confirmed=tx.execute(s->{scope(tenant);var rows=jdbc.query("""
    UPDATE profit_price_confirmations SET status='SENDING',updated_at=now()
    WHERE tenant_id=? AND connection_id=? AND id=? AND requested_by=? AND status='PREVIEW'
-     AND created_at>now()-interval '5 minutes' RETURNING id,seller_sku,old_price,new_price
-   """,(r,n)->new Confirmation(r.getObject(1,UUID.class),r.getString(2),r.getBigDecimal(3),r.getBigDecimal(4)),tenant,connection,id,actor);
+     AND created_at>now()-interval '5 minutes' RETURNING id,seller_sku,old_price,new_price,sale_start,sale_end
+   """,(r,n)->new Confirmation(r.getObject(1,UUID.class),r.getString(2),r.getBigDecimal(3),r.getBigDecimal(4),r.getObject(5,LocalDate.class),r.getObject(6,LocalDate.class)),tenant,connection,id,actor);
    if(rows.isEmpty())throw new IllegalArgumentException("Confirmation expired or already submitted. Check Amazon before trying again.");return rows.getFirst();});
   boolean sending=false;
   try{
    var listing=listing(tenant,connection,confirmed.sku());var live=live(tenant,connection,listing);var offer=offer(live);validate(confirmed.newPrice(),offer);
    if(price(offer).compareTo(confirmed.oldPrice())!=0)throw new IllegalArgumentException("Amazon's price changed since your preview. Review it again.");
-   String body=patch(json,live,confirmed.newPrice());sending=true;
+   validateSale(confirmed.newPrice(),confirmed.oldPrice(),confirmed.saleStart(),confirmed.saleEnd());
+   String body=patch(json,live,confirmed.newPrice(),confirmed.saleStart(),confirmed.saleEnd());sending=true;
    var result=amazon.patch(tenant,connection,path(listing),body);
    if(!"ACCEPTED".equals(result.json().path("status").asText())){status(tenant,id,"UNCONFIRMED");return "Amazon did not accept the update. Check Seller Central before trying again.";}
    status(tenant,id,"ACCEPTED");
@@ -95,11 +108,15 @@ public class ProfitPricePublisher {
    throw new IllegalArgumentException(e instanceof IllegalArgumentException?e.getMessage():"Could not verify the live Amazon listing. No price was sent.");}
  }
  static String patch(ObjectMapper json,JsonNode listing,BigDecimal amount){
+  return patch(json,listing,amount,null,null);
+ }
+ static String patch(ObjectMapper json,JsonNode listing,BigDecimal amount,LocalDate start,LocalDate end){
   String type=listing.path("productTypes").path(0).path("productType").asText();if(type.isBlank())throw new IllegalArgumentException("Amazon product type is unavailable.");
   var body=json.createObjectNode().put("productType",type);
   var offer=body.putArray("patches").addObject().put("op","merge").put("path","/attributes/purchasable_offer").putArray("value").addObject();
   offer.put("marketplace_id","ATVPDKIKX0DER").put("currency","USD").put("audience","ALL");
-  offer.putArray("our_price").addObject().putArray("schedule").addObject().put("value_with_tax",amount);
+  var schedule=offer.putArray(start==null?"our_price":"discounted_price").addObject().putArray("schedule").addObject().put("value_with_tax",amount);
+  if(start!=null)schedule.put("start_at",start.toString()).put("end_at",end.toString());
   return json.writeValueAsString(body);
  }
  private void status(UUID tenant,UUID id,String value){tx.executeWithoutResult(s->{scope(tenant);jdbc.update("UPDATE profit_price_confirmations SET status=?,updated_at=now() WHERE tenant_id=? AND id=?",value,tenant,id);});}

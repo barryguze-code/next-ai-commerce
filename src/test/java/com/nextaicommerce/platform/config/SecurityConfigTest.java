@@ -83,6 +83,8 @@ class SecurityConfigTest {
     }
     @TestConfiguration
     static class StubConfig {
+        @Bean com.nextaicommerce.platform.orders.SkuRefundHistory skuRefundHistory(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.SkuRefundHistory.class);}
+        @Bean com.nextaicommerce.platform.orders.OrderProfitSummary orderProfitSummary(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.OrderProfitSummary.class);}
         @Bean com.nextaicommerce.platform.orders.PackingSlipRepository packingSlips(){
             return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.PackingSlipRepository.class);
         }

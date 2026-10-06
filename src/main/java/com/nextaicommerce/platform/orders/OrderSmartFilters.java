@@ -50,7 +50,7 @@ public final class OrderSmartFilters {
         });
         String channel=value(input,"f_channel");
         if(!List.of("","FBA","FBM").contains(channel))throw new IllegalArgumentException("Invalid fulfillment channel");
-        if(!channel.isEmpty()){clauses.add("upper(orders.fulfillment_channel) IN (?,?)");args.add(channel);args.add(channel.equals("FBA")?"AFN":"MFN");}
+        if(!channel.isEmpty()){clauses.add("upper(trim(orders.fulfillment_channel)) IN (?,?,?)");args.add(channel);args.add(channel.equals("FBA")?"AFN":"MFN");args.add(channel.equals("FBA")?"AMAZON":"MERCHANT");}
         String preset=value(input,"f_date_preset");
         OffsetDateTime from,to;
         if(!preset.isEmpty()){

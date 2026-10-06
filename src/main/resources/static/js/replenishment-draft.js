@@ -2,6 +2,16 @@
 (()=>{
  'use strict';
  if(typeof document==='undefined')return;
+ const searchForm=document.querySelector('.rp-search'),searchInput=searchForm?.querySelector('[name=q]');
+ if(searchInput){
+  let timer,composing=false;
+  const search=()=>{clearTimeout(timer);if(composing)return;timer=setTimeout(()=>{if(searchInput.value===new URL(location.href).searchParams.get('q'))return;try{sessionStorage.setItem('replenishment-search-focus','1')}catch{}searchForm.requestSubmit();},600);};
+  searchInput.addEventListener('input',search);
+  searchInput.addEventListener('compositionstart',()=>{composing=true;clearTimeout(timer)});
+  searchInput.addEventListener('compositionend',()=>{composing=false;search()});
+  searchForm.addEventListener('submit',()=>clearTimeout(timer));
+  try{if(sessionStorage.getItem('replenishment-search-focus')){sessionStorage.removeItem('replenishment-search-focus');searchInput.focus();searchInput.setSelectionRange(searchInput.value.length,searchInput.value.length)}}catch{}
+ }
  const rows=[...document.querySelectorAll('[data-replenishment-row]')],basket=new Map();
  const $=s=>document.querySelector(s),text=(tag,value)=>{const n=document.createElement(tag);n.textContent=value;return n;};
  const formatCases=value=>Number.isInteger(value)?String(value):value.toFixed(2);

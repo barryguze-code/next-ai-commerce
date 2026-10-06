@@ -489,6 +489,9 @@ public class AmazonReportNormalizer {
         JsonNode transactionsNode=root.path("payload").path("transactions");long count=0;
         if(!transactionsNode.isArray())return 0;
         for(JsonNode transaction:transactionsNode){
+            String transactionMarketplace=transaction.path("marketplaceDetails").path("marketplaceId").asText("");
+            if(transactionMarketplace.isBlank())transactionMarketplace=transaction.path("sellingPartnerMetadata").path("marketplaceId").asText("");
+            if(!transactionMarketplace.isBlank()&&!job.marketplaceId().equals(transactionMarketplace))continue;
             String key=text(transaction,"transactionId","transactionIdentifier");
             if(blank(key))key=sha256(transaction.toString());
             String type=text(transaction,"transactionType","type");if(blank(type))type="UNKNOWN";

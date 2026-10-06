@@ -25,6 +25,7 @@ import com.nextaicommerce.platform.collaboration.CollaborationRepository;
 public class MarketplaceSkuController {
     private static final Logger log=LoggerFactory.getLogger(MarketplaceSkuController.class);
     private final MarketplaceSkuRepository skus;
+    @Autowired private com.nextaicommerce.platform.orders.SkuRefundHistory refunds;
     private final WorkspaceAccessRepository workspace;
     private final CatalogRepository catalog;
     private CollaborationRepository collaboration;
@@ -83,6 +84,7 @@ public class MarketplaceSkuController {
         var skuPage=skus.list(tenantId, connectionId, q, normalizedStatus,
             normalizeSort(sort),"desc".equalsIgnoreCase(direction)?"desc":"asc",requestedPage, com.nextaicommerce.platform.web.TablePaging.size(size),filters);
         model.addAttribute("skuPage",skuPage);
+        model.addAttribute("refundHistory",refunds.fourWeeks(tenantId,connectionId,skuPage.rows().stream().map(row->row.sellerSku()).toList()));
         model.addAttribute("salesAsOf",java.time.Instant.now());
         model.addAttribute("threadsByMarketplaceSku",collaboration==null?java.util.Map.of():collaboration.openSubjectSummaries(
             tenantId,"MARKETPLACE_SKU",skuPage.rows().stream().map(MarketplaceSkuRepository.SkuView::sellerSku).toList(),authentication.getName()));
