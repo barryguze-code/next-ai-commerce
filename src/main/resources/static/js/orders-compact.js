@@ -46,6 +46,7 @@
     return '↩ '+value+' · '+e.orders+(e.unknownOrders?' known':'')+(e.orders===1?' order':' orders')+(e.pendingAmounts?' + pending':'');
    }).join(' / '):'Refunds: no imported records';
    refund.title='Store-wide item-price refunds posted in the last 30 days, including refunds for older purchases. Distinct orders per currency. Excludes tax, shipping and fees. Imported records may be incomplete; these amounts have not been subtracted from estimated profit.';
+   if(entries.length){refund.setAttribute('role','button');refund.tabIndex=0;refund.onclick=()=>window.NextAiRefundOrders?.({days:30},refund);refund.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();refund.click();}};}
   }
  }).catch(()=>{summaryRequest=null;document.querySelectorAll('[data-today-profit],[data-filtered-profit],[data-period-profit],[data-period-refunds]').forEach(n=>n.textContent='Temporarily unavailable')});
  }

@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.6.4",
+ "title":"Order filters and refund details",
+ "sections":[{"title":"Orders hotfix","items":["Switch reliably between All, FBM and FBA without a previous saved filter overriding your selection.","Order item prices not yet supplied by Amazon display Pending rather than a misleading zero-dollar sale.","Click SKU refund totals, weekly refund bars or the 30-day refund summary to review imported refunded orders in a paginated side panel, without leaving your table. Refund amounts and unknown units remain separate from profit estimates."]}]
+},
+{
  "version":"1.6.3",
  "title":"Consistent profit and refund insights",
  "sections":[{"title":"Profit and refunds","items":["Orders, Marketplace SKUs and replenishment share compact price, Buy Box, profit and estimated-cost views with SKU cost editing.","Review 30-day sales, order and unit totals, estimated profit before refunds, and imported refund amounts with distinct order counts.","Four-week SKU refund history appears in Orders and Marketplace SKUs. Refunds use posting dates; imported records may be incomplete and are shown separately from estimated profit."]},{"title":"Everyday workflow","items":["Keep table page sizes and your position when changing row counts. Cancelled order rows omit financial and fulfillment actions.","Use compact price and scheduled-sale dialogs, standard inventory-adjustment choices, and consistent calculator icons. Amazon publishing still requires explicit confirmation and existing permissions."]}]

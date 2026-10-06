@@ -9,7 +9,8 @@
   const currencies=[...new Set(amounts.map(e=>e.currency))];
   const total=currency=>amounts.filter(e=>e.currency===currency).reduce((n,e)=>n+Number(e.amount),0);
   const money=(n,c)=>{try{return new Intl.NumberFormat('en-US',{style:'currency',currency:c}).format(n)}catch{return c+' '+n.toFixed(2)}};
-  const line=document.createElement('span');line.className='sku-refund-total';line.tabIndex=0;
+  const line=document.createElement('button');line.type='button';line.className='sku-refund-total';line.tabIndex=0;
+  line.onclick=()=>window.NextAiRefundOrders?.({sku:cell.dataset.refundSku},line);
   const knownUnits=entries.every(e=>!e.unknownUnits&&e.units!==null),units=entries.reduce((n,e)=>n+Number(e.units||0),0);
   const orders=entries[0].totalOrders,missingOrders=entries[0].unknownOrders;
   const orderLabel=orders===undefined?'':orders===0&&missingOrders?' · Orders pending':' · '+orders+(missingOrders?' known':'')+(orders===1?' order':' orders');
@@ -18,13 +19,14 @@
   const bars=document.createElement('span');bars.className='sku-refund-bars';bars.setAttribute('aria-label','Weekly refund amounts');
   const max=Math.max(1,...amounts.map(e=>Math.abs(Number(e.amount))));
   for(let week=0;week<4;week++){
-   const list=entries.filter(e=>e.week===week),bar=document.createElement('span');
+   const list=entries.filter(e=>e.week===week),bar=document.createElement('button');bar.type='button';
+   bar.onclick=()=>window.NextAiRefundOrders?.({sku:cell.dataset.refundSku,week},bar);
    const value=list.filter(e=>e.amount!==null).reduce((n,e)=>n+Math.abs(Number(e.amount)),0);
    // Mixed currencies are shown as presence markers, never summed for scale.
    bar.style.height=(list.length?(currencies.length>1?4:Math.max(2,Math.min(10,10*value/max))):0)+'px';
    const end=new Date(Date.now()-(3-week)*7*86400000),start=new Date(end.getTime()-7*86400000);
    bar.title=start.toLocaleDateString()+' – '+end.toLocaleDateString()+': '+(list.length?list.map(e=>(e.amount===null?'Refund amount pending':money(-Number(e.amount),e.currency||'USD'))+(e.orders===undefined?'':' · '+e.orders+(e.orders===1?' order':' orders'))).join(' / '):'No refund records imported for this week')+'. '+notice;
-   bar.tabIndex=0;bar.setAttribute('aria-label',bar.title);bars.append(bar);
+   bar.tabIndex=list.length?0:-1;bar.disabled=!list.length;bar.setAttribute('aria-label',bar.title);bars.append(bar);
   }
   cell.classList.add('has-sku-refunds');cell.append(bars,line);cell.title=notice;
  });}

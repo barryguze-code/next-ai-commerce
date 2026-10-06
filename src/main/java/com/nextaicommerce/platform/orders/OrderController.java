@@ -30,6 +30,15 @@ public class OrderController {
     @Autowired(required=false) void configureCollaboration(CollaborationRepository repository){this.collaboration=repository;}
     @Autowired private OrderProfitSummary profitSummary;
     @Autowired private SkuRefundHistory refundHistory;
+    @GetMapping("/app/orders/refund-history") @ResponseBody
+    SkuRefundHistory.RefundPage refundOrders(@RequestParam(defaultValue="") String sku,
+            @RequestParam(defaultValue="28") int days,@RequestParam(defaultValue="-1") int week,
+            @RequestParam(defaultValue="0") int page,@RequestParam(required=false) java.time.Instant asOf,HttpSession session){
+        Object store=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(store instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a store");
+        try{return refundHistory.orders(tenant(session),connection,sku,days,week,page,asOf);}
+        catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
     @GetMapping("/app/orders/profit-summary") @ResponseBody
     OrderProfitSummary.Result profitSummary(@RequestParam(defaultValue="ALL") String status,@RequestParam(defaultValue="") String q,@RequestParam Map<String,String> parameters,HttpSession session){
         Object store=session.getAttribute(AccountSelectionController.STORE_ID);
