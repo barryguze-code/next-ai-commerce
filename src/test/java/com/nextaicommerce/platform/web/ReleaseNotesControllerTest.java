@@ -22,7 +22,7 @@ class ReleaseNotesControllerTest {
         var resolver=new ClassLoaderTemplateResolver();resolver.setPrefix("templates/");resolver.setSuffix(".html");
         var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);
         assertThat(engine.process("release-notes",new Context(null,model)))
-            .contains("Order filters and refund details","v1.6.4","Deployment history","/css/release-notes.css");
+            .contains("Order details and reliable cost defaults","v1.6.4","Deployment history","/css/release-notes.css");
         assertThat(controller.history()).extracting(ReleaseNotesController.Release::version)
             .containsExactly("1.6.4","1.6.3","1.6.2","1.6.1","1.6.0","1.5.0","1.4.3","1.4.2","1.4.1","1.4.0","1.3.14","1.3.13","1.3.12","1.3.11","1.3.10","1.3.9","1.3.8","1.3.7","1.3.6","1.3.5","1.3.4","1.3.3","1.3.2","1.3.1","1.3.0","1.2.7","1.2.6","1.2.5","1.2.4","1.2.3","1.2.2","1.2.1","1.2.0","1.1.1","1.1.0","1.0.5","1.0.4","1.0.3","1.0.2","1.0.1","1.0.0");
     }
