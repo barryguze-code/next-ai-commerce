@@ -284,6 +284,27 @@ class ReceivingWorkflowDatabaseTest {
     BigDecimal stock(Fixture f){return tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,f.product());});}
     UUID receipt(Fixture f){return work.receipts(tenant,f.line()).getFirst().id();}
 
+    @Test void invoiceReusesVendorMappingWithoutChangingConflictingCatalogueIdentity(){
+        var mapped=fixture("INVOICE");var other=fixture("INVOICE");
+        String barcode="856502006480";
+        UUID originalGlobal=tx.execute(s->{setTenant();
+            jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,vendor_item_code,list_cost,is_default) VALUES (?,?,?,'299405',5.07,true)",tenant,vendor,mapped.product());
+            jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) SELECT global_product_id,'UPC',?,true FROM account_catalog_items WHERE tenant_id=? AND id=?",barcode,tenant,other.product());
+            return jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenant,mapped.product());
+        });
+        UUID document=receiving.addDocument(tenant,mapped.session(),vendor,"INVOICE","invoice-4046298.csv",
+            UUID.randomUUID().toString().replace("-","").repeat(2),"USD",List.of(Map.of(
+                "InvoiceNumber","4046298","Description","Invoice product description","ItemNumber","299405",
+                "UPC",barcode,"ShipQuantity","2","NetEach","6.25")),actor);
+        tx.executeWithoutResult(s->{setTenant();
+            assertThat(jdbc.queryForObject("SELECT account_catalog_item_id FROM receiving_document_lines WHERE tenant_id=? AND receiving_document_id=?",UUID.class,tenant,document)).isEqualTo(mapped.product());
+            assertThat(jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenant,mapped.product())).isEqualTo(originalGlobal);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
+            assertThat(jdbc.queryForObject("SELECT list_cost FROM vendor_catalog_offers WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,mapped.product())).isEqualByComparingTo("5.07");
+            assertThat(jdbc.queryForObject("SELECT invoice_unit_cost FROM receiving_document_lines WHERE tenant_id=? AND receiving_document_id=?",BigDecimal.class,tenant,document)).isEqualByComparingTo("6.25");
+        });
+    }
+
     @Test void documentSearchIncludesInvoiceItemCodesWithoutDuplicatingDocuments(){
         var a=fixture("INVOICE");var b=fixture("INVOICE");
         tx.execute(s->{setTenant();

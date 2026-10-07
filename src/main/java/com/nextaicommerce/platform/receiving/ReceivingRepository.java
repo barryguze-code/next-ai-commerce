@@ -808,6 +808,10 @@ public class ReceivingRepository {
               AND upper(regexp_replace(vendor_item_code,'[^A-Za-z0-9]','','g'))=?
               AND effective_to IS NULL LIMIT 1
             """,rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,vendorId,cleanCode(vendorCode));
+        // Receiving an invoice is not a catalogue identity edit. The account's existing
+        // vendor mapping is authoritative; retain the source barcode on the document
+        // line without reparenting products or demanding a catalogue merge.
+        if(itemId!=null)return new MatchedItem(itemId,false);
         if(!vendorCode.isBlank()){
             boolean created=itemId==null;
             itemId=catalog.addImportedVendorProduct(tenantId,actorEmail,vendorId,vendorCode,description,
