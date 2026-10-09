@@ -32,7 +32,9 @@ import tools.jackson.databind.ObjectMapper;
 
 @Controller
 public class CollaborationController {
-    public record Conversation(CollaborationRepository.Review review,List<CollaborationRepository.Message> messages,String messageType) {}
+    public record Conversation(CollaborationRepository.Review review,List<CollaborationRepository.Message> messages,String messageType,List<UUID> unreadMentionMessageIds) {
+        public Conversation(CollaborationRepository.Review review,List<CollaborationRepository.Message> messages,String messageType){this(review,messages,messageType,List.of());}
+    }
     private static final Set<String> ATTACHMENT_TYPES=Set.of("image/png","image/jpeg","image/webp","application/pdf",
         "text/plain","text/csv","application/csv","application/vnd.ms-excel",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -180,11 +182,11 @@ public class CollaborationController {
     }
 
     @GetMapping("/app/collaboration/summaries") @ResponseBody
-    Map<String,CollaborationRepository.SubjectSummary> summaries(@RequestParam String entityType,
+    ResponseEntity<Map<String,CollaborationRepository.SubjectSummary>> summaries(@RequestParam String entityType,
             @RequestParam(name="entityId") List<String> entityIds,HttpSession session,Authentication authentication){
         if(entityIds.size()>250)throw new IllegalArgumentException("Request up to 250 collaboration summaries at a time.");
-        return repository.openSubjectSummaries(tenant(session),clean(entityType,40),
-            entityIds.stream().filter(id->id!=null&&!id.isBlank()).distinct().toList(),authentication.getName());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(repository.openSubjectSummaries(tenant(session),clean(entityType,40),
+            entityIds.stream().filter(id->id!=null&&!id.isBlank()).distinct().toList(),authentication.getName()));
     }
 
     @GetMapping("/app/collaboration/reviews/{reviewId}") @ResponseBody
@@ -192,7 +194,16 @@ public class CollaborationController {
             HttpSession session,Authentication authentication){
         String type=normalizeMessageType(messageType);var review=repository.review(tenant(session),reviewId,authentication.getName());
         if(review==null)return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(new Conversation(review,repository.messages(tenant(session),reviewId,authentication.getName(),type),type));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new Conversation(review,repository.messages(tenant(session),reviewId,authentication.getName(),type),type,
+            "TEAM_CHAT".equals(type)?repository.unreadMentionMessages(tenant(session),reviewId,authentication.getName()):List.of()));
+    }
+
+    @PostMapping("/app/collaboration/reviews/{reviewId}/read") @ResponseBody
+    ResponseEntity<Void> acknowledge(@PathVariable UUID reviewId,@RequestParam(name="messageId") List<UUID> messageIds,
+            HttpSession session,Authentication authentication){
+        if(messageIds.size()>250)return ResponseEntity.badRequest().build();
+        return repository.acknowledgeMessages(tenant(session),reviewId,authentication.getName(),messageIds)
+            ?ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build():ResponseEntity.notFound().build();
     }
 
     @GetMapping("/app/collaboration/attachments/{attachmentId}") @ResponseBody

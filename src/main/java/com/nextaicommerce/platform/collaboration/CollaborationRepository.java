@@ -21,9 +21,9 @@ public class CollaborationRepository {
             String actionKind,String title,String status,String requester,String assigneeName,String assigneeEmail,
             Instant dueAt,Instant createdAt,Instant updatedAt,Instant closedAt,int messageCount,int privateNoteCount,
             String participants,String contextSnapshot,String parentUrl,boolean mentionedMe,
-            java.time.LocalDate dueDate,String dueTimeZone,UUID storeId) {
+            java.time.LocalDate dueDate,String dueTimeZone,UUID storeId,int unreadMessageCount) {
         public Review(UUID id,String subjectType,String subjectKey,String subjectLabel,String marketplace,String actionKind,String title,String status,String requester,String assigneeName,String assigneeEmail,Instant dueAt,Instant createdAt,Instant updatedAt,Instant closedAt,int messageCount,int privateNoteCount,String participants,String contextSnapshot,String parentUrl,boolean mentionedMe){
-            this(id,subjectType,subjectKey,subjectLabel,marketplace,actionKind,title,status,requester,assigneeName,assigneeEmail,dueAt,createdAt,updatedAt,closedAt,messageCount,privateNoteCount,participants,contextSnapshot,parentUrl,mentionedMe,null,null,null);
+            this(id,subjectType,subjectKey,subjectLabel,marketplace,actionKind,title,status,requester,assigneeName,assigneeEmail,dueAt,createdAt,updatedAt,closedAt,messageCount,privateNoteCount,participants,contextSnapshot,parentUrl,mentionedMe,null,null,null,0);
         }
         public boolean overdue(){return "ACTIVE".equals(status)&&dueAt!=null&&!dueAt.isAfter(Instant.now());}
         public boolean assignedTo(String email){return assigneeEmail!=null&&java.util.Arrays.stream(assigneeEmail.split(",")).anyMatch(e->e.equalsIgnoreCase(email));}
@@ -34,13 +34,20 @@ public class CollaborationRepository {
     public record Message(UUID id,UUID senderId,String senderName,String authorEmail,String messageType,String body,
             Instant createdAt,List<Attachment> attachments) {}
     public record SubjectSummary(UUID reviewId,int activeCount,int activeMessageCount,int totalCount,
-            int closedCount,Instant latestActivityAt,int originCount,int relatedCount,int mineCount) {}
+            int closedCount,Instant latestActivityAt,int originCount,int relatedCount,int mineCount,int urgentUnreadMentionCount,int unreadMessageCount,int directMessageCount,int relatedMessageCount) {}
     public record PostedMessage(UUID reviewId,UUID messageId) {}
     public record HuddleTranscriptMessage(UUID senderId,String senderName,String senderEmail,String body,Instant createdAt) {}
     public record PendingMention(UUID id,UUID reviewId,String recipientName,String recipientEmail,String accountName,
             String subjectLabel,String authorEmail,String body,String notificationKind) {}
 
     private static final String VIEWER="nullif(current_setting('app.user_email',true),'')";
+    private static final String UNREAD_MESSAGES="""
+        (SELECT count(*) FROM collaboration_messages unread_message
+         WHERE unread_message.tenant_id=review.tenant_id AND unread_message.review_id=review.id
+           AND unread_message.message_type='TEAM_CHAT' AND lower(unread_message.author_email)<>lower(%s)
+           AND NOT EXISTS (SELECT 1 FROM collaboration_read_receipts receipt JOIN app_users reader ON reader.id=receipt.user_id
+             WHERE receipt.tenant_id=review.tenant_id AND receipt.message_id=unread_message.id AND lower(reader.email)=lower(%s)))
+        """.formatted(VIEWER,VIEWER);
     private static final String VISIBLE_THREAD="""
         EXISTS (SELECT 1 FROM collaboration_messages visible_message
                 WHERE visible_message.review_id=review.id AND visible_message.message_type='TEAM_CHAT')
@@ -71,7 +78,7 @@ public class CollaborationRepository {
         EXISTS (SELECT 1 FROM collaboration_mentions mine JOIN app_users me ON me.id=mine.mentioned_user_id
                 WHERE mine.review_id=review.id AND mine.notification_kind='MENTION' AND lower(me.email)=lower(%s)),
         review.due_date,review.due_time_zone,review.marketplace_connection_id
-        """.formatted(VIEWER,VIEWER,VIEWER);
+        """.formatted(VIEWER,VIEWER,VIEWER)+","+UNREAD_MESSAGES;
 
     private final JdbcTemplate jdbc;
     public CollaborationRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
@@ -150,7 +157,11 @@ public class CollaborationRepository {
             +"WHERE linked_item.tenant_id=review.tenant_id AND linked_item.amazon_order_id=review.subject_key "
             +"AND (("+type+"='MARKETPLACE_SKU' AND linked_item.seller_sku="+key+") "
             +"OR ("+type+"='CATALOG' AND linked_component.account_catalog_item_id::text="+key+") "
-            +"OR ("+type+"='INVENTORY' AND linked_component.account_catalog_item_id::text=split_part("+key+",'|',1)))))";
+            +"OR ("+type+"='INVENTORY' AND linked_component.account_catalog_item_id::text=split_part("+key+",'|',1))))) OR "
+            +"("+type+"='ORDER' AND review.subject_type='MARKETPLACE_SKU' AND EXISTS ("
+            +"SELECT 1 FROM amazon_order_items inherited_item WHERE inherited_item.tenant_id=review.tenant_id "
+            +"AND inherited_item.amazon_order_id="+key+" AND inherited_item.seller_sku=review.subject_key "
+            +"AND (review.marketplace_connection_id IS NULL OR review.marketplace_connection_id=inherited_item.marketplace_connection_id)))";
     }
 
     @Transactional(readOnly=true)
@@ -182,9 +193,15 @@ public class CollaborationRepository {
         String sql="WITH requested(key) AS (VALUES "+placeholders+"), kind AS (SELECT ?::text AS value), visible AS ("
             +" SELECT requested.key,review.id,review.status,review.updated_at,"
             +" (review.subject_type=kind.value AND review.subject_key=requested.key) AS origin,"
-            +" (lower(review.requested_by)=lower("+VIEWER+") OR EXISTS(SELECT 1 FROM collaboration_assignments a JOIN app_users assigned_user ON assigned_user.id=a.user_id WHERE a.tenant_id=review.tenant_id AND a.review_id=review.id AND lower(assigned_user.email)=lower("+VIEWER+")) OR lower(assignee.email)=lower("+VIEWER+") OR EXISTS "
-            +" (SELECT 1 FROM collaboration_mentions mention JOIN app_users mentioned ON mentioned.id=mention.mentioned_user_id"
-            +" WHERE mention.review_id=review.id AND lower(mentioned.email)=lower("+VIEWER+"))) AS mine,"
+            // Historical mentions and overdue dates are not proof of an unread @mention.
+            +" (EXISTS(SELECT 1 FROM collaboration_assignments a JOIN app_users assigned_user ON assigned_user.id=a.user_id WHERE a.tenant_id=review.tenant_id AND a.review_id=review.id AND lower(assigned_user.email)=lower("+VIEWER+")) OR lower(assignee.email)=lower("+VIEWER+")) AS mine,"
+            +" (SELECT count(DISTINCT mention.message_id) FROM collaboration_mentions mention JOIN app_users reader ON reader.id=mention.mentioned_user_id "
+            +" JOIN collaboration_messages mentioned_message ON mentioned_message.id=mention.message_id AND mentioned_message.tenant_id=mention.tenant_id "
+            +" WHERE mention.tenant_id=review.tenant_id AND mention.review_id=review.id AND mention.notification_kind='MENTION' "
+            +" AND mentioned_message.message_type='TEAM_CHAT' AND lower(reader.email)=lower("+VIEWER+") "
+            +" AND NOT EXISTS (SELECT 1 FROM collaboration_read_receipts receipt WHERE receipt.tenant_id=mention.tenant_id AND receipt.user_id=reader.id AND receipt.message_id=mention.message_id)) AS unread_mentions,"
+            +UNREAD_MESSAGES+" AS unread_messages,"
+            +" (SELECT count(*) FROM collaboration_messages shared_message WHERE shared_message.tenant_id=review.tenant_id AND shared_message.review_id=review.id AND shared_message.message_type='TEAM_CHAT') AS shared_messages,"
             +" (SELECT count(*) FROM collaboration_messages message WHERE message.review_id=review.id AND "
             +" (message.message_type='TEAM_CHAT' OR (message.message_type='PRIVATE_NOTE' AND lower(message.author_email)=lower("+VIEWER+")))) AS messages"
             +" FROM requested CROSS JOIN kind JOIN collaboration_reviews review ON ("+subjectMatch("kind.value","requested.key")+")"
@@ -193,11 +210,44 @@ public class CollaborationRepository {
             +" count(*) FILTER (WHERE status='ACTIVE'),coalesce(sum(messages) FILTER (WHERE status='ACTIVE'),0),"
             +" count(*),count(*) FILTER (WHERE status='CLOSED'),max(updated_at),"
             +" count(*) FILTER (WHERE status='ACTIVE' AND origin),count(*) FILTER (WHERE status='ACTIVE' AND NOT origin),"
-            +" count(*) FILTER (WHERE status='ACTIVE' AND origin AND mine) FROM visible GROUP BY key";
+            +" count(*) FILTER (WHERE status='ACTIVE' AND mine),coalesce(sum(unread_mentions) FILTER (WHERE status='ACTIVE'),0),coalesce(sum(unread_messages) FILTER (WHERE status='ACTIVE' AND origin),0),"
+            +" coalesce(sum(shared_messages) FILTER (WHERE status='ACTIVE' AND origin),0),coalesce(sum(shared_messages) FILTER (WHERE status='ACTIVE' AND NOT origin),0) FROM visible GROUP BY key";
         jdbc.query(sql,(org.springframework.jdbc.core.ResultSetExtractor<Void>)rs->{
-            while(rs.next())result.put(rs.getString(1),new SubjectSummary(rs.getObject(2,UUID.class),rs.getInt(3),rs.getInt(4),rs.getInt(5),rs.getInt(6),instant(rs,7),rs.getInt(8),rs.getInt(9),rs.getInt(10)));return null;
+            while(rs.next())result.put(rs.getString(1),new SubjectSummary(rs.getObject(2,UUID.class),rs.getInt(3),rs.getInt(4),rs.getInt(5),rs.getInt(6),instant(rs,7),rs.getInt(8),rs.getInt(9),rs.getInt(10),rs.getInt(11),rs.getInt(12),rs.getInt(13),rs.getInt(14)));return null;
         },values.toArray());
         return result;
+    }
+
+    @Transactional(readOnly=true)
+    public List<UUID> unreadMentionMessages(UUID tenantId,UUID reviewId,String viewerEmail){
+        setContext(tenantId,viewerEmail);
+        return jdbc.queryForList("""
+            SELECT DISTINCT mention.message_id FROM collaboration_mentions mention
+            JOIN app_users reader ON reader.id=mention.mentioned_user_id
+            JOIN collaboration_messages message ON message.id=mention.message_id AND message.tenant_id=mention.tenant_id
+            WHERE mention.tenant_id=? AND mention.review_id=? AND lower(reader.email)=lower(?)
+              AND mention.notification_kind='MENTION' AND message.message_type='TEAM_CHAT'
+              AND NOT EXISTS (SELECT 1 FROM collaboration_read_receipts receipt WHERE receipt.tenant_id=mention.tenant_id
+                  AND receipt.user_id=reader.id AND receipt.message_id=mention.message_id)
+            """,UUID.class,tenantId,reviewId,viewerEmail);
+    }
+
+    @Transactional
+    public boolean acknowledgeMessages(UUID tenantId,UUID reviewId,String viewerEmail,List<UUID> messageIds){
+        if(messageIds.size()>250)throw new IllegalArgumentException("Acknowledge up to 250 messages at a time.");
+        setContext(tenantId,viewerEmail);
+        if(review(tenantId,reviewId,viewerEmail)==null)return false;
+        if(messageIds.isEmpty())return true;
+        var ids=messageIds.stream().distinct().toList();
+        jdbc.update("INSERT INTO collaboration_read_receipts(tenant_id,user_id,message_id) "
+            +"SELECT message.tenant_id,reader.id,message.id FROM collaboration_messages message JOIN app_users reader ON lower(reader.email)=lower(?) "
+            +"WHERE message.tenant_id=? AND message.review_id=? AND message.message_type='TEAM_CHAT' AND message.id IN ("
+            +String.join(",",Collections.nCopies(ids.size(),"?"))+") ON CONFLICT DO NOTHING",
+            receiptArguments(tenantId,viewerEmail,reviewId,ids));
+        return true;
+    }
+    private Object[] receiptArguments(UUID tenantId,String viewerEmail,UUID reviewId,List<UUID> ids){
+        var args=new ArrayList<Object>();args.add(viewerEmail);args.add(tenantId);args.add(reviewId);args.addAll(ids);return args.toArray();
     }
 
     @Transactional(readOnly=true)
@@ -449,7 +499,7 @@ public class CollaborationRepository {
         INSERT INTO collaboration_attachments(tenant_id,review_id,message_id,uploaded_by,uploaded_by_email,file_name,content_type,size_bytes,content)
         VALUES (?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?) LIMIT 1),?,?,?,?,?)
         """,tenantId,reviewId,messageId,authorEmail,authorEmail,upload.fileName(),upload.contentType(),upload.bytes().length,upload.bytes());}
-    private static Review review(java.sql.ResultSet rs)throws java.sql.SQLException{return new Review(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7),rs.getString(8),rs.getString(9),rs.getString(10),rs.getString(11),instant(rs,12),instant(rs,13),instant(rs,14),instant(rs,15),rs.getInt(16),rs.getInt(17),rs.getString(18),rs.getString(19),rs.getString(20),rs.getBoolean(21),rs.getObject(22,java.time.LocalDate.class),rs.getString(23),rs.getObject(24,UUID.class));}
+    private static Review review(java.sql.ResultSet rs)throws java.sql.SQLException{return new Review(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7),rs.getString(8),rs.getString(9),rs.getString(10),rs.getString(11),instant(rs,12),instant(rs,13),instant(rs,14),instant(rs,15),rs.getInt(16),rs.getInt(17),rs.getString(18),rs.getString(19),rs.getString(20),rs.getBoolean(21),rs.getObject(22,java.time.LocalDate.class),rs.getString(23),rs.getObject(24,UUID.class),rs.getInt(25));}
     private static String normalizeMessageType(String value){return "PRIVATE_NOTE".equalsIgnoreCase(value)?"PRIVATE_NOTE":"TEAM_CHAT";}
     private static Object[] join(Object first,List<?> rest){var values=new ArrayList<>();values.add(first);values.addAll(rest);return values.toArray();}
     private static Object[] append(List<?> values,Object last){var result=new ArrayList<Object>(values);result.add(last);return result.toArray();}

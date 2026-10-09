@@ -4,7 +4,7 @@
   let directory=[],directoryLoadedAt=0,directoryLoading=false,directoryError=false,peopleTab='online',peopleQuery='',peopleList,peopleHint;
   async function loadDirectory(){
     if(directoryLoading||Date.now()-directoryLoadedAt<60000)return;
-    directoryLoading=true;directoryError=false;
+    directoryLoading=true;directoryError=false;renderPeople();
     try{const response=await fetch('/app/collaboration/teammates',{headers:{Accept:'application/json'},cache:'no-store'});if(!response.ok)throw new Error();directory=await response.json();directoryLoadedAt=Date.now();}
     catch(_){directoryError=true;}finally{directoryLoading=false;renderPeople();}
   }
@@ -20,33 +20,44 @@
   }
   function mount(){
     if(launcher)return;const header=document.querySelector('.workspace-header');if(!header)return;
-    launcher=node('div',null,'huddle-launcher');const trigger=button('ϟ',()=>{menu.hidden=false;trigger.setAttribute('aria-expanded','true');loadDirectory();});
+    launcher=node('div',null,'huddle-launcher');const closePeople=(restore=false)=>{menu.hidden=true;trigger.setAttribute('aria-expanded','false');if(restore)trigger.focus();};
+    const trigger=button('ϟ',()=>{menu.hidden=false;trigger.setAttribute('aria-expanded','true');loadDirectory();menu.querySelector('input').focus();});
     trigger.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/></svg>';
-    trigger.className='huddle-top-icon';trigger.title='Collaborate · online teammates';trigger.setAttribute('aria-label','Open huddle and online teammates');trigger.setAttribute('aria-expanded','false');
-    menu=node('section',null,'huddle-people-panel');menu.hidden=true;menu.setAttribute('aria-label','Teammates');
-    peopleHint=node('small');const tabs=node('div',null,'huddle-people-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Teammate status');
-    for(const [value,label] of [['online','Online'],['all','All teammates']]){const tab=button(label,()=>{peopleTab=value;renderPeople();loadDirectory();});tab.dataset.peopleTab=value;tab.setAttribute('role','tab');tabs.append(tab);}
+    trigger.className='huddle-top-icon';trigger.dataset.tooltip='Collaborate · online teammates';trigger.setAttribute('aria-label','Open huddle and online teammates');trigger.setAttribute('aria-expanded','false');trigger.setAttribute('aria-controls','huddle-teammates');
+    menu=node('section',null,'huddle-people-panel');menu.id='huddle-teammates';menu.hidden=true;menu.setAttribute('aria-labelledby','huddle-people-title');
+    const heading=node('header',null,'huddle-people-heading'),title=node('strong','Collaborate');title.id='huddle-people-title';
+    const close=button('×',()=>closePeople(true));close.className='huddle-people-close';close.setAttribute('aria-label','Close teammate picker');heading.append(title,close);
+    peopleHint=node('small');const tabs=node('div',null,'huddle-people-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Teammate status');
+    for(const [value,label] of [['online','Online'],['all','All teammates']]){const tab=button(label,()=>{peopleTab=value;renderPeople();loadDirectory();});tab.dataset.peopleTab=value;tabs.append(tab);}
     const search=node('input');search.type='search';search.placeholder='Search teammates';search.setAttribute('aria-label','Search teammates');search.addEventListener('input',()=>{peopleQuery=search.value;renderPeople();});
     peopleList=node('div',null,'huddle-people-list');peopleList.setAttribute('role','region');peopleList.setAttribute('aria-label','Teammate results');
-    menu.append(node('strong','Collaborate'),peopleHint,tabs,search,peopleList);
+    menu.append(heading,peopleHint,tabs,search,peopleList);
     launcher.append(trigger,menu);
     const picker=header.querySelector('.context-menu');
     if(picker)picker.before(launcher);else (header.querySelector('.header-actions')||header).append(launcher);
     let timer;launcher.addEventListener('pointerenter',()=>{clearTimeout(timer);menu.hidden=false;trigger.setAttribute('aria-expanded','true');loadDirectory();});
     launcher.addEventListener('pointerleave',()=>{timer=setTimeout(()=>{if(!launcher.contains(document.activeElement)){menu.hidden=true;trigger.setAttribute('aria-expanded','false');}},250);});
-    document.addEventListener('keydown',e=>{if(e.key==='Escape'){menu.hidden=true;trigger.setAttribute('aria-expanded','false');}});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!menu.hidden){e.preventDefault();closePeople(launcher.contains(document.activeElement));}});
+    launcher.addEventListener('focusout',()=>setTimeout(()=>{if(!launcher.contains(document.activeElement))closePeople();},0));
     document.addEventListener('click',e=>{if(!launcher.contains(e.target)){menu.hidden=true;trigger.setAttribute('aria-expanded','false');}});
     tray=node('div',null,'floating-huddle-tray');tray.setAttribute('popover','manual');document.body.append(tray);renderPeople();
   }
   function renderPeople(){
     if(!menu)return;peopleHint.textContent=connected?'Across your shared accounts':'Reconnecting… live status unavailable';
-    menu.querySelectorAll('[data-people-tab]').forEach(tab=>tab.setAttribute('aria-selected',String(tab.dataset.peopleTab===peopleTab)));
+    menu.querySelectorAll('[data-people-tab]').forEach(tab=>tab.setAttribute('aria-pressed',String(tab.dataset.peopleTab===peopleTab)));
+    peopleList.setAttribute('aria-busy',String(directoryLoading));
     const onlineIds=new Set(people.map(p=>p.id)),all=new Map(directory.map(p=>[p.id,p]));people.forEach(p=>all.set(p.id,p));
     const query=peopleQuery.trim().toLowerCase(),others=(peopleTab==='online'?people:[...all.values()]).filter(p=>p.id!==self?.id&&((p.name||'')+' '+(p.email||'')).toLowerCase().includes(query))
       .sort((a,b)=>Number(onlineIds.has(b.id))-Number(onlineIds.has(a.id))||(a.name||a.email).localeCompare(b.name||b.email));
     peopleList.replaceChildren();
-    if(!others.length)peopleList.append(node('p',query?'No matching teammates.':peopleTab==='online'?(connected?'No teammates online right now.':'Connecting to live chat…'):directoryLoading?'Loading teammates…':directoryError?'Teammates could not be loaded. Try again.':'No teammates available.'));
-    for(const person of others){const online=connected&&onlineIds.has(person.id),label=(online?'● ':'○ ')+(person.name||person.email),b=button('',()=>start(person));b.setAttribute('aria-label',label);b.disabled=!online||!allowed;b.className='huddle-directory-person';b.dataset.online=String(online);const identity=node('span');identity.className='huddle-person-identity';const dot=node('span');dot.className='huddle-presence-dot';dot.setAttribute('aria-hidden','true');identity.append(dot,node('span',person.name||person.email));b.append(identity,node('small',online?'Online':connected?'Offline':'Status unavailable'));b.title=online?'Start a live chat':'Offline follow-up: create a saved task in Collaborate';peopleList.append(b);}
+    if(!others.length){const empty=node('p',directoryLoading&&peopleTab==='all'?'Loading teammates…':query?'No matching teammates.':peopleTab==='online'?(connected?'No teammates online right now.':'Connecting to live chat…'):directoryError?'Teammates could not be loaded.':'No teammates available.','huddle-people-empty');empty.setAttribute('role','status');peopleList.append(empty);if(directoryError&&peopleTab==='all')peopleList.append(button('Try again',loadDirectory));}
+    for(const person of others){
+      const online=connected&&onlineIds.has(person.id),name=person.name||person.email,status=online?'Online':connected?'Offline':'Status unavailable',b=button('',()=>start(person));
+      b.setAttribute('aria-label',name+' · '+status);b.disabled=!online||!allowed;b.className='huddle-directory-person';b.dataset.online=String(online);
+      const identity=node('span',null,'huddle-person-identity'),avatar=node('span',name.trim().slice(0,1).toUpperCase(),'huddle-person-avatar'),dot=node('span',null,'huddle-presence-dot');
+      avatar.setAttribute('aria-hidden','true');avatar.append(dot);identity.append(avatar,node('span',name));b.append(identity,node('small',status));
+      b.dataset.tooltip=online?(allowed?'Start a live chat':'Live chat is unavailable for your role'):'Offline follow-up: create a saved task in Collaborate';peopleList.append(b);
+    }
     if(peopleTab==='all'){const hint=node('small','Offline follow-up is available through saved tasks in '),link=node('a','Collaborate');link.href='/app/collaboration';hint.append(link);peopleList.append(hint);}
     for(const room of rooms.values())if(room.status==='ACTIVE')peopleList.append(button('↗ '+roomName(room),()=>open(room)));
   }

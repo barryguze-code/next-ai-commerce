@@ -149,12 +149,12 @@ class CollaborationTemplateTest {
         String navigation=Files.readString(Path.of("src/main/resources/templates/fragments/sidebar-nav.html"));
         String workspace=Files.readString(Path.of("src/main/resources/templates/collaboration.html"));
         String styles=Files.readString(Path.of("src/main/resources/static/css/general-task.css"));
-        assertThat(modal).contains("/images/platform/collaboration-original-source.png?v=", "aria-label=\"Go to original source\"");
+        assertThat(modal).contains("/images/platform/table/collaboration-original-redirect.png?v=", "aria-label=\"Go to original source\"");
         assertThat(navigation).contains("/images/platform/collaboration-new-task.png?v=", "aria-label=\"Create a store task\"");
         assertThat(workspace).contains("/images/platform/collaboration-new-task.png?v=");
         assertThat(styles).contains(".collaborate-nav-row .sidebar-create-task{", "border:0;background:transparent;box-shadow:none",
             ".sidebar-create-task:focus-visible");
-        for(String asset:List.of("collaboration-original-source","collaboration-new-task")) {
+        for(String asset:List.of("table/collaboration-original-redirect","collaboration-new-task","table/actionable-items")) {
             try(var input=getClass().getResourceAsStream("/static/images/platform/"+asset+".png")) {
                 assertThat(javax.imageio.ImageIO.read(input).getWidth()).isGreaterThan(0);
             }

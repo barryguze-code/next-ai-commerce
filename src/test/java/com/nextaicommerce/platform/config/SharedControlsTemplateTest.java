@@ -17,7 +17,7 @@ class SharedControlsTemplateTest {
     }
     @Test void narrowTablesKeepMinimumWidthAndReuseOneLocationPicker()throws Exception{
         assertThat(read("templates/account-catalog.html")).contains("data-table-min-width=\"1200\"","data-marketplace-shortcuts");
-        assertThat(read("templates/marketplace-skus.html")).contains("data-table-min-width=\"1240\"");
+        assertThat(read("templates/marketplace-skus.html")).contains("data-table-min-width=\"1100\"");
         assertThat(read("static/css/table-widget.css")).contains("min-width:var(--table-min-width,0px)");
         assertThat(read("static/js/platform-controls.js")).contains("aria-selected","ArrowDown","Escape","new Event('change'","select.hidden=true");
     }

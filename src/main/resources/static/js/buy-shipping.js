@@ -11,7 +11,7 @@
   function addOrderSearchShortcuts(){
     orderShortcutStyle();document.querySelectorAll('.order-item').forEach(item=>{
       const copy=item.querySelector('.item-product-copy'),sku=copy?.querySelector('code')?.textContent?.trim();
-      const amazon=item.querySelector('a[title="Open the Amazon product page"]'),asin=amazon?.getAttribute('aria-label')?.replace(/^Open\s+|\s+on Amazon$/g,'').trim();
+      const amazon=item.querySelector('a:is([title="Open the Amazon product page"],[data-tooltip="Open the Amazon product page"])'),asin=amazon?.getAttribute('aria-label')?.replace(/^Open\s+|\s+on Amazon$/g,'').trim();
       const itemCodes=[...new Set((item.querySelector('.mapping-codes')?.textContent||'').split(/\n+/).map(value=>value.split(/\s*[×x]\s*/)[0].trim()).filter(value=>value&&value!==sku&&value!=='Needs mapping'&&value!=='Choose catalogue item'))];
       if(!copy||copy.querySelector('.order-reference-shortcuts'))return;
       const shortcuts=document.createElement('div');shortcuts.className='order-reference-shortcuts';

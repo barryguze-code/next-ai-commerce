@@ -81,7 +81,7 @@ test('pagination, search, column filters and refresh share one state',async()=>{
   const page=await fixture();
   assert.equal(await page.locator('tbody tr:not(.table-data-hidden)').count(),25);
   await page.getByRole('button',{name:'Next',exact:true}).click();
-  assert.match(await page.locator('.table-standard-pagination').innerText(),/61 matching results/);
+  assert.match(await page.locator('.table-standard-pagination').innerText(),/Total: 61 results/);
   assert.equal(await page.getByRole('spinbutton',{name:'Page number'}).inputValue(),'2');
   assert.equal(await page.locator('tbody tr:not(.table-data-hidden)').count(),25);
   await page.getByRole('searchbox',{name:'Search table',exact:true}).fill('Product 60');
@@ -89,7 +89,7 @@ test('pagination, search, column filters and refresh share one state',async()=>{
   await page.getByRole('searchbox',{name:'Search table',exact:true}).fill('');
   await page.locator('.table-filter-control summary').click();
   await page.getByRole('searchbox',{name:'Filter Location',exact:true}).fill('West');
-  assert.match(await page.locator('.table-standard-pagination').innerText(),/30 matching results/);
+  assert.match(await page.locator('.table-standard-pagination').innerText(),/Total: 30 results/);
   await page.evaluate(()=>window.NextAiTableWidget.refresh());
   assert.equal(await page.locator('.table-standard-toolbar').count(),1);
   await page.close();
@@ -106,7 +106,7 @@ test('CSV preserves button-backed data, quotes and guards formulas',async()=>{
 test('shared pager resets size, bounds page jumps and keeps icon download accessible',async()=>{
   const page=await fixture();
   await page.getByRole('combobox',{name:'Rows per page'}).selectOption('50');
-  assert.match(await page.locator('.table-standard-pagination').innerText(),/61 matching results/);
+  assert.match(await page.locator('.table-standard-pagination').innerText(),/Total: 61 results/);
   assert.equal(await page.getByRole('combobox',{name:'Rows per page'}).inputValue(),'50');
   assert.equal(await page.locator('tbody tr:not(.table-data-hidden)').count(),50);
   await page.getByRole('spinbutton',{name:'Page number'}).fill('999');

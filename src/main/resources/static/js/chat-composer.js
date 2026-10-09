@@ -9,7 +9,7 @@
       submit.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 9-18 9 4-9-4-9ZM7 12h14"/></svg>';submit.setAttribute('aria-label','Send message');submit.title='Send message · Enter';
       const attachment=tools.querySelector('label');attachment.title='Attach files';attachment.setAttribute('aria-label','Attach files');
       const add=document.createElement('button');add.type='button';add.className='chat-add-person';add.title='Mention a teammate';add.setAttribute('aria-label','Mention a teammate');add.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M16 11h6"/></svg>';
-      add.onclick=()=>{field.focus();field.setRangeText((field.value&&!/\s$/.test(field.value)?' ':'')+'@',field.selectionStart,field.selectionEnd,'end');field.dispatchEvent(new Event('input',{bubbles:true}));};
+      add.textContent='@';add.onclick=()=>{field.focus();field.setRangeText((field.value&&!/\s$/.test(field.value)?' ':'')+'@',field.selectionStart,field.selectionEnd,'end');field.dispatchEvent(new Event('input',{bubbles:true}));};
       const shell=document.createElement('div');shell.className='chat-compose-shell';field.before(shell);shell.append(field,tools);tools.append(add,submit);
       const filename=tools.querySelector('[data-attachment-name]');if(filename){filename.setAttribute('aria-live','polite');filename.classList.add('chat-file-status');filename.hidden=true;tools.querySelector('input[type=file]')?.addEventListener('change',event=>filename.hidden=!event.target.files.length);}
       if(footer){footer.className='chat-compose-hint';footer.replaceChildren(document.createTextNode('Enter to send · Shift+Enter for a new line'));}

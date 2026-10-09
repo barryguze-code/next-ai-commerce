@@ -49,8 +49,10 @@ cross-page selection. Opening either view does not post stock.
   Column filters explicitly say “on this page”; they are not server predicates.
   Render a `.table-pagination` fallback with `data-page` (zero-based),
   `data-page-max` (at least 1), and `data-page-size`. The shared pager replaces
-  its controls with Rows, First, Previous, Page, Next and Last. Endpoints accept
-  `page` and `size` (25, 50 or 100); changing size resets to page zero.
+  its controls with a left-aligned Showing [size] rows selector and total count,
+  and right-aligned First, Previous, Page, Next and Last. Endpoints accept
+  `page` and `size` (25, 50 or 100); changing size retains the visible row anchor
+  and saves the preference per table in the browser.
 - CSV: visible data columns in their chosen order, excluding action controls.
   Client tables export all matching rows, independent of the selected page.
   Server tables traverse the authenticated list's Next links from page zero,

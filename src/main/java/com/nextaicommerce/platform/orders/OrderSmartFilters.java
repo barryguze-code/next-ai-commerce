@@ -69,7 +69,7 @@ public final class OrderSmartFilters {
         }else{from=date(input,"f_date_min");to=date(input,"f_date_max");}
         if(from!=null&&to!=null&&from.isAfter(to))throw new IllegalArgumentException("Start date must precede end date");
         if(from!=null){clauses.add("orders.purchase_date>=?");args.add(from);}if(to!=null){clauses.add("orders.purchase_date"+(preset.isEmpty()?"<=?":"<?"));args.add(to);}
-        String sort=value(input,"smartSort");if(!List.of("","units_desc","units_asc","orders_desc","orders_asc").contains(sort))throw new IllegalArgumentException("Invalid sort");
+        String sort=value(input,"smartSort");if(!List.of("","units_desc","units_asc","orders_desc","orders_asc","date_desc","date_asc").contains(sort))throw new IllegalArgumentException("Invalid sort");
         return new Query(clauses.isEmpty()?"true":String.join(" AND ",clauses),args,sort);
     }
     public static Map<String,String> clean(Map<String,String> input){

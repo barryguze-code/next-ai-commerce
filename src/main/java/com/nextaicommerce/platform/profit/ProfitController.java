@@ -75,6 +75,13 @@ public class ProfitController {
     }
     public record DefaultsChange(String kind,String key,UUID connection,List<ProfitRepository.SkuCostChange> skuChanges,
         List<ProfitRepository.ItemCostChange> itemChanges,List<ProfitRepository.PackageCost> packages,BigDecimal otherCost,String packageType){}
+    public record InvoiceAcceptance(UUID connection,String sku,UUID itemId,UUID documentId,BigDecimal expectedCost,BigDecimal expectedInvoice){}
+    @PostMapping("/invoice-default") @ResponseBody
+    Map<String,String> acceptInvoice(HttpSession session,Authentication auth,Model model,@RequestBody InvoiceAcceptance change){
+        edit(auth,model);profit.acceptInvoiceCost(tenant(session),store(session,change.connection()),change.sku(),change.itemId(),
+            change.documentId(),change.expectedCost(),change.expectedInvoice(),auth.getName());
+        return Map.of("message","Invoice cost accepted as the catalogue default. Receipts and Amazon are unchanged.");
+    }
     @PostMapping("/defaults") @ResponseBody
     Map<String,String> defaults(HttpSession session,Authentication auth,Model model,@RequestBody DefaultsChange change){
         edit(auth,model);profit.saveDefaults(tenant(session),store(session,change.connection()),change.kind(),change.key(),change.skuChanges(),change.itemChanges(),change.packages(),change.otherCost(),change.packageType(),auth.getName());

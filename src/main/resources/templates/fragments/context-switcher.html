@@ -12,7 +12,7 @@
     <span class="chevron">⌄</span>
   </summary>
   <section class="context-popover">
-    <header><strong>Choose workspace</strong><small>Accounts and connected stores</small></header>
+    <header><strong>Choose workspace</strong><small>Accounts and connected stores</small><button type="button" class="context-close" aria-label="Close workspace picker" onclick="closeWorkspacePicker(this)">×</button></header>
     <label class="context-filter"><span>⌕</span><input type="search" placeholder="Search accounts or stores" aria-label="Search accounts or stores" oninput="filterWorkspaceChoices(this)"></label>
     <div class="context-account" th:each="option : ${accountOptions}" th:attr="data-account-search=${#strings.toLowerCase(option.name)}">
       <form method="post" th:action="@{/app/select-account}">
@@ -27,7 +27,9 @@
       </div>
       <p class="context-no-stores" th:if="${#lists.isEmpty(option.stores)}">No connected stores</p>
     </div>
+    <footer class="context-footer"><button type="button" class="secondary-button" onclick="closeWorkspacePicker(this)">Done</button></footer>
   </section>
+  <script>function closeWorkspacePicker(source){const picker=source.closest('details.context-menu');if(picker){picker.open=false;picker.querySelector('summary').focus();}}document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelectorAll('details.context-menu[open]').forEach(closeWorkspacePicker);});</script>
   <dialog id="account-brand-dialog" class="invite-dialog"><form method="post" enctype="multipart/form-data" th:action="@{/app/platform/accounts/{id}/logo(id=${selectedAccountId})}" class="dialog-shell"><div class="dialog-header"><div><span class="eyebrow dark">Company identity</span><h2>Update company logo</h2><p>This logo appears in the workspace picker and selected-store control.</p></div><button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button></div><div class="dialog-body operation-form"><label>Company logo<input name="logo" type="file" accept="image/png,image/jpeg,image/webp" required><small>PNG, JPEG, or WebP up to 2 MB.</small></label></div><div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button" type="submit">Save logo</button></div></form></dialog>
   <script>function filterWorkspaceChoices(input){const query=input.value.trim().toLowerCase();const popover=input.closest('.context-popover');popover.querySelectorAll('.context-account').forEach(account=>{const accountMatch=account.dataset.accountSearch.includes(query);let storeMatch=false;account.querySelectorAll('[data-store-search]').forEach(store=>{const match=!query||accountMatch||store.dataset.storeSearch.includes(query);store.hidden=!match;storeMatch=storeMatch||match;});account.hidden=!!query&&!accountMatch&&!storeMatch;});}function openAccountBrandDialog(){const dialog=document.getElementById('account-brand-dialog');if(!dialog)return;if(dialog.parentElement!==document.body)document.body.appendChild(dialog);if(!dialog.open)dialog.showModal();}</script>
 </details>

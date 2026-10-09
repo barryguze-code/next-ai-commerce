@@ -32,7 +32,7 @@
     const close=(focus=false)=>{popup.hidden=true;trigger.setAttribute('aria-expanded','false');if(activePicker?.trigger===trigger)activePicker=null;if(focus)trigger.focus();};
     const sync=()=>{
       const label=select.selectedOptions[0]?.textContent.trim()||'Choose location';
-      const code=label.split(' · ')[0];trigger.textContent=compact?code.substring(0,2).toUpperCase():label;
+      const code=label.split(' · ')[0];trigger.textContent=compact?code.toUpperCase():label;
       trigger.title=label;trigger.disabled=select.disabled;
       trigger.setAttribute('aria-label',(select.getAttribute('aria-label')||'Storage location')+': '+label);
     };
@@ -41,7 +41,7 @@
       [...select.options].filter(option=>!option.hidden).forEach(option=>{
         const choice=document.createElement('button');choice.type='button';choice.setAttribute('role','option');
         choice.setAttribute('aria-selected',String(option.selected));choice.disabled=option.disabled;
-        const badge=document.createElement('span');badge.className='location-option-code';badge.textContent=option.textContent.trim().split(' · ')[0].substring(0,2).toUpperCase();
+        const badge=document.createElement('span');badge.className='location-option-code';badge.textContent=option.textContent.trim().split(' · ')[0].toUpperCase();
         const label=document.createElement('span');label.textContent=option.textContent.trim();if(!select.hasAttribute('data-standard-choice'))choice.append(badge);choice.append(label);
         choice.onclick=()=>{select.value=option.value;sync();close(true);select.dispatchEvent(new Event('change',{bubbles:true}));};popup.append(choice);
       });
@@ -61,7 +61,7 @@
     });
     trigger.onclick=()=>popup.hidden?open():close();
     trigger.addEventListener('keydown',event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();open();}});
-    select.addEventListener('change',sync);select.addEventListener('invalid',event=>{event.preventDefault();trigger.focus();open();});
+    select.addEventListener('change',sync);select.addEventListener('platform-choice-sync',sync);select.addEventListener('invalid',event=>{event.preventDefault();trigger.focus();open();});
     select.form?.addEventListener('reset',()=>setTimeout(sync,0));
     new MutationObserver(sync).observe(select,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','selected']});
     select.after(trigger);select.hidden=true;sync();
@@ -69,11 +69,16 @@
   locationPicker.counter=0;
   function enhance(root=document) {
     shortcuts(root);
+    root.querySelectorAll('.context-filter>span,.search-field>span').forEach(icon=>{
+      if(icon.textContent.trim()!=='⌕')return;
+      icon.classList.add('standard-search-icon');icon.setAttribute('aria-hidden','true');
+      icon.innerHTML='<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>';
+    });
     root.querySelectorAll('select[name="locationId"],select[name="destinationLocationId"],.receipt-location-select,select[data-standard-choice]').forEach(locationPicker);
     root.querySelectorAll('td .location-chip:not(button):not([data-location-badge])').forEach(chip=>{
       const code=chip.querySelector('strong'),detail=chip.querySelector('small');if(!code)return;
       chip.title=[code.textContent,detail?.textContent].filter(Boolean).join(' · ');chip.setAttribute('aria-label',chip.title);
-      code.textContent=code.textContent.slice(0,2).toUpperCase();if(detail)detail.hidden=true;chip.classList.add('table-location-badge');chip.dataset.locationBadge='true';
+      code.textContent=code.textContent.toUpperCase();if(detail)detail.hidden=true;chip.classList.add('table-location-badge');chip.dataset.locationBadge='true';
     });
   }
   window.NextAiMarketplaceShortcuts={enhance:shortcuts};window.NextAiPlatformControls={enhance};

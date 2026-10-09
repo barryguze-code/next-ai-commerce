@@ -427,6 +427,34 @@ class ReceivingWorkflowDatabaseTest {
         session.setAttribute(com.nextaicommerce.platform.web.AccountSelectionController.STORE_ID,UUID.randomUUID());
         assertThatThrownBy(()->controller.picture(item,session,auth)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
     }
+    @Test void buyboxLostExcludesStockoutsAndOrderDateSortsAcrossPages(){
+        var f=fixture("INVOICE");UUID connection=mappedOrder(f,1,"Unshipped");
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,price,buy_box_price,quantity,fulfillment_channel) VALUES (?,?,'QA','SHELF-SKU',20,19,99,'MFN')",tenant,connection);
+        });
+        // Mapped physical availability is authoritative, not stale Amazon quantity.
+        assertThat(repo.orders(tenant,connection,"BUY_BOX_LOST","",0,25).total()).isZero();
+        receive(f,10);
+        assertThat(repo.orders(tenant,connection,"BUY_BOX_LOST","",0,25).total()).isEqualTo(1);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE amazon_listings SET fulfillment_channel='AMAZON_NA' WHERE tenant_id=? AND marketplace_connection_id=?",tenant,connection);
+        });
+        assertThat(repo.orders(tenant,connection,"BUY_BOX_LOST","",0,25).total()).isZero();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO amazon_inventory_snapshots(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillable_quantity,snapshot_at) VALUES (?,?,'QA','SHELF-SKU',3,now())",tenant,connection);
+            for(int n=0;n<12;n++){
+                jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status,fulfillment_state) VALUES (?,?,'QA',?,now()-(? * interval '1 day'),'Unshipped','READY_TO_SHIP')",tenant,connection,"DATED-"+n,n+2);
+                jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,?,?,1)",tenant,connection,"DATED-"+n,"DATED-ITEM-"+n,"DATED-SKU-"+n);
+            }
+        });
+        assertThat(repo.orders(tenant,connection,"BUY_BOX_LOST","",0,25).total()).isEqualTo(1);
+        assertThat(repo.tabs(tenant,connection).stream().filter(tab->tab.key().equals("BUY_BOX_LOST")).findFirst().orElseThrow().orders()).isEqualTo(1);
+        assertThat(repo.orders(tenant,connection,"ALL","",0,10,Map.of("smartSort","date_asc")).rows().getFirst().amazonOrderId()).isEqualTo("DATED-11");
+        assertThat(repo.orders(tenant,connection,"ALL","",1,10,Map.of("smartSort","date_asc")).rows().getLast().amazonOrderId()).isEqualTo("SHELF-ORDER");
+        assertThat(repo.orders(tenant,connection,"ALL","",0,10,Map.of("smartSort","date_desc")).rows().getFirst().amazonOrderId()).isEqualTo("SHELF-ORDER");
+        assertThat(repo.orders(tenant,UUID.randomUUID(),"BUY_BOX_LOST","",0,25).total()).isZero();
+    }
     @Test void orderTabsCountUnitsAndCombinePendingWithoutIncludingShippedOrders(){
         UUID connection=UUID.randomUUID();
         tx.executeWithoutResult(s->{setTenant();
@@ -665,7 +693,7 @@ class ReceivingWorkflowDatabaseTest {
             var publicNote=repo.create(tenant,"ORDER","SHELF-ORDER","Synthetic order","Amazon","NOTE","QA","Public note","TEAM_CHAT","{}","/app/orders?q=SHELF-ORDER",actor,null,null,List.of());
             repo.create(tenant,"ORDER","SHELF-ORDER","Synthetic order","Amazon","NOTE","QA","Private note","PRIVATE_NOTE","{}","/app/orders?q=SHELF-ORDER",actor,null,null,List.of());
             var origin=repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),actor).get("SHELF-ORDER");
-            assertThat(origin.originCount()).isEqualTo(2);assertThat(origin.mineCount()).isEqualTo(2);
+            assertThat(origin.originCount()).isEqualTo(2);assertThat(origin.mineCount()).isZero();
             var related=repo.openSubjectSummaries(tenant,"CATALOG",List.of(f.product().toString()),actor).get(f.product().toString());
             assertThat(related.relatedCount()).isEqualTo(2);assertThat(related.originCount()).isZero();assertThat(related.mineCount()).isZero();
             assertThat(repo.subjectReviews(tenant,"MARKETPLACE_SKU","SHELF-SKU",false,"other@example.test")).hasSize(1);
@@ -677,6 +705,68 @@ class ReceivingWorkflowDatabaseTest {
         });
     }
 
+    @Test void ordersInheritSkuDiscussionsButNotOtherTenantsOrPrivateNotes(){
+        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");
+        var repo=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc);
+        tx.executeWithoutResult(s->{
+            var shared=repo.create(tenant,"MARKETPLACE_SKU","SHELF-SKU","SKU","Amazon","NOTE","QA","Shared SKU note","TEAM_CHAT","{}","/app/marketplace-skus",actor,null,null,List.of());
+            repo.create(tenant,"MARKETPLACE_SKU","SHELF-SKU","SKU","Amazon","NOTE","QA","Private SKU note","PRIVATE_NOTE","{}","/app/marketplace-skus",actor,null,null,List.of());
+            var summary=repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),"other@example.test").get("SHELF-ORDER");
+            assertThat(summary.relatedCount()).isEqualTo(1);assertThat(summary.originCount()).isZero();
+            assertThat(repo.subjectReviews(tenant,"ORDER","SHELF-ORDER",false,"other@example.test")).hasSize(1);
+            assertThat(repo.subjectReviews(tenant,"ORDER","SHELF-ORDER",false,actor)).hasSize(2);
+            jdbc.update("UPDATE collaboration_reviews SET due_at=now()-interval '1 day' WHERE tenant_id=? AND id=?",tenant,shared.reviewId());
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),"other@example.test").get("SHELF-ORDER").mineCount()).isZero();
+            jdbc.update("UPDATE collaboration_reviews SET assigned_to=? WHERE tenant_id=? AND id=?",user,tenant,shared.reviewId());
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),actor).get("SHELF-ORDER").mineCount()).isEqualTo(1);
+            var otherStore=UUID.randomUUID();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test://none','ACTIVE','Other test store','America/Los_Angeles',now())",otherStore,tenant,otherStore.toString());
+            jdbc.update("UPDATE collaboration_reviews SET marketplace_connection_id=? WHERE tenant_id=? AND id=?",otherStore,tenant,shared.reviewId());
+            assertThat(repo.subjectReviews(tenant,"ORDER","SHELF-ORDER",false,"other@example.test")).isEmpty();
+            assertThat(repo.openSubjectSummaries(UUID.randomUUID(),"ORDER",List.of("SHELF-ORDER"),actor)).isEmpty();
+        });
+    }
+    @Test void collaborationReadReceiptsArePersonalExactAndPreserveAssignments(){
+        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");
+        var repo=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc);
+        tx.executeWithoutResult(s->{
+            var reader=UUID.randomUUID();String email="reader-"+reader+"@example.test";
+            jdbc.update("INSERT INTO app_users(id,email,display_name) VALUES (?,?,'Reader')",reader,email);
+            var first=repo.create(tenant,"MARKETPLACE_SKU","SHELF-SKU","SKU","Amazon","NOTE","QA","@reader first","TEAM_CHAT","{}","/app/marketplace-skus",actor,null,null,List.of());
+            jdbc.update("INSERT INTO collaboration_mentions(tenant_id,review_id,message_id,mentioned_user_id) VALUES (?,?,?,?)",tenant,first.reviewId(),first.messageId(),reader);
+            var second=repo.reply(tenant,first.reviewId(),actor,"@reader arrived later","TEAM_CHAT",null,List.of());
+            jdbc.update("INSERT INTO collaboration_mentions(tenant_id,review_id,message_id,mentioned_user_id) VALUES (?,?,?,?)",tenant,first.reviewId(),second.messageId(),reader);
+            var privateNote=repo.reply(tenant,first.reviewId(),actor,"Secret","PRIVATE_NOTE",null,List.of());
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),email).get("SHELF-ORDER").urgentUnreadMentionCount()).isEqualTo(2);
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),actor).get("SHELF-ORDER").urgentUnreadMentionCount()).isZero();
+            assertThat(repo.unreadMentionMessages(tenant,first.reviewId(),email)).containsExactlyInAnyOrder(first.messageId(),second.messageId());
+            assertThat(repo.review(tenant,first.reviewId(),email).unreadMessageCount()).isEqualTo(2);
+            assertThat(repo.review(tenant,first.reviewId(),actor).unreadMessageCount()).isZero();
+            assertThat(repo.openSubjectSummaries(tenant,"MARKETPLACE_SKU",List.of("SHELF-SKU"),email).get("SHELF-SKU").unreadMessageCount()).isEqualTo(2);
+            assertThat(repo.acknowledgeMessages(tenant,first.reviewId(),email,List.of(first.messageId(),privateNote.messageId()))).isTrue();
+            assertThat(repo.acknowledgeMessages(tenant,first.reviewId(),email,List.of(first.messageId()))).isTrue();
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),email).get("SHELF-ORDER").urgentUnreadMentionCount()).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM collaboration_read_receipts WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+            repo.acknowledgeMessages(tenant,first.reviewId(),actor,List.of(second.messageId()));
+            assertThat(repo.unreadMentionMessages(tenant,first.reviewId(),email)).containsExactly(second.messageId());
+            assertThat(repo.acknowledgeMessages(UUID.randomUUID(),first.reviewId(),email,List.of(second.messageId()))).isFalse();
+            setTenant();jdbc.update("UPDATE collaboration_reviews SET assigned_to=? WHERE tenant_id=? AND id=?",reader,tenant,first.reviewId());
+            repo.acknowledgeMessages(tenant,first.reviewId(),email,List.of(second.messageId()));
+            var fresh=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc).openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),email).get("SHELF-ORDER");
+            assertThat(fresh.urgentUnreadMentionCount()).isZero();assertThat(fresh.mineCount()).isEqualTo(1);
+            assertThat(repo.unreadMentionMessages(tenant,first.reviewId(),email)).isEmpty();
+            assertThat(repo.review(tenant,first.reviewId(),email).unreadMessageCount()).isZero();
+            var ordinary=repo.reply(tenant,first.reviewId(),actor,"A reply without a mention","TEAM_CHAT",null,List.of());
+            assertThat(repo.review(tenant,first.reviewId(),email).unreadMessageCount()).isEqualTo(1);
+            assertThat(repo.unreadMentionMessages(tenant,first.reviewId(),email)).isEmpty();
+            repo.acknowledgeMessages(tenant,first.reviewId(),email,List.of(ordinary.messageId()));
+            assertThat(repo.openSubjectSummaries(tenant,"MARKETPLACE_SKU",List.of("SHELF-SKU"),email).get("SHELF-SKU").unreadMessageCount()).isZero();
+            var direct=repo.openSubjectSummaries(tenant,"MARKETPLACE_SKU",List.of("SHELF-SKU"),email).get("SHELF-SKU");
+            assertThat(direct.originCount()).isEqualTo(1);assertThat(direct.directMessageCount()).isEqualTo(3);
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),email).get("SHELF-ORDER").relatedMessageCount()).isEqualTo(3);
+            assertThat(repo.openSubjectSummaries(tenant,"MARKETPLACE_SKU",List.of("SHELF-SKU"),actor).get("SHELF-SKU").directMessageCount()).isEqualTo(3);
+        });
+    }
     @Test void replenishmentSoonStockIsASubsetOfSellableStock(){
         var f=fixture("INVOICE");mappedOrder(f,1,"Shipped");
         inventory.saveShelfLifePolicy(tenant,actor,10,20);

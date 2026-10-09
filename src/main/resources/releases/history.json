@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.6.6",
+ "title":"Clearer collaboration and inventory workflows",
+ "sections":[{"title":"Collaboration and shared controls","items":["Readable conversation timelines, per-user read states, accurate message counters, contextual discussions and clearer actionable-item icons.","Consistent dialogs, tooltips, search controls, page-size choices and compact laptop-friendly Orders layouts."]},{"title":"Orders and inventory","items":["Open mapped-item inventory ledgers directly. Bundle-level clicks ask which item's ledger to inspect; individual item codes remain direct links.","Inventory transfers show full destination codes and aligned quantity controls. Buy Box Lost excludes out-of-stock SKUs, and Order ID & Status sorts by order date.","Download matching Orders across pages with separate product, order, financial, stock, sales and refund CSV fields.","Review invoice cost evidence before accepting changes to saved catalogue defaults. No automatic Amazon price publishing is introduced."]}]
+},
+{
  "version":"1.6.5",
  "title":"Reliable invoice matching",
  "sections":[{"title":"Receiving hotfix","items":["Invoices reuse existing vendor item mappings without attempting to change catalogue product identity or requiring a duplicate-product merge. Invoice costs remain separate from saved default costs."]}]

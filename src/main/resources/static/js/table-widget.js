@@ -123,6 +123,7 @@ function prepareContextColumn(root){
         summary.setAttribute('aria-label',(warning?'Needs attention. ':'')+(menu?'Open actions for '+(menu.dataset.title||'this record'):'Open stock actions'));
         details.classList.toggle('table-row-menu',!warning);
         const panel=document.createElement('div');panel.className='table-warning-panel';
+        if(warning&&menu){const alert=document.createElement('p');alert.className='platform-action-warning';alert.textContent=warning.textContent.trim();panel.append(alert);}
         if(warning&&!menu){if(warning.matches('td')){const copy=document.createElement('div');copy.textContent=warning.textContent.trim();panel.append(copy)}else panel.append(warning.cloneNode(true));}
         if(menu)panel.append(menu);
         const content=menu||panel.querySelector('.shortage-message')||panel;

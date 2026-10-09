@@ -2,15 +2,17 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <body>
 <div class="sidebar-user" th:fragment="user">
+  <th:block th:replace="~{fragments/ux-components :: runtime}"></th:block>
   <link rel="stylesheet" href="/css/short-date-input.css?v=20261002-1">
   <script defer src="/js/short-date-input.js?v=20261002-2"></script>
-  <link rel="stylesheet" href="/css/huddle-floating.css?v=20261002-3">
-  <script src="/js/huddle-floating.js?v=20261002-3"></script>
-  <link rel="stylesheet" href="/css/chat-composer.css?v=20261001-2">
-  <script defer src="/js/chat-composer.js?v=20261001-2"></script>
+  <link rel="stylesheet" href="/css/huddle-floating.css?v=1.6.6">
+  <script src="/js/huddle-floating.js?v=1.6.6"></script>
+  <link rel="stylesheet" href="/css/chat-composer.css?v=1.6.6">
+  <link rel="stylesheet" href="/css/collaboration-accessibility.css?v=20261008-1">
+  <script defer src="/js/chat-composer.js?v=1.6.6"></script>
   <link rel="stylesheet" href="/css/general-task.css?v=20261002-5">
   <script defer src="/js/general-task.js?v=20261002-2"></script>
-  <link rel="stylesheet" href="/css/collaboration-task-dates.css?v=20261002-2">
+  <link rel="stylesheet" href="/css/collaboration-task-dates.css?v=1.6.6">
   <script defer src="/js/collaboration-task-dates.js?v=20261002-2"></script>
   <dialog id="general-task-dialog" class="general-task-dialog" th:if="${canEditCatalog}" aria-labelledby="general-task-title">
     <form method="post" th:action="@{/app/collaboration/general-tasks}">
@@ -25,13 +27,14 @@
       <footer><small>Appears in Collaborate for this store.</small><button type="button" class="secondary-button" data-task-cancel>Cancel</button><button type="submit" class="primary-button">Create task</button></footer>
     </form>
   </dialog>
-  <script defer src="/js/collaboration.js?v=20261002-tasks2"></script>
+  <script defer src="/js/collaboration.js?v=1.6.6"></script>
+  <script defer src="/js/collaboration-read-receipts.js?v=20261008-1"></script>
   <script src="/js/theme.js?v=20260905-1"></script>
-  <script src="/js/platform-icons.js?v=20261002-hotfix1"></script>
+  <script src="/js/platform-icons.js?v=1.6.6"></script>
   <link rel="stylesheet" href="/css/table-widget.css?v=20261001-5">
   <script defer src="/js/table-preferences.js?v=20261002-perf1"></script>
-  <script defer src="/js/table-widget.js?v=20261003-profit"></script>
-  <script defer src="/js/table-data-tools.js?v=20261002-standards3"></script>
+  <script defer src="/js/table-widget.js?v=1.6.6"></script>
+  <script defer src="/js/table-data-tools.js?v=1.6.6"></script>
   <link rel="stylesheet" href="/css/background-jobs.css?v=1.0.0">
   <script defer src="/js/background-jobs.js?v=1.0.0"></script>
   <link rel="stylesheet" href="/css/profile-picture.css">

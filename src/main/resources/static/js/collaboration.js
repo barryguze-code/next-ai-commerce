@@ -1,7 +1,7 @@
 (()=>{
   if(window.NextAiCollaborationReady)return;
   window.NextAiCollaborationReady=true;
-  let membersPromise,state=null,huddleSocket=null,huddleReconnect=null,lastPong=Date.now();
+  let membersPromise,state=null,huddleSocket=null,huddleReconnect=null,lastPong=Date.now(),summariesRefreshing=false;
   const $=(selector,scope=document)=>scope.querySelector(selector);
   const $$=(selector,scope=document)=>[...scope.querySelectorAll(selector)];
   const escape=value=>{const node=document.createElement('span');node.textContent=value??'';return node.innerHTML};
@@ -54,6 +54,8 @@
       (messages.length?'<section class="conversation-thread"><div class="conversation-thread-meta"><span>Started '+escape(formatDate(review.createdAt))+' by '+escape(review.requester)+'</span><span>'+escape(review.participants||review.requester)+'</span></div><div class="conversation-messages">'+messages.map(message=>'<article><div class="conversation-avatar">'+escape((message.senderName||message.authorEmail||'?').charAt(0).toUpperCase())+'</div><div><header><strong>'+escape(message.senderName||message.authorEmail)+'</strong><time>'+escape(formatDate(message.createdAt))+'</time></header><p>'+formattedBody(message.body)+'</p>'+renderAttachments(message.attachments)+'</div></article>').join('')+'</div></section>':empty);
   }
   function configureForms(){
+    if(dialog())dialog().dataset.visibility=state.messageType;
+    $$('.chat-add-person',dialog()).forEach(button=>button.hidden=state.messageType==='PRIVATE_NOTE');
     const management=$('#thread-management');if(management)management.hidden=!state.currentReview||!state.canCollaborate||state.currentReview.status!=='ACTIVE'||state.messageType==='PRIVATE_NOTE';
     const elements=view(),snapshot=JSON.stringify(state.snapshot||{});if(elements.start){const form=elements.start;form.elements.subjectType.value=state.type;form.elements.subjectKey.value=state.key;form.elements.subjectLabel.value=state.label;form.elements.title.value='Conversation about '+state.label;form.elements.messageType.value=state.messageType;form.elements.contextSnapshot.value=snapshot;form.elements.parentUrl.value=state.parentUrl||location.pathname+location.search;}
     if(elements.reply)elements.reply.elements.messageType.value=state.messageType;
@@ -67,7 +69,7 @@
     $$('tr[data-review-id]').filter(row=>row.dataset.reviewId===String(review.id)).forEach(row=>{
       const trigger=$('[data-assign-review]',row),icon=$('[data-conversation-count]',row);
       if(trigger){trigger.dataset.assignedEmails=review.assigneeEmail||'';$('span',trigger).textContent=review.assigneeName||'Unassigned';}
-      if(icon){icon.dataset.assignedToMe=String(emails.includes(current)&&review.status==='ACTIVE');icon.dataset.conversationCount=review.messageCount;decorateRecordConversationButton(icon);}
+      if(icon){icon.dataset.assignedToMe=String(emails.includes(current)&&review.status==='ACTIVE');icon.dataset.conversationCount=review.messageCount;icon.dataset.unreadMessageCount=review.unreadMessageCount||0;decorateRecordConversationButton(icon);}
       const count=$('[data-message-total]',row);if(count)count.textContent=review.messageCount+' messages';
     });
   }
@@ -76,7 +78,7 @@
     people.forEach(person=>body.append('people',person));
     const response=await fetch('/app/collaboration/reviews/'+encodeURIComponent(id)+'/assignees',{method:'POST',body,headers:{Accept:'application/json'}});
     if(!response.ok)throw new Error('Assignment could not be saved. Please try again.');
-    const review=await response.json();updateAssignment(review);return review;
+    const review=await response.json();updateAssignment(review);if(state?.type&&state?.key)await markRecordConversationActive(state.type,state.key);return review;
   }
   window.assignConversationToMe=async(id,email,button)=>{
     button.disabled=true;
@@ -93,6 +95,8 @@
   };
   async function renderManagement(review){
     const root=$('#thread-management');if(!root)return;updateAssignment(review);
+    const assigned=(review.assigneeEmail||'').toLowerCase().split(',').map(value=>value.trim()).includes((root.dataset.currentEmail||'').toLowerCase());
+    const statusIcon=$('#thread-status-icon');if(statusIcon){statusIcon.src=window.NextAiIcons.source(review.status==='ACTIVE'&&assigned?'collaboration-assigned-red':review.messageCount>0?'collaboration-blue':'collaboration-no-message-gray');statusIcon.alt=assigned?'Assigned to you':review.messageCount>0?'Active conversation':'No messages';}
     window.CollaborationTaskDates?.prepare(review);
     root.hidden=!state.canCollaborate||review.status!=='ACTIVE'||state.messageType==='PRIVATE_NOTE';if(root.hidden)return;
     const label=$('[data-thread-assignees]',root);label.textContent=review.assigneeName||'Unassigned';label.classList.toggle('unassigned',!review.assigneeEmail);
@@ -108,36 +112,48 @@
   }
   function decorateRecordConversationButton(button){
     if(!button)return;
+    const formatCount=count=>count>999?'999+':String(count);
+    button.dataset.readState=button.dataset.unreadMessageCount===undefined?'unknown':Number(button.dataset.unreadMessageCount)>0?'unread':'read';
     if(button.hasAttribute('data-conversation-count')){
       const count=Number(button.dataset.conversationCount||0),mine=button.dataset.assignedToMe==='true';
       const file=mine?'collaboration-assigned-red':count?'collaboration-blue':'collaboration-no-message-gray';
       const image=button.querySelector('img');if(image){image.dataset.collaborationIcon='';image.className='platform-icon';const src=window.NextAiIcons?window.NextAiIcons.source(file):'/images/platform/table/'+file+'.png?v=20260922-26';if(image.getAttribute('src')!==src)image.setAttribute('src',src);}
-      let badge=button.querySelector('b');if(!badge){badge=document.createElement('b');button.append(badge);}badge.className='collaboration-message-count';badge.textContent=String(count);
+      let badge=button.querySelector('b');if(count>0){if(!badge){badge=document.createElement('b');button.append(badge);}badge.className='collaboration-message-count';badge.textContent=formatCount(count);}else badge?.remove();
       button.classList.toggle('has-conversation',count>0);button.title=(mine?'Assigned to you · ':'')+count+' message'+(count===1?'':'s');button.setAttribute('aria-label',button.title);return;
     }
     const active=Number(button.dataset.activeCount||0),origin=Number(button.dataset.originCount??active),related=Number(button.dataset.relatedCount||0),mine=Number(button.dataset.mineCount||0);
-    const tone=mine>0?'mine':origin>0?'origin':related>0?'related':'empty';
-    const file=tone==='mine'?'collaboration-assigned-red':tone==='origin'?(Number(button.dataset.unreadCount||0)>0?'collaboration-unread-blue':'collaboration-blue'):'collaboration-no-message-gray';
+    const directMessages=Number(button.dataset.directMessageCount??origin),relatedMessages=Number(button.dataset.relatedMessageCount??related);
+    const attention=mine>0||Number(button.dataset.urgentUnreadMentionCount||0)>0;
+    const tone=attention?'mine':origin>0?'origin':related>0?'related':'empty';
+    const file=attention?'collaboration-assigned-red':origin>0?'collaboration-blue':'collaboration-no-message-gray';
     button.dataset.contextTone=tone;button.classList.toggle('has-conversation',active>0);button.classList.remove('closed-history');
     let image=button.querySelector('img[data-collaboration-icon]');
     if(!image){button.querySelector('svg')?.remove();image=document.createElement('img');image.dataset.collaborationIcon='';image.className='platform-icon';image.alt='';image.style.cssText='width:28px;height:28px;object-fit:contain';button.prepend(image);}
     const src=window.NextAiIcons?window.NextAiIcons.source(file):'/images/platform/table/'+file+'.png';if(image.getAttribute('src')!==src)image.setAttribute('src',src);
-    let badge=button.querySelector('b');if(active>0){if(!badge){badge=document.createElement('b');button.append(badge)}if(badge.textContent!==String(active))badge.textContent=String(active);}else badge?.remove();
-    button.title=active?active+' active conversation'+(active===1?'':'s')+(tone==='related'?' · related record':''):'Start collaboration';
+    let badge=button.querySelector('b');if(directMessages>0){if(!badge){badge=document.createElement('b');button.append(badge)}badge.className='collaboration-direct-count';badge.textContent=formatCount(directMessages);}else badge?.remove();
+    let indirect=button.querySelector('.collaboration-indirect-count');
+    if(relatedMessages>0){if(!indirect){indirect=document.createElement('span');indirect.className='collaboration-indirect-count';button.append(indirect);}indirect.textContent=formatCount(relatedMessages);indirect.setAttribute('aria-hidden','true');}else indirect?.remove();
+    button.title=active?directMessages+' direct messages · '+relatedMessages+' related messages in '+active+' active conversation'+(active===1?'':'s')+(mine>0?' · Requires your attention':''):'Start collaboration';
+    const unread=Math.max(0,Number(button.dataset.urgentUnreadMentionCount)||0);
+    let unreadDot=button.querySelector('.collaboration-unread-dot');
+    if(unread>0){if(!unreadDot){unreadDot=document.createElement('i');unreadDot.className='collaboration-unread-dot';unreadDot.setAttribute('aria-hidden','true');button.append(unreadDot);}button.title+=' · '+unread+' unread message'+(unread===1?'':'s');}else unreadDot?.remove();
     button.setAttribute('aria-label',button.title+' for '+(button.dataset.title||button.dataset.identifier||'this record'));
   }
   async function refreshRecordSummaries(){
+    if(summariesRefreshing||navigator.onLine===false)return;summariesRefreshing=true;
+    try{
     const groups=new Map();$$('.collaboration-row-button[data-entity-type][data-entity-id]').forEach(button=>{const type=button.dataset.entityType;if(!groups.has(type))groups.set(type,[]);groups.get(type).push(button);});
     for(const [type,buttons] of groups){
       const keys=[...new Set(buttons.map(button=>button.dataset.entityId))];
       for(let start=0;start<keys.length;start+=250){try{
         const params=new URLSearchParams({entityType:type});keys.slice(start,start+250).forEach(key=>params.append('entityId',key));
-        const response=await fetch('/app/collaboration/summaries?'+params,{headers:{Accept:'application/json'}});if(!response.ok)continue;const summaries=await response.json();
+        const response=await fetch('/app/collaboration/summaries?'+params,{headers:{Accept:'application/json'},cache:'no-store',signal:AbortSignal.timeout(10000)});if(!response.ok)continue;const summaries=await response.json();
         buttons.filter(button=>keys.slice(start,start+250).includes(button.dataset.entityId)).forEach(button=>{
-          const summary=summaries[button.dataset.entityId]||{};['activeCount','totalCount','closedCount','originCount','relatedCount','mineCount'].forEach(field=>button.dataset[field]=String(summary[field]||0));decorateRecordConversationButton(button);
+          const summary=summaries[button.dataset.entityId]||{};['activeCount','totalCount','closedCount','originCount','relatedCount','mineCount','urgentUnreadMentionCount','unreadMessageCount','directMessageCount','relatedMessageCount'].forEach(field=>{if(summary[field]===undefined)delete button.dataset[field];else button.dataset[field]=String(summary[field]);});decorateRecordConversationButton(button);
         });
       }catch(_){}}
     }
+    }finally{summariesRefreshing=false;}
   }
 
   async function markRecordConversationActive(type,key){
@@ -148,7 +164,8 @@
       if(!response.ok)throw new Error('Summary unavailable');
       const summary=(await response.json())[key]||{};
       nodes.forEach(node=>{const button=node.matches('.collaboration-row-button')?node:$('.collaboration-row-button',node);if(!button)return;
-        ['activeCount','totalCount','closedCount','originCount','relatedCount','mineCount'].forEach(field=>button.dataset[field]=String(summary[field]||0));
+        ['activeCount','totalCount','closedCount','originCount','relatedCount','mineCount','urgentUnreadMentionCount','unreadMessageCount','directMessageCount','relatedMessageCount'].forEach(field=>{if(summary[field]===undefined)delete button.dataset[field];else button.dataset[field]=String(summary[field]);});
+        if(summary.unreadCount!==undefined)button.dataset.unreadCount=String(summary.unreadCount);
         decorateRecordConversationButton(button);
       });
     }catch(_){nodes.forEach(node=>{const button=node.matches('.collaboration-row-button')?node:$('.collaboration-row-button',node);if(button)button.title='Saved. Refresh this table to update conversation counts.'})}
@@ -167,12 +184,26 @@
   }
   function showPicker(){
     const elements=view(),all=[...(state.threads||[])].sort((left,right)=>Date.parse(right.createdAt)-Date.parse(left.createdAt));elements.start.hidden=true;elements.reply.hidden=true;state.currentReviewId=null;
-    elements.list.innerHTML='<section class="conversation-picker"><header><strong>'+all.length+' conversation'+(all.length===1?'':'s')+' for this record</strong><span>Choose by date, status, and participants.</span></header><div>'+all.map(review=>'<button type="button" data-conversation-id="'+review.id+'"><span class="conversation-picker-icon '+(review.status==='CLOSED'?'closed':'active')+'"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg></span><span><strong>'+escape(formatDate(review.createdAt))+'</strong><small>'+escape(review.status==='CLOSED'?'Closed':'Active')+' · '+escape(review.participants||review.requester)+' · '+review.messageCount+' item'+(review.messageCount===1?'':'s')+'</small></span><b>›</b></button>').join('')+'</div><footer>'+(state.canCollaborate?'<button type="button" class="conversation-new-button" data-new-conversation>＋ New conversation</button>':'')+'<a class="conversation-history-link" href="'+escape(state.historyUrl)+'">Open filtered history</a></footer></section>';
+    elements.list.innerHTML='<section class="conversation-picker"><header><strong>'+all.length+' conversation'+(all.length===1?'':'s')+' for this record</strong><span>Choose by date, status, and participants.</span></header><div>'+all.map(review=>'<button type="button" data-conversation-id="'+review.id+'"><span class="conversation-picker-icon '+(review.status==='CLOSED'?'closed':'active')+'"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg></span><span><strong>'+escape(formatDate(review.createdAt))+'</strong><small class="conversation-picker-meta"><span class="conversation-picker-status">'+escape(review.status==='CLOSED'?'Closed':'Active')+'</span><span>'+escape(review.participants||review.requester)+'</span><span class="conversation-picker-count">'+review.messageCount+' message'+(review.messageCount===1?'':'s')+'</span></small></span><b aria-hidden="true">›</b></button>').join('')+'</div><footer>'+(state.canCollaborate?'<button type="button" class="conversation-new-button" data-new-conversation>＋ New conversation</button>':'')+'<a class="conversation-history-link" href="'+escape(state.historyUrl)+'">Open filtered history</a></footer></section>';
     $$('[data-conversation-id]',elements.list).forEach(button=>button.addEventListener('click',()=>loadConversation(button.dataset.conversationId,true)));$('[data-new-conversation]',elements.list)?.addEventListener('click',showNewConversation);
   }
   async function loadConversation(reviewId,showBack=false){
     const elements=view();state.currentReviewId=reviewId;state.showBack=showBack;elements.start.hidden=true;elements.reply.hidden=true;elements.list.innerHTML='<div class="conversation-loading">Loading conversation…</div>';
-    try{const response=await fetch('/app/collaboration/reviews/'+encodeURIComponent(reviewId)+'?messageType='+state.messageType,{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();const conversation=await response.json();state.currentReview=conversation.review;setParentLink(conversation.review.parentUrl,conversation.review.subjectType);elements.list.innerHTML=renderMessages(conversation,showBack);elements.reply.action='/app/collaboration/reviews/'+conversation.review.id+'/reply';elements.reply.hidden=!state.canCollaborate||conversation.review.status==='CLOSED';configureForms();renderManagement(conversation.review);$('[data-conversation-back]',elements.list)?.addEventListener('click',showPicker);if(!elements.reply.hidden)$('textarea',elements.reply).focus();elements.list.scrollTop=elements.list.scrollHeight;}catch(_){elements.list.innerHTML='<div class="history-error">This conversation could not be loaded. Please try again.</div>';}
+    const requestedType=state.messageType;
+    document.dispatchEvent(new Event('collaboration-thread-loading'));
+    try{
+      const response=await fetch('/app/collaboration/reviews/'+encodeURIComponent(reviewId)+'?messageType='+requestedType,{headers:{Accept:'application/json'},cache:'no-store'});
+      if(!response.ok)throw new Error();const conversation=await response.json();
+      if(state.currentReviewId!==reviewId||state.messageType!==requestedType)return;
+      state.currentReview=conversation.review;
+      setParentLink(conversation.review.parentUrl,conversation.review.subjectType,conversation.review.subjectKey,conversation.review.subjectLabel);
+      elements.list.innerHTML=renderMessages(conversation,showBack);
+      elements.reply.action='/app/collaboration/reviews/'+conversation.review.id+'/reply';
+      elements.reply.hidden=!state.canCollaborate||conversation.review.status==='CLOSED';configureForms();renderManagement(conversation.review);
+      $('[data-conversation-back]',elements.list)?.addEventListener('click',showPicker);
+      if(!elements.reply.hidden)$('textarea',elements.reply).focus();elements.list.scrollTop=elements.list.scrollHeight;
+      document.dispatchEvent(new CustomEvent('collaboration-thread-rendered',{detail:{reviewId,messageType:requestedType,messageIds:conversation.messages.map(message=>message.id),unreadMentionMessageIds:conversation.unreadMentionMessageIds||[]}}));
+    }catch(_){elements.list.innerHTML='<div class="history-error">This conversation could not be loaded. Please try again.</div>';}
   }
   async function loadSubject(forcePicker){
     const elements=view();elements.list.innerHTML='<div class="conversation-loading">Loading conversations…</div>';elements.start.hidden=true;elements.reply.hidden=true;
@@ -181,7 +212,7 @@
   function setHeader(button){
     $('#thread-record-type').textContent=(button.dataset.entityType||button.dataset.type||'Record').replaceAll('_',' ')+' collaboration';$('#thread-record-title').textContent=button.dataset.title||button.dataset.product||'Record conversation';
     const identifier=button.dataset.identifier||'',opaque=/^[0-9a-f]{8}-[0-9a-f-]{27,}(?:\||$)/i.test(identifier),context=[opaque?'':identifier,button.dataset.locationLabel].filter(Boolean).join(' · ');$('#thread-record-context').textContent=context;$('#thread-record-context').hidden=!context;
-    const badges=$('#thread-record-badges');badges.innerHTML='';[['expiration',button.dataset.expiration?'Expires '+button.dataset.expiration:null],['status',button.dataset.status],['marketplace',button.dataset.marketplace]].forEach(([kind,text])=>{if(!text)return;const badge=document.createElement('span');badge.className=kind;badge.textContent=text;badges.append(badge);});
+    const badges=$('#thread-record-badges');badges.innerHTML='';[['expiration',button.dataset.expiration?'Expires '+button.dataset.expiration:null],['status',button.dataset.status],['marketplace',button.dataset.marketplace]].forEach(([kind,text])=>{if(!text)return;const badge=document.createElement('span');badge.className=kind;if(kind==='status')badge.dataset.status=text.toUpperCase();badge.textContent=text;badges.append(badge);});
     setParentLink(button.dataset.parentUrl,(button.dataset.entityType||button.dataset.type||'record'));
   }
   function sourceTableUrl(url,type,key,label){
@@ -196,7 +227,7 @@
     source.searchParams.delete('page');source.searchParams.delete('status');
     return source.pathname+source.search;
   }
-  function setParentLink(url,type){const link=$('#thread-parent-link');if(!link)return;const source=sourceTableUrl(url,type,state?.key,state?.label);link.hidden=!source;if(source)link.href=source;}
+  function setParentLink(url,type,key=state?.key,label=state?.label){const link=$('#thread-parent-link');if(!link)return;const source=sourceTableUrl(url,type,key,label);link.hidden=!source;if(source){link.href=source;link.dataset.tooltip='Open original '+(type||'record').replaceAll('_',' ').toLowerCase()+': '+(label||key||'');link.setAttribute('aria-label',link.dataset.tooltip);}}
 
   window.openRecordCollaboration=(button,forcePicker=false)=>{
     const type=(button.dataset.entityType||button.dataset.type||'RECORD').toUpperCase(),key=button.dataset.entityId||button.dataset.key;
@@ -210,6 +241,15 @@
   window.openGeneralHuddle=()=>window.LiveHuddleUI?.showPeople();
   window.filterCollaborationRows=value=>{const query=(value||'').trim().toLowerCase(),rows=$$('.collaboration-open-row'),visible=rows.reduce((count,row)=>{const show=!query||(row.dataset.search||'').includes(query);row.hidden=!show;return count+(show?1:0);},0),empty=$('.collaboration-search-empty');if(empty)empty.hidden=!query||visible>0;const total=$('.collaboration-card .table-footer span');if(total)total.textContent=query?'Showing '+visible+' matching conversation'+(visible===1?'':'s'):'Showing '+rows.length+' conversation'+(rows.length===1?'':'s');};
   function boot(){
+    document.addEventListener('collaboration-messages-read',()=>{clearTimeout(recordRefreshTimer);recordRefreshTimer=setTimeout(refreshRecordSummaries,100);
+      const id=state?.currentReviewId;
+      if(id&&$$('tr[data-review-id]').some(row=>row.dataset.reviewId===String(id)))fetch('/app/collaboration/reviews/'+encodeURIComponent(id),{cache:'no-store',headers:{Accept:'application/json'}}).then(r=>r.ok?r.json():null).then(c=>{if(c)updateAssignment(c.review);}).catch(()=>{});
+    });
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshRecordSummaries();});
+    setInterval(()=>{refreshRecordSummaries();},120000);
+    setInterval(()=>{if(!document.hidden)refreshRecordSummaries();},15000);
+    window.addEventListener('focus',refreshRecordSummaries);
+    window.addEventListener('online',refreshRecordSummaries);
     $$('.collaboration-row-button').forEach(decorateRecordConversationButton);refreshRecordSummaries();
     new MutationObserver(records=>{
       const added=new Set();

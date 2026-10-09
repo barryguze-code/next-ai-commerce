@@ -187,7 +187,7 @@ public class ProfitRepository {
         int sequence=0;
         for(var p:packages)jdbc.update("INSERT INTO profit_sku_packages(tenant_id,marketplace_connection_id,seller_sku,sequence,description,amount) VALUES (?,?,?,?,?,?)",tenant,connection,sku,++sequence,p.description(),p.amount());
     }
-    public record ItemCost(UUID id,String name,BigDecimal quantity,BigDecimal cost,String currency){}
+    public record ItemCost(UUID id,String name,BigDecimal quantity,BigDecimal cost,String currency,InvoiceCostEvidence.Invoice invoice){}
     public record Defaults(String sku,BigDecimal override,List<ItemCost> items){}
     public record SkuCostChange(String sku,BigDecimal amount){}
     public record ItemCostChange(UUID id,BigDecimal amount){}
@@ -215,10 +215,30 @@ public class ProfitRepository {
             WHERE m.tenant_id=:tenant AND m.marketplace_connection_id=:connection AND m.marketplace_sku IN (:skus) AND m.status='ACTIVE'
             ORDER BY m.marketplace_sku,a.id
             """,args);
+        var invoices=InvoiceCostEvidence.latest(jdbc,tenant,parts.stream().map(p->(UUID)p.get("id")).distinct().toList());
         return named.query("SELECT seller_sku,product_cost_override FROM amazon_listings WHERE tenant_id=:tenant AND marketplace_connection_id=:connection AND seller_sku IN (:skus)",args,
             (rs,n)->{String sku=rs.getString(1);return new Defaults(sku,rs.getBigDecimal(2),parts.stream().filter(p->sku.equals(p.get("marketplace_sku")))
-                .map(p->new ItemCost((UUID)p.get("id"),text(p,"name"),decimal(p,"quantity"),decimal(p,"cost"),text(p,"currency"))).toList());});
+                .map(p->new ItemCost((UUID)p.get("id"),text(p,"name"),decimal(p,"quantity"),decimal(p,"cost"),text(p,"currency"),invoices.get((UUID)p.get("id")))).toList());});
     }
+    @Transactional
+    public void acceptInvoiceCost(UUID tenant,UUID connection,String sku,UUID itemId,UUID documentId,
+            BigDecimal expectedCost,BigDecimal expectedInvoice,String actor){
+        scope(tenant);
+        if(sku==null||sku.length()>240||itemId==null||documentId==null||actor==null||actor.isBlank())
+            throw new IllegalArgumentException("Choose an invoice cost to review.");
+        // Same catalogue-write lock as the existing editor: compare and save atomically.
+        jdbc.execute("SELECT pg_advisory_xact_lock(193641,1)");
+        var item=defaults(tenant,connection,List.of(sku)).stream().flatMap(d->d.items().stream())
+            .filter(i->i.id().equals(itemId)).findFirst().orElseThrow(()->new IllegalArgumentException("Item is not mapped in this store."));
+        var invoice=item.invoice();
+        if(invoice==null||!invoice.documentId().equals(documentId)||!sameCost(invoice.cost(),expectedInvoice)
+                ||!sameCost(item.cost(),expectedCost))throw new IllegalArgumentException("Costs changed. Reload the panel and review them again.");
+        if(item.currency()!=null&&!item.currency().equals(invoice.currency()))
+            throw new IllegalArgumentException("Invoice and default currencies differ. Review this item in Account catalogue.");
+        new com.nextaicommerce.platform.catalog.CatalogRepository(jdbc).updateDefaultFromInvoice(tenant,actor,itemId,
+            invoice.vendorId(),invoice.cost(),invoice.currency(),"Accepted invoice "+invoice.number()+" / "+invoice.documentId());
+    }
+    private static boolean sameCost(BigDecimal a,BigDecimal b){return a==null?b==null:b!=null&&a.compareTo(b)==0;}
     /** One transaction for a calculator save; only explicitly edited fields are persisted. */
     @Transactional
     public void saveDefaults(UUID tenant,UUID connection,String kind,String key,List<SkuCostChange> skuChanges,

@@ -49,3 +49,20 @@ html[data-theme=dark] .huddle-directory-person[data-online=true] small{color:#67
 html body.app-page .huddle-people-panel input[type=search]{height:34px;min-height:34px;padding:6px 10px;font-size:13px!important;line-height:20px}
 html[data-theme=dark] .huddle-people-tabs{background:#111d2d}
 html[data-theme=dark] .huddle-people-panel input[type=search]{background:#111d2d;color:#e2e9f3;border-color:#36506e}
+/* Compact Fluent-inspired teammate picker; existing platform tokens stay authoritative. */
+.huddle-people-panel{box-sizing:border-box;width:304px;max-width:calc(100vw - 24px);max-height:min(460px,calc(100dvh - 90px));padding:16px;gap:12px;border-radius:16px;box-shadow:0 4px 10px #17283e08,0 16px 40px #17283e1c;color:var(--ink,#17283e)}
+.huddle-people-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.huddle-people-heading strong{font-size:16px;font-weight:650;line-height:24px}
+.huddle-people-panel .huddle-people-close{display:grid;place-items:center;width:28px;height:28px;padding:0;background:transparent;color:var(--muted,#65748a);font-size:22px;line-height:1}
+.huddle-people-panel>small{font-size:12px;line-height:18px;margin-top:-8px}
+.huddle-people-tabs button{flex:1;text-align:center;background:transparent;color:var(--muted,#65748a)}
+.huddle-people-tabs button[aria-pressed=true]{background:var(--card,#fff);color:var(--ink,#17283e);box-shadow:0 1px 3px #17283e1c,inset 0 -2px #2e6be6;font-weight:600}
+.huddle-people-panel button:not(:disabled):hover{background:var(--surface,#f3f7fc)}
+.huddle-people-panel button:not(:disabled):active{box-shadow:inset 0 0 0 1px var(--line,#dce4ee)}
+html body.app-page .huddle-people-panel input[type=search]{height:36px;min-height:36px;border-radius:8px}
+.huddle-people-panel input[type=search]:focus-visible{outline:2px solid #2e6be6;outline-offset:2px;border-color:#2e6be6}
+.huddle-people-panel .huddle-directory-person{min-height:48px;padding:6px 8px;border-radius:8px;gap:8px}
+.huddle-person-avatar{position:relative;display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:50%;background:var(--surface,#eef2f7);color:var(--muted,#65748a);font-size:13px;font-weight:600}
+.huddle-person-avatar .huddle-presence-dot{position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border:2px solid var(--card,#fff);box-sizing:content-box}
+.huddle-directory-person small{white-space:nowrap}.huddle-people-empty{padding:18px 8px;margin:0;text-align:center;color:var(--muted,#65748a);font-size:12px;line-height:18px}
+html[data-theme=dark] .huddle-people-tabs button[aria-pressed=true]{background:#263b55;color:#e2e9f3}

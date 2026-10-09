@@ -21,7 +21,7 @@ html body.app-page #contextual-thread-dialog .thread-record-visual{width:48px;he
 html body.app-page #contextual-thread-dialog .thread-record h2{font-size:20px!important;margin:5px 0;line-height:1.3}
 html body.app-page #contextual-thread-dialog .thread-record p{font-size:12px;line-height:1.4;overflow-wrap:anywhere}
 html body.app-page #contextual-thread-dialog .thread-management{padding:10px 24px;gap:8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-html body.app-page #contextual-thread-dialog .thread-management :is(button,summary){min-height:32px!important;padding:5px 9px!important;font-size:12px!important;line-height:20px;border-radius:8px;background:var(--ui-action-soft);color:var(--ui-action-text);border:1px solid var(--ui-action-line)}
+html body.app-page #contextual-thread-dialog .thread-management :is(button,summary){min-height:44px!important;padding:9px 12px!important;font-size:max(14px,.875rem)!important;line-height:20px;border-radius:8px;background:var(--ui-action-soft);color:var(--ui-action-text);border:1px solid var(--ui-action-line)}
 html body.app-page #contextual-thread-dialog .thread-mode-switch{margin:12px 24px 0;padding:0;display:flex;justify-content:flex-start;gap:6px;background:transparent;border:0;border-radius:0}
 html body.app-page #contextual-thread-dialog .thread-mode-switch button{flex:0 1 auto;min-height:34px;padding:6px 12px;border-radius:8px;border:1px solid transparent;box-shadow:none;background:transparent}
 html body.app-page #contextual-thread-dialog .thread-mode-switch button[aria-selected=true]{background:var(--ui-action-soft);border-color:var(--ui-action-line);color:var(--ui-action-text)}

@@ -21,7 +21,39 @@ function textOf(cell){
   copy.querySelectorAll('div,p,small,strong,span,code,br').forEach(el=>el.append(document.createTextNode(' ')));
   return normalize(copy.textContent);
 }
-function values(root,row,cols){return cols.map(col=>textOf([...row.children].find(cell=>cell.dataset.column===col.id)||row.children[col.index]));}
+function columnCell(root,row,col){
+ if(root.dataset.tableWidget==='orders'){
+  const selectors={product:'.item-product',order:'.item-order-reference',sales:'.item-sales',available:'.item-number:has(>small)', 'four-week-sales':'.item-weekly-sales',profit:'.item-profit',action:'.item-actions'};
+  if(col.id==='quantity'||col.id==='available')return [...row.querySelectorAll(':scope>.item-number')].find(cell=>cell.querySelector(':scope>small')?.textContent.trim()===(col.id==='quantity'?'Qty':'Available'))||row.querySelector(':scope>[data-column="'+col.id+'"]');
+  if(selectors[col.id])return row.querySelector(selectors[col.id]);
+ }
+ return [...row.children].find(cell=>cell.dataset.column===col.id)||row.children[col.index];
+}
+function values(root,row,cols){return cols.map(col=>textOf(columnCell(root,row,col)));}
+// Export logical fields, not the concatenated text of visual compound cells.
+const orderExportFields={product:['Product','SKU','ASIN','Mapped items'],order:['Order ID','Order date','Amazon status','Fulfillment','Readiness'],sales:['Item sales','Currency','Customer shipping','Buy Box','Buy Box currency'],profit:['Estimated item profit','Product cost','Referral fee','Other cost','Shipping cost'],'four-week-sales':['4-week orders','4-week units','Week 1 units','Week 2 units','Week 3 units','Week 4 units','Refund totals by currency','Refunded orders']};
+async function prepareExport(root,cols){
+ if(root.dataset.tableWidget!=='orders'||!cols.some(col=>col.id==='profit'))return;
+ const items=rows(root),keys=[...new Set(items.map(row=>row.dataset.exportOrder).filter(Boolean))];
+ for(let start=0;start<keys.length;start+=100){
+  const params=new URLSearchParams({kind:'ORDER'});keys.slice(start,start+100).forEach(key=>params.append('key',key));
+  const response=await fetch('/app/inventory/profit?'+params,{credentials:'same-origin',headers:{Accept:'application/json'}});
+  if(!response.ok)throw new Error('Profit data unavailable. Retry the export.');const views=await response.json();
+  for(const row of items){const view=views[row.dataset.exportOrder];if(!view||!view.totals||/cancel/i.test(row.dataset.exportStatus||''))continue;const sku=row.dataset.exportSku,fees=orderSkuFees(view,sku);row.dataset.exportProfit=orderSkuProfit(view,sku)??'Pending';for(const [key,value]of Object.entries(fees))row.dataset['exportFee'+key]=value??'Pending';}
+ }
+}
+function exportColumns(root,cols){return cols.filter(col=>!['Record','Actions','Select'].includes(normalize(col.title))).flatMap(col=>(root.dataset.tableWidget==='orders'&&orderExportFields[col.id]||[col.title]).map((title,field)=>({...col,title,field})));}
+function exportValues(root,row,cols){
+ const data=row.dataset;
+ const weekly=String(row.querySelector('.item-weekly-sales')?.dataset.exportWeeks||row.querySelector('.weekly-sales')?.textContent||'').split('|').map(normalize);
+ const totals=String(row.querySelector('.weekly-sold-totals>span')?.textContent||'').split('/').map(normalize);
+ let refunds=[];try{refunds=JSON.parse(row.querySelector('[data-sku-refunds]')?.dataset.skuRefunds||'[]')}catch{}
+ const currencies=[...new Set(refunds.map(entry=>entry.currency).filter(Boolean))];
+ const refundTotals=currencies.map(currency=>currency+' '+refunds.filter(entry=>entry.currency===currency).reduce((sum,entry)=>sum+Number(entry.amount||0),0).toFixed(2)).join(' / ')+(refunds.some(entry=>entry.unknownAmounts||entry.amount==null)?' + Pending':'');
+ const fields={product:[data.exportProduct,data.exportSku,data.exportAsin,data.exportMapping],order:[data.exportOrder,data.exportDate,data.exportStatus,data.exportChannel,data.exportReadiness],sales:[data.exportSales,data.exportCurrency,data.exportShipping,data.exportBuybox,data.exportBuyboxCurrency],profit:[data.exportProfit??'Pending',data.exportFeeproduct??'Pending',data.exportFeereferral??'Pending',data.exportFeeother??'Pending',data.exportFeeshipping??'Pending'],'four-week-sales':[totals[0]||'',totals[1]||'',...Array.from({length:4},(_,i)=>weekly[i]||''),refundTotals,refunds[0]?.totalOrders??'']};
+ if(/cancel/i.test(data.exportStatus||'')){fields.sales=fields.sales.map(()=>'');fields.profit=fields.profit.map(()=>'');fields['four-week-sales']=fields['four-week-sales'].map(()=>'');}
+ return cols.map(col=>root.dataset.tableWidget==='orders'&&orderExportFields[col.id]?(fields[col.id][col.field]??''):textOf(columnCell(root,row,col)));
+}
 // Keep the first visible record at the same viewport offset when page size changes.
 function pageSizeAnchor(elements){
   const visible=elements.filter(el=>el.getClientRects().length&&!el.classList.contains('table-data-hidden'));
@@ -35,12 +67,20 @@ function restoreRowOffset(element,top){
   const delta=element.getBoundingClientRect().top-top;
   if(scroller&&scroller!==document.body)scroller.scrollTop+=delta;else window.scrollBy(0,delta);
 }
+function paginationTotal(text,kind){
+  text=text.trim();
+  const total=text.match(/^([\d,]+)\s+(documents|orders|items|results|movements)\b/)||text.match(/^Showing\b.*?\bof\s+([\d,]+)(?:\s+(\w+))?\s*$/);
+  if(total)return 'Total: '+Number(total[1].replace(/,/g,'')).toLocaleString()+' '+(total[2]||(kind==='orders'?'orders':'results'));
+  return /^No movements$/i.test(text)?'Total: 0 movements':text;
+}
 // One pager presentation for both local collections and server-backed lists.
 function paginationControls(nav,onSize,onPage){
   nav.setAttribute('aria-label','Table pages');
-  const sizeLabel=document.createElement('label');sizeLabel.textContent='Showing ';
-  const select=document.createElement('select');select.setAttribute('aria-label','Rows per page');
-  [25,50,100].forEach(size=>select.add(new Option(String(size),String(size))));sizeLabel.append(select,' rows');nav.append(sizeLabel);
+  const sizeLabel=document.createElement('label');sizeLabel.textContent='Showing ';sizeLabel.className='table-page-size';
+  const select=document.createElement('select');select.setAttribute('aria-label','Rows per page');select.setAttribute('data-standard-choice','');
+  [25,50,100].forEach(size=>select.add(new Option(String(size),String(size))));sizeLabel.append(select,' rows');
+  const context=document.createElement('div');context.className='table-page-context';
+  const summary=nav.previousElementSibling;nav.before(context);context.append(sizeLabel);if(summary)context.append(summary);
   select.onchange=()=>onSize(Number(select.value));
   let current=1,last=1;
   const buttons=[];
@@ -53,7 +93,7 @@ function paginationControls(nav,onSize,onPage){
   input.onchange=()=>onPage(Math.max(1,Math.min(last,Math.floor(Number(input.value)||1))));
   input.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();input.onchange()}};
   const total=document.createElement('span');jump.append(input,total);buttons[2].before(jump);
-  return (page,pages,size)=>{current=page;last=pages;input.value=String(page);input.max=String(pages);select.value=String(size);total.textContent='of '+pages;buttons.forEach((button,index)=>button.disabled=index<2?page===1:page===pages)};
+  return (page,pages,size)=>{current=page;last=pages;input.value=String(page);input.max=String(pages);select.value=String(size);window.NextAiPlatformControls?.enhance(context);select.dispatchEvent(new Event('platform-choice-sync'));total.textContent='of '+pages;buttons.forEach((button,index)=>button.disabled=index<2?page===1:page===pages)};
 }
 function filterMatch(value,filter){
  if(!filter)return true;
@@ -157,7 +197,7 @@ function init(root){
     const size=Number(serverPager.dataset.pageSize)||Number(new URL(location.href).searchParams.get('size'))||25;
     if(hasPreference&&size!==preferredSize){const url=new URL(location.href);url.searchParams.set('size',String(preferredSize));url.searchParams.set('page','0');url.searchParams.delete('goToPage');location.replace(url);return;}
     const summary=serverPager.firstElementChild,nav=document.createElement('nav');
-    if(summary){const total=summary.textContent.match(/\bof\s+([\d,]+)\s*$/);if(total)summary.textContent='Total: '+Number(total[1].replace(/,/g,'')).toLocaleString()+(root.dataset.tableWidget==='orders'?' orders':' results');}
+    if(summary){const label=summary.querySelector('span')||summary;label.textContent=paginationTotal(label.textContent,root.dataset.tableWidget);}
     serverPager.replaceChildren(...(summary?[summary]:[]),nav);
     const navigate=(page,size)=>{const url=new URL(location.href);url.searchParams.set('size',String(size));url.searchParams.set('page',String(page-1));url.searchParams.delete('goToPage');location.assign(url)};
     paginationControls(nav,value=>{
@@ -205,13 +245,14 @@ function init(root){
     const orderEmpty=root.querySelector('.order-empty-state');
     if(orderEmpty){const hide=filtered.length>0;if(orderEmpty.hidden!==hide)orderEmpty.hidden=hide;root.classList.toggle('orders-is-empty',!hide);if(serverPager&&serverPager.hidden===hide)serverPager.hidden=!hide;}
     if(!exportButton.disabled)status.textContent=!filtered.length?(orderEmpty||!all.length?'':'Nothing found. Try another search or change your filters.'):count&&isServer?filtered.length+' matches on this page.':'';
-    if(footer){footer.dataset.pages=String(pages);updatePager(saved.page,pages,saved.size);pageLabel.textContent=filtered.length+' matching results'}
+    if(footer){footer.dataset.pages=String(pages);updatePager(saved.page,pages,saved.size);pageLabel.textContent='Total: '+filtered.length.toLocaleString()+' results'}
   }
   exportButton.onclick=async()=>{
     exportButton.disabled=true;status.textContent='Preparing CSV…';
     const progress=window.NextAiBackgroundJobs?.start('Download '+root.dataset.tableWidget,'Preparing CSV. Keep this page open until the download starts.');
     try{
       const selected=headers(root).filter(col=>!col.el.hidden&&!['select','action','actions','record-context'].includes(col.id));
+      const exported=exportColumns(root,selected);
       const exportFilters={...saved.filters};
       let data=[];
       if(isServer){
@@ -225,19 +266,25 @@ function init(root){
           if(!source)throw new Error('Could not read table data. Please refresh and try again.');
           const sourceCols=headers(source);sourceCols.forEach((col,index)=>{if(!col.el.dataset.column)col.id=cols.find(c=>c.title===col.title)?.id||col.id;col.index=index});
           const mapped=selected.map(col=>({...col,index:sourceCols.find(c=>c.id===col.id)?.index??col.index}));
+          await prepareExport(source,mapped);
           for(const row of rows(source)){
             const allValues=values(source,row,sourceCols);
-            if(sourceCols.every((col,index)=>filterMatch(allValues[index],exportFilters[col.id])))data.push(values(source,row,mapped));
+            if(sourceCols.every((col,index)=>filterMatch(allValues[index],exportFilters[col.id])))data.push(exportValues(source,row,exportColumns(source,mapped)));
           }
           const next=[...(source.closest('.data-card')||doc).querySelectorAll('.table-pagination a[href]')].find(link=>normalize(link.textContent).toLowerCase()==='next');
           url=next?new URL(next.getAttribute('href'),location.href):null;
           if(url&&(url.origin!==location.origin||url.pathname!==location.pathname))throw new Error('Unexpected pagination link. Export stopped.');
-          if(url)url.searchParams.set('size',exportSize);
+          if(url){
+            // Server pagination markup may omit browser-added smart filters.
+            const pageNumber=url.searchParams.get('page');
+            url.search=new URL(location.href).search;
+            url.searchParams.delete('goToPage');url.searchParams.set('page',pageNumber||String(page+1));url.searchParams.set('size',exportSize);
+          }
           status.textContent='Preparing CSV · '+data.length+' rows…';
           progress?.update(status.textContent);
         }
-      }else data=rows(root).filter(row=>domainVisible(row)&&matches(row)).map(row=>values(root,row,selected));
-      const csv='\uFEFF'+[selected.map(col=>col.title),...data].map(row=>row.map(csvCell).join(',')).join('\r\n');
+      }else{await prepareExport(root,selected);data=rows(root).filter(row=>domainVisible(row)&&matches(row)).map(row=>exportValues(root,row,exported));}
+      const csv='\uFEFF'+[exported.map(col=>col.title),...data].map(row=>row.map(csvCell).join(',')).join('\r\n');
       const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=root.dataset.tableWidget+'-'+new Date().toISOString().slice(0,10)+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
       status.textContent='Exported '+data.length+' '+(data.length===1?'row.':'rows.');
       progress?.complete(status.textContent);
@@ -259,6 +306,6 @@ function init(root){
   render();
 }
 function refresh(){document.querySelectorAll('[data-table-widget-ready]').forEach(init)}
-window.NextAiTableDataTools={refresh,csvCell,resetFilters:key=>{const saved=states.get(key);if(saved){saved.filters={};saved.query='';saved.page=1;}}};
+window.NextAiTableDataTools={refresh,csvCell,exportColumns,exportValues,resetFilters:key=>{const saved=states.get(key);if(saved){saved.filters={};saved.query='';saved.page=1;}}};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{window.NextAiTableWidget?.refresh();refresh()});else{window.NextAiTableWidget?.refresh();refresh()}
 })();

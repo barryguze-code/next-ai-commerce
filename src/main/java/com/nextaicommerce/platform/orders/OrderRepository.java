@@ -117,7 +117,11 @@ public class OrderRepository {
         String status="regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g')";
         String pickup="(orders.platform_waiting_for_pickup OR "+status+" IN ('WAITINGFORPICKUP','READYFORPICKUP','PICKUPREADY','AWAITINGPICKUP','AWAITINGCARRIERPICKUP','SHIPPEDWAITINGFORPICKUP'))";
         return switch(key.toUpperCase(java.util.Locale.ROOT)){
-            case "BUY_BOX_LOST" -> "EXISTS (SELECT 1 FROM amazon_order_items priced_item JOIN amazon_listings listing ON listing.tenant_id=priced_item.tenant_id AND listing.marketplace_connection_id=priced_item.marketplace_connection_id AND listing.seller_sku=priced_item.seller_sku AND listing.marketplace_id=orders.marketplace_id WHERE priced_item.tenant_id=orders.tenant_id AND priced_item.marketplace_connection_id=orders.marketplace_connection_id AND priced_item.amazon_order_id=orders.amazon_order_id AND "+PRICE_MISMATCH+")";
+            case "BUY_BOX_LOST" -> "EXISTS (SELECT 1 FROM amazon_order_items priced_item JOIN amazon_listings listing ON listing.tenant_id=priced_item.tenant_id AND listing.marketplace_connection_id=priced_item.marketplace_connection_id AND listing.seller_sku=priced_item.seller_sku AND listing.marketplace_id=orders.marketplace_id "
+                + "LEFT JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=listing.tenant_id AND mapping.marketplace_connection_id=listing.marketplace_connection_id AND mapping.marketplace_sku=listing.seller_sku AND mapping.status='ACTIVE' "
+                + com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.LOCAL_MAPPING_AVAILABILITY
+                + " WHERE priced_item.tenant_id=orders.tenant_id AND priced_item.marketplace_connection_id=orders.marketplace_connection_id AND priced_item.amazon_order_id=orders.amazon_order_id AND "+PRICE_MISMATCH
+                + " AND (CASE WHEN upper(coalesce(listing.fulfillment_channel,'')) LIKE '%AMAZON%' OR upper(listing.fulfillment_channel) IN ('FBA','AFN') THEN coalesce((SELECT snapshot.fulfillable_quantity FROM amazon_inventory_snapshots snapshot WHERE snapshot.tenant_id=listing.tenant_id AND snapshot.marketplace_connection_id=listing.marketplace_connection_id AND snapshot.marketplace_id=listing.marketplace_id AND snapshot.seller_sku=listing.seller_sku ORDER BY snapshot.snapshot_at DESC LIMIT 1),0) ELSE coalesce(local_inventory.available,listing.quantity,0) END)>0)";
             case "PENDING"->status+" IN ('PENDING','PENDINGAVAILABILITY')";
             case "UNSHIPPED"->"NOT ("+pickup+") AND ("+status+" IN ('PENDING','PENDINGAVAILABILITY','UNSHIPPED') OR (orders.fulfillment_state='READY_TO_SHIP' AND "+status+" NOT IN ('CANCELLED','CANCELED','PICKEDUP','INTRANSIT','OUTFORDELIVERY','DELIVERED') AND "+status+" NOT LIKE '%SHIPPED%'))";
             case "WAITING_FOR_PICKUP"->pickup;
@@ -524,7 +528,7 @@ public class OrderRepository {
         int size=Math.max(10,Math.min(pageSize,100)),page=Math.max(0,requestedPage),offset=page*size;
         var smart=smartFilters(tenantId,connectionId,filters);var parameters=new ArrayList<Object>();parameters.add(tenantId);parameters.add(connectionId);
         for(int i=0;i<6;i++)parameters.add(q);parameters.addAll(smart.args());parameters.add(size);parameters.add(offset);
-        String smartOrder=smart.sort().isEmpty()?"":"max("+OrderSmartFilters.metric(smart.sort().startsWith("orders"))+") "+(smart.sort().endsWith("asc")?"ASC":"DESC")+" NULLS LAST,";
+        String smartOrder=smart.sort().isEmpty()?"":(smart.sort().startsWith("date_")?"orders.purchase_date":"max("+OrderSmartFilters.metric(smart.sort().startsWith("orders"))+")")+" "+(smart.sort().endsWith("asc")?"ASC":"DESC")+" NULLS LAST,";
         List<Object[]> raw=jdbc.query("""
             SELECT orders.id,orders.amazon_order_id,orders.purchase_date,
                    coalesce(orders.purchase_marketplace_date,orders.purchase_date::date),orders.order_status,

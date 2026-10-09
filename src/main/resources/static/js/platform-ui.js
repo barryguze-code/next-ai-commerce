@@ -10,6 +10,10 @@
   const row=title.closest('tr,.order-item');if(!row)return;
   // Inventory has a richer, authoritative movement drawer. Reuse it.
   if(row.classList.contains('inventory-row')&&window.openInventoryHistory){window.openInventoryHistory(row);return;}
+  // Mapped order products use the same ledger as their item-code links, not a
+  // second modal repeating the order table's sales/status blocks.
+  const ledger=row.matches('.order-item')&&row.querySelector('a[href*="/mappings/ledger"]');
+  if(ledger&&window.openMappedInventoryLedger){window.openMappedInventoryLedger(ledger,true,title);return;}
   if(!dialog){
    dialog=make('dialog','invite-dialog');dialog.id='ui-product-dialog';dialog.setAttribute('aria-labelledby','ui-product-title');
    dialog.innerHTML='<div class="dialog-shell"><header class="dialog-header"><img class="ui-product-picture" alt=""><div><span class="eyebrow dark">Product details</span><h2 id="ui-product-title"></h2></div><button type="button" class="dialog-close" aria-label="Close product details">×</button></header><div class="dialog-body"><dl class="ui-record-facts"></dl><nav class="ui-record-links" aria-label="Related inventory"></nav></div><footer class="dialog-actions"><button type="button" class="secondary-button">Close</button></footer></div>';
@@ -38,7 +42,7 @@
    if(row.dataset.sku)add('Marketplace SKU',row.dataset.sku);
   }
   const links=dialog.querySelector('nav');links.replaceChildren();
-  row.querySelectorAll('a[href*="/mappings/ledger"],a[href*="/inventory/ledger"]').forEach(link=>{const a=make('a','', 'Inventory movements · '+link.textContent.trim());a.href=link.href;links.append(a)});
+  const seen=new Set();row.querySelectorAll('a[href*="/mappings/ledger"],a[href*="/inventory/ledger"]').forEach(link=>{if(seen.has(link.href))return;seen.add(link.href);const a=make('a','', 'Inventory Ledger · '+link.textContent.trim());a.href=link.href;links.append(a)});
   links.hidden=!links.childElementCount;
   dialog.showModal();
  }
@@ -47,7 +51,8 @@
   matches.forEach(title=>{
    if(title.dataset.uiProduct!==undefined||!title.closest('tbody tr,.order-item'))return;
    const name=recordName(title).toLowerCase();
-   title.dataset.uiProduct='';title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label','View '+name+' details: '+title.textContent.trim());title.title='View '+name+' details';
+   const action=title.closest('.inventory-row')||title.closest('.order-item')?.querySelector('.mapping-summary-button.is-mapped')?'Inventory Ledger':'View '+name+' details';
+   title.dataset.uiProduct='';title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label',action+': '+title.textContent.trim());title.title=action;
    delete title.dataset.orderCopy;
    const heading=make('span','ui-product-heading');title.before(heading);heading.append(title);
    const copy=make('button','ui-copy-title');copy.type='button';copy.title='Copy '+name+' name';copy.setAttribute('aria-label','Copy '+name+' name');copy.dataset.uiCopy=title.textContent.trim();

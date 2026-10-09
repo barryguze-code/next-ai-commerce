@@ -26,6 +26,8 @@ public class SecurityConfig {
                 .requestMatchers("/app/users/**", "/app/connections/**")
                     .hasAnyRole("PLATFORM_ADMIN", "OWNER", "ADMIN")
                 .requestMatchers("/app/platform/**").hasRole("PLATFORM_ADMIN")
+                .requestMatchers(HttpMethod.POST, "/app/collaboration/reviews/*/read")
+                    .hasAnyRole("PLATFORM_ADMIN", "OWNER", "ADMIN", "OPERATOR", "VIEWER")
                 .requestMatchers(org.springframework.http.HttpMethod.POST, "/app/collaboration/**")
                     .hasAnyRole("PLATFORM_ADMIN", "OWNER", "ADMIN", "OPERATOR")
                 .requestMatchers("/app/collaboration/**")

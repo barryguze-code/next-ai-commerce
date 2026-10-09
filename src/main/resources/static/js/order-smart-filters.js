@@ -42,6 +42,16 @@ function manageTag(p){
 async function load(){if(loading)return;loading=true;renderTags();try{presets=await request();loaded=true}catch{loaded=false}finally{loading=false;renderTags()}}
 function init(){
  const root=document.querySelector('[data-table-widget="'+widget+'"]');if(!root)return;
+ const dateHeading=!isSku&&root.querySelector('.table-grid-header [data-column="order"]');
+ if(dateHeading&&!dateHeading.dataset.smartSort){
+  dateHeading.dataset.smartSort='true';dateHeading.dataset.noSort='true';
+  const ascending=current.get('smartSort')==='date_asc',active=current.get('smartSort')?.startsWith('date_');
+  const button=el('button','order-date-sort','Order ID & status '+(active?(ascending?'↑':'↓'):'↕'));
+  button.type='button';button.setAttribute('aria-label','Sort all orders by order date, '+(ascending?'newest':'oldest')+' first');
+  dateHeading.setAttribute('aria-sort',active?(ascending?'ascending':'descending'):'none');
+  button.onclick=event=>{event.stopPropagation();navigate({...Object.fromEntries([...current].filter(([key])=>relevant(key))),smartSort:ascending?'date_desc':'date_asc'})};
+  dateHeading.replaceChildren(button);
+ }
  const card=root.closest(isSku?'.sku-card':'.order-card'),old=card?.querySelector('details.table-filter-control');
  if(old&&!old.dataset.smartReplaced){old.dataset.smartReplaced='true';old.hidden=true;old.querySelectorAll('input').forEach(input=>{if(input.value){input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))}});
  const button=el('button','secondary-button compact-button order-smart-filter-button','Filters'+([...current].some(([k,v])=>k.startsWith('f_')&&!k.endsWith('_op')&&v)?' · Active':''));button.type='button';button.onclick=()=>open();old.after(button);
