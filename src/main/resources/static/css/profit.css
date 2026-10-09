@@ -46,7 +46,7 @@
 .rp-sku-fees button{border:0;background:transparent;color:#2c6ce5;cursor:pointer;padding:3px;font-size:14px}
 .profit-cost-source{grid-column:1/-1;color:var(--muted);font-size:10px}.profit-line>.secondary-button{grid-column:1/-1;justify-self:end}.profit-item-defaults{font-size:12px;margin:8px 0}.profit-item-cost{margin:8px 0}.profit-item-cost label{grid-template-columns:minmax(0,1fr) 100px;align-items:center}.profit-item-defaults summary{cursor:pointer}
 .profit-single-sku .profit-cost-source{grid-column:1/3;grid-row:2;align-self:center}.profit-single-sku .profit-line>.secondary-button{grid-column:3;grid-row:2}
-.profit-fee-tooltip{position:fixed;z-index:1200;width:238px;box-sizing:border-box;padding:12px 14px;background:var(--white,#fff);color:var(--ink,#18283e);border:1px solid var(--line,#dce4ee);border-radius:10px;box-shadow:0 8px 28px #14283f26;font-size:12px}
+.profit-fee-tooltip{position:fixed;pointer-events:none;z-index:1200;width:238px;box-sizing:border-box;padding:12px 14px;background:var(--white,#fff);color:var(--ink,#18283e);border:1px solid var(--line,#dce4ee);border-radius:10px;box-shadow:0 8px 28px #14283f26;font-size:12px}
 .profit-fee-tooltip[hidden]{display:none}.profit-fee-tooltip>strong{font-size:12px}.profit-fee-tooltip dl{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:5px 12px;margin:9px 0}.profit-fee-tooltip dt{color:var(--muted,#718096)}.profit-fee-tooltip dd{margin:0;white-space:nowrap;font-weight:650;font-variant-numeric:tabular-nums}.profit-fee-tooltip>small{display:block;font-size:10px;line-height:1.5;color:var(--muted,#718096)}
 .app-page .rp-sku-line{grid-template-columns:minmax(240px,3fr) 140px 95px 65px 125px 100px}
 .app-page .rp-sku-table{min-width:865px}

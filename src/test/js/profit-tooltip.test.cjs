@@ -24,6 +24,7 @@ test('cached fee tooltip is keyboard accessible, compact, and Buy Box has no cal
   assert.match(await tooltip.innerText(),/Product cost\s+\$4\.82/);
   assert.match(await tooltip.innerText(),/Shipping\s+\$9\.99/);
   assert.equal(await page.locator('#sale').getAttribute('aria-describedby'),'profit-fee-tooltip');
+  assert.equal(await tooltip.evaluate(n=>getComputedStyle(n).pointerEvents),'none');
   const prior=requests;await page.locator('#profit').hover();await tooltip.waitFor();assert.equal(requests,prior);
   const widths=await tooltip.locator('dd').evaluateAll(nodes=>nodes.map(n=>({height:n.getBoundingClientRect().height,whiteSpace:getComputedStyle(n).whiteSpace})));
   assert.ok(widths.every(n=>n.whiteSpace==='nowrap'&&n.height<25));
