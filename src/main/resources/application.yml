@@ -10,7 +10,15 @@ spring:
     # JSON history backfills are many tiny queries, not analytical scans.
     init-sqls: SET jit = off
   thymeleaf:
-    cache: false
+    # Cache parsed templates, never rendered account/order HTML. Local profile overrides this.
+    cache: true
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # Revalidate public assets on navigation; unchanged files return 304.
+          # No long freshness window: unversioned assets also update immediately on release.
+          no-cache: true
   servlet:
     multipart:
       max-file-size: 20MB
@@ -47,7 +55,7 @@ app:
     enabled: ${APP_READ_CACHE_ENABLED:true}
     ttl: ${APP_READ_CACHE_TTL:10s}
     maximum-entries: ${APP_READ_CACHE_MAXIMUM_ENTRIES:256}
-  build-version: ${APP_BUILD_VERSION:1.6.6}
+  build-version: ${APP_BUILD_VERSION:1.6.7}
   public-url: ${APP_PUBLIC_URL:http://localhost:8080}
   mail:
     enabled: ${MAIL_ENABLED:false}

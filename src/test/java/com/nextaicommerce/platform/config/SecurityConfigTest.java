@@ -47,6 +47,16 @@ import org.springframework.test.web.servlet.MockMvc;
 class SecurityConfigTest {
     private static final UUID TENANT_ID = UUID.randomUUID();
     @Autowired MockMvc mvc;
+    @Test void publicOrderAssetsRevalidateWithoutRedownloadingButPrivatePagesStayUncached() throws Exception {
+        var result=mvc.perform(get("/js/order-design.js")).andExpect(status().isOk()).andReturn();
+        org.assertj.core.api.Assertions.assertThat(result.getResponse().getHeader("Cache-Control"))
+            .contains("no-cache").doesNotContain("no-store");
+        String modified=result.getResponse().getHeader("Last-Modified");
+        org.assertj.core.api.Assertions.assertThat(modified).isNotBlank();
+        mvc.perform(get("/js/order-design.js").header("If-Modified-Since",modified)).andExpect(status().isNotModified());
+        var privatePage=mvc.perform(get("/app/orders")).andExpect(status().is3xxRedirection()).andReturn();
+        org.assertj.core.api.Assertions.assertThat(privatePage.getResponse().getHeader("Cache-Control")).contains("no-store");
+    }
     @Test void invitationSurvivesLoginRedirectWithoutSavingBackgroundRequests() throws Exception {
         var session=new org.springframework.mock.web.MockHttpSession();
         mvc.perform(get("/invitation/accept").servletPath("/invitation/accept").param("tenantId",TENANT_ID.toString()).param("token","test-invitation")
