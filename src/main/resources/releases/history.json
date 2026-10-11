@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.6.8",
+ "title":"Faster Orders totals",
+ "sections":[{"title":"Orders performance hotfix","items":["Order status totals avoid repeated inventory and status calculations when filtering, sorting, or locking identifiers.","Inventory availability remains live and account-scoped; existing totals and fulfillment rules are preserved."]}]
+},
+{
  "version":"1.6.7",
  "title":"Orders caching performance hotfix",
  "sections":[{"title":"Less repeated page-loading work","items":["Browsers can reuse unchanged public scripts, styles and icons after checking for updates.","The server reuses parsed page templates. Private order pages, inventory values and account permissions are not cached by this change."]}]

@@ -133,8 +133,7 @@ public class OrderRepository {
     @Transactional(readOnly=true)
     public List<OrderTab> tabs(UUID tenantId,UUID connectionId){
         setTenant(tenantId);
-        String columns=TAB_KEYS.stream().map(key->"count(DISTINCT orders.id) FILTER (WHERE "+tabPredicate(key)+"),coalesce(sum(item.quantity_ordered) FILTER (WHERE "+tabPredicate(key)+"),0)").collect(java.util.stream.Collectors.joining(","));
-        return jdbc.queryForObject("SELECT "+columns+" FROM amazon_orders orders JOIN amazon_order_items item ON item.tenant_id=orders.tenant_id AND item.marketplace_connection_id=orders.marketplace_connection_id AND item.amazon_order_id=orders.amazon_order_id WHERE orders.tenant_id=? AND orders.marketplace_connection_id=?",
+        return jdbc.queryForObject(OrderTabTotalsQuery.SQL,
             (rs,row)->{
                 var result=new java.util.ArrayList<OrderTab>();
                 var labels=List.of("All","Unshipped","Waiting for pickup","Shipped","Stock shortage","Unmapped","Buy Box Lost");
