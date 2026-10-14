@@ -8,20 +8,21 @@ const dialogs=template.slice(template.indexOf('<dialog'),template.indexOf('<scri
 test('receiving tabs, expiration batches, fee navigation and overage confirmation',async()=>{
  const browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})});
  try{
-  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));let submitted,posts=0,packPosts=0;
+  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));let submitted,posts=0,packPosts=0,failRefresh=false;
   const state={documents:[{id:'doc',type:'INVOICE',number:'QA'}],lines:[{id:'line',documentId:'doc',productId:'item',product:'QA Yogurt',code:'381005',remaining:12,received:0,receipts:0,unitsPerCase:6,depositFee:0,otherFee:0,locationId:'main',unitCost:2,currency:'USD',requiresExpiration:true}],locations:[{id:'main',code:'MAIN',name:'Main storage',status:'ACTIVE'}],details:[],policy:{minimumSellableDays:4,warningDays:18}};
   await page.route('**/*',route=>{
    const path=new URL(route.request().url()).pathname;
    if(path.endsWith('/identity'))return route.fulfill({json:{imageUrl:''}});
    if(path.endsWith('/expiration-status'))return route.fulfill({json:{tone:'success',message:'Expiration OK'}});
-   if(path.endsWith('/state'))return route.fulfill({json:state});
+   if(path.endsWith('/state'))return route.fulfill(failRefresh?{status:500,json:{message:'Test refresh failure'}}:{json:state});
    if(path.includes('/prepare/'))return route.fulfill({json:{message:'Fees saved.'}});
    if(path.includes('/case-pack/')){packPosts++;return route.fulfill({json:{message:'Catalogue updated.'}});}
    if(path.includes('/batches/')){posts++;submitted=JSON.parse(route.request().postData());return route.fulfill({json:{message:'Receipt saved.'}});}
    return route.fulfill({contentType:'text/html',body:'<main class="receive-work" data-can-edit="true" data-can-add-location="false"><div id="rw-lines-card"><label class="table-standard-search"><input type="search" aria-label="Search table"></label></div><button data-receive="line">Receive</button><table class="rw-table"></table><p id="rw-feedback"></p></main>'+dialogs});
   });
   await page.goto('http://localhost/receiving-fixture');await page.evaluate(state=>window.receivingWork=state,state);
-  for(const file of ['app.css','brand.css','access.css','platform-controls.css','receiving-work.css'])await page.addStyleTag({path:root+'static/css/'+file});
+  await page.evaluate(()=>document.body.className='app-page platform-standard-tables');
+  for(const file of ['app.css','brand.css','access.css','platform-controls.css','receiving-work.css','standard-record-tables.css','order-pictures.css','platform-ui.css'])await page.addStyleTag({path:root+'static/css/'+file});
   for(const file of ['platform-controls.js','receiving-work.js'])await page.addScriptTag({path:root+'static/js/'+file});
   await page.getByRole('button',{name:'Receive',exact:true}).click();
   assert.equal(await page.locator('[name=quantity]').inputValue(),'12');
@@ -31,6 +32,16 @@ test('receiving tabs, expiration batches, fee navigation and overage confirmatio
   assert.equal(await page.locator('[name=quantity]').getAttribute('readonly'),'');
   assert.equal(await page.getByText('Loose units',{exact:true}).count(),0);
   await page.waitForFunction(()=>document.activeElement?.name==='expiration');
+  // A click auto-scrolls in Playwright and previously masked the inaccessible action.
+  // Assert geometry and hit testing before clicking, with the production CSS cascade.
+  for(const viewport of [{width:1280,height:720},{width:1440,height:640},{width:390,height:664}]){
+   await page.setViewportSize(viewport);
+   assert.equal(await page.getByRole('button',{name:'Save receipt',exact:true}).evaluate(button=>{
+    const r=button.getBoundingClientRect();
+    return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth&&document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===button;
+   }),true,'Save receipt must remain visible and unobstructed at '+JSON.stringify(viewport));
+  }
+  await page.setViewportSize({width:1280,height:720});
   await page.locator('[name=pack]').fill('5');assert.equal(await page.locator('[name=cases]').inputValue(),'2');assert.equal(await page.locator('[name=quantity]').inputValue(),'10');
   assert.equal(packPosts,0);
   await page.getByRole('button',{name:'Update catalogue case size',exact:true}).click();
@@ -69,6 +80,7 @@ test('receiving tabs, expiration batches, fee navigation and overage confirmatio
   await page.getByRole('tab',{name:'Damaged',exact:true}).click();assert.equal(await page.locator('[name=damaged]').inputValue(),'0');await page.locator('[name=damagedCases]').fill('1');await page.locator('[name=damagedPack]').fill('2');
   await page.getByRole('tab',{name:'Sellable',exact:true}).click();assert.equal(await page.locator('[name=quantity]').inputValue(),'8');
   await page.getByRole('button',{name:'Item fees…',exact:true}).click();
+  assert.equal(await page.locator('[data-rw-footer-submit]').count(),0,'Receipt action must not remain on the fee panel');
   await page.getByRole('button',{name:'Back to receipt',exact:true}).click();assert.equal(await page.locator('[name=quantity]').inputValue(),'8');assert.equal(await page.locator('[data-batch-quantity]').inputValue(),'2');
   await page.getByRole('button',{name:'Item fees…',exact:true}).click();await page.getByRole('button',{name:'Save and continue receiving',exact:true}).click();await page.locator('[name=quantity]').waitFor();
   assert.equal(await page.locator('[name=quantity]').inputValue(),'8');assert.equal(await page.locator('[data-batch-date]').inputValue(),'2027-02-16');
@@ -102,6 +114,14 @@ test('receiving tabs, expiration batches, fee navigation and overage confirmatio
    assert.equal(await page.locator('[name='+key+'Cases]').inputValue(),'0');assert.equal(await page.locator('[name='+key+'Pack]').inputValue(),'0');
    assert.equal(await page.getByRole('button',{name:'Save receipt',exact:true}).isEnabled(),false);
   }
+  await page.getByRole('tab',{name:'Sellable',exact:true}).click();
+  await page.locator('[name=cases]').fill('1');
+  await page.locator('[name=expiration]').fill('2027-01-16');
+  failRefresh=true;
+  await page.getByRole('button',{name:'Save receipt',exact:true}).click();
+  await page.locator('#rw-receipt-form[data-saved]').waitFor();
+  assert.equal(posts,2);
+  assert.equal(await page.getByRole('button',{name:'Save receipt',exact:true}).isEnabled(),false,'Saved receipt cannot be resubmitted after refresh failure');
   assert.deepEqual(errors,[]);
  }finally{await browser.close();}
 });

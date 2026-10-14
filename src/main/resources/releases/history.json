@@ -1,5 +1,10 @@
 [
 {
+ "version":"1.6.9",
+ "title":"Reachable Save Receipt action",
+ "sections":[{"title":"Receiving hotfix","items":["Save Receipt stays in the receiving drawer footer while the form scrolls, including on shorter laptop screens.","Existing receipt validation, draft handling and duplicate-save protection are preserved."]}]
+},
+{
  "version":"1.6.8",
  "title":"Faster Orders totals",
  "sections":[{"title":"Orders performance hotfix","items":["Order status totals avoid repeated inventory and status calculations when filtering, sorting, or locking identifiers.","Inventory availability remains live and account-scoped; existing totals and fulfillment rules are preserved."]}]

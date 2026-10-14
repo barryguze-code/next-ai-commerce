@@ -45,6 +45,7 @@ let viewSequence=0,busy=false,returnToReceipt=null,receiptDirty=false;
 const receiptDrafts=new Map();
 function open(title,subtitle,context){
   returnToReceipt=null;receiptDirty=false;
+  drawer.querySelectorAll('[data-rw-footer-submit]').forEach(button=>button.remove());
   drawer.querySelectorAll('[data-rw-close]').forEach(b=>{if(b.textContent.includes('Back to'))b.textContent='Back to checklist';});
   viewSequence++;document.getElementById('rw-drawer-title').textContent=title;
   document.getElementById('rw-drawer-subtitle').textContent=subtitle||'';
@@ -79,7 +80,7 @@ function button(text,action,cls='secondary-button compact-button'){
 function form(markup,submit,requestId=crypto.randomUUID()){
   const el=document.createElement('form');el.className='rw-form';el.innerHTML=markup;
   el.dataset.requestId=requestId;
-  el.addEventListener('submit',event=>{event.preventDefault();if(!busy&&el.reportValidity())submit(el,requestId);});
+  el.addEventListener('submit',event=>{event.preventDefault();if(!busy&&!el.dataset.saved&&el.reportValidity())submit(el,requestId);});
   return el;
 }
 function reason(){return '<label>Reason<textarea name="reason" maxlength="500" required placeholder="Explain this correction for the audit history"></textarea></label>';}
@@ -125,9 +126,9 @@ async function run(operation,target,data,el,after){
     if(after)await after();if(!['batches','overage'].includes(operation)){message(result.message,false,true);message(result.message);}else document.getElementById('rw-feedback').hidden=true;
   }catch(error){
     message(error.message,true,true);
-    if(saved){el.querySelectorAll('input,select,textarea,button').forEach(field=>field.disabled=true);el.dataset.saved='true';}
+    if(saved){[...el.elements].forEach(field=>field.disabled=true);el.dataset.saved='true';}
   }finally{
-    busy=false;buttons.filter(b=>b.isConnected&&!b.closest('[data-saved]')).forEach(b=>b.disabled=false);
+    busy=false;buttons.filter(b=>b.isConnected&&!b.closest('[data-saved]')&&!b.form?.dataset.saved).forEach(b=>b.disabled=false);
   }
 }
 function receive(id,overage=false){
@@ -164,6 +165,12 @@ function receive(id,overage=false){
       if(extra&&!await confirmReceiving('Receive extra units?',number(extra)+' units exceed the remaining expected quantity. These extra units will be added to inventory as overage with zero item acquisition cost.','Receive with overage'))return;
       run(overage?'overage':'batches',id,{requestId,batches,confirmedOverage:extra,expirationRequired:f.elements.requiresExpiration.checked,location:f.elements.locationId.value,...Object.fromEntries(exceptions.map(([key])=>[key,amount(key)]))},f,()=>{receiptDrafts.delete(id);drawer.close();requestAnimationFrame(()=>document.querySelector('#rw-lines-card .table-standard-search input')?.focus());});
     },receiptDrafts.get(id)?.requestId);
+  // Dock the real submit control without changing validation or request identity.
+  f.id='rw-receipt-form';
+  const saveReceipt=f.querySelector('[type=submit]');
+  saveReceipt.setAttribute('form',f.id);
+  saveReceipt.dataset.rwFooterSubmit='';
+  drawer.querySelector('.dialog-actions').append(saveReceipt);
   // Each entry owns its case size. Only the calculated total is read-only.
   f.elements.quantity.readOnly=true;
   f.elements.pack.min='0';
@@ -207,7 +214,7 @@ function receive(id,overage=false){
     const proposedPack=Number(packButton.dataset.value);packButton.disabled=busy||proposedPack===savedPack||!Number.isInteger(proposedPack)||proposedPack<1||proposedPack>100000;
     f.querySelector('[data-preview]').dataset.tone=error?'danger':'neutral';
     const quantities=[physical,damaged,wrong,missing],valid=!error&&quantities.every(q=>Number.isFinite(q)&&q>=0&&Number.isInteger(q));
-    f.querySelector('[type=submit]').disabled=busy||!valid;
+    saveReceipt.disabled=busy||!valid||Boolean(f.dataset.saved);
     const tone=!valid||damaged+wrong+missing>0?'invalid':extra>0?'partial':remaining===0?'complete':'partial';
     delete summary.dataset.receiptProgress;
     summary.querySelector('[data-summary-remaining]').textContent=number(remaining)+' each remaining';
