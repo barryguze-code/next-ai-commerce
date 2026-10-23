@@ -2,6 +2,7 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <body>
 <div class="sidebar-user" th:fragment="user">
+  <th:block th:replace="~{fragments/release-notice :: notice}"></th:block>
   <th:block th:replace="~{fragments/ux-components :: runtime}"></th:block>
   <link rel="stylesheet" href="/css/short-date-input.css?v=20261002-1">
   <script defer src="/js/short-date-input.js?v=20261002-2"></script>

@@ -1,0 +1,17 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org"><body>
+<th:block th:fragment="notice" th:if="${releaseNotice != null}">
+  <link rel="stylesheet" href="/css/release-notice.css?v=20261023-hotfix1">
+  <script defer src="/js/release-notice.js?v=20261023-hotfix1"></script>
+  <section class="release-notice" data-release-notice th:attr="data-notice-version=${releaseNotice.version()},data-valid-until=${releaseNotice.validUntil()}" role="region" aria-labelledby="release-notice-title" hidden>
+    <div class="release-notice-copy" id="release-notice-details">
+      <h2 id="release-notice-title" tabindex="-1">An update is being prepared.</h2>
+      <p>We’re preparing improvements to NextAI Commerce. We’ll confirm the timing before the update begins.</p>
+      <p class="release-notice-timing"><strong>Start time:</strong> <span>To be confirmed.</span></p>
+      <p class="release-notice-timing"><strong>Estimated release work:</strong> <span>30–60 minutes.</span></p>
+      <p>This is a provisional estimate for the full update process. Service interruption has not yet been confirmed.</p>
+    </div>
+    <button type="button" class="release-notice-ack" data-notice-ack>Got it</button>
+  </section>
+</th:block>
+</body></html>
