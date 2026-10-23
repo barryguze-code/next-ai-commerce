@@ -2,7 +2,7 @@ const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
 const base=path.resolve('src/main/resources/static'),out='/tmp/sku008-010-review';let browser;
-before(async()=>{browser=await chromium.launch({headless:true,channel:process.env.TEST_BROWSER_CHANNEL||'chrome'});});
+before(async()=>{assert.ok(fs.existsSync(out+'/marketplace.html'),'Run Maven verification first to render the synthetic Marketplace safety fixture');browser=await chromium.launch({headless:true,channel:process.env.TEST_BROWSER_CHANNEL||'chrome'});});
 after(async()=>browser?.close());
 for(const width of [320,390,760,761])for(const theme of ['light','dark'])test(`sort header containment ${width} ${theme}`,async()=>{
  const {page,errors}=await fixture(width,theme,true);

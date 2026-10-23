@@ -25,6 +25,7 @@ class MarketplaceSafetyTemplateTest {
   var stocks=new HashMap<String,FbaReadRepository.Stock>();for(var r:rows)stocks.put(r.sellerSku(),new FbaReadRepository.Stock(r.sellerSku(),r==zero?0:23,0,160,0,0,0,Instant.now(),BigDecimal.TEN,null,null,null,0));c.setVariable("fbaStock",stocks);
   var mapping=new HashMap<String,List<MarketplaceSkuRepository.MappingComponentView>>();for(var r:rows)mapping.put(r.sellerSku(),List.of(new MarketplaceSkuRepository.MappingComponentView(UUID.randomUUID(),"Synthetic one","00001001",null,BigDecimal.ONE),new MarketplaceSkuRepository.MappingComponentView(UUID.randomUUID(),"Synthetic two","00001002",null,new BigDecimal("2"))));c.setVariable("mappingComponents",mapping);
   String html=engine.process("marketplace-skus",c);assertThat(html).contains("Variation family · not a sellable offer","Associated child variations","Relationship unverified","Relationship conflict","Relationship evidence expired","Incomplete — 3 listings unverified");assertThat(html).doesNotContain("mapping-dialog-main-0","data-profit-key=\"PARENT\"");
-  String dir=System.getProperty("marketplacePreviewDir");if(dir!=null){Path target=Path.of(dir).toAbsolutePath();assertThat(target.toString()).startsWith("/tmp/");Files.createDirectories(target);Files.writeString(target.resolve("marketplace.html"),html);}
+  Path target=Path.of(System.getProperty("marketplacePreviewDir","/tmp/sku008-010-review")).toAbsolutePath();
+  assertThat(target.toString()).startsWith("/tmp/");Files.createDirectories(target);Files.writeString(target.resolve("marketplace.html"),html);
  }
 }
