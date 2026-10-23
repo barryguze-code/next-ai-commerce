@@ -1,0 +1,37 @@
+{
+  "assets": [
+    "/css/background-jobs.css",
+    "/css/inventory-record-fixes.css",
+    "/css/mapping-widget.css",
+    "/css/marketplace-sku-design.css",
+    "/css/marketplace-sku-orders.css",
+    "/css/marketplace-skus.css",
+    "/css/platform-controls.css",
+    "/css/profit.css",
+    "/css/table-widget.css",
+    "/js/background-jobs.js",
+    "/js/buy-shipping.js",
+    "/js/marketplace-sku-design.js",
+    "/js/order-design.js",
+    "/js/order-smart-filters.js",
+    "/js/platform-controls.js",
+    "/js/profit.js",
+    "/js/receiving-work.js",
+    "/js/table-data-tools.js",
+    "/js/table-widget.js"
+  ],
+  "reference_count": 35,
+  "templates": [
+    "carrier-connections.html",
+    "collaboration.html",
+    "fragments/profit.html",
+    "fragments/sidebar-nav.html",
+    "fragments/sidebar-user.html",
+    "inventory.html",
+    "marketplace-skus.html",
+    "orders.html",
+    "physical-count-history.html",
+    "receiving-work.html",
+    "receiving-workspace.html"
+  ]
+}
