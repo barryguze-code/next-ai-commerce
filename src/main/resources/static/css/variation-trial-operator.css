@@ -1,0 +1,16 @@
+.variation-trial{min-width:0;max-width:72rem}
+.variation-trial .data-card{padding:clamp(16px,3vw,24px);margin-bottom:20px}
+.variation-trial h2{font-size:1.125rem;margin:0 0 12px;line-height:1.4;color:var(--ink)}
+.variation-trial p{line-height:1.6;overflow-wrap:anywhere;color:var(--muted)}
+.variation-trial dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:16px 0}
+.variation-trial dt{font-size:.875rem;color:var(--muted);margin-bottom:6px}
+.variation-trial dd{margin:0;color:var(--ink);font-weight:600;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.variation-trial .trial-actions{--ui-control-height:44px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:20px}
+.variation-trial .trial-actions form{margin:0;min-width:0;max-width:100%}
+.variation-trial .trial-actions button{min-height:44px;max-width:100%;white-space:normal}
+.variation-trial .trial-help{font-size:.875rem}
+.variation-trial>p>a{color:var(--ui-action-text);text-underline-offset:.2em}
+.variation-trial>p>a:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.variation-trial [data-trial-error]{color:var(--ink);border-inline-start:3px solid #ce5656;padding:10px 12px;background:var(--bg)}
+.variation-trial [data-trial-state]:focus-visible,.variation-trial [data-trial-error]:focus-visible{outline:2px solid var(--blue);outline-offset:4px}
+@media(max-width:760px){.variation-trial dl{grid-template-columns:1fr}.variation-trial .trial-actions{align-items:stretch;flex-direction:column}.variation-trial .trial-actions button{width:100%}}

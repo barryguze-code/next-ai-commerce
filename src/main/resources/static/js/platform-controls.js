@@ -27,13 +27,17 @@
     const trigger=document.createElement('button');trigger.type='button';trigger.className='location-picker-trigger';
     const compact=Boolean(select.closest('.default-location-form,td'));trigger.classList.toggle('is-compact',compact);
     const popup=document.createElement('div');popup.className='location-picker-popup';popup.hidden=true;
+    if(select.hasAttribute('data-standard-choice')){trigger.classList.add('standard-choice-trigger');popup.classList.add('standard-choice-popup');}
+    const conditionChoice=select.matches('[data-standard-choice][data-sku-view-filter="f_condition"]');
+    if(conditionChoice){trigger.classList.add('sku-condition-choice-trigger');popup.classList.add('sku-condition-choice-popup');}
     popup.setAttribute('role','listbox');popup.id='location-picker-'+(++locationPicker.counter);
     trigger.setAttribute('aria-haspopup','listbox');trigger.setAttribute('aria-controls',popup.id);trigger.setAttribute('aria-expanded','false');
     const close=(focus=false)=>{popup.hidden=true;trigger.setAttribute('aria-expanded','false');if(activePicker?.trigger===trigger)activePicker=null;if(focus)trigger.focus();};
     const sync=()=>{
       const label=select.selectedOptions[0]?.textContent.trim()||'Choose location';
       const code=label.split(' · ')[0];trigger.textContent=compact?code.toUpperCase():label;
-      trigger.title=label;trigger.disabled=select.disabled;
+      if(conditionChoice){const chevron=document.createElement('span');chevron.className='sku-choice-chevron';chevron.setAttribute('aria-hidden','true');chevron.textContent='⌄';trigger.append(chevron);}
+      trigger.dataset.tooltip=label;trigger.disabled=select.disabled;
       trigger.setAttribute('aria-label',(select.getAttribute('aria-label')||'Storage location')+': '+label);
     };
     const open=()=>{
@@ -42,7 +46,7 @@
         const choice=document.createElement('button');choice.type='button';choice.setAttribute('role','option');
         choice.setAttribute('aria-selected',String(option.selected));choice.disabled=option.disabled;
         const badge=document.createElement('span');badge.className='location-option-code';badge.textContent=option.textContent.trim().split(' · ')[0].toUpperCase();
-        const label=document.createElement('span');label.textContent=option.textContent.trim();if(!select.hasAttribute('data-standard-choice'))choice.append(badge);choice.append(label);
+        const label=document.createElement('span');label.textContent=option.textContent.trim();if(!select.hasAttribute('data-standard-choice'))choice.append(badge);choice.append(label);if(conditionChoice){const check=document.createElement('span');check.className='sku-choice-check';check.setAttribute('aria-hidden','true');check.textContent='✓';choice.append(check);}
         choice.onclick=()=>{select.value=option.value;sync();close(true);select.dispatchEvent(new Event('change',{bubbles:true}));};popup.append(choice);
       });
       (select.closest('dialog')||document.body).append(popup);popup.hidden=false;
@@ -57,7 +61,7 @@
       const options=[...popup.querySelectorAll('button:not(:disabled)')],index=options.indexOf(document.activeElement);
       if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close(true);}
       else if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?options.length-1:(index+(event.key==='ArrowDown'?1:-1)+options.length)%options.length;options[next]?.focus();}
-      else if(event.key==='Tab')close();
+      else if(event.key==='Tab'){if(conditionChoice)trigger.focus();close();}
     });
     trigger.onclick=()=>popup.hidden?open():close();
     trigger.addEventListener('keydown',event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();open();}});

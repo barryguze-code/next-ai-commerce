@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Carrier Integrations | Next AI Commerce</title>
+<link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css"><link rel="stylesheet" href="/css/access.css">
+<link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><link rel="stylesheet" href="/css/table-widget.css"><link rel="stylesheet" href="/css/carrier-connections.css">
+<script defer src="/js/platform-ui.js?v=1.6.6"></script><script defer src="/js/table-widget.js"></script><script defer src="/js/carrier-connections.js"></script>
+<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block>
+</head><body class="app-page">
+<aside class="sidebar"><a class="brand brand-lockup" href="/app" aria-label="Next AI Commerce"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong>Next<b>AI</b></strong><small>COMMERCE</small></span></a><div th:replace="~{fragments/sidebar-nav :: nav('carriers')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
+<main class="workspace">
+<header class="workspace-header"><div><h1>Carrier Integrations</h1><p class="page-intro">Connected carrier accounts, environments, and authentication health.</p></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
+<p class="notice" role="status" data-carrier-notice hidden></p>
+<section class="data-card"><div class="card-toolbar"><div><h2>Carrier connections</h2><p>Sandbox generates test labels only. It never fulfills a live Amazon order.</p></div><button class="primary-button" type="button" data-carrier-add>＋ Add connection</button></div>
+<div class="table-wrap"><table data-table-widget="carrier-connections" data-overview-ready="true"><thead><tr><th data-column="record-context" data-column-required="true">Record</th><th>Account name</th><th>Account number</th><th>Environment</th><th>Health status</th><th>Actions</th></tr></thead><tbody data-carrier-rows><tr><td colspan="6">Loading carrier connections…</td></tr></tbody></table></div></section>
+
+</main>
+<dialog class="invite-dialog connection-dialog" id="carrier-dialog" aria-labelledby="carrier-title"><form class="dialog-shell" id="carrier-form">
+<header class="dialog-header"><div><h2 id="carrier-title">Add carrier connection</h2><p>Connect your FedEx account using platform-managed API credentials.</p></div><button type="button" class="dialog-close" data-carrier-close aria-label="Close carrier connection">×</button></header>
+<div class="dialog-body credential-fields">
+<input name="id" type="hidden"><label>Carrier<select name="carrier"><option value="FEDEX">FedEx</option></select></label>
+<label>Account name<input name="name" maxlength="120" required></label><label>FedEx account number<input name="accountNumber" inputmode="numeric" pattern="[0-9]{9,12}" maxlength="12" required autocomplete="off"></label>
+<label>Environment<select name="environment"><option value="SANDBOX">Sandbox · test labels</option><option value="PRODUCTION">Production · live credentials</option></select></label>
+<input type="hidden" name="credentialSource" value="PLATFORM"><p>Authentication uses securely configured platform credentials. Only your FedEx account number is required.</p>
+
+<p role="status" data-carrier-health>Not checked. OAuth checks do not verify rate or shipping permissions.</p>
+</div><footer class="dialog-actions"><button type="button" class="secondary-button" data-carrier-close>Cancel</button><button type="button" class="secondary-button" data-carrier-check>Save &amp; health check</button><button type="submit" class="primary-button">Save changes</button></footer>
+</form></dialog>
+<dialog class="invite-dialog" id="carrier-delete-dialog" aria-labelledby="carrier-delete-title"><section class="dialog-shell"><header class="dialog-header"><div><h2 id="carrier-delete-title">Delete carrier connection?</h2></div><button type="button" class="dialog-close" data-delete-cancel aria-label="Close deletion confirmation">×</button></header><div class="dialog-body"><p>API credentials will be removed. Existing shipment history and labels are retained.</p></div><footer class="dialog-actions"><button type="button" class="secondary-button" data-delete-cancel>Cancel</button><button type="button" class="danger-button" data-delete-confirm>Delete connection</button></footer></section></dialog>
+<input id="carrier-csrf" th:if="${_csrf != null}" type="hidden" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
+<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block>
+</body></html>

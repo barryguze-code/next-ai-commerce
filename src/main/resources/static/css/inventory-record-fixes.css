@@ -4,3 +4,6 @@
 .identifier-filter-lock{display:inline-flex!important;align-items:center;justify-content:center;flex:none;width:23px!important;height:23px;min-width:23px!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;border-radius:4px;cursor:pointer}
 .identifier-filter-lock img{width:22px;height:22px}.identifier-filter-lock:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .available-inventory-table .stockout-note{display:block;margin-top:4px}
+
+/* Keep case equivalents on the existing quantity line. */
+.available-inventory-table .inventory-on-hand strong{white-space:nowrap}

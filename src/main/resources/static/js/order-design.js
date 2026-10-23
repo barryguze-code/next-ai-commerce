@@ -20,7 +20,7 @@
     if(row.dataset.stockShortage==='true')reasons.push(['Stock Shortage','Review available inventory for this order.']);
     // Buy Box Lost remains a review filter, not an actionable alert yet.
     stage.dataset.actionRequired=String(reasons.length>0);stage.dataset.actionSummary=reasons.map(([name,help])=>name+' — '+help).join(' ');
-    if(reasons.length){row.classList.add('order-needs-attention');order?.classList.add('order-has-attention');const tags=document.createElement('div');tags.className='order-reason-tags';reasons.forEach(([name,help])=>{const tag=document.createElement('span');tag.textContent=name;tag.title=help;tags.append(tag);});row.querySelector('.item-order-reference')?.append(tags);}
+    if(reasons.length){row.classList.add('order-needs-attention');order?.classList.add('order-has-attention');const tags=document.createElement('div');tags.className='order-reason-tags';reasons.filter(([name])=>name!=='Unmapped').forEach(([name,help])=>{const tag=document.createElement('span');tag.textContent=name;tag.title=help;tags.append(tag);});if(tags.childElementCount)row.querySelector('.item-order-reference')?.append(tags);}
    }
    const product=row.querySelector('.item-product-copy');
    if(product&&!product.dataset.designReady){product.dataset.designReady='true';
@@ -47,6 +47,8 @@
    const actions=row.querySelector('.item-actions');
    if(actions){
     actions.querySelectorAll('.order-icon-action').forEach(b=>{
+     // The carrier dialog owns its action and icon, independently of legacy actions.
+     if(b.matches('[data-fedex-shipping]'))return;
      const pack=b.classList.contains('packing-slip'),ship=!!b.closest('.platform-pickup-action');
      if(!pack&&!ship){const tip=b.closest('.order-action-tip');if(tip&&!tip.hidden)tip.hidden=true;return;}
      if(b.dataset.designIcon)return;b.dataset.designIcon='true';
@@ -65,8 +67,8 @@
     let source=row.querySelector('.mapping-summary-button');
     if(!source){
      const stage=row.querySelector('[data-picture-actions]');
-     if(stage?.dataset.mapping==='MAPPED'){
-      source=document.createElement('span');source.className='is-mapped';source.dataset.sellerSku=stage.dataset.sellerSku;
+     if(stage){
+      source=document.createElement('button');source.type='button';source.className=stage.dataset.mapping==='MAPPED'?'is-mapped':'needs-mapping';source.dataset.sellerSku=stage.dataset.sellerSku;source.setAttribute('onclick','openOrderMapping(this)');
      }
     }
     if(source){
@@ -79,12 +81,12 @@
      if(source.classList.contains('is-mapped'))details.split(/\n+/).filter(Boolean).forEach(detail=>{
       const line=document.createElement('div');line.className='order-identifier-line';
       const code=detail.split(/\s*[×x]\s*/)[0].trim();const value=document.createElement('a');value.className='order-copy-value';value.href='/app/marketplace-skus/mappings/ledger?sku='+encodeURIComponent(source.dataset.sellerSku)+'&code='+encodeURIComponent(code);value.textContent=detail;value.title='Inventory Ledger';value.setAttribute('aria-label','Inventory Ledger · '+code);line.append(value,filterButton(code));lines.append(line);
-     });else {const note=document.createElement('span');note.textContent='Needs mapping';lines.append(note);}
+     });else {const note=source.cloneNode(false);note.className='mapping-warning-trigger';note.textContent='Needs mapping';const badge=document.createElement('span');badge.className='mapping-unmapped-badge';badge.textContent='Unmapped';note.append(badge);lines.append(note);}
      mapping.append(lines);product.append(mapping);
     }
    }
    const ledger=row.querySelector('a[href*="/mappings/ledger"]'),available=row.querySelector('[data-column="available"] strong');
-   if(ledger&&available&&!available.dataset.ledgerReady){const link=document.createElement('a');const url=new URL(ledger.href);url.searchParams.delete('code');link.href=url.href;link.title='Inventory Ledger';link.setAttribute('aria-label','Inventory Ledger · Available '+available.textContent.trim());link.className='inventory-ledger-link';available.replaceWith(link);link.append(available);available.dataset.ledgerReady='true';}
+   if(ledger&&available&&!available.closest('.fba-stock')&&!available.dataset.ledgerReady){const link=document.createElement('a');const url=new URL(ledger.href);url.searchParams.delete('code');link.href=url.href;link.title='Inventory Ledger';link.setAttribute('aria-label','Inventory Ledger · Available '+available.textContent.trim());link.className='inventory-ledger-link';available.replaceWith(link);link.append(available);available.dataset.ledgerReady='true';}
   });
   for(const [selector,name] of [['.order-picture-edit','edit'],['.order-picture-more','actions-ai-human']])find(selector+':not([data-library-icon])').forEach(button=>{button.dataset.libraryIcon='true';button.querySelector('svg')?.remove();const stage=button.closest('.order-item')?.querySelector('[data-picture-actions]'),alert=button.matches('.order-picture-more')&&stage?.dataset.actionRequired==='true';button.prepend(icon(alert?'actions-ai-human-alert':name));if(button.matches('.order-picture-more')){button.setAttribute('aria-label','Actions');button.title=alert?'Actions — '+stage.dataset.actionSummary:'Actions';}});
   find('.orders-workspace .order-list[data-table-widget-ready]').forEach(root=>{root.dataset.orderDesignReady='true';});

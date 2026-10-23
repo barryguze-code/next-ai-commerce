@@ -93,6 +93,7 @@ class SecurityConfigTest {
     }
     @TestConfiguration
     static class StubConfig {
+        @Bean com.nextaicommerce.platform.fba.FbaReadRepository fbaReadRepository(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.fba.FbaReadRepository.class);}
         @Bean com.nextaicommerce.platform.orders.SkuRefundHistory skuRefundHistory(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.SkuRefundHistory.class);}
         @Bean com.nextaicommerce.platform.orders.OrderProfitSummary orderProfitSummary(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.OrderProfitSummary.class);}
         @Bean com.nextaicommerce.platform.orders.PackingSlipRepository packingSlips(){
@@ -161,6 +162,7 @@ class SecurityConfigTest {
         }
         @Bean MarketplaceSkuRepository marketplaceSkuRepository() {
             return new MarketplaceSkuRepository(null) {
+                @Override public Map<String,String> conditionOptions(UUID tenantId,UUID connectionId){return Map.of("NEW","New");}
                 @Override public SkuInsights insights(UUID tenantId,UUID connectionId){return new SkuInsights(0,0,0,0,0,0);}
                 @Override public SkuSummary summary(UUID tenantId, UUID connectionId) {
                     return new SkuSummary(1, 1, 0, 0, 0, 0, 1, 12);

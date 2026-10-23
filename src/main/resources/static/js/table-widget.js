@@ -176,9 +176,11 @@ function prepareOverview(root){
     cell.classList.add('table-context-cell','table-overview-cell');
     const rail=document.createElement('div');rail.className='table-overview-rail';
     while(cell.firstChild)rail.append(cell.firstChild);
-    const avatar=row.querySelector('.product-avatar'),upload=avatar?.closest('.product-image-upload');
+    const avatar=row.querySelector('.product-avatar,.channel-avatar'),upload=avatar?.closest('.product-image-upload');
     const picture=upload||avatar||document.createElement('span');picture.classList.add('table-overview-picture');
-    if(!avatar){const label=row.dataset.title||row.dataset.product||row.querySelector('strong')?.textContent||'Record';const src=row.dataset.image||row.querySelector('.collaboration-row-button')?.dataset.image;
+    if(root.matches('.fba-shipment-table')&&row.dataset.shipFromState){const state=document.createElement('span');state.className='fba-origin-state';state.textContent=row.dataset.shipFromState;state.setAttribute('aria-label','Ship from state: '+row.dataset.shipFromState);picture.append(state);}
+    if(avatar?.matches('.channel-avatar')&&row.dataset.countryFlag){const flag=document.createElement('span');flag.className='connection-country-flag';flag.textContent=row.dataset.countryFlag;picture.append(flag);picture.classList.add('connection-record-logo');}
+    if(!avatar&&!root.matches('.fba-shipment-table')){const label=row.dataset.title||row.dataset.product||row.querySelector('strong')?.textContent||'Record';const src=row.dataset.image||row.querySelector('.collaboration-row-button')?.dataset.image;
       const initials=document.createElement('b');initials.textContent=label.trim().split(/\s+/).slice(0,2).map(word=>word[0]).join('').toUpperCase();picture.append(initials);
       if(src){const img=document.createElement('img');img.src=src;img.alt='';img.loading='lazy';img.decoding='async';initials.hidden=true;img.onerror=()=>{img.remove();initials.hidden=false};picture.append(img);}
     }
@@ -298,13 +300,25 @@ function init(root){
   function move(id,amount,filter){const index=order.indexOf(id),next=index+amount;if(pinned(id)||pinned(order[next])||next<0||next>=order.length)return;[order[index],order[next]]=[order[next],order[index]];apply();render(filter)}
   function reveal(id){const target=root.querySelector('thead [data-column="'+id+'"],.table-grid-header [data-column="'+id+'"]');if(target)target.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'})}
   function placePanel(details){
-    const panel=details.querySelector('.table-column-panel');panel.classList.remove('opens-up');panel.style.removeProperty('--panel-max-height');
-    const trigger=details.querySelector('summary').getBoundingClientRect(),below=innerHeight-trigger.bottom-16,above=trigger.top-16;
-    const opensUp=below<360&&above>below;panel.classList.toggle('opens-up',opensUp);panel.style.position='fixed';
-    panel.style.right=Math.max(12,innerWidth-trigger.right)+'px';panel.style.left='auto';
-    panel.style.top=opensUp?'auto':Math.max(12,trigger.bottom+8)+'px';
-    panel.style.bottom=opensUp?Math.max(12,innerHeight-trigger.top+8)+'px':'auto';
-    panel.style.setProperty('--panel-max-height',Math.max(220,Math.min(590,opensUp?above:below))+'px');
+    const panel=details.querySelector('.table-column-panel'),viewport=window.visualViewport;
+    const margin=12,left=viewport?.offsetLeft||0,top=viewport?.offsetTop||0;
+    const width=viewport?.width||innerWidth,height=viewport?.height||innerHeight;
+    const trigger=details.querySelector('summary').getBoundingClientRect();
+    const panelWidth=Math.min(330,Math.max(0,width-margin*2));
+    const below=Math.max(0,top+height-trigger.bottom-margin-8),above=Math.max(0,trigger.top-top-margin-8);
+    // Enlarged targets and wrapped headers need one usable row, not a clipped sliver.
+    panel.style.width=panelWidth+'px';
+    const list=panel.querySelector('.table-column-list'),firstRow=list?.firstElementChild;
+    const minimumHeight=list?panel.scrollHeight-list.getBoundingClientRect().height+(firstRow?.getBoundingClientRect().height||44):0;
+    const boundedSheet=width<=420||Math.max(above,below)<minimumHeight;
+    const opensUp=!boundedSheet&&below<360&&above>below;
+    const available=boundedSheet?height-margin*2:Math.min(height-margin*2,Math.max(above,below));
+    panel.classList.toggle('opens-up',opensUp);
+    Object.assign(panel.style,{position:'fixed',width:panelWidth+'px',right:'auto',bottom:'auto',
+      left:Math.max(left+margin,Math.min(trigger.right-panelWidth,left+width-panelWidth-margin))+'px'});
+    panel.style.setProperty('--panel-max-height',Math.max(0,Math.min(590,available))+'px');
+    const panelHeight=panel.getBoundingClientRect().height;
+    panel.style.top=Math.max(top+margin,Math.min(boundedSheet?top+height-margin-panelHeight:opensUp?trigger.top-panelHeight-8:trigger.bottom+8,top+height-panelHeight-margin))+'px';
   }
   if(host){
     host.innerHTML='<details class="table-column-control"><summary class="secondary-button compact-button" title="Choose table columns"><span aria-hidden="true">☷</span> Columns</summary><div class="table-column-panel"><header><div><strong>Table columns</strong><small>Show, hide, or arrange columns.</small></div><button type="button">Reset default</button></header><label class="table-column-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m15 15 5 5"></path></svg><input type="search" placeholder="Find a column"></label><div class="table-column-list"></div><small class="table-column-footnote">Required columns always stay visible. Saved in this browser.</small></div></details>';
@@ -312,7 +326,12 @@ function init(root){
     details.addEventListener('toggle',()=>{if(details.open){document.querySelectorAll('.table-column-control[open]').forEach(other=>{if(other!==details)other.open=false});render();requestAnimationFrame(()=>placePanel(details))}});
     document.addEventListener('pointerdown',event=>{if(details.open&&!details.contains(event.target))details.open=false});
     document.addEventListener('keydown',event=>{if(event.key==='Escape'&&details.open){details.open=false;details.querySelector('summary').focus()}});
-    addEventListener('resize',()=>{if(details.open)placePanel(details)},{passive:true});
+    const reposition=()=>{if(details.open)placePanel(details)};
+    details.addEventListener('columnsactivitychange',reposition);
+    addEventListener('resize',reposition,{passive:true});
+    document.addEventListener('scroll',event=>{if(!details.contains(event.target))reposition()},{passive:true,capture:true});
+    window.visualViewport?.addEventListener('resize',reposition,{passive:true});
+    window.visualViewport?.addEventListener('scroll',reposition,{passive:true});
     host.querySelector('header button').onclick=()=>{order=defaults.map(c=>c.id);defaults.forEach(c=>visibility[c.id]=c.required||c.defaultVisible);apply();render();host.querySelector('input').value=''};
     host.querySelector('input').oninput=e=>render(e.target.value);render();
   }

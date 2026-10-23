@@ -39,6 +39,18 @@ import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 class TemplateRenderingTest {
+    @Test void sharedNavigationKeepsPermissionAwareLinksForMobileShell(){
+        var c=webContext();
+        c.setVariables(Map.of("active","marketplace-skus","canViewOperations",false,"canEditCatalog",false,
+            "canManageConnections",false,"canManageUsers",false,"isSuperAdmin",false));
+        String restricted=templateEngine().process("fragments/sidebar-nav",c);
+        assertThat(restricted).contains("mobile-navigation.js","aria-label=\"Platform navigation\"","href=\"/app/catalog\"");
+        assertThat(restricted).doesNotContain("href=\"/app/orders\"","href=\"/app/marketplace-skus\"",
+            "href=\"/app/connections\"","href=\"/app/users\"","href=\"/app/platform/accounts\"");
+        c.setVariable("canViewOperations",true);
+        assertThat(templateEngine().process("fragments/sidebar-nav",c)).contains("href=\"/app/orders\"",
+            "href=\"/app/marketplace-skus\"","class=\"active\"");
+    }
     @Test void actionSuggestionsRenderReviewControlsAndEscapedUserText(){
         var c=webContext();c.setVariable("suggestions",List.of(Map.of("id",UUID.randomUUID(),"title","<script>bad</script>","explanation","Move stock faster","submitted_by","user@example.com","created_at",Instant.now(),"tenant_id",UUID.randomUUID(),"menu_context","Inventory","page_path","/app/inventory","status","NEW","review_note","")));
         String html=templateEngine().process("action-suggestions",c);
@@ -114,13 +126,13 @@ class TemplateRenderingTest {
             Map.entry("orderStreamKey","test-key")
         ));
         assertThat(templateEngine().process("orders",context)).contains("Today’s orders","Today’s sales","Sales · 30 days","Live",
-            "113-1234567-1234567","Unshipped","/js/mapping-widget.js","/css/mapping-widget.css","Buy shipping label","Today’s estimated profit",
+            "113-1234567-1234567","Unshipped","/js/mapping-widget.js","/css/mapping-widget.css","Today’s estimated profit",
             "https://images.example.test/product.jpg","sellercentral.amazon.com/orders-v3/order/","Available",
             "Item Sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
             "Showing 1–1 of 1","data-order-stream","Sync now","Last Amazon order check",
             "New Amazon orders just arrived","Open this order in Seller Central","Open the Amazon product page",
             "/images/channels/amazon-seller.png","amazon.com/dp/B012345678","Orders/Units","Unmapped","Waiting for pickup",
-            "data-copy-sku=","has-issues","aria-current=\"page\"","12 orders / 15 units","status=UNSHIPPED").doesNotContain("order-day",">Historical<","Reporting only","status=PENDING","Stock readiness");
+            "data-copy-sku=","has-issues","aria-current=\"page\"","12 orders / 15 units","status=UNSHIPPED").doesNotContain("order-day",">Historical<","Reporting only","status=PENDING","Stock readiness","data-fedex-shipping","openFedExShipping(this)","Buy shipping label");
         context.setVariable("selectedStatus","WAITING_FOR_PICKUP");
         context.setVariable("pickupOverrides",java.util.Set.of(order.amazonOrderId()));
         context.setVariable("pickupEligibleOrders",java.util.Set.of(order.amazonOrderId()));
@@ -281,12 +293,27 @@ class TemplateRenderingTest {
                 Instant.parse("2026-08-29T12:00:00Z"),"Standard shipping",new BigDecimal("12.00"))),1,0,100))
         ));
         String rendered=templateEngine().process("marketplace-skus",context);
+        context.setVariable("listingSync",new com.nextaicommerce.platform.sync.AmazonManualListingSync.Availability(false,"Already running",true,Instant.parse("2026-10-18T12:00:00Z")));
+        String syncing=templateEngine().process("marketplace-skus",context);
+        assertThat(syncing).contains("sku-sync-button","Syncing…","Refreshing","Last Amazon SKU check")
+            .doesNotContain("Sync Amazon SKUs");
         assertThat(rendered).contains("Marketplace SKUs","Marketplace listings","IB-TEST-SKU","B012345678",
             "4w sales","1 | 2 | 3 | 4","Profit","Review costs","Catalogue","Unmapped","Price (+ shipping)","Buy Box",
             "Available","Shipping template","data-column-control=\"marketplace-skus\"",
+            "Store overview · all listings","Amazon-active listings · price comparison",
+            "data-table-min-width=\"1240\"","data-layout-version=\"orders-aligned-20261005\"",
             "Buy Box price match","/images/channels/amazon-seller.png","/images/channels/amazon-seller.png",
             "https://www.amazon.com/dp/B012345678","sellercentral.amazon.com")
             .doesNotContain(">Seller SKU <","Seller SKU &amp; links","SKU Mapping <small>Planned");
+        String tabs=rendered.substring(rendered.indexOf("<nav class=\"sku-filter-bar\""));
+        tabs=tabs.substring(0,tabs.indexOf("</nav>"));
+        assertThat(tabs).contains("sku-alert-tab","Unmapped").doesNotContain("Amazon problems","Out of stock");
+        context.setVariable("summary",new SkuSummary(4,1,0,0,0,0,0,1,3));
+        rendered=templateEngine().process("marketplace-skus",context);
+        tabs=rendered.substring(rendered.indexOf("<nav class=\"sku-filter-bar\""));
+        tabs=tabs.substring(0,tabs.indexOf("</nav>"));
+        assertThat(tabs).contains("Never sold","sku-info-tab","NEVER_SOLD")
+            .doesNotContain("Unmapped","Amazon problems","Inactive + stock","sku-alert-tab");
     }
 
     @Test
@@ -451,6 +478,20 @@ class TemplateRenderingTest {
         assertThat(html).contains("rp-sku-head").doesNotContain("3 expired","OOS · duration unknown","Sessions not collected","Conversions not collected");
         c.setVariable("items",List.of());
         assertThat(templateEngine().process("replenishment-draft",c)).contains("No items with sales in the last four weeks");
+    }
+
+    @Test void variationTrialOperatorRendersNativeScopedCsrfForms() throws Exception {
+        var c=webContext();
+        c.setVariables(Map.of("trialKey",UUID.fromString("12345678-1234-1234-1234-123456789abc"),
+            "seedSku","4D-2PHN-6KX3","trialMarketplace","ATVPDKIKX0DER",
+            "_csrf",new org.springframework.security.web.csrf.DefaultCsrfToken("X-CSRF-TOKEN","_csrf","fixture-csrf"),
+            "canEditCatalog",false,"canViewOperations",true,"canManageUsers",false,"canManageConnections",false,"isSuperAdmin",false));
+        String html=templateEngine().process("variation-trial-operator",c);
+        assertThat(html).contains("data-variation-trial","KARACA · Amazon US","4D-2PHN-6KX3",
+            "action=\"/app/marketplace-skus/variation-trial/start\"","action=\"/app/marketplace-skus/variation-trial/cancel\"",
+            "name=\"_csrf\" value=\"fixture-csrf\"","12345678-1234-1234-1234-123456789abc");
+        var dir=java.nio.file.Path.of("/tmp/variation-trial-operator-review");java.nio.file.Files.createDirectories(dir);
+        java.nio.file.Files.writeString(dir.resolve("operator.html"),html);
     }
 
     private static SpringTemplateEngine templateEngine() {

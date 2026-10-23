@@ -22,6 +22,8 @@ class AmazonSpApiClientSafetyTest {
         assertThat(AmazonSpApiClient.readOnlyOperation("POST","/reports/2021-06-30/reports")).isTrue();
         assertThat(AmazonSpApiClient.readOnlyOperation("POST","/batches/products/pricing/v0/itemOffers")).isTrue();
         assertThat(AmazonSpApiClient.readOnlyOperation("POST","/mfn/v0/eligibleShippingServices")).isTrue();
+        assertThat(AmazonSpApiClient.readOnlyOperation("POST","/products/fees/v0/listings/SKU%20FBA/feesEstimate")).isTrue();
+        assertThat(AmazonSpApiClient.readOnlyOperation("POST","/products/fees/v0/listings/SKU/other")).isFalse();
         assertThat(AmazonSpApiClient.readOnlyOperation("PATCH","/listings/2021-08-01/items/SKU")).isFalse();
         assertThat(AmazonSpApiClient.readOnlyOperation("POST","/mfn/v0/shipments")).isFalse();
         assertThat(AmazonSpApiClient.readOnlyOperation("DELETE","/mfn/v0/shipments/id")).isFalse();

@@ -33,6 +33,13 @@ public class AmazonSyncWorker {
     private final AmazonSyncStore store; private final AmazonSpApiClient amazon; private final AmazonReportNormalizer normalizer;
     private final MarketplaceSkuAutoMapper skuMapper; private final OrderRepository orders; private final boolean enabled;
     private AmazonCompetitivePricingService competitivePricing;
+    private FbaInboundSync inbound;
+    private AmazonProductFeeSync productFees;
+    @Autowired void configureProductFees(AmazonProductFeeSync productFees){this.productFees=productFees;}
+    @Autowired void configureInbound(FbaInboundSync inbound){this.inbound=inbound;}
+    private com.nextaicommerce.platform.shipping.OrderRecipientService recipients;
+    @Autowired
+    void configureRecipients(com.nextaicommerce.platform.shipping.OrderRecipientService recipients){this.recipients=recipients;}
     private final String workerId="worker-"+UUID.randomUUID();
     public AmazonSyncWorker(AmazonSyncStore store,AmazonSpApiClient amazon,AmazonReportNormalizer normalizer,
             MarketplaceSkuAutoMapper skuMapper,OrderRepository orders,
@@ -59,6 +66,14 @@ public class AmazonSyncWorker {
         if(job==null)return;
         log.info("{} started — {}. Data window: {} to {}. Attempt {}.",runLabel(job),stageLabel(job.type()),
             job.windowStart(),job.windowEnd(),job.attempts()+1);
+        // Fee jobs own finite budgets and fenced transitions. Never fall through to the
+        // legacy unbounded Retry-After path if infrastructure fails while recording one.
+        if("FEES_SNAPSHOT".equals(job.type())&&productFees!=null){
+            try{productFees.processPage(job);}catch(RuntimeException ex){
+                log.error("Fee worker could not record a fenced result ({}); existing lease and budgets retained.",ex.getClass().getSimpleName());
+            }
+            return;
+        }
         try{process(job);}
         catch(PermanentSyncException ex){store.fail(job,ex);}
         catch(AmazonApiException ex){store.retryOrFail(job,ex,ex.status()==429?ex.retryAfter():null);}
@@ -66,6 +81,8 @@ public class AmazonSyncWorker {
     }
 
     private void process(AmazonSyncStore.Job job){
+        if("FEES_SNAPSHOT".equals(job.type())&&productFees!=null){productFees.processPage(job);return;}
+        if("FBA_INBOUND".equals(job.type())){inbound.processPage(job);return;}
         if("VERIFY_SELLER".equals(job.type())){
             var response=amazon.get(job.tenantId(),job.connectionId(),"/sellers/v1/marketplaceParticipations");
             boolean marketplaceFound=marketplaceEnabled(response.json(),job.marketplaceId());
@@ -93,8 +110,10 @@ public class AmazonSyncWorker {
         if(reportType==null){store.complete(job,0);return;}
         if(job.reportId()==null||job.reportId().isBlank()){
             boolean windowed=job.type().contains("30_DAY");
+            boolean fees="FEES_SNAPSHOT".equals(job.type());
             String reportId=amazon.createReport(job.tenantId(),job.connectionId(),reportType,
-                job.marketplaceId(),windowed?job.windowStart():null,windowed?job.windowEnd():null);
+                job.marketplaceId(),fees?job.windowEnd().minus(Duration.ofHours(73)):windowed?job.windowStart():null,
+                fees||windowed?job.windowEnd():null);
             log.info("{} requested an Amazon report — type: {}; Amazon report ID: {}.",
                 runLabel(job),reportType,reportId);
             store.reportRequested(job,reportType,reportId);return;
@@ -126,6 +145,7 @@ public class AmazonSyncWorker {
         Instant importStarted=Instant.now();
         store.saveDocumentAndComplete(job,documentId,document,report.requestId(),
             source->normalizer.normalize(job,document,source));
+        if("ORDERS_30_DAY".equals(job.type())&&recipients!=null)recipients.enqueueWindow(job.tenantId(),job.connectionId(),job.windowStart(),job.windowEnd());
         log.info("{} local report import complete in {} second(s).",runLabel(job),
             Duration.between(importStarted,Instant.now()).toSeconds());
         if("LISTINGS_SNAPSHOT".equals(job.type())&&competitivePricing!=null){
@@ -193,6 +213,7 @@ public class AmazonSyncWorker {
         }
         log.info("{} Amazon import complete — {} changed order(s), {} item page(s), {} row(s). "
                 +"Inventory reconciliation is next.",runLabel(job),orderIds.size(),itemPage,total);
+        if(recipients!=null)recipients.enqueue(job.tenantId(),job.connectionId(),orderIds);
         store.complete(job,total);
     }
 

@@ -14,6 +14,28 @@ test -s "$runtime_config"
 grep -Eq 'SPRING_PROFILES_ACTIVE=prod([[:space:]]|$)' "$runtime_config"
 systemctl is-active --quiet next-ai-commerce
 
+# Release preparation: fail closed before downloads, backups or service changes.
+# Required values must be reviewed and installed separately; never enable work here.
+require_release_false() {
+  local setting=$1
+  local declarations expected
+  declarations=$(grep -Ec "^[[:space:]]*(export[[:space:]]+)?${setting}=" "$runtime_config" || true)
+  expected=$(grep -Ec "^[[:space:]]*(export[[:space:]]+)?${setting}=false[[:space:]]*$" "$runtime_config" || true)
+  if [[ "$declarations" != 1 || "$expected" != 1 ]]; then
+    echo "Release requires one explicit false setting: $setting. Runtime unchanged." >&2
+    return 1
+  fi
+}
+# BEGIN REVIEWED RELEASE GUARDS
+for setting in APP_FEDEX_CONFIRMATION_ENABLED APP_SCHEDULING_ENABLED SPRING_FLYWAY_ENABLED MAIL_ENABLED   AMAZON_PRODUCT_FEES_ENABLED AMAZON_SYNC_ENABLED AMAZON_RECURRING_SYNC_ENABLED   AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED AMAZON_WRITE_ENABLED   AMAZON_LISTING_ACTIONS_ENABLED AMAZON_INVENTORY_PUBLICATION_ENABLED AMAZON_SHELF_SALE_ENABLED AMAZON_BUY_SHIPPING_ENABLED AMAZON_UNRESOLVED_ORDER_CHECKS_ENABLED APP_AMAZON_RECIPIENT_IMPORT_ENABLED APP_AMAZON_CATALOG_BARCODES_ENABLED APP_AMAZON_CATALOG_IMAGES_ENABLED   APP_AMAZON_VARIATION_OPERATOR_ENABLED APP_AMAZON_VARIATION_SYNC_ENABLED   APP_AMAZON_VARIATION_COVERAGE_ENABLED APP_AMAZON_VARIATION_INVENTORY_ENFORCEMENT_ENABLED   APP_AMAZON_VARIATION_TRIAL_ONLY_SCHEDULING; do
+  require_release_false "$setting"
+done
+# END REVIEWED RELEASE GUARDS
+# Migrations require a separate approved operation before this Flyway-disabled launch.
+# Verify the complete newly introduced dependency range before changing the service.
+required_schema_count=$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM public.flyway_schema_history WHERE version IN ('104','105','106','107','108','109','110','111','112') AND success")
+test "$required_schema_count" = 9
+
 # Leave room for the package, rollback copy, database backup and live writes.
 # Refuse early instead of exhausting the filesystem beside a running database.
 database_bytes=$(sudo -u postgres psql -XAtqc "SELECT pg_database_size('next_ai_commerce')")
@@ -113,14 +135,7 @@ if ! nginx -t || ! systemctl reload nginx; then
 fi
 echo "Authenticated huddle WebSocket proxy validated and reloaded."
 sed -i -E "s/APP_BUILD_VERSION=[0-9]+\.[0-9]+\.[0-9]+/APP_BUILD_VERSION=$version/" "$runtime_config"
-# Restore the approved read-only, guarded history recovery. The original startup
-# configuration is included in the rollback backup above.
-if grep -Eq 'AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED=(true|false)' "$runtime_config"; then
-  sed -i -E 's/AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED=(true|false)/AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED=true/g' "$runtime_config"
-else
-  echo 'Missing explicit startup order recovery setting; refusing to guess runtime configuration.' >&2
-  false
-fi
+# Preserve the separately reviewed runtime settings; no startup enqueue is enabled.
 ln -sfn "$release_jar" /opt/next-ai-commerce/next-ai-commerce.jar
 systemctl restart next-ai-commerce
 healthy=false
@@ -134,8 +149,8 @@ done
 test "$healthy" = true
 # Do not declare this release healthy if its additive profit/planning schema
 # did not finish migrating. No business rows or credentials are printed.
-migration_count=$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM public.flyway_schema_history WHERE version IN ('91','92','93','94','95','96','97','98','99','100','101','102','103') AND success")
-test "$migration_count" = 13
-echo "Profit, refund, cost-default and collaboration schema migrations V91–V103 verified."
+migration_count=$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM public.flyway_schema_history WHERE version IN ('91','92','93','94','95','96','97','98','99','100','101','102','103','104','105','106','107','108','109','110','111','112') AND success")
+test "$migration_count" = 22
+echo "Profit, refund, cost-default and collaboration schema migrations V91–V112 verified."
 trap - ERR
 echo "Release v$version completed; existing Amazon publishing policies unchanged."

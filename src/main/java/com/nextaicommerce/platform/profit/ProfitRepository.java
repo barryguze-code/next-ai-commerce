@@ -26,7 +26,14 @@ public class ProfitRepository {
         }
     }
     public record View(String key,String kind,String title,String currency,LocalDate date,List<Line> lines,
-                       List<PackageCost> packages,ProfitEstimate.Breakdown totals,String note,String packageType) {}
+                       List<PackageCost> packages,ProfitEstimate.Breakdown totals,String note,String packageType,
+                       boolean fba,BigDecimal fbaFee,BigDecimal inboundShippingCost,BigDecimal placementFee,
+                       BigDecimal fbaReferralFee,String inboundSource,String feeSource,String feeSourceSummary) {
+        public View(String key,String kind,String title,String currency,LocalDate date,List<Line> lines,List<PackageCost> packages,ProfitEstimate.Breakdown totals,String note,String packageType,boolean fba,BigDecimal fbaFee,BigDecimal inboundShippingCost,BigDecimal placementFee,BigDecimal fbaReferralFee,String inboundSource){this(key,kind,title,currency,date,lines,packages,totals,note,packageType,fba,fbaFee,inboundShippingCost,placementFee,fbaReferralFee,inboundSource,null,null);}
+        public View(String key,String kind,String title,String currency,LocalDate date,List<Line> lines,List<PackageCost> packages,ProfitEstimate.Breakdown totals,String note,String packageType,boolean fba,BigDecimal fbaFee,BigDecimal inboundShippingCost,BigDecimal placementFee,BigDecimal fbaReferralFee){this(key,kind,title,currency,date,lines,packages,totals,note,packageType,fba,fbaFee,inboundShippingCost,placementFee,fbaReferralFee,null);}
+        public View(String key,String kind,String title,String currency,LocalDate date,List<Line> lines,List<PackageCost> packages,ProfitEstimate.Breakdown totals,String note,String packageType,boolean fba,BigDecimal fbaFee,BigDecimal inboundShippingCost,BigDecimal placementFee){this(key,kind,title,currency,date,lines,packages,totals,note,packageType,fba,fbaFee,inboundShippingCost,placementFee,null);}
+        public View(String key,String kind,String title,String currency,LocalDate date,List<Line> lines,List<PackageCost> packages,ProfitEstimate.Breakdown totals,String note,String packageType){this(key,kind,title,currency,date,lines,packages,totals,note,packageType,false,null,null,null);}
+    }
 
     // Catalogue costs are estimates, not historical FIFO/settlement expenses. All
     // components must have a known USD cost: partial bundle costs must never look complete.
@@ -58,6 +65,11 @@ public class ProfitRepository {
 
     @Transactional(readOnly=true)
     public Map<String,View> skus(UUID tenant,UUID connection,List<String> keys) {
+        return skus(tenant,connection,keys,null);
+    }
+    /** Export pins the existing planning-rate date to its read snapshot. */
+    @Transactional(readOnly=true)
+    public Map<String,View> skus(UUID tenant,UUID connection,List<String> keys,LocalDate planningDate) {
         scope(tenant);if(keys.isEmpty())return Map.of();
         var rows=named.queryForList("""
             SELECT l.seller_sku,l.item_name,coalesce(CASE WHEN sale.status='CONFIRMED'
@@ -85,7 +97,7 @@ public class ProfitRepository {
         Map<String,List<PackageCost>> skuPackages=new HashMap<>();
         for(var saved:named.queryForList("SELECT seller_sku,description,amount FROM profit_sku_packages WHERE tenant_id=:tenant AND marketplace_connection_id=:connection AND seller_sku IN (:keys) ORDER BY sequence",Map.of("tenant",tenant,"connection",connection,"keys",keys)))
             skuPackages.computeIfAbsent(text(saved,"seller_sku"),k->new ArrayList<>()).add(new PackageCost(text(saved,"description"),decimal(saved,"amount")));
-        LocalDate today=LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"));
+        LocalDate today=planningDate==null?LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")):planningDate;
         for(var r:rows){
             String key=text(r,"seller_sku"),currency=text(r,"currency");
             var type=packageType(text(r,"profit_package_type"),text(r,"package_name"),text(r,"carrier"));
@@ -94,7 +106,7 @@ public class ProfitRepository {
             var lines=List.of(new Line(key,text(r,"item_name"),1,decimal(r,"price"),decimal(r,"cost"),decimal(r,"other_cost_per_sku"),BigDecimal.ZERO));
             result.put(key,view(key,"SKU",text(r,"item_name"),currency,today,lines,packages,text(r,"fulfillment_channel"),type));
         }
-        return result;
+        return withFbaFees(tenant,connection,result);
     }
     @Transactional(readOnly=true)
     public Map<String,View> orders(UUID tenant,UUID connection,List<String> keys) {
@@ -152,16 +164,113 @@ public class ProfitRepository {
                 estimate=new View(estimate.key(),estimate.kind(),estimate.title(),estimate.currency(),estimate.date(),estimate.lines(),estimate.packages(),null,"Cancelled order — no sales profit estimated.",estimate.packageType());
             result.put(entry.getKey(),estimate);
         }
-        return result;
+        return withFbaFees(tenant,connection,result);
+    }
+    /** Bounded bulk lookup; do not substitute ASIN fees for another condition/SKU or currency. */
+    private Map<String,View> withFbaFees(UUID tenant,UUID connection,Map<String,View> views){
+        var skus=views.values().stream().filter(View::fba).flatMap(v->v.lines().stream()).map(Line::sku).distinct().toList();
+        if(skus.isEmpty())return views;
+        var fees=named.queryForList("""
+            SELECT DISTINCT ON (f.seller_sku,f.currency) f.seller_sku,f.fulfillment_fee,f.referral_fee,f.currency,
+              to_char(f.effective_at AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') imported_at_utc,
+              floor(extract(epoch FROM (current_timestamp-f.effective_at))/86400)::bigint import_age_days,
+              CASE WHEN d.id IS NULL THEN 'Fee archive unavailable'
+                WHEN jsonb_exists(f.raw_payload,'FeesEstimateIdentifier') THEN 'Amazon per-SKU fee quote'
+                ELSE 'Amazon fee report' END source_label
+            FROM amazon_fee_estimates f
+            JOIN marketplace_connections c ON c.tenant_id=f.tenant_id AND c.id=f.marketplace_connection_id
+            LEFT JOIN amazon_source_documents d ON d.tenant_id=f.tenant_id
+              AND d.marketplace_connection_id=f.marketplace_connection_id AND d.id=f.source_document_id
+            WHERE f.tenant_id=:tenant AND f.marketplace_connection_id=:connection AND f.seller_sku IN (:skus)
+              AND f.marketplace_id=c.marketplace_identifier
+              AND (NOT(jsonb_exists(f.raw_payload,'currency')) OR f.raw_payload->>'currency'=f.currency)
+              AND f.currency=(SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=f.marketplace_id)
+              AND (NOT jsonb_exists(f.raw_payload,'amazon-store') OR f.raw_payload->>'amazon-store'=(SELECT country_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=f.marketplace_id))
+            ORDER BY f.seller_sku,f.currency,f.effective_at DESC,f.id
+            """,Map.of("tenant",tenant,"connection",connection,"skus",skus));
+        var inbound=named.queryForList("""
+            WITH charges AS MATERIALIZED (
+              SELECT amazon_order_id shipment_id,max(posted_date) posted_at,
+                CASE WHEN count(DISTINCT currency)=1 AND bool_and(amount IS NOT NULL AND currency IS NOT NULL)
+                  THEN sum(-amount) FILTER (WHERE description='FBAPostInboundTransportation') END transport,
+                CASE WHEN count(DISTINCT currency)=1 AND bool_and(amount IS NOT NULL AND currency IS NOT NULL)
+                  THEN sum(-amount) FILTER (WHERE description='FBAInboundConvenience') END placement,
+                CASE WHEN count(DISTINCT currency)=1 THEN min(currency) END currency
+              FROM amazon_financial_transactions
+              WHERE tenant_id=:tenant AND marketplace_connection_id=:connection
+                AND transaction_type IN ('ServiceFee','ServiceFee - Reversal')
+                AND description IN ('FBAPostInboundTransportation','FBAInboundConvenience')
+                AND raw_payload->>'transactionStatus' IN ('RELEASED','DEFERRED_RELEASED')
+                AND posted_date IS NOT NULL
+              GROUP BY amazon_order_id
+            ), latest AS (
+              SELECT DISTINCT ON (i.seller_sku) i.seller_sku,c.*,
+                (c.posted_at AT TIME ZONE 'America/Los_Angeles')::date estimate_date
+              FROM amazon_fba_shipment_items i
+              JOIN amazon_fba_shipments s ON s.tenant_id=i.tenant_id
+                AND s.marketplace_connection_id=i.marketplace_connection_id AND s.shipment_id=i.shipment_id
+              JOIN charges c ON c.shipment_id=i.shipment_id
+              WHERE i.tenant_id=:tenant AND i.marketplace_connection_id=:connection
+                AND i.seller_sku IN (:skus) AND i.quantity_shipped>0
+                AND c.transport IS NOT NULL AND c.placement IS NOT NULL
+                AND c.transport>=0 AND c.placement>=0 AND c.currency='USD'
+                AND s.shipment_status NOT IN ('CANCELLED','DELETED')
+              ORDER BY i.seller_sku,c.posted_at DESC,c.shipment_id
+            )
+            SELECT l.*,l.transport/nullif(units.total,0) transport_unit,l.placement/nullif(units.total,0) placement_unit
+            FROM latest l CROSS JOIN LATERAL (
+              SELECT sum(quantity_shipped)::numeric total FROM amazon_fba_shipment_items i
+              WHERE i.tenant_id=:tenant AND i.marketplace_connection_id=:connection AND i.shipment_id=l.shipment_id
+            ) units
+            """,Map.of("tenant",tenant,"connection",connection,"skus",skus));
+        views.replaceAll((key,v)->{
+            if(!v.fba())return v;
+            BigDecimal total=BigDecimal.ZERO,referral=BigDecimal.ZERO;boolean known=true,referralKnown=true;
+            BigDecimal transport=BigDecimal.ZERO,placement=BigDecimal.ZERO;boolean transportKnown=true,placementKnown=true;
+            var sources=new LinkedHashSet<String>();var feeSources=new LinkedHashSet<String>();var feeSummaries=new LinkedHashSet<String>();
+            for(var line:v.lines()){
+                var fee=fees.stream().filter(f->line.sku().equals(f.get("seller_sku"))&&v.currency().equals(f.get("currency"))).findFirst().orElse(null);
+                if(fee!=null){
+                    long age=((Number)fee.get("import_age_days")).longValue();
+                    feeSummaries.add(fee.get("source_label")+" · imported "+fee.get("imported_at_utc").toString().substring(0,10)+" UTC");
+                    feeSources.add(line.sku()+" · "+fee.get("source_label")+" · imported "+fee.get("imported_at_utc")
+                        +" UTC · "+(age<0?"import time needs review":age+" days since import")+"; freshness not assessed");
+                }
+                if(fee==null||fee.get("fulfillment_fee")==null||!v.currency().equals(fee.get("currency")))known=false;
+                else total=total.add(((BigDecimal)fee.get("fulfillment_fee")).multiply(BigDecimal.valueOf(line.quantity())));
+                if(fee==null||fee.get("referral_fee")==null||!v.currency().equals(fee.get("currency")))referralKnown=false;
+                else referral=referral.add(((BigDecimal)fee.get("referral_fee")).multiply(BigDecimal.valueOf(line.quantity())));
+                var shipping=inbound.stream().filter(f->line.sku().equals(f.get("seller_sku"))).findFirst().orElse(null);
+                if(shipping==null||shipping.get("transport_unit")==null||!v.currency().equals(shipping.get("currency")))transportKnown=false;
+                else transport=transport.add(((BigDecimal)shipping.get("transport_unit")).multiply(BigDecimal.valueOf(line.quantity())));
+                if(shipping==null||shipping.get("placement_unit")==null||!v.currency().equals(shipping.get("currency")))placementKnown=false;
+                else placement=placement.add(((BigDecimal)shipping.get("placement_unit")).multiply(BigDecimal.valueOf(line.quantity())));
+                if(shipping!=null)sources.add(shipping.get("shipment_id")+" · charges posted "+shipping.get("estimate_date"));
+            }
+            String note=v.note()+" Inbound estimate uses each SKU's latest complete shipment by posted charge date, not a historical order-to-replenishment match."+(sources.isEmpty()?"":" Source: "+String.join(", ",sources)+".");
+            ProfitEstimate.Breakdown breakdown=null;
+            if("USD".equals(v.currency())&&!v.lines().isEmpty()){
+                BigDecimal revenue=v.lines().stream().allMatch(l->l.unitPrice()!=null&&l.customerShipping()!=null)?v.lines().stream().map(l->l.unitPrice().multiply(BigDecimal.valueOf(l.quantity())).add(l.customerShipping())).reduce(BigDecimal.ZERO,BigDecimal::add):null;
+                BigDecimal product=v.lines().stream().allMatch(l->l.productCost()!=null)?v.lines().stream().map(l->l.productCost().multiply(BigDecimal.valueOf(l.quantity()))).reduce(BigDecimal.ZERO,BigDecimal::add):null;
+                BigDecimal other=v.lines().stream().allMatch(l->l.otherCost()!=null)?v.lines().stream().map(l->l.otherCost().multiply(BigDecimal.valueOf(l.quantity()))).reduce(BigDecimal.ZERO,BigDecimal::add):null;
+                BigDecimal profit=revenue!=null&&product!=null&&other!=null&&known&&referralKnown&&transportKnown&&placementKnown?
+                    revenue.subtract(product).subtract(other).subtract(total).subtract(referral).subtract(transport).subtract(placement).setScale(2,RoundingMode.HALF_UP):null;
+                breakdown=new ProfitEstimate.Breakdown(revenue,product,referralKnown?referral:null,null,other,profit);
+            }
+            return new View(v.key(),v.kind(),v.title(),v.currency(),v.date(),v.lines(),List.of(),breakdown,note,null,true,known?total:null,
+                transportKnown?transport.setScale(4,RoundingMode.HALF_UP):null,placementKnown?placement.setScale(4,RoundingMode.HALF_UP):null,referralKnown?referral:null,
+                sources.isEmpty()?null:"Estimate · "+String.join("; ",sources),
+                feeSources.isEmpty()?null:String.join("; ",feeSources),feeSummaries.isEmpty()?null:String.join("; ",feeSummaries));
+        });return views;
     }
     private static View view(String key,String kind,String title,String currency,LocalDate date,List<Line> lines,List<PackageCost> packages,String fulfillment,ProfitShippingRates.PackageType type){
-        boolean fba=Set.of("AFN","FBA","AMAZON").contains(fulfillment.toUpperCase(Locale.ROOT));
-        String note=fba?"FBA profit is not available yet.":!"USD".equals(currency)?"Only USD estimates are supported.":
+        boolean fba=fulfillment.toUpperCase(Locale.ROOT).contains("AMAZON")||Set.of("AFN","FBA").contains(fulfillment.toUpperCase(Locale.ROOT));
+        String note=fba?"FBA fulfillment fees are imported estimates. Shipping to FBA requires verified transportation and placement charges allocated per shipped unit. Missing charges remain Pending; historical order fees are not settled actuals.":!"USD".equals(currency)?"Only USD estimates are supported.":
             "Estimated using current catalogue costs; excludes refunds, advertising and settlement adjustments. Order revenue excludes tax and promotions. Confirm shipping packages for multi-unit orders.";
         ProfitEstimate.Breakdown total=null;
         if(!fba&&"USD".equals(currency)&&!lines.isEmpty()&&lines.stream().allMatch(l->(l.unitPrice()==null||l.unitPrice().signum()>=0)&&l.customerShipping().signum()>=0))
             total=ProfitEstimate.calculate(lines.stream().map(l->new ProfitEstimate.Line(l.unitPrice(),l.quantity(),l.productCost(),l.otherCost(),l.customerShipping())).toList(),packages.stream().map(PackageCost::amount).toList());
-        return new View(key,kind,title,currency,date,lines,packages,total,note,type==null?null:type.name());
+        return new View(key,kind,title,currency,date,lines,fba?List.of():packages,total,note,type==null?null:type.name(),fba,null,null,null);
     }
     @Transactional
     public void savePackages(UUID tenant,UUID connection,String order,List<PackageCost> packages,String actor){

@@ -20,7 +20,16 @@ public class AmazonSyncStore {
     private static final Logger log=LoggerFactory.getLogger(AmazonSyncStore.class);
     public record Job(UUID id, UUID tenantId, UUID runId, UUID connectionId, String type,
         String profile, String marketplaceId, Instant windowStart, Instant windowEnd, String reportId, int attempts,
-        int failures, boolean required, Instant reportRequestedAt) {}
+        int failures, boolean required, Instant reportRequestedAt, String leaseOwner) {
+        public Job(UUID id,UUID tenantId,UUID runId,UUID connectionId,String type,String profile,
+                String marketplaceId,Instant windowStart,Instant windowEnd,String reportId,int attempts,
+                int failures,boolean required,Instant reportRequestedAt){
+            this(id,tenantId,runId,connectionId,type,profile,marketplaceId,windowStart,windowEnd,reportId,
+                attempts,failures,required,reportRequestedAt,null);
+        }
+        Job leasedBy(String owner){return new Job(id,tenantId,runId,connectionId,type,profile,marketplaceId,
+            windowStart,windowEnd,reportId,attempts,failures,required,reportRequestedAt,owner);}
+    }
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
     public AmazonSyncStore(JdbcTemplate jdbc, TransactionTemplate transactions) {
@@ -57,7 +66,7 @@ public class AmazonSyncStore {
                     ORDER BY requested.created_at DESC LIMIT 1)
             FROM marketplace_sync_jobs j JOIN marketplace_sync_runs r ON r.id=j.sync_run_id
             JOIN marketplace_connections c ON c.id=j.marketplace_connection_id AND c.tenant_id=j.tenant_id
-            WHERE j.tenant_id=? AND (
+            WHERE j.tenant_id=? AND j.job_type<>'VARIATION_RELATIONSHIPS' AND (j.job_type<>'FEES_SNAPSHOT' OR (r.status NOT IN ('FAILED','CANCELLED') AND c.status='ACTIVE')) AND (
                 (j.status IN ('QUEUED','WAITING') AND j.available_at<=now()
                     AND (j.lease_expires_at IS NULL OR j.lease_expires_at<now()))
                 OR (j.status='RUNNING' AND j.lease_expires_at<now())
@@ -81,6 +90,22 @@ public class AmazonSyncStore {
             tenant,orderRefreshOnly);
         if (jobs.isEmpty()) return null;
         Job job=jobs.getFirst();
+        if("FEES_SNAPSHOT".equals(job.type())){
+            // Serialize fee claims across different runs for this exact store.
+            boolean locked=Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT pg_try_advisory_xact_lock(hashtextextended(?::text,0))",Boolean.class,
+                "product-fees:"+tenant+":"+job.connectionId()));
+            if(!locked)return null;
+            var first=jdbc.queryForList("""
+                SELECT j.id FROM marketplace_sync_jobs j JOIN marketplace_sync_runs r ON r.id=j.sync_run_id AND r.tenant_id=j.tenant_id
+                WHERE j.tenant_id=? AND j.marketplace_connection_id=? AND j.job_type='FEES_SNAPSHOT'
+                  AND j.status IN ('QUEUED','WAITING','RUNNING') AND r.status NOT IN ('FAILED','CANCELLED')
+                ORDER BY j.created_at,j.id LIMIT 1
+                """,UUID.class,tenant,job.connectionId());
+            if(first.isEmpty()||!first.getFirst().equals(job.id())){
+                jdbc.update("UPDATE marketplace_sync_jobs SET status='SKIPPED',error_code='FEE_DUPLICATE_ACTIVE',completed_at=clock_timestamp() WHERE tenant_id=? AND id=?",tenant,job.id());return null;
+            }
+        }
         jdbc.update("""
             UPDATE marketplace_sync_jobs SET status='RUNNING',lease_owner=?,lease_expires_at=now()+interval '3 minutes',
             attempt_count=attempt_count+1,started_at=coalesce(started_at,now()) WHERE tenant_id=? AND id=?
@@ -93,7 +118,7 @@ public class AmazonSyncStore {
             user_message=CASE WHEN status IN ('COMPLETED','COMPLETED_WITH_WARNINGS') THEN user_message ELSE ? END
             WHERE tenant_id=? AND id=?
             """,job.type(),message(job.type()),tenant,job.runId());
-        return job;
+        return job.leasedBy(worker);
     }
 
     public void reportRequested(Job job, String reportType, String reportId) {
@@ -216,6 +241,21 @@ public class AmazonSyncStore {
             return records;
         });
         return result==null?0:result;
+    }
+
+    /** Relationship-only archive, called inside a fenced publication transaction.
+     * Keep exact response text even when JSON is malformed; never rewrite body/received_at on dedup. */
+    public UUID saveVariationEvidence(Job job,String sku,String body,String parsed,String requestId){
+        if(!"VARIATION_RELATIONSHIPS".equals(job.type()))throw new IllegalArgumentException("Wrong dataset");
+        setTenant(job.tenantId());
+        return jdbc.queryForObject("""
+            INSERT INTO amazon_source_documents(tenant_id,marketplace_connection_id,sync_job_id,source_type,
+                amazon_request_id,source_key,content_type,sha256,payload,text_payload,record_count)
+            VALUES(?,?,?,?,?,?,'application/json',?,CAST(? AS jsonb),?,1)
+            ON CONFLICT(tenant_id,marketplace_connection_id,source_type,sha256) DO UPDATE
+                SET id=amazon_source_documents.id
+            RETURNING id
+            """,UUID.class,job.tenantId(),job.connectionId(),job.id(),job.type(),requestId,sku,sha256(body),parsed,body);
     }
 
     public void complete(Job job, long records) {

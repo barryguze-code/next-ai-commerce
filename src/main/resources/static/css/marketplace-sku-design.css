@@ -1,4 +1,18 @@
 .sku-table:not(.table-widget){visibility:hidden}
+.sku-sync-indicator.not-synced{background:#fff4df;color:#995a0b}
+.sku-workspace .sku-filter-bar .sku-info-tab,.sku-workspace .listing-state.never_sold{color:#995a0b;background:#fff4df;border:1px solid #f0d5a4}
+.sku-workspace .sku-filter-bar .sku-info-tab b{color:inherit;background:#fbe9c6}
+.sku-workspace .sku-filter-bar .sku-info-tab.active{border-color:#c78b35;background:#ffedcb;color:#995a0b}
+html[data-theme=dark] .sku-workspace .sku-filter-bar .sku-info-tab,html[data-theme=dark] .sku-workspace .listing-state.never_sold{background:#3d2e1e;color:#ffd398;border-color:#876334}
+html[data-theme=dark] .sku-workspace .sku-filter-bar .sku-info-tab b{background:#513b24}
+.sku-workspace .sku-sync-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:7px 20px;width:100%}
+.sku-sync-title{display:flex;align-items:center;gap:10px}.sku-sync-heading>p{grid-column:1/-1;grid-row:2;margin:0}
+.sku-sync-status{grid-column:2;grid-row:1;display:flex;align-items:center;gap:8px}.sku-sync-status>small{color:#8290a1;font-size:.5625rem}.sku-sync-status form{margin:0}
+.sku-sync-button{display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid #bfd2ec;border-radius:7px;background:#f5f9ff;color:#2868ca;font:inherit;font-size:.53125rem;font-weight:800;cursor:pointer}
+.sku-sync-button:hover:not(:disabled){border-color:#78a5df;background:#eaf3ff}.sku-sync-button:disabled{cursor:not-allowed;opacity:.46}
+.sku-sync-indicator{padding:4px 8px;border-radius:999px;background:#e7f7ef;color:#16754f;font-size:.5625rem;font-weight:850;text-transform:uppercase;letter-spacing:.05em}.sku-sync-indicator.syncing{background:#eaf2ff;color:#2868ca}
+html[data-theme=dark] .sku-sync-button{border-color:#385676;background:#17283a;color:#8bb7f5}
+@media(max-width:900px){.sku-workspace .sku-sync-heading{grid-template-columns:1fr}.sku-sync-status{grid-column:1;grid-row:3;flex-wrap:wrap}}
 .sku-workspace .sku-table.table-widget{table-layout:auto}
 .sku-workspace .sku-table.table-widget th{text-align:center;font-size:.5625rem;font-weight:800;white-space:normal}
 .sku-workspace .sku-table.table-widget th a{justify-content:center}
@@ -48,3 +62,63 @@ html[data-theme=dark] .sku-workspace .sku-filter-bar .sku-alert-tab{background:#
 html[data-theme=dark] .sku-workspace .sku-filter-bar .sku-alert-tab b{background:#542935}
 html[data-theme=dark] .sku-actions-dialog .sku-action-info{background:#3d2e1e;color:#ffd398}
 html[data-theme=dark] .sku-workspace .sku-copy-value.sku-code{color:#a2bcde}
+
+/* Page-owned desktop hierarchy; keep shared record controls and mobile rules intact. */
+@media(min-width:761px){
+  .sku-workspace .sku-sync-heading{gap:6px 20px}
+  .sku-workspace .sku-sync-indicator{padding:2px 6px;font-size:var(--ui-meta,12px);font-weight:600;letter-spacing:0;text-transform:none}
+  html body.app-page .sku-workspace .sku-table.table-widget{min-width:var(--table-min-width,1240px)!important}
+  html body.app-page .sku-workspace .sku-table.table-widget th{font-size:var(--ui-meta,12px)!important;font-weight:600!important;letter-spacing:0!important;line-height:1.5;text-transform:none;text-align:left}
+  .sku-workspace .sku-table.table-widget th a{justify-content:flex-start}
+  html body.app-page .sku-workspace .sku-table.table-widget tbody tr:nth-child(n){background:var(--white)}
+  html body.app-page .sku-workspace .sku-table.table-widget tbody td{padding:14px 12px;border-bottom:1px solid var(--line);background:transparent;box-shadow:none;text-align:left;vertical-align:middle}
+  html body.app-page .sku-workspace .sku-table.table-widget tr[data-attention=true]>td:first-child{border-left:0}
+  .sku-workspace .sku-table.table-widget td[data-column=product-details]{min-width:280px;max-width:380px}
+  html body.app-page .sku-workspace .sku-approved-title{max-width:none;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;line-height:1.4!important;font-weight:650}
+  .sku-workspace .sku-identifier-line{align-items:flex-start}
+  .sku-workspace .sku-copy-value{max-width:none;min-width:0;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;text-align:left;line-height:1.5}
+  .sku-workspace .sku-copy-value.sku-code{color:var(--ink);font-weight:600}
+  .sku-workspace .sku-mapping-values{flex-direction:column;align-items:flex-start;gap:4px}
+  .sku-workspace .sku-mapping-values>.sku-identifier-line{width:100%}
+  .sku-workspace .sku-filter-lock{margin-left:2px}
+  .sku-workspace .listing-state{font-size:var(--ui-meta,12px);font-weight:600;padding:3px 6px}
+  .sku-workspace .sku-condition,.sku-workspace .local-inventory-plan{font-size:var(--ui-meta,12px);line-height:1.5}
+}
+
+/* SKU sync utility only; title, generic help and composed-header work stay separate. */
+.sku-workspace .sku-sync-heading{grid-template-columns:minmax(0,1fr) minmax(0,34rem)}
+.sku-workspace .sku-sync-status{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 10px;min-width:0;max-width:min(100%,34rem)}
+.sku-workspace .sku-sync-status>small{min-width:0;color:#8290a1;font-size:.5625rem;line-height:normal;white-space:normal;overflow-wrap:anywhere}
+.sku-workspace .sku-sync-status form{margin:0}
+.sku-workspace .sku-sync-button{position:relative;box-sizing:border-box;min-width:0;min-height:0;padding:4px 7px;border-color:#bfd2ec;border-radius:7px;background:#f5f9ff;color:#2868ca;font:inherit;font-size:.53125rem;font-weight:800;line-height:normal;white-space:nowrap;box-shadow:none}
+.sku-workspace .sku-sync-indicator{padding:2px 6px;font-size:12px;line-height:1.5;font-weight:600;letter-spacing:0;text-transform:none}
+.sku-workspace .sku-sync-reason{grid-column:1/-1;margin:0}
+@media(max-width:1200px){.sku-workspace .sku-sync-heading{grid-template-columns:minmax(0,1fr)}.sku-workspace .sku-sync-status{grid-column:1/-1;grid-row:3;justify-self:start}}
+
+/* Approved listing-header composition; preserve the existing sync utility contract. */
+.sku-workspace .sku-toolbar{padding:16px}
+.sku-workspace .sku-sync-heading{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 20px}
+.sku-workspace .sku-sync-title{flex:1 1 16rem;min-width:0;min-height:32px;flex-wrap:wrap;gap:8px 10px}
+.sku-workspace .sku-sync-title h2{min-width:0;margin:0;font-size:18px;overflow-wrap:anywhere}
+.sku-workspace .sku-sync-title .sku-sync-indicator{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.sku-workspace .sku-sync-status{display:flex;flex:0 1 34rem;max-width:100%;flex-wrap:wrap;gap:8px 10px;grid-column:auto;grid-row:auto;align-self:flex-start}
+.sku-workspace .sku-sync-status>small:first-child{flex:1 1 16rem}
+.sku-workspace .sku-sync-status form{flex:0 0 auto}
+.sku-workspace .sku-sync-reason{flex:1 0 100%}
+@media(any-pointer:coarse){.sku-workspace .sku-sync-title{min-height:44px}}
+
+/* Owner-requested Orders-format sync appearance; retain SKU-specific behavior. */
+.sku-workspace .sku-sync-status{flex:0 1 auto;margin-inline-start:auto;gap:8px;justify-content:flex-end}
+.sku-workspace .sku-sync-status>small:first-child{flex:0 1 auto;color:#8290a1}
+/* Reasons wrap under the controls without reserving intrinsic timestamp width. */
+.sku-workspace .sku-sync-reason{flex:1 1 100%;contain:inline-size}
+.sku-workspace .sku-sync-button{padding:4px 7px;border-color:#bfd2ec;border-radius:7px;background:#f5f9ff;color:#2868ca;font-weight:800}
+.sku-workspace .sku-sync-button:hover:not(:disabled){border-color:#78a5df;background:#eaf3ff}
+.sku-workspace .sku-sync-button:disabled{opacity:.46}
+html[data-theme=dark] .sku-workspace .sku-sync-button{border-color:#385676;background:#17283a;color:#8bb7f5}
+@media(max-width:760px){.sku-workspace .sku-sync-status{flex-basis:100%;margin-inline-start:0;justify-content:flex-start}}
+
+/* Latest owner direction: exact Orders visible geometry, separate touch hit area. */
+.sku-workspace .sku-sync-status form{display:flex;align-items:center;min-height:32px}
+.sku-workspace .sku-sync-button::after{content:"";position:absolute;left:0;right:0;top:50%;height:max(100%,32px);transform:translateY(-50%)}
+@media(any-pointer:coarse){.sku-workspace .sku-sync-status form{min-height:44px}.sku-workspace .sku-sync-button::after{height:max(100%,44px)}}

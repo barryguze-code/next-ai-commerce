@@ -159,3 +159,37 @@ receiving-session pictures use tenant-scoped record overrides (V75), with explic
 account access and operator checks, actual PNG/JPEG validation, and a 5 MB limit.
 These non-product images offer upload only, not an unrelated Amazon sync. Product
 sync retains the catalogue endpoint’s existing single-product mapping rules.
+
+
+## Marketplace SKU typed CSV — implementation awaiting local activation
+
+Marketplace SKU main listings have a narrowly enrolled typed snapshot exporter in
+source; other tables retain the CSV contracts above. The [approved contract](ai-handoffs/marketplace-skus/sku006-csv-contract-proposal.md) and
+[implementation evidence](ai-handoffs/marketplace-skus/sku006-implementation-evidence.md)
+define scalar field groups, required exact SKU/marketplace identity, chosen visible
+group order, component/currency expansion, internal null/N/A handling and existing query/sort
+scope. Limits are10,000 server-query listing candidates before client column filters,
+50MiB encoded output and60s. Owner amendment removes all companion value-state/data-quality columns. Unknown numeric inputs stay blank;
+negative typed amounts stay numbers, while dangerous text receives formula-prefix
+protection. Import identifier columns as Text to retain spreadsheet leading zeros.
+
+Generation uses one bounded local read snapshot and publishes a fully buffered CSV
+only on success. The shared control validates response/version/length before
+initiating a download and reports download started, not saved. There are no Amazon
+reads, sync calls or durable export jobs. This source feature is **not installed on
+running UAT**; a separately authorized, migration-disabled Eclipse restart and
+classpath reconciliation are required. Do not copy only its JavaScript.
+
+
+### Marketplace organization amendment — local verification 2026-10-22
+
+The owner-approved Marketplace specialization now exports mandatory `Parent SKU`
+and `Parent ASIN` columns alongside canonical child listing identity. Only fresh,
+verified local reciprocal evidence supplies context; unresolved values are blank.
+Verified non-buyable parents and decorative family headings are not CSV rows.
+Canonical filtering/count/pagination occurs before export; existing atomic typed
+values, authorization, exact SKU strings and formula protection remain unchanged.
+Marketplace screen and CSV default to New condition with explicit All conditions;
+All/FBA/FBM filters apply consistently. This specialization is now installed in the
+reviewed local runtime (the earlier not-installed note describes its earlier state).
+See engineering-plan Section45 for evidence and rollout limitations.

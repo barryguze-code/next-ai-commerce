@@ -19,19 +19,46 @@ public class InventoryRepository {
     private static final DateTimeFormatter LEDGER_TIME = DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a");
     static final String RESERVABLE_ORDER_STATUS_SQL =
         "upper(trim(coalesce(orders.order_status,''))) IN ('PENDING','UNSHIPPED')";
+    static final String LOCAL_ORDER_DEMAND_SQL=RESERVABLE_ORDER_STATUS_SQL+" AND "+com.nextaicommerce.platform.orders.OrderRepository.merchantFulfilledSql("orders");
     private final JdbcTemplate jdbc;
     public InventoryRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
     public record InventoryView(UUID itemId,String productName,String accountSku,String identifier,
             LocalDate expirationDate,BigDecimal quantity,BigDecimal reservedQuantity,BigDecimal unitCost,String currency,String flowRule,
             String plannedAction,String actionNotes,String costStatus,BigDecimal initiallyReceived,Instant firstReceivedAt,Instant lastMovementAt,
             UUID locationId,String locationCode,String locationName,String imageUrl,String vendorItemCode,
-            BigDecimal totalQuantity,BigDecimal totalReservedQuantity,int positionCount,String brand,String asin){
+            BigDecimal totalQuantity,BigDecimal totalReservedQuantity,int positionCount,String brand,String asin,BigDecimal unitsPerCase){
+        public InventoryView(UUID itemId,String productName,String accountSku,String identifier,
+                LocalDate expirationDate,BigDecimal quantity,BigDecimal reservedQuantity,BigDecimal unitCost,String currency,String flowRule,
+                String plannedAction,String actionNotes,String costStatus,BigDecimal initiallyReceived,Instant firstReceivedAt,Instant lastMovementAt,
+                UUID locationId,String locationCode,String locationName,String imageUrl,String vendorItemCode,
+                BigDecimal totalQuantity,BigDecimal totalReservedQuantity,int positionCount,String brand,String asin){
+            this(itemId,productName,accountSku,identifier,expirationDate,quantity,reservedQuantity,unitCost,currency,flowRule,
+                plannedAction,actionNotes,costStatus,initiallyReceived,firstReceivedAt,lastMovementAt,locationId,locationCode,locationName,
+                imageUrl,vendorItemCode,totalQuantity,totalReservedQuantity,positionCount,brand,asin,null);
+        }
         public InventoryView(UUID itemId,String productName,String accountSku,String identifier,
                 LocalDate expirationDate,BigDecimal quantity,BigDecimal reservedQuantity,BigDecimal unitCost,String currency,String flowRule,
                 String plannedAction,String actionNotes,String costStatus,BigDecimal initiallyReceived,Instant firstReceivedAt,Instant lastMovementAt){
             this(itemId,productName,accountSku,identifier,expirationDate,quantity,reservedQuantity,unitCost,currency,flowRule,
                 plannedAction,actionNotes,costStatus,initiallyReceived,firstReceivedAt,lastMovementAt,null,"MAIN","Main storage",null,null,
-                quantity,reservedQuantity,1,null,null);
+                quantity,reservedQuantity,1,null,null,null);
+        }
+        /** Current catalogue case equivalents, not a claim that physical cartons are unopened. */
+        public String onHandDisplay(){
+            if(unitsPerCase==null||unitsPerCase.compareTo(BigDecimal.ONE)<=0
+                    ||unitsPerCase.stripTrailingZeros().scale()>0||quantity.signum()<0)
+                return quantity.stripTrailingZeros().toPlainString()+" each";
+            BigDecimal cases=quantity.divideToIntegralValue(unitsPerCase);
+            BigDecimal loose=quantity.remainder(unitsPerCase);
+            return cases.stripTrailingZeros().toPlainString()+ (cases.compareTo(BigDecimal.ONE)==0?" case":" cases")
+                +(loose.signum()>0?" + "+loose.stripTrailingZeros().toPlainString()+" each":"");
+        }
+        public String onHandTitle(){
+            return unitsPerCase!=null&&unitsPerCase.compareTo(BigDecimal.ONE)>0
+                &&unitsPerCase.stripTrailingZeros().scale()<=0
+                ? quantity.stripTrailingZeros().toPlainString()+" each · "+unitsPerCase.stripTrailingZeros().toPlainString()
+                    +" each per current catalogue case; case equivalent, not sealed-carton count"
+                : "Case size unavailable or single-unit pack; quantity shown in eaches";
         }
         public String quantityUnits(){return quantity.setScale(0,java.math.RoundingMode.HALF_UP).toPlainString();}
         public String reservedUnits(){return reservedQuantity.setScale(0,java.math.RoundingMode.HALF_UP).toPlainString();}
@@ -301,7 +328,7 @@ public class InventoryRepository {
                    sum(position.quantity) OVER (PARTITION BY position.account_catalog_item_id) total_quantity,
                    sum(coalesce(reserved.quantity,0)+position.uncovered_demand) OVER (PARTITION BY position.account_catalog_item_id) total_reserved,
                    count(*) OVER (PARTITION BY position.account_catalog_item_id) position_count,
-                   product.brand,marketplace.asin
+                   product.brand,marketplace.asin,product.units_per_case
             FROM display_positions position
             JOIN account_catalog_items item ON item.tenant_id=position.tenant_id AND item.id=position.account_catalog_item_id
             JOIN global_catalog_products product ON product.id=item.global_product_id
@@ -334,12 +361,12 @@ public class InventoryRepository {
                 ORDER BY listing.last_seen_at DESC NULLS LAST LIMIT 1
             ) marketplace ON true
             ORDER BY position.expiration_date NULLS LAST,lower(coalesce(item.display_name,product.canonical_name))
-            """.formatted(RESERVABLE_ORDER_STATUS_SQL,RESERVABLE_ORDER_STATUS_SQL),(rs,row)->new InventoryView(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getString(4),
+            """.formatted(LOCAL_ORDER_DEMAND_SQL,LOCAL_ORDER_DEMAND_SQL),(rs,row)->new InventoryView(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getString(4),
                 rs.getObject(5,LocalDate.class),rs.getBigDecimal(6),rs.getBigDecimal(7),rs.getBigDecimal(8),rs.getString(9),rs.getString(10),
                 rs.getString(11),rs.getString(12),rs.getString(13),rs.getBigDecimal(14),
                 rs.getTimestamp(15)==null?null:rs.getTimestamp(15).toInstant(),rs.getTimestamp(16)==null?null:rs.getTimestamp(16).toInstant(),
                 rs.getObject(17,UUID.class),rs.getString(18),rs.getString(19),rs.getString(20),rs.getString(21),
-                rs.getBigDecimal(22),rs.getBigDecimal(23),rs.getInt(24),rs.getString(25),rs.getString(26)),tenantId,filter,filter,tenantId,filter,filter,tenantId,filter,filter);
+                rs.getBigDecimal(22),rs.getBigDecimal(23),rs.getInt(24),rs.getString(25),rs.getString(26),rs.getBigDecimal(27)),tenantId,filter,filter,tenantId,filter,filter,tenantId,filter,filter);
     }
 
     @Transactional(readOnly=true)
@@ -1173,7 +1200,7 @@ public class InventoryRepository {
             GROUP BY reservation.amazon_order_id,orders.order_status,item.seller_sku,item.quantity_ordered,
               component.quantity,totals.quantity,reservation.expiration_date,location.code,location.name
             ORDER BY min(reservation.created_at),reservation.amazon_order_id
-            """.formatted(RESERVABLE_ORDER_STATUS_SQL),(rs,row)->new ReservationView(rs.getString(1),rs.getString(2),rs.getString(3),rs.getInt(4),
+            """.formatted(LOCAL_ORDER_DEMAND_SQL),(rs,row)->new ReservationView(rs.getString(1),rs.getString(2),rs.getString(3),rs.getInt(4),
                 rs.getBigDecimal(5),rs.getBigDecimal(6),rs.getBigDecimal(7),rs.getBigDecimal(8),
                 rs.getObject(9,LocalDate.class),rs.getString(10),rs.getString(11),rs.getTimestamp(12).toInstant()),
             tenantId,itemId,expirationDate,expirationDate,locationId,locationId);

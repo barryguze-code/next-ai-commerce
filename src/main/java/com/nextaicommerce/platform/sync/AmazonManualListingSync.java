@@ -11,7 +11,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class AmazonManualListingSync {
     private final JdbcTemplate jdbc;
     public AmazonManualListingSync(JdbcTemplate jdbc) { this.jdbc=jdbc; }
-    public record Availability(boolean allowed, String message) {}
+    public record Availability(boolean allowed, String message,boolean running,Instant lastCompleted) {
+        public Availability(boolean allowed,String message){this(allowed,message,false,null);}
+        public String statusLabel(){return running?"● Refreshing":lastCompleted==null?"● Not synced":"● Synced";}
+        public String lastCheck(){return lastCompleted==null?"Amazon SKU check · Not yet completed":"Last Amazon SKU check · "+
+            java.time.format.DateTimeFormatter.ofPattern("MM/dd/yy · HH:mm 'UTC'").withZone(java.time.ZoneOffset.UTC).format(lastCompleted);}
+    }
 
     @Transactional(readOnly=true)
     public Availability availability(UUID tenant, UUID connection) {
@@ -28,11 +33,12 @@ public class AmazonManualListingSync {
             FROM marketplace_connections c WHERE c.tenant_id=? AND c.id=? AND c.channel='AMAZON'
             """,rs->{
                 if(!rs.next() || !"ACTIVE".equals(rs.getString(1))) return new Availability(false,"Verify the Amazon connection before syncing.");
-                if(rs.getBoolean(2) || rs.getBoolean(4)) return new Availability(false,"Amazon SKU sync is queued or running. Refresh to see updated listings.");
                 var completed=rs.getTimestamp(3);
+                Instant last=completed==null?null:completed.toInstant();
+                if(rs.getBoolean(2) || rs.getBoolean(4)) return new Availability(false,"Amazon SKU sync is queued or running. Refresh to see updated listings.",true,last);
                 if(completed!=null && completed.toInstant().plusSeconds(300).isAfter(Instant.now()))
-                    return new Availability(false,"Amazon SKUs were recently synced. Try again in five minutes.");
-                return new Availability(true,"Refresh listings from Amazon.");
+                    return new Availability(false,"Amazon SKUs were recently synced. Try again in five minutes.",false,last);
+                return new Availability(true,"Refresh listings from Amazon.",false,last);
             },tenant,connection);
     }
 

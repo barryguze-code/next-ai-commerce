@@ -27,7 +27,7 @@ test('cached fee tooltip is keyboard accessible, compact, and Buy Box has no cal
   assert.equal(await tooltip.evaluate(n=>getComputedStyle(n).pointerEvents),'none');
   const prior=requests;await page.locator('#profit').hover();await tooltip.waitFor();assert.equal(requests,prior);
   const widths=await tooltip.locator('dd').evaluateAll(nodes=>nodes.map(n=>({height:n.getBoundingClientRect().height,whiteSpace:getComputedStyle(n).whiteSpace})));
-  assert.ok(widths.every(n=>n.whiteSpace==='nowrap'&&n.height<25));
+  assert.ok(widths.every(n=>n.whiteSpace==='normal'&&n.height<25));
   await page.keyboard.press('Escape');assert.equal(await tooltip.isVisible(),false);
   assert.deepEqual(errors,[]);
  }finally{await browser.close();}

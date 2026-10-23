@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><body>
+<div th:fragment="stock(sku,stock)" class="fba-stock">
+  <dl class="fba-stock-totals">
+    <dt>Available</dt><dd th:text="${stock == null or stock.available == null ? 'Pending' : stock.available}">Pending</dd>
+    <dt>Inbound</dt><dd th:text="${stock == null or stock.totalInbound() == null ? 'Pending' : stock.totalInbound()}"></dd>
+    <dt>FC transfer</dt><dd th:text="${stock == null or stock.fcTransfer == null ? 'Pending' : stock.fcTransfer}"></dd>
+    <dt>Reserved</dt><dd th:text="${stock == null or stock.reserved == null ? 'Pending' : stock.reserved}"></dd>
+  </dl>
+  <details class="fba-stock-details">
+    <summary>Stock &amp; fees</summary>
+    <div class="fba-stock-breakdown">
+      <strong>FBA inventory</strong>
+      <p th:text="${sku}">SKU</p>
+      <p th:if="${stock == null or stock.observedAt == null}">Waiting for an Amazon inventory snapshot.</p>
+      <p th:if="${stock != null and stock.observedAt != null}" th:text="${'Snapshot: '+stock.observedDisplay()}"></p>
+      <p th:if="${stock != null and stock.observedAt != null and stock.stale()}">May be outdated · over 24 hours old</p>
+      <dl th:if="${stock != null}">
+        <dt>Available at Amazon</dt><dd th:text="${stock.available ?: 'Pending'}"></dd>
+        <dt>Inbound · working</dt><dd th:text="${stock.working ?: 'Pending'}"></dd>
+        <dt>Inbound · shipped</dt><dd th:text="${stock.shipped ?: 'Pending'}"></dd>
+        <dt>Inbound · receiving</dt><dd th:text="${stock.receiving ?: 'Pending'}"></dd>
+        <dt>Reserved total</dt><dd th:text="${stock.reserved ?: 'Pending'}"></dd>
+        <dt>FC transfer</dt><dd th:text="${stock.fcTransfer ?: 'Pending'}"></dd>
+        <dt>Unfulfillable</dt><dd th:text="${stock.unfulfillable ?: 'Pending'}"></dd>
+        <dt>Warehouse available</dt><dd th:text="${stock.warehouseAvailable == null ? 'Needs mapping' : #numbers.formatDecimal(stock.warehouseAvailable,1,0)}"></dd>
+        <dt>Estimated FBA fee / unit</dt><dd th:text="${stock.fulfillmentFee == null ? 'Pending' : (stock.currency ?: '')+' '+#numbers.formatDecimal(stock.fulfillmentFee,1,2)}"></dd>
+      </dl>
+      <p th:if="${stock != null and stock.feeObservedAt != null}" th:text="${'Fee snapshot: '+stock.feeObservedDisplay()}"></p>
+      <p>Warehouse availability is in complete SKU units across mapped locations. Amazon quantities are separate; reserved subcategories must not be added twice.</p>
+      <a class="secondary-button compact-button" th:href="@{/app/inventory/fba-shipments(q=${sku})}">FBA shipments →</a>
+    </div>
+  </details>
+</div>
+</body></html>

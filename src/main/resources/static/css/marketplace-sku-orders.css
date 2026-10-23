@@ -26,3 +26,24 @@
 .sku-inline-buybox.price-match .profit-calculator-art{display:none}
 .sku-workspace .sku-table .item-weekly-sales .weekly-sales-bars{height:31px;min-height:31px;padding-top:10px;box-sizing:border-box;width:88px;min-width:88px}
 .sku-workspace .sku-table .item-weekly-sales .weekly-sales-bars>span{max-height:20px}
+
+/* Final SKU commercial-column presentation, after shared widget and profit styles. */
+@media(min-width:761px){
+  .sku-workspace .sku-table.table-widget th[data-column=product-details]{width:343px}
+  .sku-workspace .sku-table.table-widget th[data-column=status]{width:115px}
+  .sku-workspace .sku-table.table-widget th[data-column=price-shipping]{width:150px}
+  .sku-workspace .sku-table.table-widget th[data-column=profit]{width:150px}
+  .sku-workspace .sku-table.table-widget th[data-column=available],.sku-workspace .sku-table.table-widget th[data-column="4w-sales"]{width:170px}
+  .sku-workspace .sku-table.table-widget td[data-label="Status"] .fulfillment-pill{margin:6px 0 0;font-size:var(--ui-meta,12px);font-weight:600}
+  .sku-workspace .sku-table.table-widget td[data-label="Price (+ shipping)"]>.profit-price-link,.sku-workspace .sku-table .profit-open>span,.sku-workspace .sku-table td[data-label="Available"]>strong{font-size:18px;font-weight:650;font-variant-numeric:tabular-nums}
+  .sku-workspace .sku-inline-buybox{align-items:flex-start;justify-content:flex-start;flex-wrap:wrap;gap:2px 6px;white-space:normal;line-height:1.5}
+  .sku-workspace .sku-inline-buybox>small{font-size:var(--ui-meta,12px);text-transform:none}
+  .sku-workspace .sku-inline-buybox .buy-box-price{font-size:13px}
+  .sku-workspace .customer-shipping-note{justify-content:flex-start;font-size:13px}
+  .sku-workspace .sku-table .item-weekly-sales{align-items:flex-start;min-height:78px}
+  .sku-workspace .sku-table .weekly-sold-totals{font-size:14px;font-weight:600}
+  .sku-workspace .sku-table .weekly-sales{margin:18px 0 0}
+  .sku-workspace .sku-table .fba-stock{align-items:flex-start}
+  .sku-workspace .sku-table .fba-stock-totals dd{color:var(--ink)}
+  .sku-workspace .sku-table .fba-stock-totals dd:first-of-type{font-size:18px;font-weight:650}
+}

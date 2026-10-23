@@ -50,3 +50,35 @@
 .profit-fee-tooltip[hidden]{display:none}.profit-fee-tooltip>strong{font-size:12px}.profit-fee-tooltip dl{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:5px 12px;margin:9px 0}.profit-fee-tooltip dt{color:var(--muted,#718096)}.profit-fee-tooltip dd{margin:0;white-space:nowrap;font-weight:650;font-variant-numeric:tabular-nums}.profit-fee-tooltip>small{display:block;font-size:10px;line-height:1.5;color:var(--muted,#718096)}
 .app-page .rp-sku-line{grid-template-columns:minmax(240px,3fr) 140px 95px 65px 125px 100px}
 .app-page .rp-sku-table{min-width:865px}
+.profit-dialog .profit-packages[hidden],.profit-dialog .profit-rate-settings[hidden]{display:none!important}
+.orders-workspace .item-profit .profit-open.profit-missing>span{font-size:14px;line-height:1.4;font-weight:600;color:var(--muted)}
+.orders-workspace .item-profit .profit-open>small{font-size:12px;line-height:1.4}
+.profit-fee-tooltip.dark-pill{width:min(420px,calc(100vw - 24px));max-width:calc(100vw - 24px);padding:14px 16px;line-height:1.45}
+.profit-fee-tooltip.dark-pill dl{grid-template-columns:minmax(100px,2fr) minmax(0,3fr);gap:8px 16px}
+.profit-fee-tooltip.dark-pill dt,.profit-fee-tooltip.dark-pill dd{min-width:0;white-space:normal;word-break:normal;overflow-wrap:break-word}
+.profit-fee-tooltip.dark-pill dd{text-align:right}
+.orders-workspace .item-sales .sale-price-pending{font-size:14px;font-weight:500;line-height:1.4;color:var(--muted)}
+.profit-fee-tooltip.dark-pill dt,.profit-fee-tooltip.dark-pill>small{color:inherit;opacity:.85}
+#profit-dialog .dialog-header{display:flex;align-items:center;gap:14px;padding:18px 22px}
+#profit-dialog .profit-header-copy{flex:1;min-width:0}
+#profit-dialog #profit-title{font-size:18px;line-height:1.35;margin:0;overflow-wrap:break-word}
+#profit-dialog [data-profit-currency]{display:block;margin-top:5px;font-size:13px;color:var(--muted)}
+#profit-dialog .profit-item-defaults{margin:12px 0;font-size:13px}
+#profit-dialog .profit-item-defaults summary{font-weight:600;padding:6px 0}
+#profit-dialog .profit-item-defaults>.cell-note{font-size:12px;line-height:1.45;color:var(--muted);margin:4px 0 8px}
+#profit-dialog .profit-item-cost{margin:6px 0}
+#profit-dialog .profit-item-cost label{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:12px;font-size:13px;font-weight:500;align-items:center}
+#profit-dialog .profit-package{display:grid;grid-template-columns:minmax(0,1fr) 105px 36px;gap:10px;align-items:end;margin:12px 0}
+#profit-dialog .profit-package label{min-width:0;font-size:12px;color:var(--muted);gap:5px}
+#profit-dialog .profit-package .location-picker-trigger{display:flex;min-height:38px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--white);color:var(--ink);font-size:13px}
+#profit-dialog .profit-package>button{height:36px;border:1px solid var(--line);border-radius:9px;background:var(--white);color:var(--muted);font-size:20px}
+#profit-dialog .dialog-actions{position:sticky;bottom:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;background:var(--white);padding:14px 22px}
+#profit-dialog .dialog-actions small{flex:1;min-width:150px;max-width:none;font-size:12px;line-height:1.4}
+#profit-dialog .dialog-actions button{min-height:38px;font-size:14px}
+
+/* Imported cost evidence stays secondary without stealing the amount line. */
+#profit-dialog.profit-fba .profit-totals{grid-template-columns:minmax(145px,1fr) minmax(0,1.3fr)}
+#profit-dialog.profit-fba .profit-totals dt,#profit-dialog.profit-fba .profit-totals dd{min-width:0}
+.profit-cost-evidence{display:block;margin-top:4px;font-size:12px;font-weight:400;line-height:1.4;white-space:normal;overflow-wrap:anywhere;color:var(--muted)}
+.profit-cost-evidence:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:2px}
+.profit-fee-tooltip .profit-cost-evidence{color:inherit;opacity:.85}

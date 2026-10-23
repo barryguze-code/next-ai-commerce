@@ -53,7 +53,7 @@ class OrderTabTotalsDatabaseTest {
     }
     UUID item(String order,String sku,int quantity) {
         UUID id=UUID.randomUUID();
-        jdbc.update("INSERT INTO amazon_order_items(id,tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,?,?,?,?)",id,tenant,connection,order,id.toString(),sku,quantity);
+        jdbc.update("INSERT INTO amazon_order_items(id,tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered,item_price) VALUES (?,?,?,?,?,?,?,?)",id,tenant,connection,order,id.toString(),sku,quantity,quantity*20);
         return id;
     }
     List<Long> totals(String sql,UUID t,UUID c) {
@@ -82,6 +82,17 @@ class OrderTabTotalsDatabaseTest {
             assertThat(totals(OrderTabTotalsQuery.SQL,tenant,connection).get(13)).isEqualTo(66);
             assertThat(totals(OrderTabTotalsQuery.SQL,UUID.randomUUID(),connection)).containsOnly(0L);
             assertThat(totals(OrderTabTotalsQuery.SQL,tenant,UUID.randomUUID())).containsOnly(0L);
+        });
+    }
+    @Test void excludesUnknownAndNonpositivePricesFromLostTotals() {
+        tx.executeWithoutResult(s->{fixture();listing("LOST","MFN",10);
+            UUID missing=order("missing","Unshipped","NEEDS_MAPPING",false,"LOST",1);
+            UUID zero=order("zero-price","Unshipped","NEEDS_MAPPING",false,"LOST",1);
+            order("positive","Unshipped","NEEDS_MAPPING",false,"LOST",1);
+            jdbc.update("UPDATE amazon_order_items SET item_price=NULL WHERE id=?",missing);
+            jdbc.update("UPDATE amazon_order_items SET item_price=0 WHERE id=?",zero);
+            equivalent();
+            assertThat(totals(OrderTabTotalsQuery.SQL,tenant,connection).get(12)).isEqualTo(1);
         });
     }
     @Test void honorsLatestFbaSnapshotCurrencyAndMarketplace() {
@@ -130,7 +141,7 @@ class OrderTabTotalsDatabaseTest {
     @Test void repeatedSkuTotalsStayWithinOneSecondDatabaseBudget() {
         tx.executeWithoutResult(s->{fixture();listing("REPEAT","MFN",10);
             jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,order_status,purchase_date) SELECT ?,?,'US','load-'||n,'Unshipped',now() FROM generate_series(1,4500) n",tenant,connection);
-            jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) SELECT ?,?,'load-'||n,'load-'||n||'-'||p,'REPEAT',p FROM generate_series(1,4500) n CROSS JOIN generate_series(1,2) p",tenant,connection);
+            jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered,item_price) SELECT ?,?,'load-'||n,'load-'||n||'-'||p,'REPEAT',p,p*20 FROM generate_series(1,4500) n CROSS JOIN generate_series(1,2) p",tenant,connection);
             // Production has collected statistics; freshly bulk-loaded fixtures do not.
             for(String table:List.of("amazon_orders","amazon_order_items","amazon_listings","marketplace_sku_mappings"))jdbc.execute("ANALYZE "+table);
             long baselineStart=System.nanoTime();var baseline=totals(OrderTabsSqlExportTest.legacySql(),tenant,connection);

@@ -14,6 +14,22 @@ import tools.jackson.databind.ObjectMapper;
 /** Only the disposable, fixed loopback test database; never UAT or production. */
 @EnabledIfSystemProperty(named="localTestDatabase",matches="true")
 class OrderSmartFiltersDatabaseTest {
+ @Test void buyBoxLostExcludesMissingAndZeroSaleAmounts(){tx.executeWithoutResult(s->{
+  UUID tenant=UUID.randomUUID(),connection=UUID.randomUUID();
+  jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,'Price guard test')",tenant,tenant.toString());
+  jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON','test','US','test','ACTIVE','Test','America/Chicago',now())",connection,tenant);
+  jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,price,buy_box_price,currency,quantity,fulfillment_channel) VALUES (?,?,'US','SKU',30,25,'USD',10,'DEFAULT')",tenant,connection);
+  var ids=new ArrayList<String>();UUID confirmed=null;
+  for(int i=0;i<3;i++){
+   String order="price-"+i;ids.add(order);UUID item=UUID.randomUUID();if(i==2)confirmed=item;
+   jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status,currency) VALUES (?,?,'US',?,now(),'Pending','USD')",tenant,connection,order);
+   jdbc.update("INSERT INTO amazon_order_items(id,tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered,item_price,currency) VALUES (?,?,?,?,?,'SKU',1,?,'USD')",item,tenant,connection,order,order,i==0?null:i==1?0:30);
+  }
+  var repo=new OrderRepository(jdbc);
+  assertThat(repo.filteredSummary(tenant,connection,"BUY_BOX_LOST","",Map.of()).orders()).isEqualTo(1);
+  assertThat(repo.buyBoxLostItems(tenant,connection,ids)).containsExactly(confirmed);
+  assertThat(repo.buyBoxLostItems(tenant,UUID.randomUUID(),ids)).isEmpty();
+ });}
  static JdbcTemplate jdbc;static TransactionTemplate tx;static String schema;
  @BeforeAll static void setup() throws Exception {
   schema="smart_filter_test_"+UUID.randomUUID().toString().replace("-","");
@@ -32,6 +48,18 @@ class OrderSmartFiltersDatabaseTest {
   assertThat(repo.orders(tenant,connection,"ALL","",0,10).rows()).hasSize(10);
   var filtered=repo.filteredSummary(tenant,connection,"ALL","",Map.of("f_quantity_min","3"));assertThat(filtered.orders()).isEqualTo(31);assertThat(filtered.units()).isEqualTo(93);assertThat(filtered.amounts().getFirst().sales()).isEqualByComparingTo("620");
   assertThat(repo.filteredSummary(tenant,connection,"ALL","absent",Map.of()).orders()).isZero();
+ });}
+ @Test void unmappedFbaPendingAndShippedOrdersAreIncluded(){tx.executeWithoutResult(s->{
+  UUID tenant=UUID.randomUUID(),connection=UUID.randomUUID();jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,'FBA mapping test')",tenant,tenant.toString());
+  jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON','test','ATVPDKIKX0DER','test','ACTIVE','Test','America/Los_Angeles',now())",connection,tenant);
+  for(String status:List.of("Pending","Shipped")){
+   jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status,fulfillment_channel,currency) VALUES (?,?,'ATVPDKIKX0DER',?,now(),?,'AFN','USD')",tenant,connection,status,status);
+   jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered,currency) VALUES (?,?,?,?,'UNMAPPED',2,'USD')",tenant,connection,status,status);
+  }
+  var repo=new OrderRepository(jdbc);var summary=repo.filteredSummary(tenant,connection,"NEEDS_MAPPING","",Map.of());
+  assertThat(summary.orders()).isEqualTo(2);assertThat(summary.units()).isEqualTo(4);
+  assertThat(repo.orders(tenant,connection,"NEEDS_MAPPING","",0,25).rows()).hasSize(2);
+  assertThat(repo.orders(tenant,UUID.randomUUID(),"NEEDS_MAPPING","",0,25).rows()).isEmpty();
  });}
  @Test void marketplaceSkuFiltersExecuteAgainstSchema(){tx.executeWithoutResult(s->{
  var repo=new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository(jdbc);UUID t=UUID.randomUUID(),c=UUID.randomUUID();

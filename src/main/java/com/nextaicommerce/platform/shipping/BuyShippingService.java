@@ -19,9 +19,12 @@ public class BuyShippingService {
     private final AmazonMerchantFulfillmentClient amazon;
     private final ObjectMapper json;
     private final ShippingLabelCrypto crypto;
+    private final ShippingPreferences preferences;
+    private final CarrierLabelComposer labelComposer;
 
-    public BuyShippingService(BuyShippingRepository repository,AmazonMerchantFulfillmentClient amazon,ObjectMapper json,ShippingLabelCrypto crypto){
+    public BuyShippingService(BuyShippingRepository repository,AmazonMerchantFulfillmentClient amazon,ObjectMapper json,ShippingLabelCrypto crypto,ShippingPreferences preferences,CarrierLabelComposer labelComposer){
         this.repository=repository;this.amazon=amazon;this.json=json;this.crypto=crypto;
+        this.preferences=preferences;this.labelComposer=labelComposer;
     }
 
     public record Context(BuyShippingRepository.StoreSettings settings,BuyShippingRepository.OrderInfo order,
@@ -46,6 +49,19 @@ public class BuyShippingService {
 
     public BuyShippingRepository.Address saveAddress(UUID tenantId,UUID connectionId,BuyShippingRepository.Address input){
         return repository.saveAddress(tenantId,connectionId,input);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public UUID savePackage(UUID tenant,UUID store,String order,PackageInput box){
+        var context=context(tenant,store,order);ensureEligible(context.order());
+        Map<String,Integer> remaining=new HashMap<>();
+        for(var item:context.items()){int quantity=Math.max(0,item.remaining()-context.committedQuantities().getOrDefault(item.orderItemId(),0));if(quantity>0)remaining.put(item.orderItemId(),quantity);}
+        Map<String,Integer> used=new HashMap<>();validatePackage(box,remaining,used);
+        if(!used.equals(remaining))throw new IllegalArgumentException("Save one package containing all remaining order items to make this order package-ready.");
+        var profile=new BuyShippingRepository.PackageProfile(null,box.name()==null||box.name().isBlank()?"Order package":box.name(),box.containerCode(),box.length(),box.width(),box.height(),dimensionUnit(box.dimensionUnit()),box.weight(),weightUnit(box.weightUnit()),box.preferredCarrier(),temperature(box.temperatureClass()));
+        UUID id=repository.saveProfile(tenant,store,profile,box.saveForItems()?context.items().stream().map(BuyShippingRepository.OrderItem::sellerSku).toList():List.of());
+        String composition=remaining.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(e->e.getKey()+":"+e.getValue()).collect(java.util.stream.Collectors.joining("|"));
+        repository.readyPackage(tenant,store,order,id,composition);return id;
     }
 
     public QuoteResult quote(UUID tenantId,UUID connectionId,String orderId,QuoteInput input,String actor){
@@ -107,8 +123,11 @@ public class BuyShippingService {
     public void queueRefund(UUID tenantId,UUID connectionId,UUID shipmentId,String actor){repository.queueRefund(tenantId,connectionId,shipmentId,actor);}
     public List<BuyShippingRepository.ShipmentView> status(UUID tenantId,UUID connectionId,String orderId){return repository.shipments(tenantId,connectionId,orderId);}
     public byte[] label(UUID tenantId,UUID connectionId,UUID shipmentId,ShippingLabelCrypto crypto){
-        var artifact=repository.artifact(tenantId,connectionId,shipmentId);if(artifact==null)throw new IllegalArgumentException("This label is not ready yet.");
-        return crypto.decrypt(artifact.encryptedPayload(),artifact.nonce());
+        var artifact=repository.artifact(tenantId,connectionId,shipmentId,"CARRIER_LABEL");if(artifact==null)throw new IllegalArgumentException("The original carrier label is not available yet.");
+        var settings=preferences.get(tenantId,connectionId);
+        var lines=repository.packingLines(tenantId,shipmentId).stream().map(line->new CarrierLabelComposer.Line(line.brand(),line.sellerSku(),line.title(),line.quantity())).toList();
+        byte[] result=labelComposer.compose(crypto.decrypt(artifact.encryptedPayload(),artifact.nonce()),repository.shipmentOrder(tenantId,connectionId,shipmentId),lines,settings.layout(),FedExClient.Environment.PRODUCTION);
+        return "LETTER".equals(settings.labelSize())?labelComposer.letter(result):result;
     }
 
     private JsonNode details(String orderId,BuyShippingRepository.OrderInfo order,BuyShippingRepository.Address address,PackageInput box,Instant requestedShipDate){

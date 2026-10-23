@@ -22,6 +22,8 @@ app:
     external-enabled: true
   amazon:
     sync-enabled: true
+    # Read-only recipient import; encrypted locally and never sent to FedEx sandbox.
+    recipient-import-enabled: true
     write-enabled: false
     # Local UAT continuously imports Amazon data, but write-enabled remains false.
     recurring-enabled: true

@@ -101,9 +101,8 @@ public class ShippingDeskRepository {
                    profile.id,profile.name,profile.container_code,profile.length,profile.width,profile.height,profile.dimension_unit,
                    profile.weight,profile.weight_unit,profile.preferred_carrier,profile.temperature_class
             FROM amazon_orders orders JOIN open_items item ON item.amazon_order_id=orders.amazon_order_id AND item.remaining>0
-            JOIN marketplace_sku_package_defaults defaults ON defaults.tenant_id=item.tenant_id
-              AND defaults.marketplace_connection_id=item.marketplace_connection_id AND defaults.seller_sku=item.seller_sku
-            JOIN shipping_package_profiles profile ON profile.tenant_id=defaults.tenant_id AND profile.id=defaults.package_profile_id AND profile.status='ACTIVE'
+            JOIN shipping_order_packages ready ON ready.tenant_id=orders.tenant_id AND ready.marketplace_connection_id=orders.marketplace_connection_id AND ready.amazon_order_id=orders.amazon_order_id
+            JOIN shipping_package_profiles profile ON profile.tenant_id=ready.tenant_id AND profile.marketplace_connection_id=ready.marketplace_connection_id AND profile.id=ready.package_profile_id AND profile.status='ACTIVE'
             WHERE orders.tenant_id=? AND orders.marketplace_connection_id=?
               AND regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g') IN ('PENDING','UNSHIPPED')
               AND upper(coalesce(orders.fulfillment_channel,'')) NOT IN ('AFN','AMAZON')
@@ -111,8 +110,8 @@ public class ShippingDeskRepository {
                 WHERE existing.tenant_id=orders.tenant_id AND existing.marketplace_connection_id=orders.marketplace_connection_id
                   AND existing.amazon_order_id=orders.amazon_order_id AND existing.state IN ('PENDING','RATING','RATED','PURCHASE_QUEUED'))
             GROUP BY orders.amazon_order_id,orders.purchase_date,orders.latest_ship_date,orders.latest_delivery_date,
-                orders.ship_service_level,orders.currency,profile.id
-            HAVING count(DISTINCT profile.id)=1 AND count(DISTINCT item.id)=(SELECT count(*) FROM open_items all_items
+                orders.ship_service_level,orders.currency,profile.id,ready.composition
+            HAVING ready.composition=string_agg(item.amazon_order_item_id||':'||item.remaining::text,'|' ORDER BY item.amazon_order_item_id) AND profile.length>0 AND profile.width>0 AND profile.height>0 AND profile.weight>0 AND count(DISTINCT profile.id)=1 AND count(DISTINCT item.id)=(SELECT count(*) FROM open_items all_items
                 WHERE all_items.amazon_order_id=orders.amazon_order_id AND all_items.remaining>0)
             ORDER BY orders.latest_ship_date NULLS LAST,orders.purchase_date
             LIMIT 200

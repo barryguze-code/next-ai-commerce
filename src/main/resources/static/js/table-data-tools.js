@@ -105,6 +105,26 @@ function filterMatch(value,filter){
  const parse=v=>filter.type==='date'?Date.parse(v):Number(v);
  return Number.isFinite(number)&&(!filter.min||number>=parse(filter.min))&&(!filter.max||number<=parse(filter.max));
 }
+// Marketplace-only typed snapshot contract. Other table exporters retain their adapters.
+async function marketplaceCsv(columns,filters){
+ const url=new URL('/app/marketplace-skus/export.csv',location.origin);
+ const current=new URL(location.href);
+ for(const [key,value]of current.searchParams)if(['q','status','sort','direction'].includes(key)||key.startsWith('f_'))url.searchParams.set(key,value);
+ url.searchParams.set('columns',columns.map(c=>c.id).join(','));
+ url.searchParams.set('columnFilters',JSON.stringify(filters));
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),60000);
+ try{
+  const response=await fetch(url,{credentials:'same-origin',cache:'no-store',signal:controller.signal,headers:{Accept:'text/csv'}});
+  if(!response.ok){let message='CSV preparation failed. No complete download was produced. Please retry.';try{const problem=await response.json();if(typeof problem.detail==='string'&&problem.detail.length<300)message=problem.detail;}catch{}throw new Error(message);}
+  const count=response.headers.get('X-CSV-Rows'),size=Number(response.headers.get('Content-Length'));
+  if(!response.headers.get('Content-Type')?.toLowerCase().startsWith('text/csv')||response.headers.get('X-CSV-Schema')!=='marketplace-skus-v1'||!/^\d+$/.test(count||'')||Number(count)>10000||!Number.isSafeInteger(size)||size<3||size>50*1024*1024)throw new Error('Invalid CSV response. No download was started.');
+  const blob=await response.blob();if(blob.size!==size)throw new Error('Incomplete CSV response. No download was started.');
+  const filename=response.headers.get('Content-Disposition')?.match(/filename="(marketplace-skus-\d{8}T\d{6}Z\.csv)"/)?.[1];
+  if(!filename)throw new Error('Invalid CSV filename. No download was started.');
+  const objectUrl=URL.createObjectURL(blob);try{const link=document.createElement('a');link.href=objectUrl;link.download=filename;link.click();}finally{setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);}
+  return{rows:Number(count)};
+ }catch(error){if(error.name==='AbortError')throw new Error('Export timed out or was cancelled. Narrow the filters and retry.');throw error;}finally{clearTimeout(timer);}
+}
 function init(root){
   if(root.dataset.dataToolsReady)return;
   const cols=headers(root);if(!cols.length)return;
@@ -252,6 +272,11 @@ function init(root){
     const progress=window.NextAiBackgroundJobs?.start('Download '+root.dataset.tableWidget,'Preparing CSV. Keep this page open until the download starts.');
     try{
       const selected=headers(root).filter(col=>!col.el.hidden&&!['select','action','actions','record-context'].includes(col.id));
+      if(root.dataset.tableWidget==='marketplace-skus'){
+        const result=await marketplaceCsv(selected,saved.filters);
+        status.textContent='CSV prepared: '+result.rows+' rows. Download started.';
+        progress?.complete(status.textContent);return;
+      }
       const exported=exportColumns(root,selected);
       const exportFilters={...saved.filters};
       let data=[];

@@ -54,8 +54,8 @@ class PlatformUiStandardTest {
         assertThat(read("static/js/shipping-desk.js")).contains(
             "signature===candidateSignature", "selected.has(item.orderId)", "entityType:'ORDER'",
             "menu.dataset.actionSuggestionMenu", "root.dataset.canCollaborate");
-        assertThat(read("templates/shipping.html")).contains("data-can-collaborate=${canEditCatalog}",
-            "data-column=\"record-context\"");
+        assertThat(read("templates/shipping.html")).contains("Shipping-label purchase is not available from the Orders table.",
+            "/app/shipping/preferences").doesNotContain("Open the Buy Shipping action beside an order");
     }
 
     @Test void readOnlyRecordsStillOfferContributionWithoutWriteActions() throws Exception {

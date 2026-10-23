@@ -22,6 +22,7 @@ public class AmazonInitializationService {
         new Step("FINANCES_30_DAY", false),
         new Step("REIMBURSEMENTS_30_DAY", false),
         new Step("FEES_SNAPSHOT", false),
+        new Step("FBA_INBOUND", false),
         new Step("FBA_CUSTOMER_SHIPMENTS_30_DAY", false),
         new Step("FINAL_RECONCILIATION", false));
 

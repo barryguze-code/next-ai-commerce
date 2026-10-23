@@ -107,7 +107,7 @@ public class ShippingDeskService {
         if(!List.of("READY","PARTIAL").contains(summary.state()))
             throw new IllegalStateException("This batch is still processing. Print it after every purchase reaches a final state.");
         List<ShippingDeskRepository.BatchArtifact> artifacts=desk.batchArtifacts(tenantId,connectionId,batchId);
-        byte[] merged=pdf.merge(artifacts.stream().map(item->crypto.decrypt(item.encryptedPayload(),item.nonce())).toList());
+        byte[] merged=pdf.merge(artifacts.stream().map(item->shipping.label(tenantId,connectionId,item.shipmentId(),crypto)).toList());
         for(var artifact:artifacts)desk.recordAccess(tenantId,artifact.shipmentId());return merged;
     }
     public ShippingDeskRepository.PolicySettings savePolicy(UUID tenantId,UUID connectionId,ShippingDeskRepository.PolicySettings value){return desk.savePolicy(tenantId,connectionId,value);}

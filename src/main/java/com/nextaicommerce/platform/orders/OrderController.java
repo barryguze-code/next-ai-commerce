@@ -30,6 +30,7 @@ public class OrderController {
     @Autowired(required=false) void configureCollaboration(CollaborationRepository repository){this.collaboration=repository;}
     @Autowired private OrderProfitSummary profitSummary;
     @Autowired private SkuRefundHistory refundHistory;
+    @Autowired private com.nextaicommerce.platform.fba.FbaReadRepository fba;
     @GetMapping("/app/orders/refund-history") @ResponseBody
     SkuRefundHistory.RefundPage refundOrders(@RequestParam(defaultValue="") String sku,
             @RequestParam(defaultValue="28") int days,@RequestParam(defaultValue="-1") int week,
@@ -72,6 +73,10 @@ public class OrderController {
         var items=orders.itemsForOrders(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList());
         if(smart.keySet().stream().anyMatch(k->k.startsWith("f_"))){var matches=orders.matchingItems(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList(),smart);items.replaceAll((id,list)->list.stream().filter(item->matches.contains(item.id())).toList());}
         model.addAttribute("soldTotals",orders.soldTotals(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).distinct().toList()));
+        model.addAttribute("fbaStock",fba.stocks(tenant,connection,rows.stream()
+            .filter(order->"FBA".equals(order.fulfillmentTag()))
+            .flatMap(order->items.getOrDefault(order.amazonOrderId(),java.util.List.of()).stream())
+            .map(OrderRepository.OrderItemView::sellerSku).toList()));
         model.addAttribute("buyBoxLostItems",orders.buyBoxLostItems(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList()));
         model.addAttribute("fourWeekSales",orders.fourWeekSales(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).toList()));
         model.addAttribute("refundHistory",refundHistory.fourWeeks(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).toList()));

@@ -55,3 +55,7 @@ dialog.mw-picture-menu::backdrop{background:transparent}
 [data-picture-sku] .mw-picture-edit svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2}
 [data-picture-sku]:hover .mw-picture-edit,[data-picture-sku]:focus-within .mw-picture-edit{opacity:1}
 @media(hover:none){[data-picture-sku] .mw-picture-edit{opacity:1}}
+.mapping-warning-trigger{display:inline-flex;align-items:center;flex-wrap:wrap;gap:8px;border:0;background:transparent;padding:3px 4px;color:var(--ink);font:inherit;cursor:pointer;border-radius:6px}
+.mapping-warning-trigger:hover,.mapping-warning-trigger:focus-visible{outline:1px solid var(--blue);background:var(--sky)}
+.mapping-unmapped-badge{display:inline-block;padding:3px 8px;border-radius:999px;background:var(--red-soft,#fde8e8);color:var(--red,#bb3039);font-size:12px;font-weight:700;line-height:1.3}
+html[data-theme=dark] .mapping-unmapped-badge{background:#40272c;color:#ef9ca2}

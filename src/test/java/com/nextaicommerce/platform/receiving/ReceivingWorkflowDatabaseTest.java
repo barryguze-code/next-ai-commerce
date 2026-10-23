@@ -432,6 +432,8 @@ class ReceivingWorkflowDatabaseTest {
         var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
         tx.executeWithoutResult(s->{setTenant();
             jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,price,buy_box_price,quantity,fulfillment_channel) VALUES (?,?,'QA','SHELF-SKU',20,19,99,'MFN')",tenant,connection);
+            // A price-comparison alert requires a priced order item, not missing revenue.
+            jdbc.update("UPDATE amazon_order_items SET item_price=20 WHERE tenant_id=? AND marketplace_connection_id=?",tenant,connection);
         });
         // Mapped physical availability is authoritative, not stale Amazon quantity.
         assertThat(repo.orders(tenant,connection,"BUY_BOX_LOST","",0,25).total()).isZero();

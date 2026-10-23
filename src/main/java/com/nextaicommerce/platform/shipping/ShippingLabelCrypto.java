@@ -18,20 +18,28 @@ public class ShippingLabelCrypto {
     public boolean configured(){return key!=null;}
 
     public Encrypted encrypt(byte[] plain){
+        return encrypt(plain,null);
+    }
+    public Encrypted encrypt(byte[] plain,byte[] context){
         if(key==null)throw new IllegalStateException("Label encryption is not configured.");
         try{
             byte[] nonce=new byte[12];random.nextBytes(nonce);
             Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE,new SecretKeySpec(key,"AES"),new GCMParameterSpec(128,nonce));
+            if(context!=null)cipher.updateAAD(context);
             return new Encrypted(cipher.doFinal(plain),nonce);
         }catch(Exception ex){throw new IllegalStateException("The shipping label could not be encrypted.",ex);}
     }
 
     public byte[] decrypt(byte[] payload,byte[] nonce){
+        return decrypt(payload,nonce,null);
+    }
+    public byte[] decrypt(byte[] payload,byte[] nonce,byte[] context){
         if(key==null)throw new IllegalStateException("Label encryption is not configured.");
         try{
             Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE,new SecretKeySpec(key,"AES"),new GCMParameterSpec(128,nonce));
+            if(context!=null)cipher.updateAAD(context);
             return cipher.doFinal(payload);
         }catch(Exception ex){throw new IllegalStateException("The stored shipping label could not be opened.",ex);}
     }

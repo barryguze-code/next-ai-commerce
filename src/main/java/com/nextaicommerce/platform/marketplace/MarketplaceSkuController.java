@@ -26,8 +26,10 @@ public class MarketplaceSkuController {
     private static final Logger log=LoggerFactory.getLogger(MarketplaceSkuController.class);
     private final MarketplaceSkuRepository skus;
     @Autowired private com.nextaicommerce.platform.orders.SkuRefundHistory refunds;
+    @Autowired private com.nextaicommerce.platform.fba.FbaReadRepository fba;
     private final WorkspaceAccessRepository workspace;
     private final CatalogRepository catalog;
+    @Autowired(required=false) private MarketplaceSkuFamilies families;
     private CollaborationRepository collaboration;
     private com.nextaicommerce.platform.sync.AmazonManualListingSync listingSync;
 
@@ -42,6 +44,7 @@ public class MarketplaceSkuController {
     @Autowired(required=false)
     void configureListingSync(com.nextaicommerce.platform.sync.AmazonManualListingSync sync){this.listingSync=sync;}
 
+    @org.springframework.transaction.annotation.Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     @GetMapping("/app/marketplace-skus")
     String marketplaceSkus(@RequestParam(defaultValue = "") String q,
             @RequestParam(defaultValue = "ALL") String status,
@@ -74,22 +77,44 @@ public class MarketplaceSkuController {
             return "marketplace-skus";
         }
 
+        filters=MarketplaceSkuFilters.defaults(filters);
+        model.addAttribute("selectedCondition",filters.get("f_condition"));
+        model.addAttribute("selectedFulfillment",filters.getOrDefault("f_channel",""));
+        var conditionOptions=new java.util.LinkedHashMap<String,String>();conditionOptions.put("NEW","New");
+        conditionOptions.putAll(skus.conditionOptions(tenantId,connectionId));
+        if(SkuCondition.OPTIONS.containsKey(filters.get("f_condition")))conditionOptions.putIfAbsent(filters.get("f_condition"),SkuCondition.OPTIONS.get(filters.get("f_condition")));
+        model.addAttribute("conditionOptions",conditionOptions);
         String normalizedStatus = normalizeStatus(status);
         if(listingSync!=null && maySync(tenantId,connectionId,authentication))
             model.addAttribute("listingSync",listingSync.availability(tenantId,connectionId));
         model.addAttribute("selectedStatus", normalizedStatus);
+        var policy=skus.inventoryPolicy(tenantId,connectionId);
+        model.addAttribute("inventoryDecisions",policy.decisions());
         model.addAttribute("summary", skus.summary(tenantId, connectionId));
         model.addAttribute("insights", skus.insights(tenantId, connectionId));
         int requestedPage=goToPage==null?page:Math.max(0,goToPage-1);
         var skuPage=skus.list(tenantId, connectionId, q, normalizedStatus,
             normalizeSort(sort),"desc".equalsIgnoreCase(direction)?"desc":"asc",requestedPage, com.nextaicommerce.platform.web.TablePaging.size(size),filters);
         model.addAttribute("skuPage",skuPage);
-        model.addAttribute("refundHistory",refunds.fourWeeks(tenantId,connectionId,skuPage.rows().stream().map(row->row.sellerSku()).toList()));
+        var relationships=skus.relationshipPolicy(tenantId,connectionId);
+        model.addAttribute("parentContexts",relationships.children());
+        model.addAttribute("emptyParentContext",skuPage.total()==0?relationships.exactParent(q):null);
+        var familyRows=families==null?java.util.Map.<String,List<MarketplaceSkuRepository.SkuView>>of():families.load(tenantId,connectionId,skuPage.rows(),policy);
+        model.addAttribute("familyRows",familyRows);
+        var contextRows=new java.util.LinkedHashMap<String,MarketplaceSkuRepository.SkuView>();
+        skuPage.rows().forEach(r->contextRows.put(r.sellerSku(),r));familyRows.values().forEach(rows->rows.forEach(r->contextRows.put(r.sellerSku(),r)));
+        var contextList=List.copyOf(contextRows.values());
+
+        var allStock=new java.util.LinkedHashMap<String,com.nextaicommerce.platform.fba.FbaReadRepository.Stock>();
+        var stockKeys=contextList.stream().filter(MarketplaceSkuRepository.SkuView::fba).map(MarketplaceSkuRepository.SkuView::sellerSku).toList();
+        for(int i=0;i<stockKeys.size();i+=1000)allStock.putAll(fba.stocks(tenantId,connectionId,stockKeys.subList(i,Math.min(i+1000,stockKeys.size()))));
+        model.addAttribute("fbaStock",allStock);
+        model.addAttribute("refundHistory",refunds.fourWeeks(tenantId,connectionId,contextList.stream().map(row->row.sellerSku()).toList()));
         model.addAttribute("salesAsOf",java.time.Instant.now());
         model.addAttribute("threadsByMarketplaceSku",collaboration==null?java.util.Map.of():collaboration.openSubjectSummaries(
-            tenantId,"MARKETPLACE_SKU",skuPage.rows().stream().map(MarketplaceSkuRepository.SkuView::sellerSku).toList(),authentication.getName()));
+            tenantId,"MARKETPLACE_SKU",contextList.stream().map(MarketplaceSkuRepository.SkuView::sellerSku).toList(),authentication.getName()));
         model.addAttribute("mappingComponents",skus.mappingComponents(tenantId,connectionId,
-            skuPage.rows().stream().map(MarketplaceSkuRepository.SkuView::sellerSku).toList()));
+            contextList.stream().map(MarketplaceSkuRepository.SkuView::sellerSku).toList()));
         model.addAttribute("vendors",Boolean.TRUE.equals(model.asMap().get("canEditCatalog"))
             ?catalog.listVendorChoices(tenantId):List.of());
         return "marketplace-skus";
@@ -181,7 +206,7 @@ public class MarketplaceSkuController {
     private static String normalizeStatus(String status) {
         if (status == null) return "ALL";
         String normalized = status.trim().toUpperCase(java.util.Locale.ROOT);
-        return java.util.Set.of("ALL", "ACTIVE", "OOS", "INACTIVE", "AMAZON_PROBLEM", "DELETED", "UNMAPPED").contains(normalized)
+        return java.util.Set.of("ALL", "ACTIVE", "OOS", "NEVER_SOLD", "INACTIVE", "AMAZON_PROBLEM", "DELETED", "UNMAPPED").contains(normalized)
             ? normalized : "ALL";
     }
 

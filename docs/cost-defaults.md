@@ -30,3 +30,26 @@ The aggregate profit summary cache expires within 60 seconds.
 Verification: PostgreSQL tests cover invoice initialization, preservation of
 existing defaults, invoice item-code search, SKU overrides/reset, item pack
 calculation, account/store scope and rollback on invalid package input.
+
+FBA shipping estimates use the latest **complete** shipment for the exact seller SKU,
+account and connection, ordered by the posted charge date. Both transportation and
+placement charges must be explicitly present, released, in USD, and non-negative;
+a missing charge is never assumed to be zero. Charges are divided by all shipped
+units on that shipment before allocating the SKU/order quantity. The calculator
+and fee tooltip identify the source shipment and charge date. This is a current
+planning estimate, not historical order-to-replenishment or settled expense.
+
+Legacy regional fee reports can repeat a seller SKU across currencies. Only rows
+whose explicit currency matches the requested marketplace definition are normalized;
+other or unknown currencies are recorded as import rejections. Raw reports remain
+unchanged. This prevents future mixed-currency snapshot collisions; it does not
+repair already inconsistent fee snapshots or authorize a live fee refresh.
+
+Fee readers also require exact connection marketplace and its defined currency,
+and reject an explicit report country/currency that contradicts the normalized
+snapshot. Blank listing currency uses the existing marketplace definition; it
+never causes another marketplace's fee to be substituted. Imported snapshot date
+and whole-day age are evidence metadata, not an assertion of current pricing or
+freshness; no new expiration threshold is applied. Transportation and placement
+are displayed separately and deducted once each. Uploaded commercial item/SKU
+costs remain exactly as supplied.

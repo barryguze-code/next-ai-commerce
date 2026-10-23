@@ -40,6 +40,10 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSSXXX} %-5level %msg%n%wEx"
   level:
     com.nextaicommerce.platform.sync: INFO
+    org.springframework.web: INFO
+    org.springframework.jdbc.core: INFO
+    org.hibernate.orm.jdbc.bind: "OFF"
+    jdk.httpclient: "OFF"
 server:
   compression:
     enabled: true
@@ -50,12 +54,14 @@ server:
   max-http-request-header-size: ${APP_MAX_REQUEST_HEADER_SIZE:64KB}
   error:
     include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
 app:
   read-cache:
     enabled: ${APP_READ_CACHE_ENABLED:true}
     ttl: ${APP_READ_CACHE_TTL:10s}
     maximum-entries: ${APP_READ_CACHE_MAXIMUM_ENTRIES:256}
-  build-version: ${APP_BUILD_VERSION:1.6.10}
+  build-version: ${APP_BUILD_VERSION:1.7.0}
   public-url: ${APP_PUBLIC_URL:http://localhost:8080}
   mail:
     enabled: ${MAIL_ENABLED:false}
@@ -71,7 +77,16 @@ app:
       client-secret: ${MICROSOFT_CLIENT_SECRET:}
   credentials:
     encryption-key: ${APP_CREDENTIAL_ENCRYPTION_KEY:}
+  fedex:
+    confirmation-enabled: ${APP_FEDEX_CONFIRMATION_ENABLED:false}
   amazon:
+    product-fees-enabled: ${AMAZON_PRODUCT_FEES_ENABLED:false}
+    product-fees-requests-per-second: ${AMAZON_PRODUCT_FEES_REQUESTS_PER_SECOND:0.5}
+    variation:
+      operator-enabled: false
+      sync-enabled: false
+      inventory-enforcement-enabled: false
+    recipient-import-enabled: ${APP_AMAZON_RECIPIENT_IMPORT_ENABLED:false}
     sync-enabled: ${AMAZON_SYNC_ENABLED:true}
     write-enabled: ${AMAZON_WRITE_ENABLED:true}
     buy-shipping-enabled: ${AMAZON_BUY_SHIPPING_ENABLED:false}

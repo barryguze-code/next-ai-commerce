@@ -4,7 +4,7 @@ const {chromium}=require('playwright');
 const path=require('node:path');
 const fs=require('node:fs');
 test('basket survives pagination and menus, isolates accounts, and case save stays in place',async()=>{
- const browser=await chromium.launch({headless:true});
+ const browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})});
  try{
   const page=await browser.newPage();
   const script=fs.readFileSync(path.resolve('src/main/resources/static/js/replenishment-draft.js'),'utf8');
@@ -34,7 +34,7 @@ test('basket survives pagination and menus, isolates accounts, and case save sta
  }finally{await browser.close();}
 });
 test('basket preserves whole units, formats cases, calculates totals and keeps duplicate edits',async()=>{
- const browser=await chromium.launch({headless:true});
+ const browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})});
  try{const page=await browser.newPage();
  await page.setContent(`<table><thead><tr><th>Item</th></tr></thead><tbody><tr data-replenishment-row data-item="test" data-name="Test product" data-code="123" data-vendor="Vendor" data-dc="41" data-pack="12" data-cases="2" data-cost="1.25" data-image="data:image/gif;base64,R0lGODlhAQABAAAAACw="><td><button data-add-basket>Add to basket</button></td></tr></tbody></table><button data-basket-open>Basket preview <span data-basket-count>0</span></button><dialog id="rp-basket"><div data-basket-body></div><button data-po-preview>Review by vendor</button><button data-close-dialog>Close</button></dialog>`);
  await page.addScriptTag({path:path.resolve('src/main/resources/static/js/replenishment-draft.js')});

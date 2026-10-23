@@ -45,8 +45,64 @@ public class AmazonSpApiClient {
         return send(tenantId, connectionId, "GET", path, null);
     }
 
+    /** Dedicated PII transport: no raw archive, response-bearing exception cause, or body logging. */
+    public com.nextaicommerce.platform.shipping.OrderRecipient recipient(UUID tenant,UUID store,String endpoint,String order) {
+        if(!externalEnabled)throw new AmazonApiException(503,null,"Recipient retrieval is disabled.");
+        if(!java.util.Set.of(NA_ENDPOINT,"https://sellingpartnerapi-eu.amazon.com","https://sellingpartnerapi-fe.amazon.com").contains(endpoint)
+            ||!order.matches("[0-9]{3}-[0-9]{7}-[0-9]{7}"))throw new IllegalArgumentException("Invalid recipient request.");
+        try {
+            var request=HttpRequest.newBuilder(URI.create(endpoint+"/orders/2026-01-01/orders/"+order+"?includedData=RECIPIENT"))
+                .timeout(Duration.ofSeconds(30)).header("x-amz-access-token",accessToken(tenant,store)).header("Accept","application/json").GET().build();
+            var response=http.send(request,HttpResponse.BodyHandlers.ofInputStream());
+            try(var input=response.body()) {
+                if(response.statusCode()/100!=2)throw new AmazonApiException(response.statusCode(),null,"Amazon recipient retrieval was not successful.");
+                byte[] bytes=input.readNBytes(2_000_001);
+                if(bytes.length>2_000_000)throw new IllegalArgumentException("Recipient response exceeded the safe size limit.");
+                try{return com.nextaicommerce.platform.shipping.OrderRecipient.parse(json.readTree(bytes),order);}
+                finally{java.util.Arrays.fill(bytes,(byte)0);}
+            }
+        }catch(AmazonApiException ex){throw ex;}
+        catch(InterruptedException ex){Thread.currentThread().interrupt();throw new AmazonApiException(503,null,"Recipient retrieval was interrupted.");}
+        catch(Exception ex){throw new AmazonApiException(503,null,"Recipient retrieval is temporarily unavailable.");}
+    }
+
     public ApiResponse post(UUID tenantId, UUID connectionId, String path, String body) {
         return send(tenantId, connectionId, "POST", path, body);
+    }
+
+    public interface RequestPermit extends java.util.function.BooleanSupplier {
+        boolean oauth();
+        Duration remaining();
+        default void observedRate(Double rate){}
+        default void completed(){}
+        default void uncertain(){completed();}
+    }
+    public interface VariationPermit extends RequestPermit {}
+    public interface FeePermit extends RequestPermit {}
+    /** Fee estimates are reads; reserve dispatch after cached OAuth resolution. */
+    static String endpoint(String market){
+        if(java.util.Set.of("ATVPDKIKX0DER","A2EUQ1WTGCTBG2","A1AM78C64UM0Y8","A2Q3Y263D00KWC").contains(market))return "https://sellingpartnerapi-na.amazon.com";
+        if(java.util.Set.of("A1F83G8C2ARO7P","A1PA6795UKMFR9","A13V1IB3VIYZZH","APJ6JRA9NG5V4","A1RKKUPIHCS9HS","A1805IZSGTT6HS","A2NODRKZP88ZB9","A1C3SOZRARQ6R3","A33AVAJ2PDY3EV","A21TJRUUN4KGV","A2VIGQ35RCS4UG","A17E79C6D8DWNP","A28R8C7NBKEWEA").contains(market))return "https://sellingpartnerapi-eu.amazon.com";
+        if(java.util.Set.of("A1VC38T7YXB528","A39IBJ37TRP1C6","A19VAU5U5O7RUS").contains(market))return "https://sellingpartnerapi-fe.amazon.com";
+        throw new IllegalArgumentException("Unsupported marketplace region");
+    }
+    public ApiResponse quoteProductFee(UUID tenant,UUID connection,String sku,String body,FeePermit permit){
+        String path="/products/fees/v0/listings/"+encode(sku).replace("+","%20")+"/feesEstimate";
+        java.util.Objects.requireNonNull(permit,"Fee dispatch permit required");
+        String market=json.readTree(body).path("FeesEstimateRequest").path("MarketplaceId").asText();
+        return send(tenant,connection,endpoint(market),"POST",path,body,true,permit);
+    }
+    private static Duration timeout(java.util.function.BooleanSupplier permit){
+        Duration remaining=permit instanceof RequestPermit p?p.remaining():Duration.ofSeconds(30);
+        return remaining.compareTo(Duration.ofSeconds(30))<0?remaining:Duration.ofSeconds(30);
+    }
+    /** Read-only Listings Items transport retaining malformed successful response text for A2 diagnostics. */
+    public ApiResponse getVariationAt(UUID tenantId,UUID connectionId,String endpoint,String path){
+        return getVariationAt(tenantId,connectionId,endpoint,path,null);
+    }
+    public ApiResponse getVariationAt(UUID tenantId,UUID connectionId,String endpoint,String path,java.util.function.BooleanSupplier permit){
+        if(!java.util.Set.of(NA_ENDPOINT,"https://sellingpartnerapi-eu.amazon.com","https://sellingpartnerapi-fe.amazon.com").contains(endpoint)||!path.startsWith("/listings/2021-08-01/items/"))throw new IllegalArgumentException("Invalid relationship path");
+        return send(tenantId,connectionId,endpoint,"GET",path,null,true,permit);
     }
 
     /** Calls a regional SP-API endpoint selected from the order's marketplace. */
@@ -105,28 +161,42 @@ public class AmazonSpApiClient {
     }
 
     private ApiResponse send(UUID tenantId, UUID connectionId, String endpoint, String method, String path, String body) {
+        return send(tenantId,connectionId,endpoint,method,path,body,false);
+    }
+    private ApiResponse send(UUID tenantId, UUID connectionId, String endpoint, String method, String path, String body,boolean retainMalformed) {
+        return send(tenantId,connectionId,endpoint,method,path,body,retainMalformed,null);
+    }
+    private ApiResponse send(UUID tenantId, UUID connectionId, String endpoint, String method, String path, String body,boolean retainMalformed,java.util.function.BooleanSupplier permit) {
         if(!externalEnabled)throw new IllegalStateException("Amazon connections are disabled in local testing. No request was sent.");
         if(!writeEnabled&&!readOnlyOperation(method,path))
             throw new IllegalStateException("Amazon changes are disabled in Local UAT. No request was sent.");
         try {
             String operation=operation(method,path);
             log.info("Amazon request started — {}. {} {}.",operation,method,safeEndpoint(path));
-            String token = accessToken(tenantId, connectionId);
-            var builder = HttpRequest.newBuilder(URI.create(endpoint + path)).timeout(Duration.ofSeconds(45))
+            String token = accessToken(tenantId, connectionId,permit);
+            // Reserve Listings capacity after token refresh, immediately before request dispatch.
+            if(permit!=null&&!permit.getAsBoolean())throw new VariationDeferredException();
+            var builder = HttpRequest.newBuilder(URI.create(endpoint + path)).timeout(permit instanceof RequestPermit?timeout(permit):Duration.ofSeconds(45))
                 .header("x-amz-access-token", token).header("Accept", "application/json");
             if ("GET".equals(method)) builder.GET();
             else if ("DELETE".equals(method)) builder.DELETE();
             else builder.header("Content-Type", "application/json")
                 .method(method,HttpRequest.BodyPublishers.ofString(body));
-            HttpResponse<String> response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = dispatch(builder.build(),permit);
             String requestId = response.headers().firstValue("x-amzn-RequestId").orElse(null);
             if (response.statusCode() / 100 != 2)
-                throw new AmazonApiException(response.statusCode(), retryAfter(response), safeMessage(response.statusCode(),path,response.body()));
+                throw retainMalformed?(permit instanceof FeePermit
+                    ?new FeeReadException(response.statusCode(),variationRetryAfter(response),response.body(),requestId,rateLimit(response))
+                    :new VariationReadException(response.statusCode(),variationRetryAfter(response),response.body(),requestId,rateLimit(response)))
+                    :new AmazonApiException(response.statusCode(), retryAfter(response), safeMessage(response.statusCode(),path,response.body()));
             log.info("Amazon request complete — {}. HTTP {}; Amazon request ID: {}.",operation,
                 response.statusCode(),requestId==null?"not supplied":requestId);
-            JsonNode parsed=response.body()==null||response.body().isBlank()?json.createObjectNode():json.readTree(response.body());
-            return new ApiResponse(response.statusCode(), requestId, parsed, response.body());
-        } catch (AmazonApiException ex) { throw ex; }
+            JsonNode parsed;
+            try{parsed=response.body()==null||response.body().isBlank()?json.createObjectNode():json.readTree(response.body());}
+            catch(RuntimeException malformed){if(!retainMalformed)throw malformed;parsed=json.createObjectNode();}
+            if(path.startsWith("/orders/v0/")){parsed=OrderPiiRedactor.redact(parsed);return new ApiResponse(response.statusCode(),requestId,parsed,parsed.toString());}
+            return new ApiResponse(response.statusCode(), requestId, parsed, response.body(),rateLimit(response));
+        } catch (VariationDeferredException ex){throw ex;} catch (AmazonApiException ex) { throw ex; }
         catch (IllegalStateException ex) {
             // Credential decryption/configuration happens before the HTTP request.
             // Preserve its safe, actionable message instead of mislabelling it as a
@@ -136,18 +206,20 @@ public class AmazonSpApiClient {
         }
         catch (HttpTimeoutException ex) { throw new AmazonTransportException("Amazon did not answer before the request timed out.",true,ex); }
         catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw new AmazonTransportException("The Amazon request was interrupted.",true,ex); }
-        catch (Exception ex) { throw new AmazonTransportException("Amazon could not be reached.",false,ex); }
+        catch (Exception ex) { throw new AmazonTransportException("Amazon could not be reached.",false,path.startsWith("/orders/")?null:ex); }
     }
 
     static boolean readOnlyOperation(String method,String path){
         if("GET".equals(method))return true;
         if(!"POST".equals(method))return false;
         return "/reports/2021-06-30/reports".equals(path)
+            || path.matches("/products/fees/v0/listings/[^/]+/feesEstimate")
             || "/batches/products/pricing/v0/itemOffers".equals(path)
             || "/mfn/v0/eligibleShippingServices".equals(path);
     }
 
-    private String accessToken(UUID tenantId, UUID connectionId) throws Exception {
+    private String accessToken(UUID tenantId, UUID connectionId) throws Exception {return accessToken(tenantId,connectionId,null);}
+    private String accessToken(UUID tenantId, UUID connectionId,java.util.function.BooleanSupplier permit) throws Exception {
         TokenKey key=new TokenKey(tenantId,connectionId);CachedToken cached=accessTokens.get(key);
         if(cached!=null&&cached.expiresAt().isAfter(Instant.now().plusSeconds(60)))return cached.value();
         synchronized(accessTokens){
@@ -156,9 +228,10 @@ public class AmazonSpApiClient {
             Map<String, String> c = credentialService.credentials(tenantId, connectionId);
             String form = "grant_type=refresh_token&refresh_token=" + encode(c.get("refreshToken"))
                 + "&client_id=" + encode(c.get("lwaClientId")) + "&client_secret=" + encode(c.get("lwaClientSecret"));
-            HttpResponse<String> response = http.send(HttpRequest.newBuilder(LWA).timeout(Duration.ofSeconds(30))
+            if(permit instanceof RequestPermit p&&!p.oauth())throw new VariationDeferredException();
+            HttpResponse<String> response = dispatch(HttpRequest.newBuilder(LWA).timeout(timeout(permit))
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString(form)).build(), HttpResponse.BodyHandlers.ofString());
+                .POST(HttpRequest.BodyPublishers.ofString(form)).build(),permit);
             if (response.statusCode() / 100 != 2) throw new AmazonApiException(response.statusCode(), null,
                 "Amazon authorization needs attention.");
             JsonNode token=json.readTree(response.body());String value=token.path("access_token").asText();
@@ -168,6 +241,37 @@ public class AmazonSpApiClient {
         }
     }
 
+    private HttpResponse<String> dispatch(HttpRequest request,java.util.function.BooleanSupplier permit)throws Exception {
+        try{var response=http.send(request,HttpResponse.BodyHandlers.ofString());
+            if(permit instanceof RequestPermit p){if(permit instanceof FeePermit){Double rate=rateLimit(response);if(rate!=null)p.observedRate(rate);}p.completed();}return response;}
+        catch(java.io.IOException|InterruptedException ex){if(permit instanceof RequestPermit p)p.uncertain();throw ex;}
+    }
+    static Duration variationRetryAfter(HttpResponse<?> response){
+        String value=response.headers().firstValue("Retry-After").orElse(null);if(value==null)return null;
+        try{return Duration.ofSeconds(Math.max(1,Long.parseLong(value)));}
+        catch(NumberFormatException ignored){try{
+            Duration delay=Duration.between(Instant.now(),java.time.ZonedDateTime.parse(value,java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant());
+            return delay.isNegative()?Duration.ofSeconds(1):delay;
+        }catch(java.time.DateTimeException malformed){return Duration.ofMinutes(1);}}
+    }
+    public static final class VariationDeferredException extends RuntimeException {
+        public VariationDeferredException(){super("Relationship request deferred before dispatch");}
+    }
+    /** Raw Listings read evidence is accessible only to the fenced archive writer, never exception text. */
+    public static final class FeeReadException extends AmazonApiException {
+        private final String body,requestId;private final Double rateLimit;
+        FeeReadException(int status,Duration retryAfter,String body,String requestId,Double rateLimit){
+            super(status,retryAfter,"Amazon fee estimate failed (HTTP "+status+").");
+            this.body=body;this.requestId=requestId;this.rateLimit=rateLimit;
+        }
+        public String body(){return body;} public String requestId(){return requestId;}
+        public Double rateLimit(){return rateLimit;}
+    }
+    public static final class VariationReadException extends AmazonApiException {
+        private final String rawBody,requestId;private final Double rateLimit;
+        public VariationReadException(int status,Duration retryAfter,String body,String requestId,Double rateLimit){super(status,retryAfter,"Amazon relationship read failed (HTTP "+status+").");this.rawBody=body;this.requestId=requestId;this.rateLimit=rateLimit;}
+        public String rawBody(){return rawBody;}public String requestId(){return requestId;}public Double rateLimit(){return rateLimit;}
+    }
     private static Duration retryAfter(HttpResponse<?> response) {
         return response.headers().firstValue("Retry-After").map(value -> {
             try { return Duration.ofSeconds(Math.max(1, Long.parseLong(value))); }
@@ -175,6 +279,7 @@ public class AmazonSpApiClient {
         }).orElse(null);
     }
     private String safeMessage(int status,String path,String body) {
+        if(path.startsWith("/orders/"))return "Amazon order request was not successful (HTTP "+status+").";
         if(status==403&&path.startsWith("/mfn/"))return "Amazon has not authorized Buy Shipping for this connection. Add the Direct-to-Consumer Shipping role, then reauthorize this seller account.";
         if(status==429)return path.startsWith("/mfn/")
             ?"Amazon is receiving too many shipping requests. Wait a moment and compare rates again."
@@ -222,7 +327,14 @@ public class AmazonSpApiClient {
     }
     private static String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
 
-    public record ApiResponse(int status, String requestId, JsonNode json, String body) {}
+    private static Double rateLimit(HttpResponse<?> response){
+        try{double value=Double.parseDouble(response.headers().firstValue("x-amzn-RateLimit-Limit").orElse(""));return value>0&&Double.isFinite(value)?value:null;}
+        catch(NumberFormatException ignored){return null;}
+    }
+    public record ApiResponse(int status, String requestId, JsonNode json, String body,Double rateLimit) {
+        public ApiResponse(int status,String requestId,JsonNode json,String body){this(status,requestId,json,body,null);}
+        @Override public String toString(){return "Amazon response [body redacted; status="+status+"]";}
+    }
     private record TokenKey(UUID tenantId,UUID connectionId){}
     private record CachedToken(String value,Instant expiresAt){}
     public static class AmazonApiException extends RuntimeException {

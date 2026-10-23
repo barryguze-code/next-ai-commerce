@@ -15,6 +15,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class OrderRepository {
+    /** Only explicit merchant fulfillment can consume local warehouse inventory. */
+    public static String merchantFulfilledSql(String alias){
+        if(!alias.matches("[a-z_]+"))throw new IllegalArgumentException("Invalid SQL alias");
+        return "upper(trim(coalesce("+alias+".fulfillment_channel,''))) IN ('MFN','FBM','DEFAULT','MERCHANT')";
+    }
+    public static boolean merchantFulfilled(String channel){
+        return java.util.Set.of("MFN","FBM","DEFAULT","MERCHANT").contains(channel==null?"":channel.trim().toUpperCase(java.util.Locale.ROOT));
+    }
     static final String MARKETPLACE_IDENTIFIER_SQL="SELECT marketplace_identifier FROM marketplace_connections WHERE tenant_id=? AND id=?";
     private final JdbcTemplate jdbc;
     public record SoldTotals(long orders,long units){}
@@ -85,7 +93,7 @@ public class OrderRepository {
         };}
         public boolean needsMapping(){return "NEEDS_MAPPING".equals(state);}
         public boolean needsShelfStock(){return !"HISTORICAL".equals(scope)&&statusReservesInventory(amazonStatus)
-            &&!java.util.Set.of("AFN","AMAZON").contains(fulfillmentChannel==null?"":fulfillmentChannel.toUpperCase(java.util.Locale.ROOT));}
+            &&merchantFulfilled(fulfillmentChannel);}
         public String amazonStatusLabel(){return amazonStatus==null||amazonStatus.isBlank()?"Status pending":amazonStatus.replaceAll("([a-z])([A-Z])","$1 $2");}
         public String sellerCentralUrl(){return "https://"+sellerCentralDomain(marketplaceId)+"/orders-v3/order/"+amazonOrderId;}
     }
@@ -120,13 +128,14 @@ public class OrderRepository {
             case "BUY_BOX_LOST" -> "EXISTS (SELECT 1 FROM amazon_order_items priced_item JOIN amazon_listings listing ON listing.tenant_id=priced_item.tenant_id AND listing.marketplace_connection_id=priced_item.marketplace_connection_id AND listing.seller_sku=priced_item.seller_sku AND listing.marketplace_id=orders.marketplace_id "
                 + "LEFT JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=listing.tenant_id AND mapping.marketplace_connection_id=listing.marketplace_connection_id AND mapping.marketplace_sku=listing.seller_sku AND mapping.status='ACTIVE' "
                 + com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.LOCAL_MAPPING_AVAILABILITY
-                + " WHERE priced_item.tenant_id=orders.tenant_id AND priced_item.marketplace_connection_id=orders.marketplace_connection_id AND priced_item.amazon_order_id=orders.amazon_order_id AND "+PRICE_MISMATCH
+                + " WHERE priced_item.tenant_id=orders.tenant_id AND priced_item.marketplace_connection_id=orders.marketplace_connection_id AND priced_item.amazon_order_id=orders.amazon_order_id AND priced_item.item_price IS NOT NULL AND priced_item.item_price>0 AND priced_item.quantity_ordered>0 AND "+PRICE_MISMATCH
                 + " AND (CASE WHEN upper(coalesce(listing.fulfillment_channel,'')) LIKE '%AMAZON%' OR upper(listing.fulfillment_channel) IN ('FBA','AFN') THEN coalesce((SELECT snapshot.fulfillable_quantity FROM amazon_inventory_snapshots snapshot WHERE snapshot.tenant_id=listing.tenant_id AND snapshot.marketplace_connection_id=listing.marketplace_connection_id AND snapshot.marketplace_id=listing.marketplace_id AND snapshot.seller_sku=listing.seller_sku ORDER BY snapshot.snapshot_at DESC LIMIT 1),0) ELSE coalesce(local_inventory.available,listing.quantity,0) END)>0)";
             case "PENDING"->status+" IN ('PENDING','PENDINGAVAILABILITY')";
             case "UNSHIPPED"->"NOT ("+pickup+") AND ("+status+" IN ('PENDING','PENDINGAVAILABILITY','UNSHIPPED') OR (orders.fulfillment_state='READY_TO_SHIP' AND "+status+" NOT IN ('CANCELLED','CANCELED','PICKEDUP','INTRANSIT','OUTFORDELIVERY','DELIVERED') AND "+status+" NOT LIKE '%SHIPPED%'))";
             case "WAITING_FOR_PICKUP"->pickup;
             case "SHIPPED"->"NOT ("+pickup+") AND ("+status+" LIKE 'SHIPPED%' OR "+status+" IN ('PICKEDUP','INTRANSIT','OUTFORDELIVERY','DELIVERED'))";
-            case "NEEDS_MAPPING","INVENTORY_SHORTAGE","READY_TO_SHIP"->"("+tabPredicate("UNSHIPPED")+") AND orders.fulfillment_state='"+key.toUpperCase(java.util.Locale.ROOT)+"'";
+            case "NEEDS_MAPPING" -> "EXISTS (SELECT 1 FROM amazon_order_items missing_item WHERE missing_item.tenant_id=orders.tenant_id AND missing_item.marketplace_connection_id=orders.marketplace_connection_id AND missing_item.amazon_order_id=orders.amazon_order_id AND NOT EXISTS (SELECT 1 FROM marketplace_sku_mappings mapping WHERE mapping.tenant_id=missing_item.tenant_id AND mapping.marketplace_connection_id=missing_item.marketplace_connection_id AND mapping.marketplace_sku=missing_item.seller_sku AND mapping.status='ACTIVE'))";
+            case "INVENTORY_SHORTAGE","READY_TO_SHIP"->"("+tabPredicate("UNSHIPPED")+") AND orders.fulfillment_state='"+key.toUpperCase(java.util.Locale.ROOT)+"'";
             default->"true";
         };
     }
@@ -172,7 +181,7 @@ public class OrderRepository {
                     WHEN orders.purchase_date<connection.inventory_activated_at THEN 'REPORTING_ONLY'
                     WHEN regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g')
                         IN ('CANCELLED','CANCELED') THEN 'CANCELLED'
-                    WHEN upper(coalesce(orders.fulfillment_channel,'')) IN ('AFN','AMAZON') THEN 'AMAZON_FULFILLED'
+                    WHEN upper(trim(coalesce(orders.fulfillment_channel,''))) IN ('AFN','FBA','AMAZON') THEN 'AMAZON_FULFILLED'
                     WHEN regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g')
                         IN ('PENDING','UNSHIPPED') THEN 'NEEDS_MAPPING'
                     ELSE orders.fulfillment_state END,
@@ -192,7 +201,7 @@ public class OrderRepository {
                      AND shipped_item.amazon_order_id=orders.amazon_order_id AND shipped_item.quantity_shipped>0)
             FROM amazon_orders orders
             WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND orders.operational_scope='LIVE'
-              AND upper(coalesce(orders.fulfillment_channel,'')) NOT IN ('AFN','AMAZON')
+              AND upper(trim(coalesce(orders.fulfillment_channel,''))) IN ('MFN','FBM','DEFAULT','MERCHANT')
             ORDER BY orders.purchase_date,orders.created_at
             """,(rs,row)->new Object[]{rs.getString(1),rs.getString(2),rs.getString(3),rs.getBoolean(4),rs.getBoolean(5)},tenantId,connectionId);
         for(Object[] candidate:candidates){
@@ -204,7 +213,7 @@ public class OrderRepository {
             }
         }
         recordCancelledReservations(tenantId,connectionId);
-        jdbc.update("DELETE FROM order_inventory_reservations WHERE tenant_id=? AND marketplace_connection_id=? AND status='ACTIVE'",
+        jdbc.update("DELETE FROM order_inventory_reservations r WHERE tenant_id=? AND marketplace_connection_id=? AND status='ACTIVE' AND EXISTS (SELECT 1 FROM amazon_orders orders WHERE orders.tenant_id=r.tenant_id AND orders.marketplace_connection_id=r.marketplace_connection_id AND orders.amazon_order_id=r.amazon_order_id AND "+merchantFulfilledSql("orders")+")",
             tenantId,connectionId);
         for(Object[] candidate:candidates){
             if(statusReservesInventory((String)candidate[1]))
@@ -227,6 +236,7 @@ public class OrderRepository {
             LEFT JOIN LATERAL (SELECT bool_or(i.quantity_shipped>0) partial FROM amazon_order_items i
                 WHERE i.tenant_id=o.tenant_id AND i.marketplace_connection_id=o.marketplace_connection_id AND i.amazon_order_id=o.amazon_order_id) shipment ON true
             WHERE r.tenant_id=? AND r.marketplace_connection_id=? AND r.status='ACTIVE'
+                AND upper(trim(coalesce(o.fulfillment_channel,''))) IN ('MFN','FBM','DEFAULT','MERCHANT')
                 AND regexp_replace(upper(o.order_status),'[^A-Z]','','g') IN ('CANCELED','CANCELLED')
             GROUP BY r.tenant_id,r.account_catalog_item_id,r.location_id,r.marketplace_connection_id,r.expiration_date,o.id,shipment.partial
             ON CONFLICT(tenant_id,idempotency_key) DO NOTHING
@@ -606,7 +616,7 @@ public class OrderRepository {
         if(orderIds.isEmpty())return java.util.Set.of();
         var parameters=new java.util.ArrayList<Object>();parameters.add(tenantId);parameters.add(connectionId);parameters.addAll(orderIds);
         String slots=String.join(",",java.util.Collections.nCopies(orderIds.size(),"?"));
-        return new java.util.HashSet<>(jdbc.query("SELECT DISTINCT item.id FROM amazon_order_items item JOIN amazon_orders orders ON orders.tenant_id=item.tenant_id AND orders.marketplace_connection_id=item.marketplace_connection_id AND orders.amazon_order_id=item.amazon_order_id JOIN amazon_listings listing ON listing.tenant_id=item.tenant_id AND listing.marketplace_connection_id=item.marketplace_connection_id AND listing.seller_sku=item.seller_sku AND listing.marketplace_id=orders.marketplace_id WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id IN ("+slots+") AND "+PRICE_MISMATCH,(rs,row)->rs.getObject(1,UUID.class),parameters.toArray()));
+        return new java.util.HashSet<>(jdbc.query("SELECT DISTINCT item.id FROM amazon_order_items item JOIN amazon_orders orders ON orders.tenant_id=item.tenant_id AND orders.marketplace_connection_id=item.marketplace_connection_id AND orders.amazon_order_id=item.amazon_order_id JOIN amazon_listings listing ON listing.tenant_id=item.tenant_id AND listing.marketplace_connection_id=item.marketplace_connection_id AND listing.seller_sku=item.seller_sku AND listing.marketplace_id=orders.marketplace_id WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id IN ("+slots+") AND item.item_price IS NOT NULL AND item.item_price>0 AND item.quantity_ordered>0 AND "+PRICE_MISMATCH,(rs,row)->rs.getObject(1,UUID.class),parameters.toArray()));
     }
 
     @Transactional(readOnly=true)

@@ -30,6 +30,52 @@ class InventoryPublicationDatabaseTest {
   jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,1)",tenant,bundle,second);
   mapping("FBA",item,1);jdbc.update("UPDATE amazon_listings SET fulfillment_channel='AFN' WHERE tenant_id=? AND seller_sku='FBA'",tenant);
  });}
+ @Test void onlyExplicitMerchantOrdersCanReserveLocalStock(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);var orders=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+  for(String channel:Arrays.asList("AFN","FBA","AMAZON","UNKNOWN","",null,"MFN","FBM","DEFAULT","MERCHANT")){
+   String id="channel-"+channel;order(id,"SINGLE",1);
+   jdbc.update("UPDATE amazon_orders SET fulfillment_channel=? WHERE tenant_id=? AND amazon_order_id=?",channel,tenant,id);
+  }
+  orders.reconcile(tenant,connection);
+  var reserved=jdbc.queryForList("SELECT orders.fulfillment_channel FROM order_inventory_reservations r JOIN amazon_orders orders ON orders.tenant_id=r.tenant_id AND orders.marketplace_connection_id=r.marketplace_connection_id AND orders.amazon_order_id=r.amazon_order_id WHERE r.tenant_id=? AND r.status='ACTIVE'",String.class,tenant);
+  assertThat(reserved).containsExactlyInAnyOrder("MFN","FBM","DEFAULT","MERCHANT");
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);
+  assertThat(inventory.inventory(tenant,List.of(item)).getFirst().totalReservedQuantity()).isEqualByComparingTo("4");
+ });}
+ @Test void fbaAndUnknownOpenDemandCannotAppearAsLocalReservedStock(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);
+  for(String channel:Arrays.asList("AFN","FBA","AMAZON","UNKNOWN","",null)){
+   String id="display-"+channel;order(id,"SINGLE",2);
+   jdbc.update("UPDATE amazon_orders SET fulfillment_channel=? WHERE tenant_id=? AND amazon_order_id=?",channel,tenant,id);
+  }
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);
+  assertThat(inventory.inventory(tenant,List.of(item)).getFirst().totalReservedQuantity()).isZero();
+ });}
+ @Test void legacyFbaReservationsRemainStoredButAreNotLocalReservedDemand(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);order("legacy-fba","SINGLE",2);
+  jdbc.update("UPDATE amazon_orders SET fulfillment_channel='FBA' WHERE tenant_id=? AND amazon_order_id='legacy-fba'",tenant);
+  UUID line=jdbc.queryForObject("SELECT id FROM amazon_order_items WHERE tenant_id=? AND amazon_order_id='legacy-fba'",UUID.class,tenant);
+  jdbc.update("INSERT INTO order_inventory_reservations(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,account_catalog_item_id,expiration_date,quantity) VALUES (?,?,'legacy-fba',?,?,current_date+40,2)",tenant,connection,line,item);
+  String before=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(r)::text,',' ORDER BY id)) FROM order_inventory_reservations r WHERE tenant_id=?",String.class,tenant);
+  var orders=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);orders.reconcile(tenant,connection);
+  assertThat(jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(r)::text,',' ORDER BY id)) FROM order_inventory_reservations r WHERE tenant_id=?",String.class,tenant)).isEqualTo(before);
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);
+  assertThat(inventory.inventory(tenant,List.of(item)).getFirst().totalReservedQuantity()).isZero();
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",Integer.class,tenant,item)).isEqualTo(12);
+ });}
+ @Test void reservationRebuildAndProjectionRemainTenantAndConnectionScoped(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);order("same-id","SINGLE",2);UUID other=UUID.randomUUID();
+  jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON','other-seller','ATVPDKIKX0DER','test','ACTIVE','Other','UTC',now()-interval '1 day')",other,tenant);
+  jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status,fulfillment_channel,operational_scope) VALUES (?,?,'ATVPDKIKX0DER','same-id',now(),'Unshipped','FBA','LIVE')",tenant,other);
+  UUID line=UUID.randomUUID();jdbc.update("INSERT INTO amazon_order_items(id,tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,'same-id','other-item','SINGLE',5)",line,tenant,other);
+  jdbc.update("INSERT INTO order_inventory_reservations(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,account_catalog_item_id,expiration_date,quantity) VALUES (?,?,'same-id',?,?,current_date+40,1)",tenant,other,line,item);
+  String before=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(r)::text,',' ORDER BY id)) FROM order_inventory_reservations r WHERE tenant_id=? AND marketplace_connection_id=?",String.class,tenant,other);
+  var orders=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);orders.reconcile(tenant,connection);
+  assertThat(jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(r)::text,',' ORDER BY id)) FROM order_inventory_reservations r WHERE tenant_id=? AND marketplace_connection_id=?",String.class,tenant,other)).isEqualTo(before);
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);
+  assertThat(inventory.inventory(tenant,List.of(item)).getFirst().totalReservedQuantity()).isEqualByComparingTo("2");
+  assertThat(inventory.inventory(UUID.randomUUID(),List.of(item))).isEmpty();
+ });}
  @Test void manualStockUsesDefaultCatalogueCostWithoutReplacingRecordedCosts(){tx.executeWithoutResult(s->{
   var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);UUID vendor=UUID.randomUUID();
   jdbc.update("INSERT INTO vendors(id,tenant_id,name) VALUES (?,?,'Cost test')",vendor,tenant);

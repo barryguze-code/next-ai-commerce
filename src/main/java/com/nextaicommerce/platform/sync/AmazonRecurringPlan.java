@@ -12,6 +12,8 @@ public final class AmazonRecurringPlan {
             "ORDERS_API_DELTA"),
         schedule("CURRENT_INVENTORY", "INCREMENTAL", Duration.ofHours(1), Duration.ZERO, 20,
             "INVENTORY_SNAPSHOT"),
+        schedule("FBA_INBOUND", "RECONCILIATION", Duration.ofHours(6), Duration.ZERO, 25,
+            "FBA_INBOUND"),
         schedule("RECENT_ORDER_RECONCILIATION", "RECONCILIATION", Duration.ofHours(6), Duration.ofDays(7), 30,
             "ORDERS_30_DAY", "ORDER_ITEMS_30_DAY"),
         schedule("RETURNS", "INCREMENTAL", Duration.ofHours(4), Duration.ofDays(7), 40,

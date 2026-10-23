@@ -16,7 +16,28 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 class AmazonSyncWorkerTest {
+    @Test void newFeeJobsUseTheQueuedProductFeesClient(){
+        var store=mock(AmazonSyncStore.class);var amazon=mock(AmazonSpApiClient.class);var fees=mock(AmazonProductFeeSync.class);
+        var now=Instant.now();var job=new AmazonSyncStore.Job(UUID.randomUUID(),UUID.randomUUID(),UUID.randomUUID(),UUID.randomUUID(),"FEES_SNAPSHOT","RECONCILIATION","US",now,now,null,0,0,false,null);
+        when(store.claim(anyString())).thenReturn(job);
+        var worker=new AmazonSyncWorker(store,amazon,mock(AmazonReportNormalizer.class),mock(MarketplaceSkuAutoMapper.class),mock(OrderRepository.class),true);
+        worker.configureProductFees(fees);worker.processNext();verify(fees).processPage(job);
+        org.mockito.Mockito.verifyNoInteractions(amazon);
+    }
     private final ObjectMapper json = new ObjectMapper();
+
+    @Test
+    void feePreviewRequestsRequiredHistoricalWindow() {
+        var store=mock(AmazonSyncStore.class);var amazon=mock(AmazonSpApiClient.class);
+        var end=Instant.parse("2026-10-14T20:00:00Z");
+        var job=new AmazonSyncStore.Job(UUID.randomUUID(),UUID.randomUUID(),UUID.randomUUID(),UUID.randomUUID(),
+            "FEES_SNAPSHOT","RECONCILIATION","ATVPDKIKX0DER",end,end,null,0,0,false,null);
+        when(store.claim(anyString())).thenReturn(job);
+        new AmazonSyncWorker(store,amazon,mock(AmazonReportNormalizer.class),mock(MarketplaceSkuAutoMapper.class),
+            mock(OrderRepository.class),true).processNext();
+        verify(amazon).createReport(job.tenantId(),job.connectionId(),"GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA",
+            job.marketplaceId(),end.minus(Duration.ofHours(73)),end);
+    }
 
     @Test
     void readsMarketplaceIdFromSellersApiPayloadArray() throws Exception {

@@ -26,7 +26,10 @@ public final class MarketplaceSkuFilters {
         });
         String channel=input.getOrDefault("f_channel","");
         if(!List.of("","FBA","FBM").contains(channel))throw new IllegalArgumentException("Invalid fulfillment channel");
-        if(!channel.isEmpty())sql.add("upper(coalesce(fulfillment_channel,'')) "+(channel.equals("FBA")?"LIKE":"NOT LIKE")+" '%AMAZON%'");
+        if(!channel.isEmpty())sql.add(channel.equals("FBA")?"upper(coalesce(fulfillment_channel,'')) LIKE '%AMAZON%'":"upper(coalesce(fulfillment_channel,'')) IN ('DEFAULT','MFN','MERCHANT','FBM')");
+        String condition=input.getOrDefault("f_condition","ALL");
+        if(!condition.equals("ALL")&&!SkuCondition.OPTIONS.containsKey(condition))throw new IllegalArgumentException("Invalid condition");
+        if(!condition.equals("ALL")){sql.add(CONDITION_SQL+"=?");args.add(condition);}
         Map<String,String> dates=new HashMap<>();input.forEach((k,v)->{if(k.startsWith("f_date_"))dates.put(k,v);});
         var dateQuery=OrderSmartFilters.parse(dates);
         if(!dateQuery.sql().equals("true")){sql.add(dateQuery.sql().replace("orders.purchase_date","last_seen_at"));args.addAll(dateQuery.args());}
@@ -39,11 +42,27 @@ public final class MarketplaceSkuFilters {
     }
     public static Map<String,String> clean(Map<String,String> input){
         if(input==null||input.size()>60)throw new IllegalArgumentException("Too many filters");
-        Set<String> allowed=new HashSet<>(List.of("q","status","f_channel","f_date_min","f_date_max","f_date_preset","f_date_start_offset","f_date_end_offset"));
+        Set<String> allowed=new HashSet<>(List.of("q","status","f_channel","f_condition","f_date_min","f_date_max","f_date_preset","f_date_start_offset","f_date_end_offset"));
         TEXT.keySet().forEach(k->{allowed.add("f_"+k);allowed.add("f_"+k+"_op");});
         NUMBER.keySet().forEach(k->{allowed.add("f_"+k+"_min");allowed.add("f_"+k+"_max");});
         Map<String,String> result=new TreeMap<>();
         input.forEach((k,v)->{if(k.startsWith("f_")&&!allowed.contains(k))throw new IllegalArgumentException("Unknown filter");if(allowed.contains(k)){if(v==null||v.length()>250)throw new IllegalArgumentException("Filter is too long");if(!v.isBlank())result.put(k,v.trim());}});
         parse(result);return result;
     }
+    /** HTTP defaults belong to Marketplace only; existing repository/Orders callers keep their contract. */
+    public static Map<String,String> defaults(Map<String,String> input){var result=new java.util.LinkedHashMap<>(input);result.putIfAbsent("f_condition","NEW");parse(result);return result;}
+    static final String CONDITION_SQL="""
+        CASE regexp_replace(lower(coalesce(condition_type,'')),'[^a-z0-9]','','g')
+        WHEN '11' THEN 'NEW' WHEN 'new' THEN 'NEW' WHEN 'newnew' THEN 'NEW'
+        WHEN '1' THEN 'USED_LIKE_NEW' WHEN 'usedlikenew' THEN 'USED_LIKE_NEW'
+        WHEN '2' THEN 'USED_VERY_GOOD' WHEN 'usedverygood' THEN 'USED_VERY_GOOD'
+        WHEN '3' THEN 'USED_GOOD' WHEN 'usedgood' THEN 'USED_GOOD'
+        WHEN '4' THEN 'USED_ACCEPTABLE' WHEN 'usedacceptable' THEN 'USED_ACCEPTABLE'
+        WHEN '5' THEN 'COLLECTIBLE_LIKE_NEW' WHEN 'collectiblelikenew' THEN 'COLLECTIBLE_LIKE_NEW'
+        WHEN '6' THEN 'COLLECTIBLE_VERY_GOOD' WHEN 'collectibleverygood' THEN 'COLLECTIBLE_VERY_GOOD'
+        WHEN '7' THEN 'COLLECTIBLE_GOOD' WHEN 'collectiblegood' THEN 'COLLECTIBLE_GOOD'
+        WHEN '8' THEN 'COLLECTIBLE_ACCEPTABLE' WHEN 'collectibleacceptable' THEN 'COLLECTIBLE_ACCEPTABLE'
+        WHEN '10' THEN 'REFURBISHED' WHEN 'refurbished' THEN 'REFURBISHED' WHEN 'refurbishedrefurbished' THEN 'REFURBISHED'
+        ELSE 'UNKNOWN' END
+        """;
 }

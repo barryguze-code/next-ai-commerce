@@ -5,6 +5,13 @@ const drawer=document.getElementById('receiving-drawer'),body=document.getElemen
 const canEdit=document.querySelector('.receive-work').dataset.canEdit==='true';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number=value=>Number(value||0).toLocaleString(undefined,{maximumFractionDigits:4});
+// Case equivalents use the saved invoice pack, never a subsequently changed catalogue pack.
+const quantity=(value,l)=>{
+  const units=Number(value),pack=Number(l?.unitsPerCase),each=number(value)+' each';
+  if(!Number.isFinite(units)||units<0||!Number.isFinite(pack)||pack<=0)return each;
+  const cases=Math.floor(units/pack),loose=Number((units-cases*pack).toFixed(4));
+  return number(cases)+(cases===1?' case':' cases')+(loose>0?' + '+number(loose)+' loose':'')+' · '+each;
+};
 const doc=id=>state.documents.find(d=>d.id===id),line=id=>state.lines.find(l=>l.id===id);
 const label=d=>(d.type==='INVOICE'?'Invoice':'Packing list')+' · '+(d.number||d.filename);
 const progress=d=>d.closed?(d.partial?'Closed · Partial':'Closed · Received'):Number(d.outstanding)===0?(Number(d.received)<Number(d.expected)?'Resolved · exceptions':'Fully received'):Number(d.received)>0||Number(d.outstanding)<Number(d.expected)?'Partially received':'Not received';
@@ -20,17 +27,33 @@ const unshippedHost=document.getElementById('rw-unshipped-information');if(unshi
 const conditionNames={SELLABLE:'Received',SOON_EXPIRED:'Short shelf life',EXPIRED:'Expired',SHORT_SHIPPED:'Short shipped',DAMAGED:'Damaged',MISPICKED:'Mispick',OVER_SHIPPED:'Overage'};
 const date=value=>value?value.split('-').slice(1).concat(value.slice(2,4)).join('/'):'No expiration';
 const shelf=value=>{if(!value||!state.policy)return 'neutral';const days=Math.round((new Date(value+'T00:00:00')-new Date(new Date().toDateString()))/86400000);return days<=Number(state.policy.minimumSellableDays)?'danger':days<=Number(state.policy.warningDays)?'warning':'success'};
+function receiptQuantities(l,d){
+  let batches=[];try{batches=JSON.parse(d.batches||'[]')}catch(_){}
+  const totals={};batches.forEach(b=>totals[b.condition]=(totals[b.condition]||0)+Number(b.quantity));
+  return {batches,totals,sellable:Math.max(0,Number(l.received)-(totals.DAMAGED||0)-(totals.MISPICKED||0)-(totals.EXPIRED||0)),
+    shortage:Math.max(Number(d.shortage)||0,totals.SHORT_SHIPPED||0)};
+}
+function receiptExceptions(totals,shortage){
+  return [[shortage,'short shipped'],[totals.DAMAGED,'damaged received'],[totals.MISPICKED,'mispick received'],[totals.EXPIRED,'expired received']]
+    .filter(([count])=>Number(count)>0).map(([count,label])=>'<small>'+number(count)+' '+label+'</small>').join('');
+}
 function renderLine(row,l){
-  const d=detail(l.id);let batches=[];try{batches=JSON.parse(d.batches||'[]')}catch(_){}
-  const quantities={};batches.forEach(b=>quantities[b.condition]=(quantities[b.condition]||0)+Number(b.quantity));
-  row.querySelector('[data-column="received"]').textContent=(Number(l.remaining)===0?'✓ ':'◔ ')+number(l.received)+' each';
+  row.querySelector('[data-column="expected"]').textContent=quantity(l.expected,l);
+  for(const key of ['expected','received','remaining']){
+    const cell=row.querySelector('[data-column="'+key+'"]');
+    cell.dataset.sortValue=String(l[key]??0);
+    cell.title=Number(l.unitsPerCase)>0?'Case equivalents · '+number(l.unitsPerCase)+' each per invoice case':'Case size unavailable';
+  }
+  const d=detail(l.id),{batches,totals:quantities,sellable,shortage}=receiptQuantities(l,d);
+  row.querySelector('[data-column="received"]').dataset.sortValue=String(sellable);
+  row.querySelector('[data-column="received"]').textContent=(Number(l.remaining)===0?'✓ ':'◔ ')+quantity(sellable,l);
   const dates=[...new Set(batches.filter(b=>['SELLABLE','SOON_EXPIRED','EXPIRED','OVER_SHIPPED'].includes(b.condition)).map(b=>b.expiration))];
   row.querySelector('[data-column="expiration"]').innerHTML=dates.length?dates.map(v=>'<span class="rw-status-badge '+shelf(v)+'">'+escape(date(v))+'</span>').join(' '):'—';
   const conditions=[...new Set(batches.map(b=>b.condition))];if(Number(d.shortage)>0&&!conditions.includes('SHORT_SHIPPED'))conditions.push('SHORT_SHIPPED');
   const tone=conditions.some(c=>['EXPIRED','DAMAGED','MISPICKED'].includes(c))||dates.some(v=>shelf(v)==='danger')?'danger':conditions.some(c=>['SHORT_SHIPPED','SOON_EXPIRED'].includes(c))||dates.some(v=>shelf(v)==='warning')?'warning':Number(l.received)>0?'success':'open';
   row.dataset.receivingStatus=l.closed?'closed':tone;
   row.querySelector('[data-column="condition"]').innerHTML=(conditions.length?conditions.map(c=>'<span class="rw-status-badge '+(['EXPIRED','DAMAGED','MISPICKED'].includes(c)?'danger':['SHORT_SHIPPED','SOON_EXPIRED'].includes(c)?'warning':'success')+'">'+escape(conditionNames[c]||c)+'</span>').join(' '):'<span class="rw-status-badge open">Not received</span>')+(l.closed?'<small>Closed · Read only</small>':'');
-  row.querySelector('[data-column="remaining"]').innerHTML=(l.closed?'Closed':number(l.remaining)+' each')+(Number(d.shortage)>0?'<small>'+number(d.shortage)+' short shipped</small>':'');
+  row.querySelector('[data-column="remaining"]').innerHTML=(l.closed?'Closed':quantity(l.remaining,l))+receiptExceptions(quantities,shortage);
   row.querySelector('[data-column="remaining"]').classList.toggle('rw-remaining-complete',!l.closed&&Number(l.remaining)===0);
   const receivedCell=row.querySelector('[data-column="received"]');
   receivedCell.dataset.receiptProgress=conditions.some(c=>['DAMAGED','MISPICKED','SHORT_SHIPPED'].includes(c))||Number(d.shortage)>0?'invalid':conditions.includes('OVER_SHIPPED')?'partial':Number(l.remaining)===0?'complete':Number(l.received)>0?'partial':'open';
@@ -99,9 +122,9 @@ async function refresh(){
   const updated=await response.json();state.documents=updated.documents;state.lines=updated.lines;state.details=updated.details;
   document.querySelectorAll('[data-line]').forEach(row=>{
     const l=line(row.dataset.line);if(!l){row.remove();return;}
-    row.querySelector('[data-column="expected"]').textContent=number(l.expected)+' each';
-    row.querySelector('[data-column="received"]').textContent=number(l.received)+' each';
-    row.querySelector('[data-column="remaining"]').textContent=l.closed?'Closed':number(l.remaining)+' each';
+    row.querySelector('[data-column="expected"]').textContent=quantity(l.expected,l);
+    row.querySelector('[data-column="received"]').textContent=quantity(l.received,l);
+    row.querySelector('[data-column="remaining"]').textContent=l.closed?'Closed':quantity(l.remaining,l);
     const actionCell=row.querySelector('[data-column="actions"]'),chat=actionCell.querySelector('.collaboration-row-button');
     actionCell.replaceChildren(rowActions(l));if(chat)actionCell.prepend(chat);
     renderLine(row,l);
@@ -223,9 +246,11 @@ function receive(id,overage=false){
     if(row){
       row.dataset.receiptPreview='true';
       const received=row.querySelector('[data-column="received"]'),left=row.querySelector('[data-column="remaining"]');
-      received.dataset.receiptProgress=tone;received.textContent=(valid&&remaining===0?'✓ ':'◔ ')+number(Number(l.received)+delivered)+' each';received.title=valid?'Unsaved preview · save receipt to apply':'Check quantities · unsaved preview';
-      left.dataset.receiptProgress=tone;left.classList.remove('rw-remaining-complete');left.textContent=number(remaining)+' each';
-      const shortages=Number(facts.shortage||0)+missing;if(shortages){const text=document.createElement('small');text.textContent=number(shortages)+' short shipped';left.append(text);}
+      const saved=receiptQuantities(l,facts),sellable=saved.sellable+physical;
+      received.dataset.sortValue=String(sellable);left.dataset.sortValue=String(remaining);
+      received.dataset.receiptProgress=tone;received.textContent=(valid&&remaining===0?'✓ ':'◔ ')+quantity(sellable,l);received.title=valid?'Unsaved preview · save receipt to apply':'Check quantities · unsaved preview';
+      left.dataset.receiptProgress=tone;left.classList.remove('rw-remaining-complete');left.textContent=quantity(remaining,l);
+      left.innerHTML+=receiptExceptions({...saved.totals,DAMAGED:(saved.totals.DAMAGED||0)+damaged,MISPICKED:(saved.totals.MISPICKED||0)+wrong},saved.shortage+missing);
     }
   };
   f.elements.cases.addEventListener('input',()=>{f.elements.quantity.value=String(Number((Number(f.elements.cases.value)*Number(f.elements.pack.value)).toFixed(4)))});
@@ -314,9 +339,10 @@ async function review(id){
     receipts.forEach(r=>{
       const card=document.createElement('article');card.className='rw-receipt'+(r.undone?' is-undone':'');
       card.dataset.receivingStatus=['EXPIRED','DAMAGED','MISPICKED'].includes(r.disposition)?'danger':['SHORT_SHIPPED','SOON_EXPIRED'].includes(r.disposition)?'warning':'success';
-      card.innerHTML='<h3>'+number(r.quantity)+' each · '+escape(conditionNames[r.disposition]||r.disposition)+(r.undone?' · Undone':'')+'</h3><p>'+escape(time(r.receivedAt))+' · '+escape(r.location||'No stock location')+'</p><p>'+escape(date(r.expiration))+'</p>';
+      card.innerHTML='<h3>'+quantity(r.quantity,l)+' · '+escape(conditionNames[r.disposition]||r.disposition)+(r.undone?' · Undone':'')+'</h3><p>'+escape(time(r.receivedAt))+' · '+escape(r.location||'No stock location')+'</p><p>'+escape(date(r.expiration))+'</p>';
+      card.title=Number(l.unitsPerCase)>0?'Case equivalents · '+number(l.unitsPerCase)+' each per invoice case':'Case size unavailable';
       const physical=['SELLABLE','SOON_EXPIRED','EXPIRED','OVER_SHIPPED'].includes(r.disposition);
-      if(!r.undone&&physical)card.innerHTML+='<p>Batch now: '+number(r.onHand)+' on hand · '+number(r.reserved)+' reserved</p>';
+      if(!r.undone&&physical)card.innerHTML+='<p>Batch now: '+quantity(r.onHand,l)+' on hand · '+quantity(r.reserved,l)+' reserved</p>';
       if(!r.undone&&r.blockedReason)card.innerHTML+='<p>'+escape(r.blockedReason)+'</p>';
       if(!r.undone&&canEdit&&!l.closed){
         const actions=document.createElement('div');actions.className='rw-row-actions';
@@ -330,7 +356,7 @@ async function review(id){
 }
 function undoReceipt(id,r){
   const l=line(id);open('Undo this receipt?',l.product,label(doc(l.documentId)));
-  body.innerHTML=note('Undo '+number(r.quantity)+' each · '+(conditionNames[r.disposition]||r.disposition),r.disposition==='SHORT_SHIPPED'?'The quantity returns to remaining, and its open vendor follow-up is reduced. No stock changes.':'Only untouched stock can be undone. Active orders and movements are checked before saving. The original receipt remains visible.',true);
+  body.innerHTML=note('Undo '+quantity(r.quantity,l)+' · '+(conditionNames[r.disposition]||r.disposition),r.disposition==='SHORT_SHIPPED'?'The quantity returns to remaining, and its open vendor follow-up is reduced. No stock changes.':'Only untouched stock can be undone. Active orders and movements are checked before saving. The original receipt remains visible.',true);
   body.append(form(reason()+'<button class="secondary-button compact-button rw-primary-action rw-danger" type="submit">Confirm undo receipt</button>',
     (f,requestId)=>run('undo',id,{requestId,receipt:r.id,reason:f.elements.reason.value},f,()=>review(id))));
 }

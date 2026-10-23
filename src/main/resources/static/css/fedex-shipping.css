@@ -1,0 +1,11 @@
+#fedex-shipping{width:min(760px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--line,#dce4ee);border-radius:20px;color:var(--ink);background:var(--white,#fff)}
+#fedex-shipping::backdrop{background:#14283f66}#fedex-shipping .dialog-shell{display:flex;flex-direction:column;max-height:calc(100dvh - 34px)}
+#fedex-shipping .dialog-header,#fedex-shipping .dialog-actions{padding:16px 20px;flex-shrink:0;border-bottom:1px solid var(--line,#dce4ee)}
+#fedex-shipping .dialog-header{display:flex;justify-content:space-between;align-items:center}#fedex-shipping .dialog-body{overflow:auto;padding:18px 20px}#fedex-shipping .dialog-actions{display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--line,#dce4ee)}
+#fedex-shipping label{display:grid;gap:5px;font-size:14px;color:var(--ink)}#fedex-shipping input,#fedex-shipping select{min-width:0;max-width:100%;padding:9px;border:1px solid var(--line,#dce4ee);border-radius:8px;font:inherit}
+#fedex-shipping label:has(input[type=checkbox]){display:flex;align-items:center;margin:12px 0}#fedex-shipping fieldset{border:1px solid var(--line,#dce4ee);border-radius:10px;margin:16px 0;padding:12px}#fedex-shipping legend{font-weight:650;font-size:14px}
+.fedex-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.fedex-measurements{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.fedex-rate,.fedex-history-row{display:flex;gap:12px;align-items:center;justify-content:space-between;border-top:1px solid var(--line,#dce4ee);padding:12px 0;font-size:14px}
+.fedex-history-row{flex-wrap:wrap}.fedex-order-action img{width:26px;max-height:18px;object-fit:contain;background:#4d148c;border-radius:3px;padding:3px}
+.fedex-recipient-warning{padding:12px 14px;border:1px solid var(--line,#dce4ee);border-left:4px solid var(--warning,#b7791f);border-radius:8px;background:var(--surface,#f8fafc);color:var(--ink,#172b42);font-size:14px;line-height:1.5}
+@media(max-width:550px){.fedex-fields,.fedex-measurements{grid-template-columns:1fr 1fr}.fedex-rate{flex-wrap:wrap}}

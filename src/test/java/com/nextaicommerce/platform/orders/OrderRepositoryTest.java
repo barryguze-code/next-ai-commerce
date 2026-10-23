@@ -5,6 +5,13 @@ import org.junit.jupiter.api.Test;
 
 class OrderRepositoryTest {
     @Test
+    void buyBoxLostRequiresConfirmedOrderItemAmount() {
+        assertThat(OrderRepository.tabPredicate("BUY_BOX_LOST"))
+            .contains("priced_item.item_price IS NOT NULL")
+            .contains("priced_item.item_price>0")
+            .contains("priced_item.quantity_ordered>0");
+    }
+    @Test
     void marketplaceTimeLookupUsesTheFoundationSchemaColumn() {
         assertThat(OrderRepository.MARKETPLACE_IDENTIFIER_SQL)
             .contains("SELECT marketplace_identifier FROM marketplace_connections")

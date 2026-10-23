@@ -171,9 +171,23 @@ public class BuyShippingRepository {
         return id;
     }
 
+    @Transactional
+    public void readyPackage(UUID tenant,UUID store,String order,UUID profile,String composition){
+        setTenant(tenant);
+        jdbc.update("INSERT INTO shipping_order_packages(tenant_id,marketplace_connection_id,amazon_order_id,package_profile_id,composition) VALUES (?,?,?,?,?) ON CONFLICT(tenant_id,marketplace_connection_id,amazon_order_id) DO UPDATE SET package_profile_id=excluded.package_profile_id,composition=excluded.composition",tenant,store,order,profile,composition);
+    }
+
     @Transactional(readOnly=true)
     public PackageProfile defaultProfile(UUID tenantId,UUID connectionId,String orderId){
         setTenant(tenantId);
+        var saved=jdbc.query("""
+            SELECT profile.id,profile.name,profile.container_code,profile.length,profile.width,profile.height,
+                   profile.dimension_unit,profile.weight,profile.weight_unit,profile.preferred_carrier,profile.temperature_class
+            FROM shipping_order_packages ready JOIN shipping_package_profiles profile ON profile.tenant_id=ready.tenant_id
+              AND profile.marketplace_connection_id=ready.marketplace_connection_id AND profile.id=ready.package_profile_id
+            WHERE ready.tenant_id=? AND ready.marketplace_connection_id=? AND ready.amazon_order_id=? AND profile.status='ACTIVE'
+            """,(rs,row)->new PackageProfile(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getBigDecimal(4),rs.getBigDecimal(5),rs.getBigDecimal(6),rs.getString(7),rs.getBigDecimal(8),rs.getString(9),rs.getString(10),rs.getString(11)),tenantId,connectionId,orderId);
+        if(!saved.isEmpty())return saved.getFirst();
         return jdbc.query("""
             SELECT profile.id,profile.name,profile.container_code,profile.length,profile.width,profile.height,
                    profile.dimension_unit,profile.weight,profile.weight_unit,profile.preferred_carrier,profile.temperature_class
@@ -468,15 +482,21 @@ public class BuyShippingRepository {
 
     @Transactional(readOnly=true)
     public Artifact artifact(UUID tenantId,UUID connectionId,UUID shipmentId){
+        return artifact(tenantId,connectionId,shipmentId,"COMPOSED_PRINT_FILE");
+    }
+    @Transactional(readOnly=true)
+    public Artifact artifact(UUID tenantId,UUID connectionId,UUID shipmentId,String type){
         setTenant(tenantId);
         return jdbc.query("""
             SELECT artifact.encrypted_payload,artifact.encryption_nonce,artifact.mime_type
             FROM shipping_label_artifacts artifact JOIN buy_shipping_shipments shipment
               ON shipment.tenant_id=artifact.tenant_id AND shipment.id=artifact.shipment_id
             WHERE artifact.tenant_id=? AND shipment.marketplace_connection_id=? AND artifact.shipment_id=?
-              AND artifact.artifact_type='COMPOSED_PRINT_FILE'
-            """,rs->rs.next()?new Artifact(rs.getBytes(1),rs.getBytes(2),rs.getString(3)):null,tenantId,connectionId,shipmentId);
+              AND artifact.artifact_type=?
+            """,rs->rs.next()?new Artifact(rs.getBytes(1),rs.getBytes(2),rs.getString(3)):null,tenantId,connectionId,shipmentId,type);
     }
+    @Transactional(readOnly=true)
+    public String shipmentOrder(UUID tenant,UUID store,UUID shipment){setTenant(tenant);return jdbc.queryForObject("SELECT amazon_order_id FROM buy_shipping_shipments WHERE tenant_id=? AND marketplace_connection_id=? AND id=?",String.class,tenant,store,shipment);}
 
     private void saveArtifact(UUID tenantId,UUID shipmentId,String type,ShippingLabelCrypto.Encrypted encrypted,String mime,int pages){
         jdbc.update("""

@@ -7,9 +7,10 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 class ShippingDeskTemplateTest {
-    @Test void exposesDurableBulkAndReprintWorkflowsInPlainLanguage() throws Exception {
+    @Test void shippingHubDoesNotAdvertiseTheRemovedOrdersEntry() throws Exception {
         String html=Files.readString(Path.of("src/main/resources/templates/shipping.html"));
-        assertThat(html).contains("Package-ready orders","Create shipping batch","Shipping batches","Purchased labels",
-            "Print batch again","Purchase batch labels","Cold-chain shipping policy","Never use services containing");
+        assertThat(html).contains("Merchant-fulfilled orders", "Shipping-label purchase is not available from the Orders table.",
+            "Review merchant-fulfilled orders and shipping settings.", "<h3>Saved shipment history</h3>", "Saved shipment history is retained.", "/app/orders?f_channel=FBM", "/app/shipping/preferences", "/app/connections/carriers")
+            .doesNotContain("Ship directly from Orders", "Open the same order’s Buy Shipping dialog", "data-create-batch", "Choose an order, compare carrier rates", "<h3>Reprint a label</h3>");
     }
 }

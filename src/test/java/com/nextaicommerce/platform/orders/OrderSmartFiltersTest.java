@@ -3,6 +3,7 @@ import static org.assertj.core.api.Assertions.*;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 class OrderSmartFiltersTest {
+ @Test void unmappedChecksActualMappingsRatherThanWarehouseFulfillmentState(){assertThat(OrderRepository.tabPredicate("NEEDS_MAPPING")).contains("marketplace_sku_mappings","NOT EXISTS").doesNotContain("orders.fulfillment_state=");}
  @Test void orderDateSortIsAccepted(){assertThat(OrderSmartFilters.parse(Map.of("smartSort","date_asc")).sort()).isEqualTo("date_asc");assertThat(OrderSmartFilters.parse(Map.of("smartSort","date_desc")).sort()).isEqualTo("date_desc");}
  @Test void buyBoxLostRequiresAvailableStock(){assertThat(OrderRepository.tabPredicate("BUY_BOX_LOST")).contains("local_inventory.available","listing.quantity",">0");}
  @Test void smartDatesMoveWithTimeAndRespectMarketplaceMidnight(){var zone=java.time.ZoneId.of("America/Los_Angeles");var clock=java.time.Clock.fixed(java.time.Instant.parse("2026-09-20T02:00:00Z"),zone);var q=OrderSmartFilters.parse(Map.of("f_date_preset","today"),zone,clock);assertThat(q.args()).containsExactly(java.time.OffsetDateTime.parse("2026-09-19T00:00:00-07:00"),java.time.OffsetDateTime.parse("2026-09-20T00:00:00-07:00"));assertThat(q.sql()).contains("purchase_date<?");var next=OrderSmartFilters.parse(Map.of("f_date_preset","today"),zone,java.time.Clock.offset(clock,java.time.Duration.ofDays(1)));assertThat(next.args()).doesNotContain(q.args().getFirst());}

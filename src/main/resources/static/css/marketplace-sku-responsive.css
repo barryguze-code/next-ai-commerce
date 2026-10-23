@@ -1,0 +1,171 @@
+/* Marketplace-only canonical row/card and verified family disclosure. */
+.sku-parent-label{display:inline-flex;padding:3px 7px;border-radius:6px;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-weight:650}
+.sku-parent-explanation,.sku-inventory-coverage{color:var(--muted);font-size:var(--ui-meta,12px);line-height:1.5;white-space:normal}
+.sku-inventory-coverage{padding:10px 16px;margin:0}
+.sku-family{margin-top:12px;max-width:100%;min-width:0}
+.sku-family>summary{cursor:pointer;min-height:44px;display:list-item;align-content:center;color:var(--ink);font-weight:600;white-space:normal}
+.sku-family-body{max-height:70vh;overflow:auto;overscroll-behavior:contain;max-width:100%;border:1px solid var(--line);border-radius:10px;background:var(--white)}
+.sku-family-table{border-collapse:collapse;width:100%;table-layout:auto}
+.sku-family-table th,.sku-family-table td{padding:12px;text-align:left;vertical-align:top;white-space:normal;border-bottom:1px solid var(--line)}
+.sku-family-table .sku-open-actions{min-width:44px;min-height:44px}
+.sku-family-table [hidden]{display:none!important}
+.sku-family :focus-visible{outline:2px solid var(--blue,#2868ca);outline-offset:3px}
+@media(max-width:760px){
+ .sku-workspace #marketplace-listings-table-wrap{min-width:0;max-width:100%;overflow:visible}
+ .sku-workspace #marketplace-listings-table{display:block;min-width:0!important;width:100%;table-layout:auto}
+ .sku-workspace #marketplace-listings-table>thead{display:block;position:static!important;overflow-x:auto;max-width:100%;padding:8px}
+ .sku-workspace #marketplace-listings-table>thead>tr{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+ /* Shared table status width (1%) and record width (142px) are desktop constraints. */
+ .sku-workspace #marketplace-listings-table>thead>tr>th{display:block;position:static!important;width:auto!important;min-width:0!important;max-width:100%!important;padding:4px 8px;border:0;white-space:normal}
+ .sku-workspace #marketplace-listings-table>thead>tr>th>a{display:inline-flex;align-items:center;min-height:44px;white-space:normal}
+ .sku-workspace #marketplace-listings-table>tbody{display:block;padding:10px;min-width:0}
+ .sku-workspace #marketplace-listings-table>tbody>tr{display:flex;flex-direction:column;min-width:0;margin:0 0 12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--white);box-shadow:none}
+ .sku-workspace #marketplace-listings-table>tbody>tr>td{display:block;position:static!important;box-sizing:border-box;min-width:0!important;max-width:100%!important;width:100%!important;padding:8px 0;border:0;white-space:normal;overflow-wrap:anywhere;text-align:left}
+ .sku-workspace #marketplace-listings-table>tbody>tr>td[hidden]{display:none!important}
+ .sku-workspace #marketplace-listings-table>tbody>tr>td::before{content:attr(data-label);display:block;margin-bottom:6px;color:var(--muted);font-size:12px;font-weight:600}
+ .sku-workspace .sku-approved-title,.sku-workspace .sku-copy-value{max-width:100%;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+ .sku-workspace .sku-approved-product,.sku-workspace .sku-mapping-values,.sku-workspace .sku-identifier-line{min-width:0;max-width:100%;flex-wrap:wrap}
+ .sku-workspace #marketplace-listings-table .table-overview-rail{position:static!important;min-width:0;max-width:100%}
+ .sku-workspace #marketplace-listings-table .table-overview-rail button{min-width:44px;min-height:44px}
+ .sku-workspace .sku-family-body{width:100%;max-height:65vh}
+ .sku-workspace .sku-family-table,.sku-workspace .sku-family-table>tbody{display:block;width:100%;min-width:0}
+ .sku-workspace .sku-family-table>thead{display:none}
+ .sku-workspace .sku-family-table>tbody>tr{display:flex;flex-direction:column;min-width:0;padding:10px;border-bottom:1px solid var(--line)}
+ .sku-workspace .sku-family-table>tbody>tr>td{display:block;min-width:0!important;max-width:100%!important;padding:8px 0;overflow-wrap:anywhere;border:0}
+ .sku-workspace .sku-family-table>tbody>tr>td::before{content:attr(data-label);display:block;color:var(--muted);font-size:12px}
+}
+
+.sku-workspace #marketplace-listings-table>tbody>tr[hidden]{display:none!important}
+.sku-workspace #marketplace-listings-table>tbody>tr[data-family-disclosure]>td{padding:0 12px 16px;max-width:0}
+@media(max-width:760px){.sku-workspace #marketplace-listings-table>tbody>tr[data-family-disclosure]{padding:0 10px 10px;margin-top:-12px;border-top:0;border-radius:0 0 12px 12px}.sku-workspace #marketplace-listings-table>tbody>tr[data-family-disclosure]>td{max-width:100%!important;padding:0}.sku-workspace #marketplace-listings-table>tbody>tr[data-family-disclosure]>td::before{display:none}}
+
+@media(min-width:761px){
+ #marketplace-listings-table :is(th,td)[data-column=fnsku]{min-width:12rem;overflow-wrap:anywhere;word-break:normal}
+ .sku-family-table :is(th,td)[data-column=fnsku]{min-width:12rem}
+ .sku-family-table :is(th,td)[data-column=product-details]{min-width:18rem}
+ .sku-family-table :is(th,td)[data-column=status]{min-width:9rem}
+ .sku-family-table :is(th,td):not([data-column=product-details]):not([data-column=fnsku]){min-width:8rem}
+}
+.sku-workspace .sku-family-table .sku-open-actions.table-action-trigger{display:inline-grid;place-items:center;width:44px;height:44px;padding:4px;border:1px solid #b7c8de;border-radius:10px;background:transparent;color:var(--ink)}
+.sku-family-table .sku-open-actions .platform-icon{width:30px;height:30px;object-fit:contain}
+.sku-family-body{border-inline-start:3px solid var(--blue);padding:8px;background:var(--bg)}
+
+.sku-family-body:focus-visible,.sku-workspace .sku-table-wrap:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+/* Inventory numbers must remain legible on every Marketplace dark card surface. */
+html[data-theme=dark] .sku-workspace #marketplace-listings-table .fba-stock-totals dd{color:var(--ink)!important}
+
+/* Verified family context is decorative, outside canonical row controls/counts. */
+.sku-workspace .sku-view-filters{display:flex;flex-wrap:wrap;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line)}
+.sku-workspace .sku-view-filters label{display:flex;flex-direction:column;gap:4px;min-width:150px;max-width:100%;color:var(--ink);font-size:12px;font-weight:600}
+.sku-workspace .sku-view-filters select{min-height:44px;max-width:100%;padding:8px 32px 8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--white);color:var(--ink);font:inherit;font-size:14px}
+.sku-workspace .sku-view-filters select:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.sku-workspace .sku-store-count-caption{margin:0;padding:8px 16px 0;color:var(--muted);font-size:12px;white-space:normal}
+.sku-workspace #marketplace-listings-table>tbody>.sku-family-heading{--sku-family-ink:#59677c;background:var(--bg);color:var(--sku-family-ink);font-size:12px;font-weight:400}
+.sku-workspace #marketplace-listings-table>tbody>.sku-family-heading>td{padding:12px 16px;white-space:normal;overflow-wrap:anywhere;color:var(--sku-family-ink)}
+@media(max-width:760px){
+ .sku-workspace #marketplace-listings-table>tbody>.sku-family-heading{display:block;border:0;border-radius:0;padding:0;margin:8px 0;background:transparent}
+ .sku-workspace #marketplace-listings-table>tbody>.sku-family-heading>td{padding:8px 0}
+ .sku-workspace #marketplace-listings-table>tbody>.sku-family-heading>td:before{display:none}
+ .sku-workspace .sku-view-filters label{flex:1 1 180px;min-width:0}
+}
+
+html[data-theme="dark"] .sku-workspace #marketplace-listings-table>tbody>.sku-family-heading{--sku-family-ink:#a8b2c1}
+
+@media(min-width:761px){.sku-workspace #marketplace-listings-table [data-column="shipping-template"]{min-width:170px;width:170px;white-space:normal;overflow-wrap:normal;word-break:normal}}
+
+/* Owner UAT corrections: compact presets and visible contiguous family boundaries. */
+.sku-workspace .sku-view-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0;border:0;min-width:0;max-width:100%}
+.sku-workspace .sku-fulfillment-segments{display:flex;align-items:center;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--white)}
+.sku-workspace .sku-fulfillment-segments button{min-width:44px;min-height:44px;padding:8px 10px;border:0;border-inline-end:1px solid var(--line);border-radius:0;background:transparent;color:var(--ink);font:inherit;font-size:13px}
+.sku-workspace .sku-fulfillment-segments button:last-child{border-inline-end:0}
+.sku-workspace .sku-fulfillment-segments button[aria-pressed=true]{background:var(--blue-soft,#eaf1ff);color:var(--blue);font-weight:700}
+.sku-workspace .sku-condition-preset{display:flex;align-items:center;min-width:0;max-width:100%;border:1px solid var(--line);border-radius:9px;background:var(--white)}
+.sku-workspace .sku-view-filters .sku-condition-preset label{display:flex;flex-direction:row;align-items:center;gap:2px;min-width:0;padding-inline-start:10px;flex:0 1 auto}
+.sku-workspace .sku-condition-preset select{min-width:0;min-height:44px;max-width:180px;border:0;padding:8px 24px 8px 4px;font-size:13px;background:transparent}
+.sku-workspace .sku-condition-preset [data-sku-clear-condition]{min-width:44px;min-height:44px;border:0;border-inline-start:1px solid var(--line);background:transparent;color:var(--muted);font-size:20px}
+.sku-workspace .sku-condition-preset button[hidden]{display:none}
+.sku-workspace .sku-view-filters :focus-visible{outline:2px solid var(--blue);outline-offset:-3px}
+.sku-workspace .sku-filter-bar .sku-store-count-caption{padding:0;margin:0;align-self:center;flex-shrink:0;font-size:11px;color:var(--muted)}
+.sku-workspace .sku-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.sku-workspace .sku-sync-status{align-items:center}
+.sku-workspace .sku-sync-reason:not(.sku-visually-hidden){margin:0;font-size:12px}
+.sku-workspace #marketplace-listings-table>tbody>.sku-family-heading>td,
+.sku-workspace #marketplace-listings-table>tbody>.sku-family-member>td:first-child{border-inline-start:2px solid var(--line)}
+.sku-workspace #marketplace-listings-table>tbody>.sku-family-end>td{border-bottom:2px solid var(--line);padding-bottom:18px}
+@media(min-width:1201px){.sku-workspace .sku-sync-heading{align-items:center}}
+@media(max-width:760px){
+ .sku-workspace .sku-view-filters{flex:1 1 auto;gap:6px}
+ .sku-workspace .sku-condition-preset{flex:0 1 auto}
+ .sku-workspace .sku-condition-preset select{max-width:160px}
+ .sku-workspace #marketplace-listings-table>tbody>.sku-family-heading{border-inline-start:2px solid var(--line);padding-inline-start:10px;margin-bottom:0;padding-bottom:8px}
+ .sku-workspace #marketplace-listings-table>tbody>.sku-family-member{border-inline-start:2px solid var(--line);border-radius:0 10px 10px 0;margin-bottom:0;padding-inline-start:10px}
+ .sku-workspace #marketplace-listings-table>tbody>.sku-family-member>td:first-child{border-inline-start:0}
+ .sku-workspace #marketplace-listings-table>tbody>.sku-family-end{border-bottom:2px solid var(--line);margin-bottom:12px;padding-bottom:16px}
+ .sku-workspace #marketplace-listings-table>tbody>.sku-family-end>td{border-bottom:0;padding-bottom:8px}
+}
+.sku-workspace .sku-condition-preset select{field-sizing:content;width:auto;min-width:58px;max-width:160px}
+
+/* Marketplace opt-in to the existing standard choice list. Native select remains fallback. */
+.sku-workspace .sku-condition-preset .sku-condition-choice-trigger{width:auto;min-width:58px;min-height:44px;max-width:200px;padding:8px 10px;border:0;background:transparent;color:var(--ink);font-size:13px;font-weight:500;white-space:normal}
+.sku-workspace .sku-condition-preset:has(.sku-condition-choice-trigger) label{padding-inline-start:0}
+.location-picker-popup.sku-condition-choice-popup button{min-height:44px;overflow-wrap:anywhere}
+
+.location-picker-popup.sku-condition-choice-popup button[aria-selected=true]:after{content:none}
+.sku-condition-choice-popup .sku-choice-check{margin-inline-start:auto;visibility:hidden;color:var(--blue);font-weight:800}
+.sku-condition-choice-popup [aria-selected=true] .sku-choice-check{visibility:visible}
+.sku-workspace .sku-table>tbody>tr[data-sku][data-family-collapsed]{display:none!important}
+.sku-workspace .sku-family-toggle{display:inline-flex;align-items:center;gap:8px;min-height:44px;max-width:100%;margin-inline-end:14px;padding:6px 0;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;text-align:start}
+.sku-workspace .sku-family-toggle:focus-visible{outline:2px solid var(--blue);outline-offset:3px;border-radius:4px}
+.sku-workspace .sku-family-chevron{display:inline-block;flex-shrink:0;width:16px;text-align:center}
+.sku-workspace .sku-family-toggle[aria-expanded=false] .sku-family-chevron{transform:rotate(-90deg)}
+.sku-workspace .sku-family-heading[data-family-collapsed]>td{border-bottom:2px solid var(--line)}
+@media(max-width:760px){
+ .sku-workspace .sku-family-heading .sku-family-toggle{display:flex;margin-inline-end:0}
+ .sku-workspace .sku-family-heading[data-family-collapsed]{border-bottom:2px solid var(--line);margin-bottom:12px}
+ .sku-workspace .sku-family-heading[data-family-collapsed]>td{border-bottom:0}
+}
+
+/* Tooltip suppression owns pseudo-elements; keep the condition affordance decorative DOM. */
+.sku-workspace .sku-condition-choice-trigger:after{content:none}
+.sku-condition-choice-trigger .sku-choice-chevron{margin-inline-start:auto;flex-shrink:0;color:var(--muted)}
+
+/* Compact family identity: Inventory's blue title affordance, no row-wide action. */
+.sku-workspace #marketplace-listings-table>tbody>.sku-family-heading{background:color-mix(in srgb,var(--ink) 4%,var(--white));color:var(--ink);font-size:13px}
+.sku-workspace #marketplace-listings-table>tbody>.sku-family-heading>td{padding:0 12px;color:var(--ink)}
+.sku-workspace .sku-family-toggle{display:inline-flex;align-items:center;min-height:44px;margin:0 12px 0 0;padding:0 6px;border-radius:6px;color:var(--blue);font-size:13px;font-weight:600;vertical-align:middle}
+.sku-workspace .sku-family-toggle:hover,.sku-workspace .sku-family-toggle:focus-visible{background:var(--sky);color:var(--blue);text-decoration:underline}
+.sku-workspace .sku-family-toggle:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.sku-workspace .sku-family-asin{color:color-mix(in srgb,var(--ink) 15%,var(--muted));font-size:13px;margin-inline-end:12px}
+.sku-workspace .sku-family-count{color:var(--ink);font-size:13px;font-weight:600}
+@media(max-width:760px){
+ .sku-workspace #marketplace-listings-table>tbody>.sku-family-heading{padding:0;margin-top:8px;background:color-mix(in srgb,var(--ink) 4%,var(--white))}
+ .sku-workspace #marketplace-listings-table>tbody>.sku-family-heading>td{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;padding:0 8px 4px}
+ .sku-workspace .sku-family-heading .sku-family-toggle{display:inline-flex;max-width:100%;margin:0;padding:0 4px}
+ .sku-workspace .sku-family-identity{overflow-wrap:anywhere;min-width:0}
+ .sku-workspace .sku-family-asin{margin:0;overflow-wrap:anywhere}
+}
+
+.sku-workspace .sku-empty-parent-context{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:12px;background:color-mix(in srgb,var(--ink) 4%,var(--white));color:var(--ink);font-size:13px;overflow-wrap:anywhere;border-bottom:1px solid var(--line)}
+
+/* Stable overview slot; the photographic frame follows intrinsic image proportions. */
+.sku-workspace #marketplace-listings-table>tbody>tr[data-sku] .table-overview-layout{display:grid!important;grid-template-columns:80px 34px;min-height:88px}
+.sku-workspace #marketplace-listings-table>tbody>tr[data-sku] .table-overview-picture:has(>img:not([hidden])){width:auto!important;height:auto!important;max-width:80px;max-height:88px;justify-self:center;padding:0;background:#fff;border-radius:min(18px,25%)}
+.sku-workspace #marketplace-listings-table>tbody>tr[data-sku] .table-overview-picture>img:not([hidden]){display:block;box-sizing:border-box;width:auto;height:auto;max-width:78px;max-height:86px;padding:0;margin:0;border:0;border-radius:0;object-fit:contain;object-position:center}
+
+/* Compact product typography; keep complete titles readable at both levels. */
+body.app-page .sku-workspace #marketplace-listings-table .sku-approved-title{font-size:13px!important;font-weight:600!important;line-height:1.4!important}
+body.app-page:has(.sku-workspace) #profit-dialog #profit-title{font-size:18px!important;font-weight:600!important;line-height:1.35!important}
+
+/* Selected semantic status tabs retain their hue; inset cues do not change geometry. */
+body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active{color:#ba3544!important;background:#fde9ec!important;border-color:#c24352!important;box-shadow:inset 0 0 0 1px #c24352,inset 0 -3px 0 #c24352}
+body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active b{color:inherit!important;background:#fce1e5!important}
+body.app-page .sku-workspace .sku-filter-bar>a.sku-info-tab.active{color:#995a0b!important;background:#ffedcb!important;border-color:#a66d22!important;box-shadow:inset 0 0 0 1px #a66d22,inset 0 -3px 0 #a66d22}
+body.app-page .sku-workspace .sku-filter-bar>a.sku-info-tab.active b{color:inherit!important;background:#ffe6bc!important}
+html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active{color:#ffacb5!important;background:#482731!important;border-color:#d97c8c!important;box-shadow:inset 0 0 0 1px #d97c8c,inset 0 -3px 0 #d97c8c}
+html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active b{background:#633342!important}
+html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-info-tab.active{color:#ffd398!important;background:#4b351d!important;border-color:#c78b35!important;box-shadow:inset 0 0 0 1px #c78b35,inset 0 -3px 0 #c78b35}
+html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-info-tab.active b{background:#63451f!important}
+
+/* The existing exact condition selection owns the closed trigger treatment. */
+body.app-page .sku-workspace .sku-condition-preset:has(select[data-sku-view-filter="f_condition"] option:checked:not([value="ALL"])){border-color:var(--ui-action-line)}
+body.app-page .sku-workspace .sku-condition-preset:has(select[data-sku-view-filter="f_condition"] option:checked:not([value="ALL"])) :is(.sku-condition-choice-trigger[aria-expanded=false],select:not([hidden])){background:var(--ui-action-soft)!important;color:var(--ui-action-text)!important}

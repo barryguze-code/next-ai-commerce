@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FBA Shipments | Next AI Commerce</title>
+  <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css"><link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><link rel="stylesheet" href="/css/fba.css?v=20261015-modal">
+  <script defer src="/js/theme.js"></script><script defer src="/js/platform-ui.js?v=1.6.6"></script>
+  <link rel="stylesheet" href="/css/inventory.css"><script defer src="/js/fba-shipments.js?v=20261015-modal"></script>
+  <th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block>
+</head><body class="app-page">
+<aside class="sidebar"><a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
+  <div th:replace="~{fragments/sidebar-nav :: nav('fba-shipments')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
+<main class="workspace">
+  <header class="workspace-header"><div><h1>FBA Shipments</h1><p class="page-intro">Warehouse replenishments to Amazon—not customer orders.</p></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
+  <section class="data-card">
+    <div class="card-toolbar"><div><h2>Replenishment shipments</h2><p>Find shipments containing a marketplace SKU or FNSKU.</p></div>
+      <form method="get" action="/app/inventory/fba-shipments"><label class="search-field"><input type="search" name="q" th:value="${query}" placeholder="Search SKU, product title, shipment, or destination" aria-label="Search FBA shipments"></label><button class="secondary-button" type="submit">Search</button></form></div>
+    <p class="fba-notice">Amazon replenishment shipments import in the background. Ship-from locality comes from Amazon; warehouse mapping is separate. Viewing or importing shipments never deducts warehouse inventory.</p>
+    <p class="fba-notice" th:unless="${amazonStore}">Choose an Amazon store to view FBA shipments.</p>
+    <div class="table-wrap"><table class="fba-shipment-table" data-layout-version="20261015-fba-dates"><thead><tr><th>Shipment</th><th>Ship from</th><th>Amazon destination</th><th>Status</th><th class="numeric">SKUs</th><th class="numeric">Shipped</th><th class="numeric">Received</th><th>FBA Shipment Date</th></tr></thead><tbody>
+      <tr th:each="row:${shipments.rows}" th:attr="data-ship-from-state=${row.shipFromState}"><td><button type="button" class="text-button" data-fba-shipment th:attr="data-fba-shipment=${row.id}" th:text="${row.id}"></button><small th:text="${row.name}"></small></td><td><span th:text="${row.shipFrom ?: 'Not supplied'}"></span><small>Warehouse mapping pending</small></td><td th:text="${row.destination ?: 'Pending'}"></td><td th:text="${row.status ?: 'Unknown'}"></td><td class="numeric" th:text="${row.skuCount}"></td><td class="numeric" th:text="${row.shipped}"></td><td class="numeric" th:text="${row.received}"></td><td th:text="${row.createdDisplay()}"></td></tr>
+      <tr th:if="${shipments.rows.isEmpty()}"><td colspan="8"><div class="table-empty"><strong th:text="${query.isEmpty() ? 'No FBA shipments imported yet' : 'No matching shipments'}"></strong><p>Inventory snapshots alone do not contain individual shipment records.</p></div></td></tr>
+    </tbody></table></div>
+    <footer class="table-pagination" th:attr="data-page=${shipments.page},data-page-max=${shipments.pages()},data-page-size=${shipments.size}">
+      <span th:text="${'Total: '+shipments.total+' shipments'}"></span>
+      <nav aria-label="Shipment pages"><form method="get"><input type="hidden" name="q" th:value="${query}"><input type="hidden" name="size" th:value="${shipments.size}">
+        <button class="secondary-button compact-button" name="page" value="0" th:disabled="${!shipments.previous()}">First</button><button class="secondary-button compact-button" name="page" th:value="${shipments.page-1}" th:disabled="${!shipments.previous()}">Previous</button><span th:text="${'Page '+(shipments.page+1)+' of '+shipments.pages()}"></span><button class="secondary-button compact-button" name="page" th:value="${shipments.page+1}" th:disabled="${!shipments.next()}">Next</button><button class="secondary-button compact-button" name="page" th:value="${shipments.pages()-1}" th:disabled="${!shipments.next()}">Last</button>
+      </form></nav>
+    </footer>
+  </section>
+</main>
+<dialog id="fba-shipment-dialog" class="invite-dialog inventory-history-dialog" aria-labelledby="fba-shipment-title">
+ <section class="dialog-shell"><header class="dialog-header"><div><small>FBA replenishment</small><h2 id="fba-shipment-title">Shipment contents</h2></div><button type="button" class="dialog-close" data-fba-close aria-label="Close shipment">×</button></header>
+ <div class="dialog-body"><form data-fba-item-search><label class="search-field"><input type="search" aria-label="Search shipment items" placeholder="Search SKU, FNSKU or product title"></label><button class="secondary-button">Search</button></form><p data-fba-item-status role="status"></p><div class="table-wrap"><table><thead><tr><th>Product / SKU</th><th>Shipped units</th><th>Received units</th></tr></thead><tbody data-fba-items></tbody></table></div></div>
+ <footer class="dialog-actions"><button class="secondary-button" type="button" data-fba-prev>Previous</button><span data-fba-page></span><button class="secondary-button" type="button" data-fba-next>Next</button><button class="primary-button" type="button" data-fba-close>Done</button></footer></section>
+</dialog><th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block></body></html>

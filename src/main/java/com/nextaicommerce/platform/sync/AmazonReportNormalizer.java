@@ -55,6 +55,11 @@ public class AmazonReportNormalizer {
         });
     }
 
+    /** Shipment-scoped Finances API response, using the same idempotent transaction store. */
+    public long normalizeShipmentFinances(AmazonSyncStore.Job job,JsonNode root,UUID sourceDocument){
+        return transactions.execute(status->{setTenant(job.tenantId());return finances(job,root,sourceDocument);});
+    }
+
     public long normalizeOrderItems(AmazonSyncStore.Job job,String orderId,JsonNode root,UUID sourceDocument){
         return transactions.execute(status->{setTenant(job.tenantId());long count=0;
             jdbc.query("SELECT id FROM amazon_orders WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=? FOR UPDATE",rs->{},job.tenantId(),job.connectionId(),orderId);
@@ -117,10 +122,10 @@ public class AmazonReportNormalizer {
             ON CONFLICT(tenant_id,marketplace_connection_id,amazon_order_item_id) DO UPDATE SET
                 seller_sku=EXCLUDED.seller_sku,asin=EXCLUDED.asin,title=EXCLUDED.title,
                 quantity_ordered=EXCLUDED.quantity_ordered,quantity_shipped=EXCLUDED.quantity_shipped,
-                item_price=EXCLUDED.item_price,item_tax=EXCLUDED.item_tax,shipping_price=EXCLUDED.shipping_price,
-                shipping_tax=EXCLUDED.shipping_tax,promotion_discount=EXCLUDED.promotion_discount,
-                shipping_discount=EXCLUDED.shipping_discount,
-                currency=EXCLUDED.currency,updated_at=now()
+                item_price=coalesce(EXCLUDED.item_price,amazon_order_items.item_price),item_tax=coalesce(EXCLUDED.item_tax,amazon_order_items.item_tax),shipping_price=coalesce(EXCLUDED.shipping_price,amazon_order_items.shipping_price),
+                shipping_tax=coalesce(EXCLUDED.shipping_tax,amazon_order_items.shipping_tax),promotion_discount=coalesce(EXCLUDED.promotion_discount,amazon_order_items.promotion_discount),
+                shipping_discount=coalesce(EXCLUDED.shipping_discount,amazon_order_items.shipping_discount),
+                currency=coalesce(EXCLUDED.currency,amazon_order_items.currency),updated_at=now()
             """,job.tenantId(),job.connectionId(),orderId,itemId,item.path("SellerSKU").asText(null),
             item.path("ASIN").asText(null),item.path("Title").asText(null),item.path("QuantityOrdered").asInt(0),
             item.path("QuantityShipped").asInt(0),money(item,"ItemPrice"),money(item,"ItemTax"),
@@ -254,10 +259,10 @@ public class AmazonReportNormalizer {
                 ON CONFLICT(tenant_id,marketplace_connection_id,amazon_order_item_id) DO UPDATE SET
                     seller_sku=EXCLUDED.seller_sku,asin=EXCLUDED.asin,title=EXCLUDED.title,
                     quantity_ordered=EXCLUDED.quantity_ordered,quantity_shipped=EXCLUDED.quantity_shipped,
-                    item_price=EXCLUDED.item_price,item_tax=EXCLUDED.item_tax,shipping_price=EXCLUDED.shipping_price,
-                    shipping_tax=EXCLUDED.shipping_tax,promotion_discount=EXCLUDED.promotion_discount,
-                    shipping_discount=EXCLUDED.shipping_discount,
-                    currency=EXCLUDED.currency,updated_at=now()
+                    item_price=coalesce(EXCLUDED.item_price,amazon_order_items.item_price),item_tax=coalesce(EXCLUDED.item_tax,amazon_order_items.item_tax),shipping_price=coalesce(EXCLUDED.shipping_price,amazon_order_items.shipping_price),
+                    shipping_tax=coalesce(EXCLUDED.shipping_tax,amazon_order_items.shipping_tax),promotion_discount=coalesce(EXCLUDED.promotion_discount,amazon_order_items.promotion_discount),
+                    shipping_discount=coalesce(EXCLUDED.shipping_discount,amazon_order_items.shipping_discount),
+                    currency=coalesce(EXCLUDED.currency,amazon_order_items.currency),updated_at=now()
                 """,job.tenantId(),job.connectionId(),orderId,itemId,sku,asin,value(report,row,"product-name","title"),
                 zero(integer(value(report,row,"quantity","quantity-purchased"))),
                 zero(integer(value(report,row,"quantity-shipped"))),decimal(value(report,row,"item-price")),
@@ -463,9 +468,18 @@ public class AmazonReportNormalizer {
 
     private long feeEstimates(AmazonSyncStore.Job job,String text,UUID source){
         Parsed report=parse(text);long count=0;Timestamp effective=Timestamp.from(Instant.now());
+        // Regional reports may repeat a seller SKU in several currencies. The
+        // snapshot key has no currency dimension: reject other markets' rows
+        // before they can replace amounts while retaining an earlier currency.
+        String expectedCurrency=jdbc.query("SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=?",
+            (rs,n)->rs.getString(1),job.marketplaceId()).stream().findFirst().orElse(null);
         for(int i=0;i<report.rows().size();i++){
             String[] row=report.rows().get(i);String sku=value(report,row,"sku","seller-sku");
             if(blank(sku)){reject(job,source,i+2,"Missing seller SKU",row);continue;}
+            String rowCurrency=value(report,row,"currency");
+            if(expectedCurrency==null||rowCurrency==null||!expectedCurrency.equalsIgnoreCase(rowCurrency)){
+                reject(job,source,i+2,"Fee currency missing or does not match the requested marketplace",row);continue;
+            }
             jdbc.update("""
                 INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,
                     fnsku,asin,currency,estimated_fee_total,referral_fee,fulfillment_fee,effective_at,
@@ -479,7 +493,7 @@ public class AmazonReportNormalizer {
                 value(report,row,"asin"),currency(value(report,row,"currency")),
                 decimal(value(report,row,"estimated-fee-total")),
                 decimal(value(report,row,"estimated-referral-fee-per-unit")),
-                decimal(value(report,row,"expected-fulfillment-fee-per-unit","estimated-fulfillment-fee-per-unit")),
+                decimal(value(report,row,"expected-fulfillment-fee-per-unit","estimated-fulfillment-fee-per-unit","expected-domestic-fulfilment-fee-per-unit")),
                 effective,rowJson(report,row),source);
             count++;
         }return count;
@@ -508,6 +522,9 @@ public class AmazonReportNormalizer {
                     transaction_type=EXCLUDED.transaction_type,posted_date=EXCLUDED.posted_date,
                     posted_marketplace_date=EXCLUDED.posted_marketplace_date,amount=EXCLUDED.amount,
                     currency=EXCLUDED.currency,breakdown=EXCLUDED.breakdown,raw_payload=EXCLUDED.raw_payload,
+                    amazon_order_id=coalesce(EXCLUDED.amazon_order_id,amazon_financial_transactions.amazon_order_id),
+                    shipment_id=coalesce(EXCLUDED.shipment_id,amazon_financial_transactions.shipment_id),
+                    seller_sku=coalesce(EXCLUDED.seller_sku,amazon_financial_transactions.seller_sku),
                     source_document_id=EXCLUDED.source_document_id,updated_at=now()
                 """,job.tenantId(),job.connectionId(),key,type,posted.instant(),posted.marketplaceDate(),
                 related(transaction,"ORDER_ID","orderId"),related(transaction,"SHIPMENT_ID","shipmentId"),

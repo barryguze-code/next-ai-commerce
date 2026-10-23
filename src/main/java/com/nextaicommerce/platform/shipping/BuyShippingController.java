@@ -58,6 +58,9 @@ public class BuyShippingController {
         return result;
     }
 
+    @PostMapping("/app/orders/{orderId}/buy-shipping/package")
+    Map<String,UUID> savePackage(@PathVariable String orderId,@RequestBody BuyShippingService.PackageInput input,HttpSession session){return Map.of("profileId",shipping.savePackage(tenant(session),connection(session),orderId,input));}
+
     @PostMapping("/app/orders/{orderId}/buy-shipping/purchase")
     ResponseEntity<Map<String,String>> purchase(@PathVariable String orderId,@RequestParam UUID shipmentId,@RequestParam UUID offerId,
             HttpSession session,Principal principal){

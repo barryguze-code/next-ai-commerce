@@ -113,7 +113,7 @@
     const data=state.data,order=data.order;
     $('[data-cancel-order]').href=sellerCentral(state.orderId,order.marketplaceId);
     $('[data-shipping-deadlines]').innerHTML=`<article><small>Ship no later than</small><strong>${date(order.latestShip)}</strong></article><article><small>Deliver no later than</small><strong>${date(order.latestDelivery)}</strong></article>`;
-    renderMode();renderAddresses();$('[data-packing-slip]').checked=data.settings.printPackingSlip;
+    renderMode();renderAddresses();$('[data-packing-slip]').checked=data.settings.printPackingSlip;const packingControl=$('[data-packing-slip]').closest('label');if(packingControl){packingControl.hidden=true;if(!dialog.querySelector('[data-preferences-link]')){const link=document.createElement('a');link.dataset.preferencesLink='';link.href='/app/shipping/preferences';link.textContent='Label layout: Buy Shipping Preferences';packingControl.after(link);}}
     $('[data-package-list]').innerHTML='';addPackage(true);renderHistory(data.shipments||[]);
     const unlabelled=(data.items||[]).reduce((sum,item)=>sum+Math.max(0,item.quantityOrdered-item.quantityShipped-(data.committedQuantities?.[item.orderItemId]||0)),0),rateButton=$('[data-get-rates]');
     rateButton.disabled=unlabelled===0||data.settings.mode==='DISABLED';rateButton.textContent=unlabelled===0?'All unshipped units already have labels':'Compare live rates';
@@ -177,6 +177,9 @@
       preferredCarrier:$('[data-preferred-carrier]',card).value||null,temperatureClass:$('[data-temperature-class]',card).value,saveForItems:$('[data-save-package]',card).checked,
       items:$$('[data-order-item-id]',card).map(input=>({orderItemId:input.dataset.orderItemId,quantity:Number(input.value)})).filter(item=>item.quantity>0)};
   }
+  const savePackageButton=document.createElement('button');savePackageButton.type='button';savePackageButton.className='secondary-button';savePackageButton.textContent='Save package for queue';
+  $('[data-get-rates]').before(savePackageButton);
+  savePackageButton.onclick=async()=>{if($('.shipping-package').length!==1)return message('The queue requires one package containing all remaining items.');savePackageButton.disabled=true;try{await request('/app/orders/'+encodeURIComponent(state.orderId)+'/buy-shipping/package',{method:'POST',body:JSON.stringify(packagePayload($('.shipping-package')))});message('Package saved. This order is now eligible for the Buy Shipping queue.',true);}catch(error){message(error.message);}finally{savePackageButton.disabled=false;}};
   async function getRates(){
     message('Sending the package details to Amazon. Eligible services usually return within a few seconds.',false,'working');const button=$('[data-get-rates]');button.disabled=true;button.setAttribute('aria-busy','true');button.textContent='Checking Amazon rates…';
     try{

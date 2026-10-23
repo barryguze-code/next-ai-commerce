@@ -22,7 +22,7 @@ final class OrderTabTotalsQuery {
         return """
             WITH scope AS MATERIALIZED (SELECT ?::uuid tenant_id, ?::uuid connection_id),
             normalized_orders AS MATERIALIZED (
-              SELECT orders.id,orders.amazon_order_id,orders.marketplace_id,orders.fulfillment_state,
+              SELECT orders.id,orders.tenant_id,orders.marketplace_connection_id,orders.amazon_order_id,orders.marketplace_id,orders.fulfillment_state,
                 orders.platform_waiting_for_pickup,
                 regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g') normalized_status,
                 sum(item.quantity_ordered) units
@@ -57,6 +57,7 @@ final class OrderTabTotalsQuery {
                 AND priced_item.marketplace_connection_id=scope.connection_id
               JOIN normalized_orders orders ON orders.amazon_order_id=priced_item.amazon_order_id
               JOIN lost_skus lost ON lost.seller_sku=priced_item.seller_sku AND lost.marketplace_id=orders.marketplace_id
+              WHERE priced_item.item_price IS NOT NULL AND priced_item.item_price>0 AND priced_item.quantity_ordered>0
             )
             SELECT
             """ + columns + """

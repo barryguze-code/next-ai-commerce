@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amazon relationship trial | Next AI Commerce</title>
+<link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css"><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5">
+<script defer src="/js/platform-ui.js?v=1.6.6"></script><link rel="stylesheet" href="/css/variation-trial-operator.css?v=20261021-1"><script defer src="/js/variation-trial-operator.js?v=20261021-1"></script></head>
+<body class="app-page"><aside class="sidebar"><a class="brand" href="/app">Next AI Commerce</a><div th:replace="~{fragments/sidebar-nav :: nav('marketplace-skus')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
+<main class="workspace variation-trial" data-variation-trial>
+<header class="workspace-header"><div><span class="eyebrow dark">Local operator trial</span><h1>Amazon relationship trial</h1><p>One bounded collection of variation relationships. Amazon writes and inventory enforcement remain off.</p></div></header>
+<section class="data-card trial-scope" aria-labelledby="trial-scope-title"><h2 id="trial-scope-title">Approved scope</h2>
+<dl><div><dt>Account and store</dt><dd>KARACA · Amazon US</dd></div><div><dt>Marketplace</dt><dd th:text="${trialMarketplace}">ATVPDKIKX0DER</dd></div><div><dt>Exact starting SKU</dt><dd th:text="${seedSku}">4D-2PHN-6KX3</dd></div></dl>
+<p>Maximum 4 seller-SKU identities, 10 Listings read reservations and 2 token-request reservations within 5 minutes from Start. Retries use the same limits. This trial cannot be renewed or reset.</p>
+</section>
+<section class="data-card trial-result" aria-labelledby="trial-state">
+<div role="status" aria-live="polite"><h2 id="trial-state" tabindex="-1" data-trial-state>Checking trial status…</h2><p data-trial-message>No trial starts automatically.</p></div>
+<p role="alert" tabindex="-1" data-trial-error hidden></p>
+<dl class="trial-budgets"><div><dt>Read reservations</dt><dd data-trial-reads>—</dd></div><div><dt>Token-request reservations</dt><dd data-trial-oauth>—</dd></div><div><dt>Server deadline</dt><dd><time data-trial-deadline>—</time></dd></div></dl>
+<p class="trial-help">Reservations include retries and may include a request that was not sent. Counts do not confirm complete or verified relationships. Checking status can close an expired trial.</p>
+<div class="trial-actions">
+<form action="/app/marketplace-skus/variation-trial/start" method="post" data-trial-start>
+<input type="hidden" name="idempotencyKey" th:value="${trialKey}"><input th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+<button class="primary-button" type="submit" disabled>Start approved KARACA trial</button></form>
+<form action="/app/marketplace-skus/variation-trial/cancel" method="post" data-trial-cancel>
+<input th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"><button class="secondary-button" type="submit" disabled>Cancel trial</button></form>
+<button class="secondary-button" type="button" data-trial-refresh>Refresh trial status</button>
+</div><p class="trial-help">Cancellation stops further scheduling; an in-flight request may still finish. A completed trial does not enable parent inventory enforcement.</p>
+<noscript><p role="alert">JavaScript is required for these controls. No trial has been started by this page.</p></noscript>
+</section><p><a href="/app/marketplace-skus">Return to Marketplace SKUs</a></p>
+</main></body></html>
