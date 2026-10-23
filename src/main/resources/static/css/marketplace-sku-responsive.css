@@ -169,3 +169,6 @@ html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-info-ta
 /* The existing exact condition selection owns the closed trigger treatment. */
 body.app-page .sku-workspace .sku-condition-preset:has(select[data-sku-view-filter="f_condition"] option:checked:not([value="ALL"])){border-color:var(--ui-action-line)}
 body.app-page .sku-workspace .sku-condition-preset:has(select[data-sku-view-filter="f_condition"] option:checked:not([value="ALL"])) :is(.sku-condition-choice-trigger[aria-expanded=false],select:not([hidden])){background:var(--ui-action-soft)!important;color:var(--ui-action-text)!important}
+
+/* Reuse the dark link token; preserve the shared loss treatment and other workspaces. */
+html[data-theme=dark] .sku-workspace .profit-open:not(.profit-loss){color:var(--blue)}
