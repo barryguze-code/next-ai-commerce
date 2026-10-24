@@ -22,7 +22,7 @@ class GlobalCatalogDatabaseTest {
             postgres=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();
             url=postgres.getJdbcUrl("postgres","postgres");
         }
-        var source=new DriverManagerDataSource(url+"?currentSchema="+schema,"postgres",password);
+        var source=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);
         org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
         jdbc=new JdbcTemplate(source);
     }
