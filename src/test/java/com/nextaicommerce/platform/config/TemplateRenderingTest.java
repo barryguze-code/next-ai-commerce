@@ -138,6 +138,23 @@ class TemplateRenderingTest {
         context.setVariable("pickupEligibleOrders",java.util.Set.of(order.amazonOrderId()));
         assertThat(templateEngine().process("orders",context)).contains("Platform only","Undo platform pickup mark","/pickup-override");
         assertThat(templateEngine().process("orders",context)).contains("aria-current=\"page\"").doesNotContain("order-pickup-note");
+        context.setVariable("orders",List.of());
+        context.setVariable("orderPage",new OrderPage(List.of(),0,0,25));
+        context.setVariable("selectedStatus","ALL");
+        context.setVariable("orderTabs",List.of(new com.nextaicommerce.platform.orders.OrderRepository.OrderTab("ALL","All",false,6,12)));
+        context.setVariable("feeVarianceEnabled",true);
+        context.setVariable("feeVarianceOrders",0);
+        context.setVariable("feeVarianceFiltered",true);
+        assertThat(templateEngine().process("orders",context))
+            .contains("All: 6 orders, 12 units","Fee variance: 0 affected orders","No comparable fee differences",
+                "Orders appear here when comparable fee evidence shows a difference. Missing evidence remains unavailable.","View all orders")
+            .doesNotContain("Your orders will appear here","New orders will show up here automatically.");
+        context.setVariable("feeVarianceFiltered",false);
+        assertThat(templateEngine().process("orders",context)).contains("Your orders will appear here","New orders will show up here automatically.")
+            .doesNotContain("No comparable fee differences");
+        context.setVariable("query","not-found");
+        assertThat(templateEngine().process("orders",context)).contains("No orders found","Try a different search or view all your orders.")
+            .doesNotContain("No comparable fee differences","Your orders will appear here");
     }
 
     @Test
@@ -314,6 +331,18 @@ class TemplateRenderingTest {
         tabs=tabs.substring(0,tabs.indexOf("</nav>"));
         assertThat(tabs).contains("Never sold","sku-info-tab","NEVER_SOLD")
             .doesNotContain("Unmapped","Amazon problems","Inactive + stock","sku-alert-tab");
+        context.setVariable("summary",new SkuSummary(6,6,0,0,0,0,6,0));
+        context.setVariable("skuPage",new SkuPage(List.of(),0,0,25));
+        context.setVariable("feeVarianceEnabled",true);
+        context.setVariable("feeVarianceSkus",0);
+        context.setVariable("feeVarianceFiltered",true);
+        assertThat(templateEngine().process("marketplace-skus",context))
+            .contains("Fee variance: 0 affected SKUs","No comparable fee differences",
+                "Listings appear here when comparable fee evidence shows a difference. Missing evidence remains unavailable.")
+            .doesNotContain("Amazon has not supplied listings for this filter yet.");
+        context.setVariable("feeVarianceFiltered",false);
+        assertThat(templateEngine().process("marketplace-skus",context)).contains("No marketplace SKUs match this view","Amazon has not supplied listings for this filter yet.")
+            .doesNotContain("No comparable fee differences");
     }
 
     @Test

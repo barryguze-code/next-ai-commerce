@@ -133,7 +133,7 @@
 
             </tr>
 </th:block>
-            <tr th:if="${#lists.isEmpty(skuPage.rows)}"><td colspan="12"><div class="table-empty"><strong>No marketplace SKUs match this view</strong><span th:text="${emptyParentContext != null ? 'Adjust the current filters to view matching variations.' : (#strings.isEmpty(query) ? 'Amazon has not supplied listings for this filter yet.' : 'Try a different SKU, ASIN, title, or status.')}">Try another search.</span></div></td></tr>
+            <tr th:if="${#lists.isEmpty(skuPage.rows)}"><td colspan="12"><div class="table-empty"><strong th:text="${feeVarianceFiltered == true ? 'No comparable fee differences' : 'No marketplace SKUs match this view'}">No marketplace SKUs match this view</strong><span th:text="${feeVarianceFiltered == true ? 'Listings appear here when comparable fee evidence shows a difference. Missing evidence remains unavailable.' : (emptyParentContext != null ? 'Adjust the current filters to view matching variations.' : (#strings.isEmpty(query) ? 'Amazon has not supplied listings for this filter yet.' : 'Try a different SKU, ASIN, title, or status.'))}">Try another search.</span></div></td></tr>
           </tbody>
         </table>
       </div>
