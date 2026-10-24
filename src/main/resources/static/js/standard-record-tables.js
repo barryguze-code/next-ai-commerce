@@ -35,6 +35,7 @@
    const form=holder.matches('form')?holder:null;
    const product=row.dataset.pictureItem||form?.action.match(/products\/([^/]+)\/image/)?.[1];
    const url=product?'/app/catalog/products/'+encodeURIComponent(product)+'/image':row.dataset.pictureId?'/app/catalog/record-pictures/'+row.dataset.pictureType+'/'+row.dataset.pictureId:null;
+   if(product)holder.classList.add('product-thumbnail-slot');
    if(url){
     holder.dataset.standardPictureUrl=url;
     if(!holder.querySelector('img')){const img=node('img');img.alt='';img.loading='lazy';img.decoding='async';img.src=row.dataset.image||url;img.onerror=()=>{img.hidden=true};img.onload=()=>holder.querySelectorAll('b').forEach(b=>b.hidden=true);holder.prepend(img)}

@@ -64,3 +64,27 @@ The current step must be visually distinct. Completed steps use a clear success 
 - Empty, loading, success, validation, permission, and unexpected-error states are designed.
 - Keyboard, mobile, light-theme, and dark-theme behavior are considered.
 - Client-facing text contains no internal implementation language.
+
+
+## Product thumbnails in operational tables
+
+Product photos use an intrinsic photographic frame inside the table's existing
+bounded picture slot. Show the complete source image at its original aspect ratio:
+no cropping, stretching, zooming, or added image padding. The visible frame follows
+the image proportions within the slot; it must not create rectangular letterbox
+bands around a differently shaped photo. Keep a white canvas behind transparent
+pixels in both themes, a subtle outline, and bounded rounded corners. Whitespace
+already embedded in the source image is preserved.
+
+Keep row height, picture-slot width, action rails, image-edit controls, permission
+checks, upload-label behavior, keyboard focus, and missing/broken-image placeholders
+unchanged. A frame correction must not change image URLs or stored images.
+
+The explicit `product-thumbnail-slot` adapter in
+`src/main/resources/static/css/product-thumbnails.css` enrolls Orders and Available
+Inventory, plus product-identified rows in Account Catalogue, Inventory Ledger,
+and Receiving work. Receiving rows without a mapped product remain unchanged.
+Marketplace SKUs retain their accepted intrinsic-frame implementation in
+`marketplace-sku-responsive.css`. This rule does not enroll avatars, company or
+marketplace logos, vendor/session/document images, galleries, or image editors.
+New table consumers require explicit product-photo enrollment and rendered review.

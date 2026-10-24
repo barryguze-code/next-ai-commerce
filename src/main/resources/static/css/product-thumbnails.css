@@ -1,0 +1,15 @@
+/* Product photos only. The original slot continues to own layout and controls. */
+.table-widget .product-thumbnail-slot:has(>img:not([hidden]),>label>.product-avatar>img:not([hidden])),
+.orders-workspace .order-list.table-widget .order-product-stage.product-thumbnail-slot:has(>img:not([hidden])){
+ display:grid;place-items:center;padding:0;border:0;background:transparent;box-shadow:none
+}
+/* Upload labels remain intact; only their photographic canvas loses its inset. */
+.table-widget .product-thumbnail-slot:has(>label>.product-avatar>img:not([hidden]))>label,
+.table-widget .product-thumbnail-slot:has(>label>.product-avatar>img:not([hidden]))>label>.product-avatar{
+ display:grid;place-items:center;width:100%;height:100%;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none
+}
+.table-widget .product-thumbnail-slot>img:not([hidden]),
+.table-widget .product-thumbnail-slot>label>.product-avatar>img:not([hidden]),
+.orders-workspace .order-list.table-widget .order-product-stage.product-thumbnail-slot>img:not([hidden]){
+ position:static;inset:auto;display:block;box-sizing:content-box;width:auto;height:auto;min-width:0;min-height:0;max-width:78px;max-height:86px;padding:0;margin:0;border:1px solid #d3dfed;border-radius:min(18px,25%);background:#fff;object-fit:contain;object-position:center
+}

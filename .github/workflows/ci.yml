@@ -32,5 +32,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: minor-1-7-package
-          path: target/next-ai-commerce-1.7.1.jar
+          path: target/next-ai-commerce-1.7.2.jar
           if-no-files-found: error

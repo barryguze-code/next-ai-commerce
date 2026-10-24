@@ -193,3 +193,10 @@ Marketplace screen and CSV default to New condition with explicit All conditions
 All/FBA/FBM filters apply consistently. This specialization is now installed in the
 reviewed local runtime (the earlier not-installed note describes its earlier state).
 See engineering-plan Section45 for evidence and rollout limitations.
+
+
+### Product photograph frames
+
+Follow the canonical [operational product-thumbnail standard](UX_DESIGN_STANDARDS.md#product-thumbnails-in-operational-tables).
+The product-only `product-thumbnail-slot` adapter preserves existing slots and
+handlers; it is not a global rule for `.table-overview-picture` or all images.

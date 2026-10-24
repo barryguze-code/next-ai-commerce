@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260913-2"><link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/inventory.css?v=20261001-10"><link rel="stylesheet" href="/css/locations.css"><link rel="stylesheet" href="/css/collaboration.css?v=20261001-5"><link rel="stylesheet" href="/css/collaboration-detail.css"><link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7"><link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2"><link rel="stylesheet" href="/css/collaboration-thread.css?v=20260911-8">
   <script defer src="/js/theme.js?v=20260905-1"></script><script defer src="/js/table-preferences.js?v=20261002-perf1"></script>
   <link rel="stylesheet" href="/css/catalog-inventory-controls.css?v=1.2.0">
-<link rel="stylesheet" href="/css/standard-record-tables.css?v=20260922-32"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31"><script defer src="/js/standard-record-tables.js?v=20261002-standards3"></script><link rel="stylesheet" href="/css/confirm-dialog.css"><script defer src="/js/confirm-dialog.js?v=20260923-3"></script><script defer src="/js/shelf-sale-publishing.js?v=20260923-3"></script><script defer src="/js/shelf-policy-confirm.js?v=20260923-5"></script><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><script defer src="/js/platform-ui.js?v=1.6.6"></script></head>
+<link rel="stylesheet" href="/css/standard-record-tables.css?v=20260922-32"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31"><script defer src="/js/standard-record-tables.js?v=1.7.2"></script><link rel="stylesheet" href="/css/confirm-dialog.css"><script defer src="/js/confirm-dialog.js?v=20260923-3"></script><script defer src="/js/shelf-sale-publishing.js?v=20260923-3"></script><script defer src="/js/shelf-policy-confirm.js?v=20260923-5"></script><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><script defer src="/js/platform-ui.js?v=1.6.6"></script></head>
 <body class="app-page platform-standard-tables">
 <aside class="sidebar">
   <a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
@@ -55,7 +55,7 @@
 <button th:if="${canEditCatalog and row.expirationDate != null}" class="plan-action-button inventory-stage-menu" data-context-action type="button" th:attr="data-item=${row.itemId},data-product=${row.productName},data-location=${row.locationId},data-location-code=${row.locationCode},data-expiration=${row.expirationDate.toString()},data-action=${row.plannedAction ?: ''},data-action-label=${row.actionLabel() ?: ''},data-on-hand=${row.quantityUnits},data-available=${row.availableUnits}" onclick="event.stopPropagation();openInventoryActionMenu(this)" th:aria-label="${'Open actions for '+row.productName}" title="Open inventory actions">⋯</button>
 <span th:unless="${canEditCatalog and row.expirationDate != null}" class="action-unavailable inventory-stage-menu" aria-label="No actions available">—</span>
 </div>
-<form th:if="${canEditCatalog}" method="post" enctype="multipart/form-data" th:action="@{/app/catalog/products/{id}/image(id=${row.itemId})}" class="product-image-upload table-overview-picture" onclick="event.stopPropagation()">
+<form th:if="${canEditCatalog}" method="post" enctype="multipart/form-data" th:action="@{/app/catalog/products/{id}/image(id=${row.itemId})}" class="product-image-upload table-overview-picture product-thumbnail-slot" onclick="event.stopPropagation()">
 <input type="hidden" name="returnTo" value="/app/inventory">
 <label th:title="${'Upload a picture for '+row.productName}">
 <span class="product-avatar product-image">
@@ -66,7 +66,7 @@
 <input class="sr-only" type="file" name="image" accept="image/png,image/jpeg,image/webp" onchange="this.form.requestSubmit()">
 </label>
 </form>
-<span th:unless="${canEditCatalog}" class="product-avatar product-image table-overview-picture">
+<span th:unless="${canEditCatalog}" class="product-avatar product-image table-overview-picture product-thumbnail-slot">
 <img th:if="${row.imageUrl != null}" th:src="${row.imageUrl}" alt="" loading="lazy">
 <b th:unless="${row.imageUrl != null}" th:text="${#strings.substring(row.productName,0,1)}">P</b>
 </span>

@@ -5,6 +5,13 @@
  let anchor;
  function migrate(node){
   if(node.nodeType!==1)return;
+  for(const el of [node,...node.querySelectorAll('.column-info[data-tip]')]){
+   if(!el.matches('.column-info[data-tip]')||!el.dataset.tip.trim())continue;
+   el.dataset.tooltip=el.dataset.tip;el.removeAttribute('data-tip');
+   // Help is an independent control inside an otherwise sortable heading.
+   el.addEventListener('click',event=>{event.stopPropagation();show(event)});
+   el.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' ')event.stopPropagation()});
+  }
   for(const el of [node,...node.querySelectorAll('[title]')])if(el.hasAttribute('title')){
    const text=el.getAttribute('title');if(text){el.dataset.tooltip=text;if(el.matches('button,a')&&!el.textContent.trim()&&!el.hasAttribute('aria-label'))el.setAttribute('aria-label',text);}el.removeAttribute('title');
   }

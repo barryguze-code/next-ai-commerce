@@ -151,7 +151,7 @@ public class CatalogRepository {
                 WHERE global_product_id=product.id ORDER BY last_seen_at DESC LIMIT 1
             ) vendor_code ON true
             LEFT JOIN LATERAL (
-                SELECT identifier_value FROM global_product_identifiers
+                SELECT identifier_type, identifier_value FROM global_product_identifiers
                 WHERE global_product_id=product.id ORDER BY is_primary DESC, created_at LIMIT 1
             ) identifier ON true
             ORDER BY lower(product.canonical_name)
