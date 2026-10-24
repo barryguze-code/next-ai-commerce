@@ -24,6 +24,8 @@
   const text=target.dataset.copySku||target.dataset.orderCopy||target.dataset.tooltip||target.dataset.referenceTip;if(!text)return;
   document.dispatchEvent(new Event('platform-text-tooltip'));anchor=target;(target.closest('dialog[open]')||document.body).append(tip);tip.textContent=text;tip.hidden=false;
   target.setAttribute('aria-describedby',((target.getAttribute('aria-describedby')||'')+' '+tip.id).trim());
+  // Measure independently of the previous anchor/viewport's fixed position.
+  tip.style.left='8px';tip.style.top='8px';tip.style.width='max-content';
   const r=target.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(r.left,innerWidth-tip.offsetWidth-8))+'px';tip.style.top=Math.max(8,Math.min(r.bottom+7,innerHeight-tip.offsetHeight-8))+'px';
  }
  window.NextAiTooltips={hide};
@@ -32,5 +34,5 @@
  new MutationObserver(records=>{for(const r of records)if(r.type==='attributes')migrate(r.target);else for(const n of r.addedNodes)migrate(n);}).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['title']});
  document.addEventListener('mouseover',show);document.addEventListener('focusin',show);
  document.addEventListener('mouseout',e=>{if(anchor&&!anchor.contains(e.relatedTarget))hide();});document.addEventListener('focusout',hide);
- document.addEventListener('click',hide);document.addEventListener('keydown',e=>{if(e.key==='Escape')hide();});window.addEventListener('scroll',hide,true);window.addEventListener('blur',hide);
+ document.addEventListener('click',hide);document.addEventListener('keydown',e=>{if(e.key==='Escape')hide();});window.addEventListener('scroll',hide,true);window.addEventListener('resize',hide);window.addEventListener('blur',hide);
 })();

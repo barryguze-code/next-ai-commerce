@@ -58,3 +58,9 @@ test('negative control reproduces a cached old head script shadowing the shared 
   const bounds=await page.locator('.table-column-panel').boundingBox();assert.ok(bounds.x<0,JSON.stringify(bounds));assert.equal(requests.filter(r=>r==='/js/table-widget.js?v=1.6.6').length,1,'Old first script is reused from real browser HTTP cache');
  }finally{await context.close();}
 });
+
+
+test('tooltip hotfix uses a fresh canonical URL without repinning unchanged assets',()=>{
+ assert.equal(assetUrl('fragments/ux-components.html','/js/platform-tooltips.js'),'/js/platform-tooltips.js?v=1.7.3');
+ assert.equal(assetUrl('fragments/sidebar-user.html','/css/product-thumbnails.css'),'/css/product-thumbnails.css?v=1.7.2');
+});
