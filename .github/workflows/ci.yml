@@ -41,3 +41,10 @@ jobs:
           name: tooltip-hotfix-package
           path: target/next-ai-commerce-1.7.3.jar
           if-no-files-found: error
+      - name: Preserve tested fee minor release artifact
+        if: github.ref == 'refs/heads/codex/fee-variance-release-1-8'
+        uses: actions/upload-artifact@v4
+        with:
+          name: minor-1-8-package
+          path: target/next-ai-commerce-1.8.0.jar
+          if-no-files-found: error

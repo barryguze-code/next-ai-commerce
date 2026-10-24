@@ -61,7 +61,7 @@ app:
     enabled: ${APP_READ_CACHE_ENABLED:true}
     ttl: ${APP_READ_CACHE_TTL:10s}
     maximum-entries: ${APP_READ_CACHE_MAXIMUM_ENTRIES:256}
-  build-version: ${APP_BUILD_VERSION:1.7.0}
+  build-version: ${APP_BUILD_VERSION:1.8.0}
   public-url: ${APP_PUBLIC_URL:http://localhost:8080}
   mail:
     enabled: ${MAIL_ENABLED:false}
@@ -81,6 +81,13 @@ app:
     confirmation-enabled: ${APP_FEDEX_CONFIRMATION_ENABLED:false}
   amazon:
     product-fees-enabled: ${AMAZON_PRODUCT_FEES_ENABLED:false}
+    product-fees-batch-enabled: ${AMAZON_PRODUCT_FEES_BATCH_ENABLED:false}
+    product-fees-recurring-enabled: ${AMAZON_PRODUCT_FEES_RECURRING_ENABLED:false}
+    product-fees-zero-shipping-approved: ${AMAZON_PRODUCT_FEES_ZERO_SHIPPING_APPROVED:false}
+    product-fees-marketplace-currency-fallback: ${AMAZON_PRODUCT_FEES_MARKETPLACE_CURRENCY_FALLBACK:false}
+    fee-evidence-enabled: ${AMAZON_FEE_EVIDENCE_ENABLED:false}
+    fee-variance-ui-enabled: ${AMAZON_FEE_VARIANCE_UI_ENABLED:false}
+    fee-approvals-enabled: ${AMAZON_FEE_APPROVALS_ENABLED:false}
     product-fees-requests-per-second: ${AMAZON_PRODUCT_FEES_REQUESTS_PER_SECOND:0.5}
     variation:
       operator-enabled: false

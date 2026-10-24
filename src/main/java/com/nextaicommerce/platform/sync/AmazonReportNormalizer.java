@@ -24,6 +24,10 @@ import com.nextaicommerce.platform.marketplace.MarketplaceSkuAutoMapper;
 public class AmazonReportNormalizer {
     private final JdbcTemplate jdbc; private final TransactionTemplate transactions; private final ObjectMapper json;
     private final MarketplaceSkuAutoMapper skuMapper;
+    private com.nextaicommerce.platform.fees.AmazonFeeEvidence feeEvidence;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    void configureFeeEvidence(com.nextaicommerce.platform.fees.AmazonFeeEvidence value){feeEvidence=value;}
+    private void bindFeeOrder(AmazonSyncStore.Job job,String order){if(feeEvidence!=null)feeEvidence.bindOrder(job.tenantId(),job.connectionId(),job.marketplaceId(),order);}
     public AmazonReportNormalizer(JdbcTemplate jdbc,TransactionTemplate transactions,ObjectMapper json,
             MarketplaceSkuAutoMapper skuMapper){this.jdbc=jdbc;this.transactions=transactions;this.json=json;this.skuMapper=skuMapper;}
 
@@ -64,7 +68,7 @@ public class AmazonReportNormalizer {
         return transactions.execute(status->{setTenant(job.tenantId());long count=0;
             jdbc.query("SELECT id FROM amazon_orders WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=? FOR UPDATE",rs->{},job.tenantId(),job.connectionId(),orderId);
             for(JsonNode item:root.path("payload").path("OrderItems")){upsertApiOrderItem(job,orderId,item);count++;}
-            refreshOrderTotal(job,orderId);return count;
+            refreshOrderTotal(job,orderId);bindFeeOrder(job,orderId);return count;
         });
     }
 
@@ -96,6 +100,7 @@ public class AmazonReportNormalizer {
             order.path("ShipServiceLevel").asText(null),decimal(total.path("Amount").asText(null)),
             nullIfBlank(total.path("CurrencyCode").asText(null)));
         updateOperationalState(job,orderId);
+        bindFeeOrder(job,orderId);
     }
 
     private void upsertApiOrderItem(AmazonSyncStore.Job job,String orderId,JsonNode item){
@@ -295,6 +300,7 @@ public class AmazonReportNormalizer {
                 WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND orders.amazon_order_id=?
                   AND connection.tenant_id=orders.tenant_id AND connection.id=orders.marketplace_connection_id
                 """,job.tenantId(),job.connectionId(),orderId);
+            bindFeeOrder(job,orderId);
             count++;
         }return count;
     }
@@ -532,7 +538,9 @@ public class AmazonReportNormalizer {
                 integer(text(transaction,"quantity")),amount,currency,job.marketplaceId(),transaction.toString(),
                 transaction.toString(),source);
             count++;
-        }return count;
+        }
+        if(feeEvidence!=null)feeEvidence.finances(job.tenantId(),job.connectionId(),job.marketplaceId(),source,root);
+        return count;
     }
 
     private String rowJson(Parsed report,String[] row){

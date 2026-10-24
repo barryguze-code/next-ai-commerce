@@ -11,6 +11,7 @@ public final class MarketplaceSkuFilters {
     private static final Map<String,String> NUMBER=Map.of("available","available","sales","price","shipping","average_shipping","buyBox","buy_box_price","soldUnits","(week_4+week_3+week_2+current_week)","soldOrders","sold_orders","fees","estimated_fee_total");
     public static Query parse(Map<String,String> input){
         List<String> sql=new ArrayList<>();List<Object> args=new ArrayList<>();
+        if(!List.of("","1").contains(input.getOrDefault("f_fee_variance","")))throw new IllegalArgumentException("Invalid fee view");
         TEXT.forEach((key,column)->{
             String value=input.getOrDefault("f_"+key,"").trim();if(value.isEmpty())return;
             if(value.length()>250)throw new IllegalArgumentException("Filter is too long");
@@ -42,7 +43,7 @@ public final class MarketplaceSkuFilters {
     }
     public static Map<String,String> clean(Map<String,String> input){
         if(input==null||input.size()>60)throw new IllegalArgumentException("Too many filters");
-        Set<String> allowed=new HashSet<>(List.of("q","status","f_channel","f_condition","f_date_min","f_date_max","f_date_preset","f_date_start_offset","f_date_end_offset"));
+        Set<String> allowed=new HashSet<>(List.of("q","status","f_fee_variance","f_channel","f_condition","f_date_min","f_date_max","f_date_preset","f_date_start_offset","f_date_end_offset"));
         TEXT.keySet().forEach(k->{allowed.add("f_"+k);allowed.add("f_"+k+"_op");});
         NUMBER.keySet().forEach(k->{allowed.add("f_"+k+"_min");allowed.add("f_"+k+"_max");});
         Map<String,String> result=new TreeMap<>();

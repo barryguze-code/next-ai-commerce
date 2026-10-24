@@ -14,6 +14,9 @@ public class ProfitRepository {
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate named;
     private final ProfitCostRepository costs;
+    private com.nextaicommerce.platform.fees.AmazonFeeVarianceRepository acceptedFees;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    void configureAcceptedFees(com.nextaicommerce.platform.fees.AmazonFeeVarianceRepository value){acceptedFees=value;}
     public ProfitRepository(JdbcTemplate jdbc,ProfitCostRepository costs) {
         this.jdbc=jdbc;this.named=new NamedParameterJdbcTemplate(jdbc);this.costs=costs;
     }
@@ -235,6 +238,20 @@ public class ProfitRepository {
                     feeSummaries.add(fee.get("source_label")+" · imported "+fee.get("imported_at_utc").toString().substring(0,10)+" UTC");
                     feeSources.add(line.sku()+" · "+fee.get("source_label")+" · imported "+fee.get("imported_at_utc")
                         +" UTC · "+(age<0?"import time needs review":age+" days since import")+"; freshness not assessed");
+                }
+                // Explicitly prospective SKU planning only. Historical Orders retain their prior path/basis.
+                if("SKU".equals(v.kind())&&acceptedFees!=null&&acceptedFees.prospectiveEnabled()){
+                    String market=jdbc.queryForObject("SELECT marketplace_identifier FROM marketplace_connections WHERE tenant_id=? AND id=?",String.class,tenant,connection);
+                    BigDecimal shippingBasis=null;
+                    if(line.customerShipping()!=null)try{shippingBasis=line.customerShipping().divide(BigDecimal.valueOf(line.quantity()),4,RoundingMode.UNNECESSARY);}catch(ArithmeticException ignored){}
+                    var fbaAccepted=acceptedFees.applicableSku(tenant,connection,market,"FBA",line.sku(),v.currency(),"FBA",line.unitPrice(),shippingBasis);
+                    var referralAccepted=acceptedFees.applicableSku(tenant,connection,market,"FBA",line.sku(),v.currency(),"REFERRAL",line.unitPrice(),shippingBasis);
+                    if(fbaAccepted!=null||referralAccepted!=null){
+                        fee=fee==null?new LinkedHashMap<>():new LinkedHashMap<>(fee);fee.put("currency",v.currency());
+                        if(fbaAccepted!=null)fee.put("fulfillment_fee",fbaAccepted);if(referralAccepted!=null)fee.put("referral_fee",referralAccepted);
+                        feeSources.add(line.sku()+" · User-approved actual fee · prospective exact basis");
+                        feeSummaries.add("User-approved actual fee · exact SKU basis");
+                    }
                 }
                 if(fee==null||fee.get("fulfillment_fee")==null||!v.currency().equals(fee.get("currency")))known=false;
                 else total=total.add(((BigDecimal)fee.get("fulfillment_fee")).multiply(BigDecimal.valueOf(line.quantity())));

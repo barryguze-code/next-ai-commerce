@@ -24,7 +24,9 @@ import com.nextaicommerce.platform.collaboration.CollaborationRepository;
 @Controller
 public class MarketplaceSkuController {
     private static final Logger log=LoggerFactory.getLogger(MarketplaceSkuController.class);
+    @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceUi;
     private final MarketplaceSkuRepository skus;
+    @Autowired(required=false) private com.nextaicommerce.platform.fees.AmazonFeeVarianceRepository feeVariances;
     @Autowired private com.nextaicommerce.platform.orders.SkuRefundHistory refunds;
     @Autowired private com.nextaicommerce.platform.fba.FbaReadRepository fba;
     private final WorkspaceAccessRepository workspace;
@@ -77,6 +79,9 @@ public class MarketplaceSkuController {
             return "marketplace-skus";
         }
 
+        // Resolve counts after the shared advice restores account/store context.
+        if(feeVariances!=null&&feeVariances.visible())model.addAttribute("feeVarianceSkus",feeVariances.count(tenantId,connectionId,true));
+        if(!feeVarianceUi&&filters.containsKey("f_fee_variance"))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND);
         filters=MarketplaceSkuFilters.defaults(filters);
         model.addAttribute("selectedCondition",filters.get("f_condition"));
         model.addAttribute("selectedFulfillment",filters.getOrDefault("f_channel",""));

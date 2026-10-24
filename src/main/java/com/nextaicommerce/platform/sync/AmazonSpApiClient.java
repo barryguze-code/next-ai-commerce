@@ -92,6 +92,21 @@ public class AmazonSpApiClient {
         String market=json.readTree(body).path("FeesEstimateRequest").path("MarketplaceId").asText();
         return send(tenant,connection,endpoint(market),"POST",path,body,true,permit);
     }
+    /** Read-only batch operation, with the same scoped OAuth and durable dispatch permit. */
+    public ApiResponse quoteProductFees(UUID tenant,UUID connection,String body,FeePermit permit){
+        java.util.Objects.requireNonNull(permit,"Fee dispatch permit required");
+        var requests=json.readTree(body);
+        if(!requests.isArray()||requests.isEmpty()||requests.size()>20)throw new IllegalArgumentException("Choose 1 to 20 exact fee bases");
+        String market=requests.get(0).path("FeesEstimateRequest").path("MarketplaceId").asText();
+        var ids=new java.util.HashSet<String>();
+        for(var request:requests){
+            var fee=request.path("FeesEstimateRequest");
+            if(!"SellerSKU".equals(request.path("IdType").asText())||request.path("IdValue").asText().isBlank()
+                ||!market.equals(fee.path("MarketplaceId").asText())||fee.path("Identifier").asText().isBlank()
+                ||!ids.add(fee.path("Identifier").asText()))throw new IllegalArgumentException("Conflicting fee batch scope");
+        }
+        return send(tenant,connection,endpoint(market),"POST","/products/fees/v0/feesEstimate",body,true,permit);
+    }
     private static Duration timeout(java.util.function.BooleanSupplier permit){
         Duration remaining=permit instanceof RequestPermit p?p.remaining():Duration.ofSeconds(30);
         return remaining.compareTo(Duration.ofSeconds(30))<0?remaining:Duration.ofSeconds(30);
@@ -214,6 +229,7 @@ public class AmazonSpApiClient {
         if(!"POST".equals(method))return false;
         return "/reports/2021-06-30/reports".equals(path)
             || path.matches("/products/fees/v0/listings/[^/]+/feesEstimate")
+            || "/products/fees/v0/feesEstimate".equals(path)
             || "/batches/products/pricing/v0/itemOffers".equals(path)
             || "/mfn/v0/eligibleShippingServices".equals(path);
     }

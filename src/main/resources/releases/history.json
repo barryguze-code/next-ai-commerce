@@ -1,4 +1,24 @@
 [
+{
+  "version": "1.8.0",
+  "title": "Preparing clearer Amazon fee reviews",
+  "sections": [
+    {
+      "title": "Controlled fee review rollout",
+      "items": [
+        "A new fee review foundation is ready for controlled rollout. Fee collection and acceptance remain disabled until separately enabled.",
+        "When enabled with verified evidence, fee comparisons keep fulfillment and referral charges separate and preserve earlier differences. Missing evidence stays unavailable rather than appearing as zero."
+      ]
+    },
+    {
+      "title": "Prospective fees and preserved history",
+      "items": [
+        "When authorized, accepting an actual fee applies to the matching SKU basis for future estimates. Historical orders and fee differences remain available.",
+        "Existing inventory quantities, product mappings and historical source records are preserved."
+      ]
+    }
+  ]
+},
 {"version":"1.7.3","title":"Readable help after resizing","sections":[{"title":"Tooltip correction","items":["Column help remains readable when switching from desktop to a narrow screen.","Keyboard focus, Escape dismissal and column sorting remain independent."]}]},
 {"version":"1.7.2","title":"Clear product pictures and catalogue help","sections":[{"title":"Catalogue corrections","items":["Global Catalogue opens correctly and preserves existing product identifiers.","Product pictures retain their proportions without added inset padding in operational tables.","Buying-cost help stays readable and separate from column sorting."]}]},
 {"version":"1.7.1","title":"Reliable delivery of released workspace assets","sections":[{"title":"Browser cache correction","items":["Updated asset versions ensure ordinary page refresh loads the released workspace scripts and styles, including mobile Columns controls, CSV export and cost details.","Feature behavior, inventory quantities and integration settings are unchanged."]}]},

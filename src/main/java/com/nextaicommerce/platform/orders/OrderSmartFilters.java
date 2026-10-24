@@ -39,6 +39,9 @@ public final class OrderSmartFilters {
     public static Query parse(Map<String,String> input,java.time.ZoneId zone,java.time.Clock clock){
         var clauses=new ArrayList<String>();var args=new ArrayList<Object>();
         TEXT.forEach((key,column)->text(input,key,column,clauses,args));
+        String feeVariance=value(input,"f_fee_variance");
+        if(!List.of("","1").contains(feeVariance))throw new IllegalArgumentException("Invalid fee view");
+        if(feeVariance.equals("1"))clauses.add("EXISTS(SELECT 1 FROM amazon_fee_comparisons fee_variance WHERE fee_variance.tenant_id=item.tenant_id AND fee_variance.marketplace_connection_id=item.marketplace_connection_id AND fee_variance.order_item_id=item.id AND fee_variance.state IN ('HIGHER','LOWER'))");
         String code=value(input,"f_itemCode");if(!code.isEmpty()){
             var nested=new ArrayList<String>();text(input,"itemCode","coalesce(nullif(offer.vendor_item_code,''),nullif(catalog.account_sku,''),catalog.display_name,product.canonical_name)",nested,args);
             clauses.add("EXISTS (SELECT 1 FROM marketplace_sku_mapping_components c JOIN account_catalog_items catalog ON catalog.tenant_id=c.tenant_id AND catalog.id=c.account_catalog_item_id JOIN global_catalog_products product ON product.id=catalog.global_product_id LEFT JOIN LATERAL (SELECT vendor_item_code FROM vendor_catalog_offers WHERE tenant_id=catalog.tenant_id AND account_catalog_item_id=catalog.id ORDER BY (effective_to IS NULL) DESC,is_default DESC,updated_at DESC LIMIT 1) offer ON true WHERE c.tenant_id=mapping.tenant_id AND c.marketplace_sku_mapping_id=mapping.id AND "+nested.getFirst()+")");
@@ -74,7 +77,7 @@ public final class OrderSmartFilters {
     }
     public static Map<String,String> clean(Map<String,String> input){
         if(input==null||input.size()>60)throw new IllegalArgumentException("Too many filters");
-        var allowed=new HashSet<String>(List.of("smartSort","q","status","f_itemCode","f_itemCode_op","f_date_min","f_date_max","f_date_preset","f_date_start_offset","f_date_end_offset","f_channel"));
+        var allowed=new HashSet<String>(List.of("smartSort","q","status","f_itemCode","f_itemCode_op","f_date_min","f_date_max","f_date_preset","f_date_start_offset","f_date_end_offset","f_channel","f_fee_variance"));
         TEXT.keySet().forEach(k->{allowed.add("f_"+k);allowed.add("f_"+k+"_op");});NUMBER.keySet().forEach(k->{allowed.add("f_"+k+"_min");allowed.add("f_"+k+"_max");});
         var result=new TreeMap<String,String>();input.forEach((k,v)->{if(k.startsWith("f_")&&!allowed.contains(k))throw new IllegalArgumentException("Unknown filter");if(allowed.contains(k)){if(v==null||v.length()>250)throw new IllegalArgumentException("Filter is too long");if(!v.isBlank())result.put(k,v.trim());}});parse(result);return result;
     }

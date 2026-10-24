@@ -25,6 +25,7 @@ public class OrderRepository {
     }
     static final String MARKETPLACE_IDENTIFIER_SQL="SELECT marketplace_identifier FROM marketplace_connections WHERE tenant_id=? AND id=?";
     private final JdbcTemplate jdbc;
+    @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceAvailable;
     public record SoldTotals(long orders,long units){}
     @Transactional(readOnly=true)
     public Map<String,SoldTotals> soldTotals(UUID tenant,UUID connection,List<String> skus){
@@ -75,6 +76,7 @@ public class OrderRepository {
 
     public OrderRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
     private OrderSmartFilters.Query smartFilters(UUID tenant,UUID connection,Map<String,String> filters){
+        if(!feeVarianceAvailable&&filters.containsKey("f_fee_variance"))throw new IllegalArgumentException("Fee variance is not enabled");
         if(!filters.containsKey("f_date_preset"))return OrderSmartFilters.parse(filters);
         String marketplace=jdbc.queryForObject(MARKETPLACE_IDENTIFIER_SQL,String.class,tenant,connection);
         return OrderSmartFilters.parse(filters,AmazonMarketplaceTime.zone(marketplace==null?"":marketplace),java.time.Clock.systemUTC());

@@ -73,6 +73,7 @@ public class MarketplaceSkuRepository {
               ) local_inventory ON mapping.id IS NOT NULL
             """;
     private final JdbcTemplate jdbc;
+    @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceAvailable;
     private MarketplaceInventoryEligibility eligibility;
     private MarketplaceSkuRelationships relationships;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
@@ -420,6 +421,7 @@ public class MarketplaceSkuRepository {
     }
     private SkuPage read(UUID tenantId,UUID connectionId,String search,String status,String sort,String direction,
             int requestedPage,int pageSize,Map<String,String> filters,MarketplaceInventoryEligibility.Batch provided,List<String> exact){
+        if(!feeVarianceAvailable&&filters.containsKey("f_fee_variance"))throw new IllegalArgumentException("Fee variance is not enabled");
         var smart=MarketplaceSkuFilters.parse(filters);
         var relationship=relationshipPolicy(tenantId,connectionId);
         setTenant(tenantId);var policy=provided==null?inventoryPolicy(tenantId,connectionId):provided;String query=search==null?"":search.trim();String filter=normalizeStatus(status);
@@ -527,6 +529,7 @@ public class MarketplaceSkuRepository {
                   LIMIT 1
               ) inventory_plan ON true
               WHERE listing.tenant_id=? AND listing.marketplace_connection_id=?
+            """+("1".equals(filters.get("f_fee_variance"))?" AND EXISTS(SELECT 1 FROM amazon_fee_comparisons fv WHERE fv.tenant_id=listing.tenant_id AND fv.marketplace_connection_id=listing.marketplace_connection_id AND fv.marketplace_id=listing.marketplace_id AND fv.seller_sku=listing.seller_sku AND fv.state IN ('HIGHER','LOWER'))":"")+"""
             )
             SELECT *,count(*) over() filtered_total FROM sku_rows
             WHERE (?='' OR seller_sku ILIKE '%'||?||'%' OR coalesce(asin,'') ILIKE '%'||?||'%'

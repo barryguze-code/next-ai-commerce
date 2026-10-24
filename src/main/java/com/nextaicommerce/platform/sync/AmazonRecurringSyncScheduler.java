@@ -18,6 +18,10 @@ public class AmazonRecurringSyncScheduler {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
     private final boolean enabled;
+    @Value("${app.amazon.product-fees-batch-enabled:false}") private boolean batchFees;
+    @Value("${app.amazon.product-fees-recurring-enabled:false}") private boolean recurringFees;
+    @Value("${app.amazon.product-fees-enabled:false}") private boolean collectFees;
+    @Value("${app.amazon.product-fees-zero-shipping-approved:false}") private boolean zeroShippingApproved;
 
     AmazonRecurringSyncScheduler(JdbcTemplate jdbc,TransactionTemplate transactions,
             @Value("${app.amazon.recurring-enabled:true}") boolean enabled) {
@@ -45,6 +49,7 @@ public class AmazonRecurringSyncScheduler {
             JOIN marketplace_connections connection
               ON connection.tenant_id=schedule.tenant_id AND connection.id=schedule.marketplace_connection_id
             WHERE schedule.tenant_id=? AND schedule.enabled=true AND schedule.next_run_at<=now()
+              AND (?=false OR schedule.schedule_key<>'FBA_FEES' OR ?=true)
               AND connection.channel='AMAZON' AND connection.status='ACTIVE'
               AND EXISTS (SELECT 1 FROM marketplace_connection_credentials credential
                   WHERE credential.tenant_id=schedule.tenant_id
@@ -61,7 +66,7 @@ public class AmazonRecurringSyncScheduler {
             ORDER BY schedule.priority,schedule.next_run_at
             FOR UPDATE OF schedule SKIP LOCKED LIMIT 1
             """,(rs,row)->new DueSchedule(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),
-                rs.getLong(4),rs.getLong(5),rs.getString(6)),tenantId);
+                rs.getLong(4),rs.getLong(5),rs.getString(6)),tenantId,batchFees,recurringFees&&collectFees&&zeroShippingApproved);
         if(due.isEmpty())return;
         DueSchedule schedule=due.getFirst();
         AmazonRecurringPlan.Schedule plan=AmazonRecurringPlan.schedules().stream()
@@ -86,11 +91,12 @@ public class AmazonRecurringSyncScheduler {
                 VALUES(?,?,?,?,?,false)
                 """,tenantId,runId,schedule.connectionId(),job,sequence++);
         }
-        jdbc.update("""
+        if(!(batchFees&&"FBA_FEES".equals(schedule.key())))jdbc.update("""
             INSERT INTO marketplace_sync_jobs(tenant_id,sync_run_id,marketplace_connection_id,
                 job_type,sequence_number,required_for_ready)
             VALUES(?,?,?,'FINAL_RECONCILIATION',?,false)
             """,tenantId,runId,schedule.connectionId(),sequence);
+        if(batchFees&&"FBA_FEES".equals(schedule.key()))jdbc.update("UPDATE marketplace_sync_jobs SET cursor=jsonb_set(cursor,'{shippingBasisConfirmed}','true') WHERE tenant_id=? AND sync_run_id=? AND job_type='FEES_SNAPSHOT'",tenantId,runId);
         jdbc.update("""
             UPDATE marketplace_sync_schedules SET last_enqueued_at=now(),last_run_id=?,
                 next_run_at=now()+make_interval(secs=>cadence_seconds),updated_at=now()

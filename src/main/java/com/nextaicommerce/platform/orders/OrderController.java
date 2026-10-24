@@ -28,6 +28,8 @@ public class OrderController {
     private final OrderRepository orders;private final WorkspaceAccessRepository workspace;private final AmazonManualOrderSync manualSync;private final PackingSlipRepository packingSlips;private CollaborationRepository collaboration;
     public OrderController(OrderRepository orders,WorkspaceAccessRepository workspace,AmazonManualOrderSync manualSync,PackingSlipRepository packingSlips){this.orders=orders;this.workspace=workspace;this.manualSync=manualSync;this.packingSlips=packingSlips;}
     @Autowired(required=false) void configureCollaboration(CollaborationRepository repository){this.collaboration=repository;}
+    @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceUi;
+    @Autowired(required=false) private com.nextaicommerce.platform.fees.AmazonFeeVarianceRepository feeVariances;
     @Autowired private OrderProfitSummary profitSummary;
     @Autowired private SkuRefundHistory refundHistory;
     @Autowired private com.nextaicommerce.platform.fba.FbaReadRepository fba;
@@ -59,6 +61,8 @@ public class OrderController {
         if(!(selected instanceof UUID connection)){model.addAttribute("storeSelectionRequired",true);model.addAttribute("chooseStore",true);return "orders";}
         var identity=workspace.findConnection(tenant,connection);
         if(!"AMAZON".equalsIgnoreCase(identity.channel())){model.addAttribute("unsupportedChannel",true);return "orders";}
+        // Workspace advice has restored the authenticated account/store before this handler.
+        if(feeVariances!=null&&feeVariances.visible())model.addAttribute("feeVarianceOrders",feeVariances.count(tenant,connection,false));
         if(java.util.List.of("PENDING","READY_TO_SHIP").contains(status.toUpperCase(java.util.Locale.ROOT)))status="UNSHIPPED";
         if(!OrderRepository.TAB_KEYS.contains(status.toUpperCase(java.util.Locale.ROOT)))status="ALL";
         model.addAttribute("selectedStatus",status.toUpperCase(java.util.Locale.ROOT));
@@ -66,6 +70,7 @@ public class OrderController {
         model.addAttribute("pickupOverrides",orders.pickupOverrides(tenant,connection));
         model.addAttribute("pickupEligibleOrders",orders.pickupEligibleOrders(tenant,connection));
         int requestedPage=goToPage==null?page:Math.max(0,goToPage-1);
+        if(!feeVarianceUi&&smartParameters.containsKey("f_fee_variance"))throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         Map<String,String> smart;try{smart=OrderSmartFilters.clean(smartParameters);}catch(IllegalArgumentException ex){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,ex.getMessage());}
         var orderPage=orders.orders(tenant,connection,status,q,requestedPage,com.nextaicommerce.platform.web.TablePaging.size(size),smart);var rows=orderPage.rows();
         if(!q.isBlank()||!"ALL".equalsIgnoreCase(status)||smart.keySet().stream().anyMatch(k->k.startsWith("f_")&&!k.endsWith("_op")))

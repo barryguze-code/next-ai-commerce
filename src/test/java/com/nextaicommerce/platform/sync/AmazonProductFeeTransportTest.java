@@ -36,5 +36,12 @@ class AmazonProductFeeTransportTest {
         String date=ZonedDateTime.now(ZoneOffset.UTC).plusMinutes(2).format(DateTimeFormatter.RFC_1123_DATE_TIME);var r=response(429,"",Map.of("Retry-After",List.of(date)));assertThat(AmazonSpApiClient.variationRetryAfter(r).toSeconds()).isBetween(118L,120L);
     }
     @Test void unsupportedRegionNeverSendsCredentials(){assertThatThrownBy(()->api.quoteProductFee(tenant,store,"0001",request("UNKNOWN"),permit(true,true))).isInstanceOf(IllegalArgumentException.class);verifyNoInteractions(http);}
+    @Test void batchReadIsPermittedButRemainsBudgetedAndBounded()throws Exception{
+        String body="[{\"IdType\":\"SellerSKU\",\"IdValue\":\"0001\",\"FeesEstimateRequest\":{\"MarketplaceId\":\"ATVPDKIKX0DER\",\"Identifier\":\"one\"}}]";
+        assertThat(AmazonSpApiClient.readOnlyOperation("POST","/products/fees/v0/feesEstimate")).isTrue();
+        assertThatThrownBy(()->api.quoteProductFees(tenant,store,body,permit(false,true))).isInstanceOf(AmazonSpApiClient.VariationDeferredException.class);verifyNoInteractions(http);
+        assertThatThrownBy(()->api.quoteProductFees(tenant,store,"[]",permit(true,true))).isInstanceOf(IllegalArgumentException.class);verifyNoInteractions(http);
+    }
+
 }
 

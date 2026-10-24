@@ -21,6 +21,9 @@ public class AmazonProductFeeJobs {
     private static final long GLOBAL_LOCK=0x464545535f5631L;
     private final JdbcTemplate jdbc;private final TransactionTemplate tx;private final ObjectMapper json;
     private final AmazonSyncStore store;private final long baseInterval;
+    @Value("${app.amazon.product-fees-marketplace-currency-fallback:false}") private boolean currencyFallback;
+    private com.nextaicommerce.platform.fees.AmazonFeeEvidence feeEvidence;
+    @Autowired(required=false) void configureFeeEvidence(com.nextaicommerce.platform.fees.AmazonFeeEvidence evidence){feeEvidence=evidence;}
     record Target(String sku,BigDecimal price,String currency) {}
     private record Row(AmazonSyncStore.Job job,ObjectNode cursor,ObjectNode fee,Instant now,Instant deadline,Instant leaseExpiry) {}
     @Autowired public AmazonProductFeeJobs(JdbcTemplate jdbc,TransactionTemplate tx,ObjectMapper json,AmazonSyncStore store,
@@ -88,6 +91,7 @@ public class AmazonProductFeeJobs {
         r.fee().put("reason",reason);save(r);
         update(r,false,"status=?,error_code=?,error_message='Fee collection stopped; saved estimates preserved.',completed_at=clock_timestamp(),lease_owner=NULL,lease_expires_at=NULL",
             r.job().required()?"FAILED":"SKIPPED",reason);
+        if(r.fee().path("batchMode").asBoolean(false))jdbc.update("UPDATE marketplace_sync_runs SET status='COMPLETED_WITH_WARNINGS',progress_percent=100,user_message='Fee refresh stopped; valid evidence retained',completed_at=clock_timestamp() WHERE tenant_id=? AND id=? AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs WHERE tenant_id=? AND sync_run_id=? AND status NOT IN ('COMPLETED','SKIPPED','FAILED'))",r.job().tenantId(),r.job().runId(),r.job().tenantId(),r.job().runId());
     }
     public void stop(AmazonSyncStore.Job j,String reason){owned(j,r->{stop(r,reason);return true;},false);}
     private void defer(Row r,Instant until){
@@ -111,6 +115,7 @@ public class AmazonProductFeeJobs {
         return owned(j,r->{
             ObjectNode basis=json.createObjectNode().put("MarketplaceId",j.marketplaceId()).put("IsAmazonFulfilled",true)
                 .put("_platformSellerId",r.fee().path("seller").asText());
+            if(r.cursor().path("shippingBasisConfirmed").asBoolean(false))basis.put("_platformShippingApproved",true);
             var p=basis.putObject("PriceToEstimateFees");p.putObject("ListingPrice").put("CurrencyCode",t.currency()).put("Amount",t.price());
             p.putObject("Shipping").put("CurrencyCode",t.currency()).put("Amount",BigDecimal.ZERO);return basis;
         },null);
@@ -154,6 +159,11 @@ public class AmazonProductFeeJobs {
             Instant ready=nextAt(r);if(ready.isAfter(r.now())){defer(r,ready);return false;}
             int attempts=sku.equals(r.fee().path("attemptSku").asText())?r.fee().path("skuAttempts").asInt():0;
             if(attempts>=SKU_ATTEMPTS||r.fee().path("http").asInt()>=HTTP_LIMIT){stop(r,"FEE_REQUEST_LIMIT");return false;}
+            if(r.fee().path("batchPending").isArray()){
+                var itemAttempts=r.fee().has("itemAttempts")?(ObjectNode)r.fee().path("itemAttempts"):r.fee().putObject("itemAttempts");
+                for(var item:r.fee().path("batchPending"))if(itemAttempts.path(item.asText()).asInt()>=SKU_ATTEMPTS){stop(r,"FEE_ITEM_RETRY_EXHAUSTED");return false;}
+                for(var item:r.fee().path("batchPending"))itemAttempts.put(item.asText(),itemAttempts.path(item.asText()).asInt()+1);
+            }
             r.fee().put("attemptSku",sku).put("skuAttempts",attempts+1).put("http",r.fee().path("http").asInt()+1)
                 .put("nextAt",r.now().plusMillis(interval(r)).toString());
         }else{if(r.fee().path("oauth").asInt()>=OAUTH_LIMIT){stop(r,"FEE_OAUTH_LIMIT");return false;}r.fee().put("oauth",r.fee().path("oauth").asInt()+1);}
@@ -209,7 +219,8 @@ public class AmazonProductFeeJobs {
         public void close(){if(lock!=null){try(var ps=lock.prepareStatement("SELECT pg_advisory_unlock(?)")){ps.setLong(1,GLOBAL_LOCK);ps.execute();}catch(SQLException ignored){try{lock.abort(Runnable::run);}catch(SQLException ignoredAgain){}}finally{try{lock.close();}catch(SQLException ignored){}lock=null;}}}
     }
     Permit permit(AmazonSyncStore.Job j,String sku){return new Permit(j,sku);}
-    private UUID archive(Row r,String sku,String body,String requestId,boolean verified){
+    private UUID archive(Row r,String sku,String body,String requestId,boolean verified){return archive(r,sku,body,requestId,verified,verified?1:0);}
+    private UUID archive(Row r,String sku,String body,String requestId,boolean verified,int records){
         JsonNode parsed;try{parsed=json.readTree(body);}catch(RuntimeException malformed){parsed=json.createObjectNode();}
         var created=jdbc.queryForList("""
             INSERT INTO amazon_source_documents(tenant_id,marketplace_connection_id,sync_job_id,source_type,amazon_request_id,
@@ -217,7 +228,7 @@ public class AmazonProductFeeJobs {
             VALUES(?,?,?,'FEES_SNAPSHOT',?,?,'application/json',?,CAST(? AS jsonb),?,?,clock_timestamp(),?)
             ON CONFLICT(tenant_id,marketplace_connection_id,source_type,sha256) DO NOTHING RETURNING id
             """,UUID.class,r.job().tenantId(),r.job().connectionId(),r.job().id(),requestId,sku,digest(body),parsed.toString(),body,
-                verified?1:0,verified?null:"Fee response retained without a verified estimate");
+                records,verified?null:"Fee response retained without a verified estimate");
         if(!created.isEmpty())return created.getFirst();
         return jdbc.queryForObject("SELECT id FROM amazon_source_documents WHERE tenant_id=? AND marketplace_connection_id=? AND source_type='FEES_SNAPSHOT' AND sha256=?",UUID.class,r.job().tenantId(),r.job().connectionId(),digest(body));
     }
@@ -240,6 +251,7 @@ public class AmazonProductFeeJobs {
               estimated_fee_total,referral_fee,fulfillment_fee,effective_at,raw_payload,source_document_id)
             VALUES(?,?,?,?,?,?,?,?,?,CAST(? AS jsonb),?)
             """,j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),t.currency(),amounts.total(),amounts.referral(),amounts.fulfillment(),Timestamp.from(r.now()),stored.toString(),source);
+        if(feeEvidence!=null)feeEvidence.quote(j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),source,digest(stored.toString()),basis,amounts.referral(),AmazonProductFeeSync.comparableFba(result.path("FeesEstimate"),t.currency()),r.now());
         advance(r,t.sku(),1);return true;
     },false);}
     void failed(AmazonSyncStore.Job j,String sku,RuntimeException error,String body,String requestId,Double rate){owned(j,r->{
@@ -255,4 +267,89 @@ public class AmazonProductFeeJobs {
         Instant paced=nextAt(r);if(paced.isAfter(retry))retry=paced;
         r.fee().put("reason","RETRY");defer(r,retry);return true;
     },false);}
+    /** Freeze exact inputs once. Live shipping-zero authority must come from a reviewed operator/run. */
+    List<Target> batchNext(AmazonSyncStore.Job j){return owned(j,r->{
+        r.fee().put("batchMode",true);
+        if(!r.fee().path("pendingKind").asText().isEmpty()){stop(r,"FEE_REQUEST_OUTCOME_UNKNOWN");return List.of();}
+        if(!r.cursor().path("shippingBasisConfirmed").asBoolean(false)){stop(r,"FEE_SHIPPING_BASIS_REQUIRES_APPROVAL");return List.of();}
+        if(!r.fee().has("batchManifest")){
+            var manifest=r.fee().putArray("batchManifest");
+            var rows=jdbc.queryForList("""
+                SELECT l.seller_sku,l.price,CASE WHEN ? THEN coalesce(nullif(trim(l.currency),''),d.currency_code) ELSE l.currency END currency FROM amazon_listings l JOIN marketplace_connections c
+                 ON c.tenant_id=l.tenant_id AND c.id=l.marketplace_connection_id AND c.marketplace_identifier=l.marketplace_id
+                JOIN marketplace_definitions d ON d.channel='AMAZON' AND d.marketplace_identifier=l.marketplace_id AND (d.currency_code=l.currency OR (? AND nullif(trim(l.currency),'') IS NULL))
+                WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.marketplace_id=? AND upper(l.listing_status)='ACTIVE'
+                 AND upper(l.fulfillment_channel) IN ('AMAZON','AMAZON_NA','AMAZON_EU','AMAZON_JP','FBA','AFN') AND l.price>0
+                 AND NOT EXISTS(SELECT 1 FROM amazon_variation_classifications v WHERE v.tenant_id=l.tenant_id
+                   AND v.marketplace_connection_id=l.marketplace_connection_id AND v.marketplace_id=l.marketplace_id
+                   AND v.seller_sku=l.seller_sku AND (v.classification='CONFLICT' OR (v.classification='PARENT'
+                     AND v.valid_until>clock_timestamp() AND v.verified_revision=v.evidence_revision
+                     AND v.own_complete AND v.reciprocal_complete AND v.members_complete)))
+                ORDER BY l.seller_sku LIMIT 1001
+                """,currencyFallback,currencyFallback,j.tenantId(),j.connectionId(),j.marketplaceId());
+            if(rows.size()>1000){stop(r,"FEE_MANIFEST_LIMIT");return List.of();}
+            for(var row:rows){
+                String sku=row.get("seller_sku").toString(),currency=row.get("currency").toString();BigDecimal price=(BigDecimal)row.get("price");
+                var basis=json.createObjectNode().put("MarketplaceId",j.marketplaceId()).put("IsAmazonFulfilled",true)
+                    .put("_platformSellerId",r.fee().path("seller").asText()).put("_platformShippingApproved",true);
+                var money=basis.putObject("PriceToEstimateFees");money.putObject("ListingPrice").put("CurrencyCode",currency).put("Amount",price);
+                money.putObject("Shipping").put("CurrencyCode",currency).put("Amount",BigDecimal.ZERO);
+                boolean cached=jdbc.queryForObject("""
+                    SELECT EXISTS(SELECT 1 FROM amazon_fee_estimates f JOIN amazon_source_documents d
+                     ON d.tenant_id=f.tenant_id AND d.marketplace_connection_id=f.marketplace_connection_id AND d.id=f.source_document_id
+                     WHERE f.tenant_id=? AND f.marketplace_connection_id=? AND f.marketplace_id=? AND f.seller_sku=? AND f.currency=?
+                      AND f.effective_at>=? AND f.effective_at<=? AND f.fulfillment_fee>=0 AND f.referral_fee>=0 AND f.estimated_fee_total>=0
+                      AND f.raw_payload->>'Status'='Success' AND f.raw_payload->'_platformQuoteBasis'=CAST(? AS jsonb)
+                      AND f.raw_payload->'FeesEstimateIdentifier'->>'IdType'='SellerSKU'
+                      AND f.raw_payload->'FeesEstimateIdentifier'->>'IdValue'=?
+                      AND f.raw_payload->'FeesEstimateIdentifier'->>'MarketplaceId'=?)
+                    """,Boolean.class,j.tenantId(),j.connectionId(),j.marketplaceId(),sku,currency,Timestamp.from(r.now().minus(CACHE_AGE)),Timestamp.from(r.now()),basis.toString(),sku,j.marketplaceId());
+                if(cached)r.fee().put("cacheHits",r.fee().path("cacheHits").asInt()+1);
+                else manifest.addObject().put("sku",sku).put("price",price).put("currency",currency);
+            }
+            r.fee().put("batchIndex",0);save(r);
+        }
+        var manifest=r.fee().path("batchManifest");int index=r.fee().path("batchIndex").asInt();
+        if(index>=manifest.size()){
+            update(r,true,"status='COMPLETED',completed_at=clock_timestamp(),lease_owner=NULL,lease_expires_at=NULL");
+            jdbc.update("UPDATE marketplace_sync_runs SET status='COMPLETED',progress_percent=100,user_message='Fee estimates refreshed',completed_at=clock_timestamp() WHERE tenant_id=? AND id=? AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs WHERE tenant_id=? AND sync_run_id=? AND status NOT IN ('COMPLETED','SKIPPED'))",j.tenantId(),j.runId(),j.tenantId(),j.runId());
+            return List.of();
+        }
+        List<Target> targets=new ArrayList<>();
+        for(int n=index;n<Math.min(index+20,manifest.size());n++){
+            var m=manifest.get(n);targets.add(new Target(m.path("sku").asText(),m.path("price").decimalValue(),m.path("currency").asText()));
+        }
+        var pending=r.fee().putArray("batchPending");for(var t:targets)pending.add(digest(t.sku()+":"+t.price().stripTrailingZeros().toPlainString()+":"+t.currency()));save(r);
+        return List.copyOf(targets);
+    },List.of());}
+    void publishBatch(AmazonSyncStore.Job j,List<Target> targets,AmazonProductFeeBatch.Result result,AmazonSpApiClient.ApiResponse response){owned(j,r->{
+        observe(r,response.rateLimit());
+        for(var accepted:result.accepted()){
+            var t=accepted.request().target();
+            var current=jdbc.queryForList("SELECT id FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=? AND price=? AND (currency=? OR (? AND nullif(trim(currency),'') IS NULL AND ?=(SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=?))) AND upper(listing_status)='ACTIVE' AND upper(fulfillment_channel) IN ('AMAZON','AMAZON_NA','AMAZON_EU','AMAZON_JP','FBA','AFN') FOR SHARE",UUID.class,j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),t.price(),t.currency(),currencyFallback,t.currency(),j.marketplaceId());
+            if(current.size()!=1){archive(r,"batch:"+r.fee().path("batchIndex").asInt(),response.body(),response.requestId(),false,0);stop(r,"FEE_BASIS_CHANGED");return false;}
+        }
+        UUID source=archive(r,"batch:"+r.fee().path("batchIndex").asInt(),response.body(),response.requestId(),!result.accepted().isEmpty(),result.accepted().size());
+        for(var accepted:result.accepted()){
+            var t=accepted.request().target();
+            ObjectNode raw=(ObjectNode)accepted.result().deepCopy();raw.set("_platformQuoteBasis",accepted.request().basis());
+            String key=digest(raw.toString());
+            boolean exists=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM amazon_fee_estimates WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=? AND raw_payload=CAST(? AS jsonb))",Boolean.class,j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),raw.toString());
+            if(!exists){
+                var a=accepted.amounts();jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,currency,estimated_fee_total,referral_fee,fulfillment_fee,effective_at,raw_payload,source_document_id) VALUES(?,?,?,?,?,?,?,?,?,CAST(? AS jsonb),?)",j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),t.currency(),a.total(),a.referral(),a.fulfillment(),Timestamp.from(r.now()),raw.toString(),source);
+                if(feeEvidence!=null)feeEvidence.quote(j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),source,key,accepted.request().basis(),a.referral(),AmazonProductFeeSync.comparableFba(accepted.result().path("FeesEstimate"),t.currency()),r.now());
+            }
+        }
+        if(!result.unresolved().isEmpty()){
+            // Retry only definitively unresolved siblings; keep valid observations and durable progress.
+            var manifest=(tools.jackson.databind.node.ArrayNode)r.fee().path("batchManifest");int index=r.fee().path("batchIndex").asInt();
+            for(int n=0;n<targets.size();n++)manifest.remove(index);
+            for(int n=result.unresolved().size()-1;n>=0;n--){var t=result.unresolved().get(n).target();manifest.insert(index,json.createObjectNode().put("sku",t.sku()).put("price",t.price()).put("currency",t.currency()));}
+            save(r);if(r.fee().path("skuAttempts").asInt()>=SKU_ATTEMPTS){stop(r,"FEE_RETRY_EXHAUSTED");return false;}
+            defer(r,r.now().plusSeconds(30));return true;
+        }
+        r.fee().put("batchIndex",r.fee().path("batchIndex").asInt()+targets.size()).put("skuAttempts",0).put("attemptSku","");save(r);
+        update(r,true,"records_processed=records_processed+?,status='WAITING',available_at=clock_timestamp(),lease_owner=NULL,lease_expires_at=NULL",result.accepted().size());return true;
+    },false);}
+
 }
