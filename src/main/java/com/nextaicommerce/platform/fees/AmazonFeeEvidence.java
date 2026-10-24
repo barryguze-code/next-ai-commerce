@@ -17,7 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class AmazonFeeEvidence {
     // Versioned derivation contract: upgrades require explicit bounded reprojection, never source rewrites.
-    static final String DERIVATION_REVISION="fee-comparison-v2";
+    static final String DERIVATION_REVISION="fee-comparison-v3";
     private final JdbcTemplate jdbc; private final ObjectMapper json; private final boolean enabled;
     public AmazonFeeEvidence(JdbcTemplate jdbc, ObjectMapper json,
                              @Value("${app.amazon.fee-evidence-enabled:false}") boolean enabled) {
@@ -71,7 +71,7 @@ public class AmazonFeeEvidence {
             jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",Object.class,
                     tenant+":"+connection+":"+transaction.path("transactionId").asText("unidentified"));
             for(String priorOrder:jdbc.queryForList("SELECT DISTINCT order_id FROM amazon_order_fee_charge_observations WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND transaction_key=? AND order_id IS NOT NULL",String.class,tenant,connection,market,transaction.path("transactionId").asText("")))orders.add(priorOrder);
-            Timestamp received=jdbc.queryForObject("SELECT clock_timestamp()",Timestamp.class);
+            Timestamp received=jdbc.queryForObject("SELECT received_at FROM amazon_source_documents WHERE tenant_id=? AND marketplace_connection_id=? AND id=?",Timestamp.class,tenant,connection,source);
             String revision=digest(transaction.toString());
             for(var c:new AmazonOrderFeeParser().parse(transaction,market,seller)) {
                 String key=c.transaction().isBlank()?"unidentified:"+revision:c.transaction();
@@ -104,6 +104,14 @@ public class AmazonFeeEvidence {
             Timestamp purchase=(Timestamp)item.get("purchase_date");String currency=(String)item.get("currency"),sku=(String)item.get("seller_sku");
             boolean fba=Set.of("AFN","FBA","AMAZON").contains(Objects.toString(item.get("fulfillment_channel"),""));
             for(String type:List.of("REFERRAL","FBA")) {
+                var existing=jdbc.queryForList("""
+                    SELECT id,expected_amount FROM amazon_fee_comparisons WHERE tenant_id=? AND marketplace_connection_id=?
+                    AND marketplace_id=? AND order_item_id=? AND fee_type=?
+                    AND (revision_key='BASIS' OR revision_key LIKE 'BASIS:RECOVERED:%')
+                    ORDER BY revision_seq DESC LIMIT 1
+                    """,tenant,connection,market,item.get("id"),type);
+                // A complete historical basis is immutable. Only unresolved bindings may recover.
+                if(!existing.isEmpty()&&existing.getFirst().get("expected_amount")!=null)continue;
                 Map<String,Object> basis=null; boolean approved=false;
                 if(fba && price!=null && price.signum()>0 && shipping!=null && currency.equals(item.get("order_currency"))) {
                     var approvals=jdbc.queryForList("""
@@ -121,15 +129,18 @@ public class AmazonFeeEvidence {
                         if(!quotes.isEmpty())basis=quotes.getFirst();
                     }
                 }
+                if(!existing.isEmpty()&&basis==null)continue;
+                UUID predecessor=existing.isEmpty()?null:(UUID)existing.getFirst().get("id");
+                String bindingRevision=predecessor==null?"BASIS":"BASIS:RECOVERED:"+digest(item.get("id")+":"+type+":"+basis.get("id"));
                 jdbc.update("""
                     INSERT INTO amazon_fee_comparisons(tenant_id,marketplace_connection_id,marketplace_id,order_item_id,order_id,
                       seller_sku,fee_type,currency,quantity,unit_price,shipping,purchase_at,boundary_at,observation_id,approval_id,
-                      expected_amount,state,reason,revision_key)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'BASIS') ON CONFLICT DO NOTHING
+                      expected_amount,state,reason,previous_id,revision_key)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING
                     """,tenant,connection,market,item.get("id"),order,sku,type,currency,qty,price,shipping,purchase,
                         basis==null?null:basis.get("boundary_at"),basis==null||approved?null:basis.get("id"),basis!=null&&approved?basis.get("id"):null,
                         basis==null?null:((BigDecimal)basis.get("amount")).multiply(BigDecimal.valueOf(qty)),
-                        basis==null?"NOT_COMPARABLE":"AWAITING",basis==null?"Basis unavailable":"Awaiting charges");
+                        basis==null?"NOT_COMPARABLE":"AWAITING",basis==null?"Basis unavailable":"Awaiting charges",predecessor,bindingRevision);
             }
         }
         compareOrder(tenant,connection,market,order);
@@ -138,43 +149,17 @@ public class AmazonFeeEvidence {
     public void compareOrder(UUID tenant,UUID connection,String market,String order) {
         if(!enabled)return;
         scope(tenant,connection,market);
-        for(var b:jdbc.queryForList("SELECT * FROM amazon_fee_comparisons WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND order_id=? AND revision_key='BASIS' AND expected_amount IS NOT NULL",tenant,connection,market,order)) {
-            var charges=jdbc.queryForList("""
-                SELECT c.* FROM amazon_order_fee_charge_observations c WHERE c.tenant_id=? AND c.marketplace_connection_id=?
-                  AND c.marketplace_id=? AND c.order_id=? AND c.seller_sku=? AND c.fee_type=?
-                  AND NOT EXISTS(SELECT 1 FROM amazon_order_fee_charge_observations newer
-                    WHERE newer.tenant_id=c.tenant_id AND newer.marketplace_connection_id=c.marketplace_connection_id
-                     AND newer.marketplace_id=c.marketplace_id AND newer.transaction_key=c.transaction_key
-                     AND newer.observation_seq>c.observation_seq AND newer.revision<>c.revision)
-                ORDER BY c.observation_seq
-                """,tenant,connection,market,order,b.get("seller_sku"),b.get("fee_type"));
-            boolean unresolved=jdbc.queryForObject("""
-                SELECT EXISTS(SELECT 1 FROM amazon_order_fee_charge_observations c WHERE c.tenant_id=? AND c.marketplace_connection_id=?
-                 AND c.marketplace_id=? AND c.order_id=? AND (c.seller_sku IS NULL OR c.seller_sku=?) AND c.state<>'SUPPORTED'
-                 AND NOT EXISTS(SELECT 1 FROM amazon_order_fee_charge_observations n WHERE n.tenant_id=c.tenant_id
-                   AND n.marketplace_connection_id=c.marketplace_connection_id AND n.marketplace_id=c.marketplace_id
-                   AND n.transaction_key=c.transaction_key AND n.observation_seq>c.observation_seq AND n.revision<>c.revision))
-                """,Boolean.class,tenant,connection,market,order,b.get("seller_sku"));
-            var scopeIds=jdbc.queryForList("""
-                SELECT c.id FROM amazon_order_fee_charge_observations c WHERE c.tenant_id=? AND c.marketplace_connection_id=?
-                 AND c.marketplace_id=? AND c.order_id=? AND (c.seller_sku IS NULL OR c.seller_sku=?)
-                 AND NOT EXISTS(SELECT 1 FROM amazon_order_fee_charge_observations n WHERE n.tenant_id=c.tenant_id
-                  AND n.marketplace_connection_id=c.marketplace_connection_id AND n.marketplace_id=c.marketplace_id
-                  AND n.transaction_key=c.transaction_key AND n.observation_seq>c.observation_seq AND n.revision<>c.revision)
-                 ORDER BY c.observation_seq
-                """,UUID.class,tenant,connection,market,order,b.get("seller_sku"));
-            boolean identityChanged=jdbc.queryForObject("""
-                SELECT EXISTS(SELECT 1 FROM amazon_order_fee_charge_observations c
-                 JOIN LATERAL(SELECT n.revision FROM amazon_order_fee_charge_observations n
-                   WHERE n.tenant_id=c.tenant_id AND n.marketplace_connection_id=c.marketplace_connection_id
-                     AND n.marketplace_id=c.marketplace_id AND n.transaction_key=c.transaction_key
-                   ORDER BY n.observation_seq DESC LIMIT 1) latest ON true
-                 WHERE c.tenant_id=? AND c.marketplace_connection_id=? AND c.marketplace_id=? AND c.order_id=?
-                  AND c.seller_sku=? AND NOT EXISTS(SELECT 1 FROM amazon_order_fee_charge_observations member
-                    WHERE member.tenant_id=c.tenant_id AND member.marketplace_connection_id=c.marketplace_connection_id
-                      AND member.marketplace_id=c.marketplace_id AND member.transaction_key=c.transaction_key AND member.revision=latest.revision
-                      AND member.order_id=c.order_id AND member.seller_sku=c.seller_sku))
-                """,Boolean.class,tenant,connection,market,order,b.get("seller_sku"));
+        for(var b:jdbc.queryForList("""
+            SELECT * FROM (SELECT DISTINCT ON(order_item_id,fee_type) * FROM amazon_fee_comparisons
+              WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND order_id=?
+              AND (revision_key='BASIS' OR revision_key LIKE 'BASIS:RECOVERED:%')
+              ORDER BY order_item_id,fee_type,revision_seq DESC) binding WHERE expected_amount IS NOT NULL
+            """,tenant,connection,market,order)) {
+            var selection=chargeSelection(tenant,connection,market,order,(String)b.get("seller_sku"));
+            var charges=selection.rows().stream().filter(c->Objects.equals(c.get("fee_type"),b.get("fee_type"))).toList();
+            boolean identityChanged=selection.conflict();
+            boolean unresolved=identityChanged||selection.rows().stream().anyMatch(c->!"SUPPORTED".equals(c.get("state")));
+            var scopeIds=selection.rows().stream().map(c->(UUID)c.get("id")).toList();
             if(charges.isEmpty()&&scopeIds.isEmpty()&&!identityChanged)continue;
             boolean unique=jdbc.queryForObject("SELECT count(*) FROM amazon_order_items WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=? AND seller_sku=?",Integer.class,tenant,connection,order,b.get("seller_sku"))==1;
             var c=charges.isEmpty()?Map.<String,Object>of():charges.getFirst();boolean matched=unique&&charges.size()==1&&"SUPPORTED".equals(c.get("state"))
@@ -193,17 +178,24 @@ public class AmazonFeeEvidence {
             matched=matched&&Objects.equals(current.get("quantity_ordered"),b.get("quantity"))
                     &&equal(perUnit((BigDecimal)current.get("item_price"),((Number)b.get("quantity")).intValue()),(BigDecimal)b.get("unit_price"))
                     &&equal(perUnit((BigDecimal)current.get("shipping_price"),((Number)b.get("quantity")).intValue()),(BigDecimal)b.get("shipping"));
-            matched=matched&&c.get("posted_at")!=null&&((Timestamp)c.get("posted_at")).compareTo((Timestamp)b.get("purchase_at"))>=0
+            matched=matched&&financialBase(c,current)&&c.get("posted_at")!=null&&((Timestamp)c.get("posted_at")).compareTo((Timestamp)b.get("purchase_at"))>=0
                 &&((Timestamp)c.get("posted_at")).compareTo((Timestamp)c.get("observed_at"))<=0
                 &&equal((BigDecimal)current.get("item_tax"),BigDecimal.ZERO)&&equal((BigDecimal)current.get("shipping_tax"),BigDecimal.ZERO)
                 &&equal((BigDecimal)current.get("promotion_discount"),BigDecimal.ZERO)
                 &&(equal((BigDecimal)current.get("shipping_price"),BigDecimal.ZERO)||equal((BigDecimal)current.get("shipping_discount"),BigDecimal.ZERO));
             var result=FeeComparison.compare((String)b.get("currency"),((Timestamp)b.get("purchase_at")).toInstant(),
                     ((Timestamp)b.get("boundary_at")).toInstant(),(BigDecimal)b.get("expected_amount"),matched?(BigDecimal)c.get("expense_amount"):null,matched);
-            String state=matched?result.state():charges.isEmpty()&&!unresolved&&!identityChanged?"AWAITING":"NOT_COMPARABLE",reason=matched?result.reason():state.equals("AWAITING")?"Awaiting complete charges":"Charge identity, quantity or revision unresolved";
-            Timestamp updated=(Timestamp)current.get("updated_at");
-            String revision=digest(DERIVATION_REVISION+":"+scopeIds.stream().map(UUID::toString).sorted().toList()+":"
-                    +charges.stream().map(x->x.get("id").toString()).sorted().toList()+":"+state+":"+(updated==null?"unknown":updated.toInstant()));
+            String state=matched?result.state():charges.isEmpty()&&!unresolved&&!identityChanged?"AWAITING":"NOT_COMPARABLE",reason=matched?result.reason():identityChanged?"Conflicting financial observations; correction authority unavailable":state.equals("AWAITING")?"Awaiting complete charges":"Charge identity, quantity or revision unresolved";
+            String semantic=digest(b.get("id")+":"+scopeIds.stream().map(UUID::toString).sorted().toList()+":"
+                    +charges.stream().map(x->x.get("id").toString()).sorted().toList()+":"+state+":"+contextRevision(current));
+            String prefix=DERIVATION_REVISION+":"+semantic+":";
+            var previous=jdbc.queryForMap("""
+                SELECT id,revision_key FROM amazon_fee_comparisons WHERE tenant_id=? AND marketplace_connection_id=?
+                  AND marketplace_id=? AND order_item_id=? AND fee_type=? ORDER BY revision_seq DESC LIMIT 1
+                """,tenant,connection,market,b.get("order_item_id"),b.get("fee_type"));
+            if(Objects.toString(previous.get("revision_key"),"").startsWith(prefix))continue;
+            // A returned A after B is a new derivation; an unchanged retry of the latest A is not.
+            String revision=prefix+previous.get("id");
             jdbc.update("""
                 INSERT INTO amazon_fee_comparisons(tenant_id,marketplace_connection_id,marketplace_id,order_item_id,order_id,
                   seller_sku,fee_type,currency,quantity,unit_price,shipping,purchase_at,boundary_at,observation_id,approval_id,
@@ -211,8 +203,90 @@ public class AmazonFeeEvidence {
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING
                 """,tenant,connection,market,b.get("order_item_id"),order,b.get("seller_sku"),b.get("fee_type"),b.get("currency"),b.get("quantity"),b.get("unit_price"),b.get("shipping"),
                     b.get("purchase_at"),b.get("boundary_at"),b.get("observation_id"),b.get("approval_id"),matched?result.expected():b.get("expected_amount"),
-                    result.actual(),result.difference(),state,reason,matched?c.get("id"):null,b.get("id"),revision);
+                    result.actual(),result.difference(),state,reason,matched?c.get("id"):null,previous.get("id"),revision);
         }
+    }
+    private record ChargeSelection(List<Map<String,Object>> rows,boolean conflict) {}
+    private ChargeSelection chargeSelection(UUID tenant,UUID connection,String market,String order,String sku) {
+        // Fetch all revisions of transactions touching this item. Receipt order is not Amazon correction authority.
+        var all=jdbc.queryForList("""
+            SELECT c.* FROM amazon_order_fee_charge_observations c
+            WHERE c.tenant_id=? AND c.marketplace_connection_id=? AND c.marketplace_id=?
+              AND c.transaction_key IN (SELECT transaction_key FROM amazon_order_fee_charge_observations
+                WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND order_id=?
+                AND (seller_sku IS NULL OR seller_sku=?)) ORDER BY c.observation_seq
+            """,tenant,connection,market,tenant,connection,market,order,sku);
+        Map<String,Map<String,List<Map<String,Object>>>> transactions=new LinkedHashMap<>();
+        for(var c:all)transactions.computeIfAbsent((String)c.get("transaction_key"),k->new LinkedHashMap<>())
+            .computeIfAbsent((String)c.get("revision"),k->new ArrayList<>()).add(c);
+        List<Map<String,Object>> selected=new ArrayList<>();boolean conflict=false;
+        for(var revisions:transactions.values()){
+            Set<String> economics=new HashSet<>();List<Map<String,Object>> chosen=null;boolean released=false;
+            for(var rows:revisions.values()){
+                var raw=json.readTree(rows.getFirst().get("raw_evidence").toString());
+                var material=raw.deepCopy();if(material.isObject())((tools.jackson.databind.node.ObjectNode)material).remove(List.of("transactionStatus","description"));
+                economics.add(canonical(material));
+                boolean finalState=Set.of("RELEASED","DEFERRED_RELEASED").contains(raw.path("transactionStatus").asText());
+                if(chosen==null||finalState&&!released||finalState==released){chosen=rows;released=finalState;}
+            }
+            if(economics.size()>1){conflict=true;for(var rows:revisions.values())selected.addAll(rows);}
+            else if(chosen!=null)selected.addAll(chosen);
+        }
+        return new ChargeSelection(selected.stream().filter(c->Objects.equals(c.get("order_id"),order)
+            &&(c.get("seller_sku")==null||Objects.equals(c.get("seller_sku"),sku))).toList(),conflict);
+    }
+    private String canonical(JsonNode node){
+        if(node.isObject()){
+            Map<String,String> fields=new TreeMap<>();node.properties().forEach(e->fields.put(e.getKey(),canonical(e.getValue())));
+            return json.writeValueAsString(fields);
+        }
+        if(node.isArray()){List<String> values=new ArrayList<>();node.forEach(n->values.add(canonical(n)));return json.writeValueAsString(values);}
+        return node.isNumber()?node.decimalValue().stripTrailingZeros().toPlainString():node.toString();
+    }
+    private boolean financialBase(Map<String,Object> charge,Map<String,Object> item){
+        if(charge.get("raw_evidence")==null||charge.get("component_path")==null)return false;
+        String[] path=charge.get("component_path").toString().split("/");
+        if(path.length<2||!"items".equals(path[0]))return false;
+        int index;try{index=Integer.parseInt(path[1]);}catch(NumberFormatException error){return false;}
+        var financial=json.readTree(charge.get("raw_evidence").toString()).path("items").path(index);
+        String currency=Objects.toString(item.get("currency"),"");BigDecimal principal=null,shipping=BigDecimal.ZERO;
+        List<JsonNode> nodes=new ArrayList<>();int products=0,shipments=0;
+        for(var n:financial.path("breakdowns")){
+            nodes.add(n);
+            if("ProductCharges".equals(n.path("breakdownType").asText())){
+                if(++products>1)return false;n.path("breakdowns").forEach(nodes::add);
+            }
+        }
+        for(var n:nodes){
+            String type=n.path("breakdownType").asText();
+            if("OurPricePrincipal".equals(type)){
+                if(principal!=null)return false;principal=financialAmount(n,currency);if(principal==null)return false;
+            }
+            if("Shipping".equals(type)){
+                if(++shipments>1||n.path("breakdowns").size()!=1)return false;
+                var child=n.path("breakdowns").get(0);
+                if(!"ShippingPrincipal".equals(child.path("breakdownType").asText()))return false;
+                shipping=financialAmount(child,currency);if(shipping==null)return false;
+            }
+            if("Tax".equals(type))for(var child:n.path("breakdowns")){
+                var tax=financialAmount(child,currency);if(tax==null||tax.signum()!=0)return false;
+            }
+        }
+        return equal(principal,(BigDecimal)item.get("item_price"))&&equal(shipping,(BigDecimal)item.get("shipping_price"))
+            &&equal((BigDecimal)item.get("shipping_discount"),BigDecimal.ZERO);
+    }
+    private static BigDecimal financialAmount(JsonNode n,String currency){
+        var amount=n.path("breakdownAmount");return currency.equals(amount.path("currencyCode").asText())&&amount.path("currencyAmount").isNumber()
+            ?amount.path("currencyAmount").decimalValue():null;
+    }
+    private String contextRevision(Map<String,Object> item){
+        var values=new ArrayList<String>();
+        for(String key:List.of("seller_sku","currency","order_currency","current_market","current_purchase","fulfillment_channel",
+                "quantity_ordered","quantity_shipped","item_price","shipping_price","item_tax","shipping_tax","promotion_discount","shipping_discount")){
+            Object value=item.get(key);
+            values.add(value instanceof Timestamp t?t.toInstant().toString():value instanceof BigDecimal n?n.stripTrailingZeros().toPlainString():Objects.toString(value,null));
+        }
+        return digest(json.writeValueAsString(values));
     }
     static BigDecimal perUnit(BigDecimal total,int quantity){if(total==null||quantity<1)return null;try{return total.divide(BigDecimal.valueOf(quantity),4,RoundingMode.UNNECESSARY);}catch(ArithmeticException e){return null;}}
     static boolean equal(BigDecimal a,BigDecimal b){return a!=null&&b!=null&&a.compareTo(b)==0;}
