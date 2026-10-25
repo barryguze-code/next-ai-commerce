@@ -221,7 +221,14 @@ public class AmazonProductFeeJobs {
         r.fee().put("reason",reason);save(r);
         update(r,false,"status=?,error_code=?,error_message='Fee collection stopped; saved estimates preserved.',completed_at=clock_timestamp(),lease_owner=NULL,lease_expires_at=NULL",
             r.job().required()?"FAILED":"SKIPPED",reason);
-        if(r.fee().path("batchMode").asBoolean(false))jdbc.update("UPDATE marketplace_sync_runs SET status='COMPLETED_WITH_WARNINGS',progress_percent=100,user_message='Fee refresh stopped; valid evidence retained',completed_at=clock_timestamp() WHERE tenant_id=? AND id=? AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs WHERE tenant_id=? AND sync_run_id=? AND status NOT IN ('COMPLETED','SKIPPED','FAILED'))",r.job().tenantId(),r.job().runId(),r.job().tenantId(),r.job().runId());
+        if(r.fee().path("batchMode").asBoolean(false))jdbc.update("UPDATE marketplace_sync_runs SET status='COMPLETED_WITH_WARNINGS',progress_percent=100,user_message=?,completed_at=clock_timestamp() WHERE tenant_id=? AND id=? AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs WHERE tenant_id=? AND sync_run_id=? AND status NOT IN ('COMPLETED','SKIPPED','FAILED'))",batchSummary(r),r.job().tenantId(),r.job().runId(),r.job().tenantId(),r.job().runId());
+    }
+    private String batchSummary(Row r){
+        int accepted=r.fee().path("acceptedCount").asInt(),unsupported=r.fee().path("unsupportedCount").asInt();
+        int remaining=Math.max(0,r.fee().path("batchManifest").size()-r.fee().path("batchIndex").asInt());
+        return (r.fee().has("runContract")?"Archived fee quotes: ":"Saved fee quotes: ")+accepted+" passed validation; "+unsupported+" unsupported; "+remaining+" unresolved results. "
+            +"Comparable per-unit FBA fees: "+r.fee().path("fbaComparableCount").asInt()+" of "+accepted+". "
+            +"Quotes reused: "+r.fee().path("cacheHits").asInt()+"."+(r.fee().has("runContract")?" Estimates unchanged.":"");
     }
     public void stop(AmazonSyncStore.Job j,String reason){owned(j,r->{stop(r,reason);return true;},false);}
     private void defer(Row r,Instant until){
@@ -467,8 +474,9 @@ public class AmazonProductFeeJobs {
         }
         var manifest=r.fee().path("batchManifest");int index=r.fee().path("batchIndex").asInt();
         if(index>=manifest.size()){
+            if(r.fee().path("unsupportedCount").asInt()>0){stop(r,"FEE_UNSUPPORTED_RESULTS");return List.of();}
             update(r,true,"status='COMPLETED',completed_at=clock_timestamp(),lease_owner=NULL,lease_expires_at=NULL");
-            jdbc.update("UPDATE marketplace_sync_runs SET status='COMPLETED',progress_percent=100,user_message=?,completed_at=clock_timestamp() WHERE tenant_id=? AND id=? AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs WHERE tenant_id=? AND sync_run_id=? AND status NOT IN ('COMPLETED','SKIPPED'))",r.fee().has("runContract")?"Fee responses archived; estimates unchanged":"Fee estimates refreshed",j.tenantId(),j.runId(),j.tenantId(),j.runId());
+            jdbc.update("UPDATE marketplace_sync_runs SET status=?,progress_percent=100,user_message=?,completed_at=clock_timestamp() WHERE tenant_id=? AND id=? AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs WHERE tenant_id=? AND sync_run_id=? AND status NOT IN ('COMPLETED','SKIPPED'))",r.fee().path("fbaUnavailableCount").asInt()>0?"COMPLETED_WITH_WARNINGS":"COMPLETED",batchSummary(r),j.tenantId(),j.runId(),j.tenantId(),j.runId());
             return List.of();
         }
         List<Target> targets=new ArrayList<>();
@@ -478,7 +486,22 @@ public class AmazonProductFeeJobs {
         var pending=r.fee().putArray("batchPending");for(var t:targets)pending.add(digest(t.sku()+":"+t.price().stripTrailingZeros().toPlainString()+":"+t.currency()));save(r);
         return List.copyOf(targets);
     },List.of());}
+    private boolean matchesPendingBatch(Row r,List<Target> targets,AmazonProductFeeBatch.Result result){
+        if(!pendingSlice(r.fee())||targets.size()!=r.fee().path("batchPending").size())return false;
+        Set<Target> expected=new HashSet<>(targets),observed=new HashSet<>();
+        if(expected.size()!=targets.size())return false;
+        for(int n=0;n<targets.size();n++){
+            var t=targets.get(n);String key=digest(t.sku()+":"+t.price().stripTrailingZeros().toPlainString()+":"+t.currency());
+            if(!key.equals(r.fee().path("batchPending").get(n).asText()))return false;
+        }
+        for(var accepted:result.accepted())if(!observed.add(accepted.request().target()))return false;
+        for(var unresolved:result.unresolved())if(!observed.add(unresolved.target()))return false;
+        Set<AmazonProductFeeBatch.Request> rejected=new HashSet<>();
+        for(var terminal:result.rejected())if(!result.unresolved().contains(terminal.request())||!rejected.add(terminal.request()))return false;
+        return expected.equals(observed);
+    }
     void publishBatch(AmazonSyncStore.Job j,List<Target> targets,AmazonProductFeeBatch.Result result,AmazonSpApiClient.ApiResponse response){owned(j,r->{
+        if(!matchesPendingBatch(r,targets,result)){stop(r,"FEE_RESPONSE_STATE_INVALID");return false;}
         observe(r,response.rateLimit());
         for(var accepted:result.accepted()){
             var t=accepted.request().target();
@@ -494,20 +517,35 @@ public class AmazonProductFeeJobs {
             boolean exists=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM amazon_fee_estimates WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=? AND raw_payload=CAST(? AS jsonb))",Boolean.class,j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),raw.toString());
             if(!exists){
                 var a=accepted.amounts();jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,currency,estimated_fee_total,referral_fee,fulfillment_fee,effective_at,raw_payload,source_document_id) VALUES(?,?,?,?,?,?,?,?,?,CAST(? AS jsonb),?)",j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),t.currency(),a.total(),a.referral(),a.fulfillment(),Timestamp.from(r.now()),raw.toString(),source);
-                if(feeEvidence!=null)feeEvidence.quote(j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),source,key,accepted.request().basis(),a.referral(),AmazonProductFeeBatch.comparableFba(accepted.result().path("FeesEstimate"),t.currency()),r.now());
+                if(feeEvidence!=null)feeEvidence.quote(j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),source,key,accepted.request().basis(),a.referral(),AmazonProductFeeBatch.comparableFba(accepted.result().path("FeesEstimate"),t.currency(),accepted.request().basis()),r.now());
             }
         }
-        r.fee().remove("batchPending");
+        // Archive/publication, counts and remaining work commit together under the same lease fence.
+        update(r,true,"records_processed=records_processed+?",result.accepted().size());
+        r.fee().put("acceptedCount",r.fee().path("acceptedCount").asInt()+result.accepted().size());
+        int comparable=0;for(var accepted:result.accepted())if(AmazonProductFeeBatch.comparableFba(accepted.result().path("FeesEstimate"),accepted.request().target().currency(),accepted.request().basis())!=null)comparable++;
+        r.fee().put("referralComparableCount",r.fee().path("referralComparableCount").asInt()+result.accepted().size());
+        r.fee().put("fbaComparableCount",r.fee().path("fbaComparableCount").asInt()+comparable);
+        r.fee().put("fbaUnavailableCount",r.fee().path("fbaUnavailableCount").asInt()+result.accepted().size()-comparable);
+        var issues=r.fee().has("unsupportedResults")?(tools.jackson.databind.node.ArrayNode)r.fee().path("unsupportedResults"):r.fee().putArray("unsupportedResults");
+        for(var rejected:result.rejected())issues.addObject().put("sku",rejected.request().target().sku()).put("reason",rejected.reason()).put("sourceDocument",source.toString());
+        r.fee().put("unsupportedCount",issues.size());r.fee().remove("batchPending");
         if(!result.unresolved().isEmpty()){
-            // Retry only definitively unresolved siblings; keep valid observations and durable progress.
+            // Only missing or service-error siblings retry. Deterministic unsupported evidence is retained for review.
             var manifest=(tools.jackson.databind.node.ArrayNode)r.fee().path("batchManifest");int index=r.fee().path("batchIndex").asInt();
             for(int n=0;n<targets.size();n++)manifest.remove(index);
-            for(int n=result.unresolved().size()-1;n>=0;n--){var t=result.unresolved().get(n).target();manifest.insert(index,json.createObjectNode().put("sku",t.sku()).put("price",t.price()).put("currency",t.currency()));}
-            save(r);if(r.fee().path("skuAttempts").asInt()>=SKU_ATTEMPTS){stop(r,"FEE_RETRY_EXHAUSTED");return false;}
+            var retryable=result.retryable();
+            for(int n=retryable.size()-1;n>=0;n--){var t=retryable.get(n).target();manifest.insert(index,json.createObjectNode().put("sku",t.sku()).put("price",t.price()).put("currency",t.currency()));}
+            save(r);
+            if(retryable.isEmpty()){
+                r.fee().put("skuAttempts",0).put("attemptSku","");save(r);
+                update(r,true,"status='WAITING',available_at=clock_timestamp(),lease_owner=NULL,lease_expires_at=NULL");return true;
+            }
+            if(r.fee().path("skuAttempts").asInt()>=SKU_ATTEMPTS){stop(r,"FEE_RETRY_EXHAUSTED");return false;}
             defer(r,r.now().plusSeconds(30));return true;
         }
         r.fee().put("batchIndex",r.fee().path("batchIndex").asInt()+targets.size()).put("skuAttempts",0).put("attemptSku","");save(r);
-        update(r,true,"records_processed=records_processed+?,status='WAITING',available_at=clock_timestamp(),lease_owner=NULL,lease_expires_at=NULL",result.accepted().size());return true;
+        update(r,true,"status='WAITING',available_at=clock_timestamp(),lease_owner=NULL,lease_expires_at=NULL");return true;
     },false);}
 
 }

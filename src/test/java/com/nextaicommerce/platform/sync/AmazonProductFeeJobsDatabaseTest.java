@@ -298,6 +298,127 @@ class AmazonProductFeeJobsDatabaseTest {
         assertThat(count("amazon_source_documents")).isOne();assertThat(count("amazon_fee_estimates")).isZero();verifyNoInteractions(evidence);
         assertThat(count("amazon_fee_observations")).isZero();assertThat(count("amazon_fee_comparisons")).isZero();assertThat(count("amazon_fee_approvals")).isZero();
     }
+    // Sanitized structural reproduction: one accepted sibling and one unsupported promotion.
+    record BatchFixture(List<AmazonProductFeeJobs.Target> targets,AmazonProductFeeBatch.Result verified,AmazonSpApiClient.ApiResponse response) {}
+    BatchFixture partialBatch(boolean promotion){
+        batchScope();jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,price,currency,fulfillment_channel,listing_status) VALUES (?,?,?,'SECOND',30,'USD','AFN','ACTIVE')",tenant,connection,MARKET);
+        return batchResponse(jobs.batchNext(job),promotion?"SECOND":null,promotion?null:"SECOND");
+    }
+    BatchFixture batchResponse(List<AmazonProductFeeJobs.Target> targets,String promotionSku,String missingSku){
+        var requests=new ArrayList<AmazonProductFeeBatch.Request>();var envelope=json.createArrayNode();
+        for(var target:targets){
+            var basis=jobs.basis(job,target);String correlation="fixture-"+target.sku();requests.add(new AmazonProductFeeBatch.Request(target,basis,correlation));
+            var raw=(ObjectNode)response().json().path("payload").path("FeesEstimateResult").deepCopy();
+            var identifier=(ObjectNode)raw.path("FeesEstimateIdentifier");identifier.put("IdValue",target.sku()).put("SellerId",connection.toString()).put("SellerInputIdentifier",correlation).put("IsAmazonFulfilled",true);identifier.set("PriceToEstimateFees",basis.path("PriceToEstimateFees"));
+            for(var f:raw.path("FeesEstimate").path("FeeDetailList"))((ObjectNode)f).set("FinalFee",f.path("FeeAmount").deepCopy());
+            if(target.sku().equals(missingSku))continue; // A missing sibling can retry within its existing budget.
+            if(target.sku().equals(promotionSku)){
+                for(var f:raw.path("FeesEstimate").path("FeeDetailList"))if("ReferralFee".equals(f.path("FeeType").asText())){
+                    ((ObjectNode)f).putObject("FeePromotion").put("CurrencyCode","USD").put("Amount",1);
+                    ((ObjectNode)f.path("FinalFee")).put("Amount",2);
+                }
+                ((ObjectNode)raw.path("FeesEstimate").path("TotalFeesEstimate")).put("Amount",7);
+            }
+            envelope.add(raw);
+        }
+        return new BatchFixture(targets,AmazonProductFeeBatch.verify(requests,envelope),new AmazonSpApiClient.ApiResponse(200,"sanitized-partial",envelope,envelope.toString()));
+    }
+    @Test void partialAcceptedProgressIsDurableBeforeRetryAndCannotCountAgain(){
+        var f=partialBatch(false);jobs.publishBatch(job,f.targets(),f.verified(),f.response());
+        assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isEqualTo(1);
+        assertThat(status()).isEqualTo("WAITING");assertThat(jdbc.queryForObject("SELECT record_count FROM amazon_source_documents",Integer.class)).isEqualTo(1);
+        jobs.publishBatch(job,f.targets(),f.verified(),f.response());
+        assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isEqualTo(1);
+        resumed();assertThat(jobs.batchNext(job)).extracting(AmazonProductFeeJobs.Target::sku).containsExactly("SECOND");
+    }
+    @Test void deterministicPromotionIsArchivedOnceWithoutAnotherAttempt(){
+        var f=partialBatch(true);jobs.publishBatch(job,f.targets(),f.verified(),f.response());
+        assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isEqualTo(1);
+        resumed();assertThat(jobs.batchNext(job)).isEmpty();
+        assertThat(status()).isEqualTo("SKIPPED");assertThat(reason()).isEqualTo("FEE_UNSUPPORTED_RESULTS");
+        assertThat(count("amazon_source_documents")).isOne();assertThat(count("amazon_fee_estimates")).isOne();
+        assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_runs WHERE id=?",String.class,run)).isEqualTo("COMPLETED_WITH_WARNINGS");
+    }
+
+    @Test void archiveOnlyPartialResultsRetainDistinctCountsAndUnsupportedSourceWithoutFinancialWrites(){
+        var contract=pilot();((tools.jackson.databind.node.ArrayNode)contract.path("skus")).add("SECOND");
+        var digest=json.createArrayNode();for(String sku:List.of(SKU,"SECOND"))digest.addArray().add(sku).add("30").add("USD").add("FBA").add("0");
+        contract.put("basisSha256",com.nextaicommerce.platform.fees.AmazonFeeEvidence.digest(digest.toString()));pilot(contract);
+        var f=partialBatch(true);assertThat(jobs.reserve(job,SKU,"FEE")).isTrue();jobs.received(job);jobs.publishBatch(job,f.targets(),f.verified(),f.response());
+        assertThat(fee().path("acceptedCount").asInt()).isOne();assertThat(fee().path("unsupportedCount").asInt()).isOne();
+        assertThat(fee().path("referralComparableCount").asInt()).isOne();assertThat(fee().path("fbaComparableCount").asInt()).isZero();assertThat(fee().path("fbaUnavailableCount").asInt()).isOne();
+        assertThat(fee().path("unsupportedResults").get(0).path("sku").asText()).isEqualTo("SECOND");assertThat(fee().path("unsupportedResults").get(0).path("reason").asText()).isEqualTo("UNSUPPORTED_FEE_PROMOTION");
+        assertThat(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM amazon_source_documents WHERE id=CAST(? AS uuid))",Boolean.class,fee().path("unsupportedResults").get(0).path("sourceDocument").asText())).isTrue();
+        resumed();assertThat(jobs.batchNext(job)).isEmpty();assertThat(status()).isEqualTo("SKIPPED");assertThat(fee().path("http").asInt()).isOne();
+        assertThat(jdbc.queryForObject("SELECT user_message FROM marketplace_sync_runs WHERE id=?",String.class,run)).contains("1 passed validation; 1 unsupported; 0 unresolved results", "Comparable per-unit FBA fees: 0 of 1", "Estimates unchanged");
+        for(String table:List.of("amazon_fee_estimates","amazon_fee_observations","amazon_fee_comparisons","amazon_fee_approvals","amazon_inventory_snapshots","inventory_ledger_entries"))assertThat(count(table)).as(table).isZero();
+    }
+    @Test void partialPublicationFailureRollsBackArchiveProgressAndRemainingTargets(){
+        var f=partialBatch(false);String before=fee().toString();
+        jdbc.execute("CREATE FUNCTION "+schema+".reject_partial_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.records_processed>0 AND NEW.status='WAITING' THEN RAISE EXCEPTION 'fixture publication failure'; END IF; RETURN NEW; END $$");
+        jdbc.execute("CREATE TRIGGER reject_partial_fixture BEFORE UPDATE ON marketplace_sync_jobs FOR EACH ROW EXECUTE FUNCTION "+schema+".reject_partial_fixture()");
+        try{
+            assertThatThrownBy(()->jobs.publishBatch(job,f.targets(),f.verified(),f.response())).isInstanceOf(RuntimeException.class);
+            assertThat(fee().toString()).isEqualTo(before);assertThat(count("amazon_source_documents")).isZero();assertThat(count("amazon_fee_estimates")).isZero();
+            assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isZero();
+        }finally{jdbc.execute("DROP TRIGGER reject_partial_fixture ON marketplace_sync_jobs");jdbc.execute("DROP FUNCTION "+schema+".reject_partial_fixture()");}
+        jobs.publishBatch(job,f.targets(),f.verified(),f.response());assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isEqualTo(1);
+    }
+    @Test void staleOrMismatchedBatchCannotDoubleCountAcceptedSiblings(){
+        var f=partialBatch(false);jobs.publishBatch(job,f.targets(),f.verified(),f.response());resumed();jobs.batchNext(job);
+        jobs.publishBatch(job,f.targets(),f.verified(),f.response());
+        assertThat(reason()).isEqualTo("FEE_RESPONSE_STATE_INVALID");assertThat(count("amazon_source_documents")).isOne();
+        assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isEqualTo(1);
+    }
+    @Test void expiryDuringBatchArchiveRollsBackCountsAndEvidence(){
+        var f=partialBatch(false);
+        jdbc.execute("CREATE FUNCTION "+schema+".expire_batch_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN UPDATE marketplace_sync_jobs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id='"+id+"'; RETURN NEW; END $$");
+        jdbc.execute("CREATE TRIGGER expire_batch_fixture BEFORE INSERT ON amazon_source_documents FOR EACH ROW EXECUTE FUNCTION "+schema+".expire_batch_fixture()");
+        try{
+            assertThatThrownBy(()->jobs.publishBatch(job,f.targets(),f.verified(),f.response())).isInstanceOf(RuntimeException.class);
+            assertThat(count("amazon_source_documents")).isZero();assertThat(count("amazon_fee_estimates")).isZero();
+            assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isZero();assertThat(fee().path("acceptedCount").asInt()).isZero();
+        }finally{jdbc.execute("DROP TRIGGER expire_batch_fixture ON amazon_source_documents");jdbc.execute("DROP FUNCTION "+schema+".expire_batch_fixture()");}
+    }
+    @Test void unavailablePerUnitFbaKeepsSuccessfulQuotesButCompletesWithWarning(){
+        batchPublicationIsFencedAndPreservesExactRawEvidence();resumed();assertThat(jobs.batchNext(job)).isEmpty();
+        assertThat(status()).isEqualTo("COMPLETED");assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_runs WHERE id=?",String.class,run)).isEqualTo("COMPLETED_WITH_WARNINGS");
+        assertThat(jdbc.queryForObject("SELECT user_message FROM marketplace_sync_runs WHERE id=?",String.class,run)).contains("1 passed validation", "Comparable per-unit FBA fees: 0 of 1").doesNotContain("Estimates unchanged");
+    }
+    @Test void mixedPartialBatchKeepsLaterTargetsAndCountsEachAcceptedSkuExactlyOnce(){
+        batchScope();jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,price,currency,fulfillment_channel,listing_status) SELECT ?,?,?,'REST-'||lpad(n::text,2,'0'),30,'USD','AFN','ACTIVE' FROM generate_series(0,23) n",tenant,connection,MARKET);
+        var first=batchResponse(jobs.batchNext(job),"REST-00","REST-01");assertThat(first.targets()).hasSize(20);
+        assertThat(jobs.reserve(job,first.targets().getFirst().sku(),"FEE")).isTrue();jobs.received(job);jobs.publishBatch(job,first.targets(),first.verified(),first.response());
+        assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isEqualTo(18);
+        assertThat(fee().path("unsupportedCount").asInt()).isOne();assertThat(fee().path("batchManifest")).hasSize(6);
+        resumed();state("nextAt",Instant.now().minusSeconds(1).toString());var rest=jobs.batchNext(job);
+        assertThat(rest).extracting(AmazonProductFeeJobs.Target::sku).containsExactly("REST-01","REST-19","REST-20","REST-21","REST-22","REST-23");
+        assertThat(jobs.reserve(job,rest.getFirst().sku(),"FEE")).isTrue();jobs.received(job);
+        var second=batchResponse(rest,null,null);jobs.publishBatch(job,rest,second.verified(),second.response());resumed();assertThat(jobs.batchNext(job)).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isEqualTo(24);
+        assertThat(count("amazon_fee_estimates")).isEqualTo(24);assertThat(count("amazon_source_documents")).isEqualTo(2);assertThat(fee().path("acceptedCount").asInt()).isEqualTo(24);assertThat(fee().path("unsupportedCount").asInt()).isOne();assertThat(fee().path("http").asInt()).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT user_message FROM marketplace_sync_runs WHERE id=?",String.class,run)).contains("24 passed validation; 1 unsupported; 0 unresolved results");
+    }
+    @Test void exhaustedRetryReportsAcceptedUnsupportedAndMissingSeparately(){
+        var f=partialBatch(false);state("skuAttempts",3);jobs.publishBatch(job,f.targets(),f.verified(),f.response());
+        assertThat(reason()).isEqualTo("FEE_RETRY_EXHAUSTED");assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT user_message FROM marketplace_sync_runs WHERE id=?",String.class,run)).contains("1 passed validation; 0 unsupported; 1 unresolved results");
+    }
+    @Test void feeOnlyStatusReaderPreservesAuthoritativeTerminalAndActiveStates(){
+        var reader=new com.nextaicommerce.platform.web.WorkspaceAccessRepository(jdbc);
+        for(String state:List.of("QUEUED","RUNNING","COMPLETED","COMPLETED_WITH_WARNINGS","FAILED","CANCELLED")){
+            jdbc.update("UPDATE marketplace_sync_runs SET status=? WHERE id=?",state,run);
+            assertThat(reader.listCurrentSyncStatuses(tenant)).singleElement().satisfies(view->assertThat(view.status()).as(state).isEqualTo(state));
+        }
+        assertThat(reader.listCurrentSyncStatuses(UUID.randomUUID())).isEmpty();
+    }
+    @Test void mixedInitializationStatusProjectionRemainsUnchanged(){
+        var reader=new com.nextaicommerce.platform.web.WorkspaceAccessRepository(jdbc);
+        jdbc.update("INSERT INTO marketplace_sync_jobs(tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,status,required_for_ready) VALUES (?,?,?,'INVENTORY_SNAPSHOT',2,'COMPLETED',true)",tenant,run,connection);
+        assertThat(reader.listCurrentSyncStatuses(tenant)).singleElement().satisfies(view->assertThat(view.status()).isEqualTo("ENRICHING"));
+        jdbc.update("INSERT INTO marketplace_sync_jobs(tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,status,required_for_ready) VALUES (?,?,?,'FINAL_RECONCILIATION',3,'COMPLETED',true)",tenant,run,connection);
+        assertThat(reader.listCurrentSyncStatuses(tenant)).singleElement().satisfies(view->{assertThat(view.status()).isEqualTo("COMPLETED");assertThat(view.message()).isEqualTo("Amazon data is ready");});
+    }
     @Test void batchShippingScopeMustBeExplicit(){assertThat(jobs.batchNext(job)).isEmpty();assertThat(reason()).isEqualTo("FEE_SHIPPING_BASIS_REQUIRES_APPROVAL");}
     @Test void batchFreezesExactTargetsAndDoesNotFollowLaterPrice(){batchScope();var targets=jobs.batchNext(job);assertThat(targets).hasSize(1);jdbc.update("UPDATE amazon_listings SET price=77 WHERE tenant_id=?",tenant);assertThat(jobs.batchNext(job).getFirst().price()).isEqualByComparingTo(targets.getFirst().price());}
     @Test void legacyQuotesDoNotBypassTheNewFinalFeeCacheContract(){batchScope();publish();resumed();assertThat(jobs.batchNext(job)).hasSize(1);assertThat(fee().path("cacheHits").asInt()).isZero();assertThat(fee().path("http").asInt()).isZero();}

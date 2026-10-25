@@ -26,19 +26,25 @@ public class WorkspaceAccessRepository {
     }
     public record CredentialEnvelope(byte[] payload, byte[] nonce) {}
     public record SyncStatusView(UUID connectionId, String storeName, String status, int progress,
-        String stage, String message, Instant startedAt) {
+        String stage, String message, Instant startedAt, boolean feeOnly) {
+        public SyncStatusView(UUID connectionId,String storeName,String status,int progress,String stage,String message,Instant startedAt){this(connectionId,storeName,status,progress,stage,message,startedAt,false);}
+        public boolean feeTerminal(){return feeOnly&&Set.of("COMPLETED","COMPLETED_WITH_WARNINGS","FAILED","CANCELLED").contains(status);}
+        public String feeStateLabel(){return switch(status){case "COMPLETED"->"Completed";case "COMPLETED_WITH_WARNINGS"->"Completed with warnings";case "FAILED"->"Failed";case "CANCELLED"->"Cancelled";case "QUEUED"->"Queued";case "RUNNING"->"Checking fee quotes";default->"Fee check needs review";};}
         public int displayProgress() {
+            if(feeOnly)return Math.max(0,Math.min(100,progress));
             return AmazonSyncProgress.displayPercent(progress, stage, status);
         }
         public String stagePosition() {
+            if(feeOnly)return "Fee quote results";
             return "Step " + AmazonSyncProgress.stageNumber(stage) + " of " + AmazonSyncProgress.stageCount();
         }
         public String estimatedTimeRemaining() {
+            if(feeOnly)return feeStateLabel();
             if ("COMPLETED".equals(status)) return "Complete";
             return AmazonSyncProgress.stageTiming(stage);
         }
         public boolean starting() {
-            return progress == 0 && !"COMPLETED".equals(status);
+            return progress == 0 && !"COMPLETED".equals(status) && !feeTerminal();
         }
     }
     public record SyncJobView(UUID connectionId, int sequence, String jobType, String label,
@@ -276,7 +282,8 @@ public class WorkspaceAccessRepository {
         setTenant(tenantId);
         return jdbc.query("""
             SELECT r.marketplace_connection_id, c.display_name,
-                   CASE WHEN final_job.id IS NOT NULL THEN 'COMPLETED'
+                   CASE WHEN fee_scope.fee_only THEN r.status
+                        WHEN final_job.id IS NOT NULL THEN 'COMPLETED'
                         WHEN NOT EXISTS (SELECT 1 FROM marketplace_sync_jobs required_job
                             WHERE required_job.tenant_id=r.tenant_id AND required_job.sync_run_id=r.id
                               AND required_job.required_for_ready=true
@@ -285,9 +292,12 @@ public class WorkspaceAccessRepository {
                    CASE WHEN final_job.id IS NOT NULL THEN 100 ELSE r.progress_percent END AS progress_percent,
                    CASE WHEN final_job.id IS NOT NULL THEN 'FINAL_RECONCILIATION' ELSE r.current_stage END AS current_stage,
                    CASE WHEN final_job.id IS NOT NULL THEN 'Amazon data is ready' ELSE r.user_message END AS user_message,
-                   r.started_at
+                   r.started_at, fee_scope.fee_only
             FROM marketplace_sync_runs r
             JOIN marketplace_connections c ON c.tenant_id=r.tenant_id AND c.id=r.marketplace_connection_id
+            CROSS JOIN LATERAL (SELECT
+                EXISTS(SELECT 1 FROM marketplace_sync_jobs fee_job WHERE fee_job.tenant_id=r.tenant_id AND fee_job.sync_run_id=r.id AND fee_job.job_type='FEES_SNAPSHOT')
+                AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs other_job WHERE other_job.tenant_id=r.tenant_id AND other_job.sync_run_id=r.id AND other_job.job_type<>'FEES_SNAPSHOT') AS fee_only) fee_scope
             LEFT JOIN marketplace_sync_jobs final_job ON final_job.sync_run_id=r.id
                 AND final_job.tenant_id=r.tenant_id
                 AND final_job.job_type='FINAL_RECONCILIATION'
@@ -302,7 +312,7 @@ public class WorkspaceAccessRepository {
                 rs.getObject("marketplace_connection_id", UUID.class), rs.getString("display_name"),
                 rs.getString("status"), rs.getInt("progress_percent"), rs.getString("current_stage"),
                 rs.getString("user_message"), rs.getTimestamp("started_at") == null ? null
-                    : rs.getTimestamp("started_at").toInstant()), tenantId);
+                    : rs.getTimestamp("started_at").toInstant(),rs.getBoolean("fee_only")), tenantId);
     }
 
     @Transactional(readOnly = true)

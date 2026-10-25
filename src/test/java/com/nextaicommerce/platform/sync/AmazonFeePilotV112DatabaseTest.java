@@ -46,7 +46,7 @@ class AmazonFeePilotV112DatabaseTest {
             assertThat(jdbc.queryForObject("SELECT text_payload FROM amazon_source_documents WHERE sync_job_id=?",String.class,job)).isEqualTo(envelope.toString());
             assertThat(jdbc.queryForMap("SELECT * FROM amazon_source_documents WHERE id=?",old)).isEqualTo(beforeSource);assertThat(jdbc.queryForMap("SELECT * FROM amazon_orders WHERE tenant_id=?",tenant)).isEqualTo(beforeOrder);assertThat(jdbc.queryForMap("SELECT * FROM amazon_inventory_snapshots WHERE tenant_id=?",tenant)).isEqualTo(beforeStock);
             var finished=jobs.claimPilot(tenant,connection,market,job,hash,"v112-next");assertThat(finished).isNotNull();assertThat(jobs.batchNext(finished)).isEmpty();
-            assertThat(jdbc.queryForObject("SELECT user_message FROM marketplace_sync_runs WHERE id=?",String.class,run)).isEqualTo("Fee responses archived; estimates unchanged");
+            assertThat(jdbc.queryForObject("SELECT user_message FROM marketplace_sync_runs WHERE id=?",String.class,run)).isEqualTo("Archived fee quotes: 1 passed validation; 0 unsupported; 0 unresolved results. Comparable per-unit FBA fees: 0 of 1. Quotes reused: 0. Estimates unchanged.");
         }
     }
 }

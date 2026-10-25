@@ -468,6 +468,24 @@ class TemplateRenderingTest {
             "aria-label=\"Complete\">✓", "Amazon is preparing the product file").doesNotContain("sync-panel");
     }
 
+    @Test void feeOnlyStatusUsesTruthfulTerminalCopyAndGoldenRenderedMarkup() throws Exception {
+        var json=new tools.jackson.databind.ObjectMapper();var fixtures=json.createObjectNode();
+        UUID id=UUID.fromString("00000000-0000-0000-0000-000000000001");
+        for(String state:List.of("COMPLETED_WITH_WARNINGS","FAILED","CANCELLED","RUNNING")){
+            var c=webContext();String message="Archived fee quotes: 18 passed validation; 2 unsupported; 0 unresolved results. Comparable per-unit FBA fees: 0 of 18. Quotes reused: 0. Estimates unchanged.";
+            var view=new SyncStatusView(id,"Synthetic fee proof",state,state.equals("RUNNING")?0:100,"FEES_SNAPSHOT",message,Instant.parse("2026-10-24T12:00:00Z"),true);
+            c.setVariable("syncStatuses",List.of(view));c.setVariable("syncJobsByConnection",Map.of(id,List.of(new SyncJobView(id,1,"FEES_SNAPSHOT","Fee quotes",state.equals("RUNNING")?"RUNNING":state.equals("CANCELLED")?"WAITING":state.equals("FAILED")?"FAILED":"SKIPPED",18,"Review retained results"))));
+            String html=templateEngine().process("fragments/sync-onboarding",c);
+            assertThat(html).contains("Amazon fee check",view.feeStateLabel(),message,"Fee quote results").doesNotContain("Amazon initialization","Initial 30-day import","Not available for this store");
+            if(view.feeTerminal())assertThat(html).contains("This fee check has ended").doesNotContain("sync-loader","job-spinner","role=\"progressbar\"","Working now","Waiting for Amazon","Synchronization continues");
+            else assertThat(html).contains("sync-loader","Checking fee quotes","This bounded fee check runs in the background");
+            fixtures.put(state,html);
+        }
+        var path=java.nio.file.Path.of("src/test/resources/fee-status-rendered.json");
+        if(Boolean.getBoolean("feeStatusWriteFixtures"))java.nio.file.Files.writeString(path,json.writerWithDefaultPrettyPrinter().writeValueAsString(fixtures));
+        assertThat(json.readTree(java.nio.file.Files.readString(path))).isEqualTo(fixtures);
+    }
+
     @Test void replenishmentDraftShowsRealItemContextAndExplicitUnknownMetrics() {
         var c=webContext();var id=UUID.randomUUID();
         var sku=new java.util.HashMap<String,Object>();
