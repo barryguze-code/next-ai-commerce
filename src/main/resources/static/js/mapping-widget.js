@@ -2,12 +2,19 @@
 (()=>{'use strict';
 const endpoint=id=>'/app/catalog/products/'+encodeURIComponent(id)+'/image';
 function thumbnail(id,source){const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';img.src=source||endpoint(id);img.onerror=()=>{img.hidden=true};return img}
+function identityLabel(product){
+ const vendor=product.vendorItemCode?.trim(),account=product.accountSku?.trim(),name=product.productName||product.name||'';
+ return [vendor?'Vendor item code '+vendor:account?'Account SKU '+account:'Vendor item code unavailable',name].filter(Boolean).join(' · ');
+}
+function identityHelp(product){const vendor=product.vendorItemCode?.trim(),account=product.accountSku?.trim();return !vendor?'Vendor item code unavailable':account?'Account SKU '+account:''}
+
+function imageFrame(img){const frame=document.createElement('span');frame.className='mw-image-frame';frame.append(img);return frame}
 function picture(line,product){
  const id=product?.id||product?.itemId||line.querySelector('[name=productId]')?.value;
  let holder=line.querySelector('.mapping-component-picture');if(!holder){holder=document.createElement('span');holder.className='mapping-component-picture';line.prepend(holder)}
  holder.style.backgroundImage='none';holder.replaceChildren();holder.classList.remove('has-image');
  if(!id){holder.textContent='＋';return}
- holder.append(thumbnail(id,product?.imageUrl));
+ holder.append(imageFrame(thumbnail(id,product?.imageUrl)));
  if(line.closest('dialog').dataset.canEdit!=='true')return;
  attachEditor(holder,id);
 }
@@ -31,7 +38,7 @@ function pictureMenu(trigger,holder,productId,sku){
   const data=new FormData();data.append('sku',sku||dialog.querySelector('[name=sellerSku]').value);if(productId)data.append('productId',productId);if(file)data.append('image',file);data.append('amazon',String(amazon));
   const csrf=document.getElementById('buy-shipping-csrf'),headers={Accept:'application/json'};if(csrf)headers[csrf.dataset.header]=csrf.value;
   try{const r=await fetch('/app/marketplace-skus/mapping-picture',{method:'POST',body:data,headers});const result=await r.json();if(!r.ok)throw Error(result.error||'Picture update failed.');
-   let img=holder.querySelector('img');if(!img){img=node('img');img.alt='';holder.prepend(img)}holder.querySelectorAll('b').forEach(b=>b.hidden=true);img.hidden=false;img.src=result.imageUrl+(result.imageUrl.includes('?')?'&':'?')+'v='+Date.now();
+   let img=holder.querySelector('img');if(!img){img=node('img');img.alt='';holder.prepend(holder.matches('.mw-product-image,.mapping-component-picture')?imageFrame(img):img)}holder.querySelectorAll('b').forEach(b=>b.hidden=true);img.hidden=false;img.src=result.imageUrl+(result.imageUrl.includes('?')?'&':'?')+'v='+Date.now();
    if(!productId){const sku=data.get('sku');document.querySelectorAll('[data-seller-sku]').forEach(el=>{if(el.dataset.sellerSku===sku){el.dataset.image=img.src;const tile=el.matches('[data-picture-actions]')?el.querySelector('img'):null;if(tile)tile.src=img.src}})}
    close();
   }catch(e){feedback.textContent=e.message;menu.querySelectorAll('.order-picture-entry').forEach(b=>b.disabled=false)}
@@ -61,14 +68,14 @@ function shell(){
 function valid(){return [...dialog.querySelectorAll('.mw-line')].length>0&&[...dialog.querySelectorAll('.mw-line')].every(l=>l.querySelector('[name=productId]').value&&l.querySelector('[name=quantity]').checkValidity())}
 function update(){const disabled=dialog.dataset.canEdit!=='true'||!valid();dialog.querySelector('.mw-add').disabled=disabled;dialog.querySelector('.mw-save').disabled=disabled}
 function line(product){
- const row=node('div','mw-line');row.innerHTML='<label><span>Account catalogue product</span><input type="search" placeholder="Search product, UPC, or vendor item code" autocomplete="off" required><input type="hidden" name="productId"><div class="mw-results"></div></label><label><span>Quantity</span><input type="number" name="quantity" min="1" max="10000" step="1" value="1" required></label><button type="button" class="mw-remove" aria-label="Remove product">−</button>';
+ const row=node('div','mw-line');row.innerHTML='<label><span>Account catalogue product</span><input type="search" placeholder="Search product, UPC, or vendor item code" autocomplete="off" required><input type="hidden" name="productId"><small class="mw-selected-summary"></small><small class="mw-identity-help"></small><small class="mw-selection-status" role="status"></small><div class="mw-results"></div></label><label><span>Quantity</span><input type="number" name="quantity" min="1" max="10000" step="1" value="1" required></label><button type="button" class="mw-remove" aria-label="Remove product">−</button>';
  dialog.querySelector('.mw-lines').append(row);
  const input=row.querySelector('[type=search]'),id=row.querySelector('[name=productId]'),results=row.querySelector('.mw-results');
- if(product){input.value=[product.vendorItemCode,product.productName||product.name,product.accountSku].filter(Boolean).join(' · ');id.value=product.itemId||product.id;row.querySelector('[name=quantity]').value=product.quantity||1}
+ if(product){input.value=identityLabel(product);row.querySelector('.mw-selected-summary').textContent=identityLabel(product);row.querySelector('.mw-identity-help').textContent=identityHelp(product);id.value=product.itemId||product.id;row.querySelector('[name=quantity]').value=product.quantity||1}
  picture(row,product);
  let timer,controller;
- input.oninput=()=>{id.value='';picture(row);update();clearTimeout(timer);controller?.abort();results.replaceChildren();const q=input.value.trim();if(q.length<2)return;timer=setTimeout(async()=>{controller=new AbortController();try{const response=await fetch('/app/catalog/product-search?q='+encodeURIComponent(q),{signal:controller.signal});if(!response.ok)throw Error();const products=await response.json();if(!input.isConnected||input.value.trim()!==q)return;results.replaceChildren();products.forEach(p=>{const b=node('button','mw-option');b.type='button';const copy=node('span');copy.append(node('strong','',p.name),node('small','',[p.brand,p.vendorItemCode,p.identifier].filter(Boolean).join(' · ')));b.append(thumbnail(p.id,p.imageUrl),copy);b.onclick=()=>{input.value=[p.vendorItemCode,p.name,p.accountSku].filter(Boolean).join(' · ');id.value=p.id;picture(row,p);results.replaceChildren();update()};results.append(b)});if(!products.length){const link=node('a','','No match — add a catalogue product ↗');link.href='/app/catalog?addProduct=true';link.target='_blank';link.rel='noopener';results.append(link)}}catch(e){if(e.name!=='AbortError')results.textContent='Search unavailable. Please try again.'}},200)};
- row.querySelector('.mw-remove').onclick=()=>{controller?.abort();if(dialog.querySelectorAll('.mw-line').length===1){input.value='';id.value='';picture(row);results.replaceChildren()}else row.remove();update()};
+ input.oninput=()=>{id.value='';row.querySelector('.mw-selected-summary').textContent='';row.querySelector('.mw-identity-help').textContent='';row.querySelector('.mw-selection-status').textContent='Select a product to map';picture(row);update();clearTimeout(timer);controller?.abort();results.replaceChildren();const q=input.value.trim();if(q.length<2)return;timer=setTimeout(async()=>{controller=new AbortController();try{const response=await fetch('/app/catalog/product-search?q='+encodeURIComponent(q),{signal:controller.signal});if(!response.ok)throw Error();const products=await response.json();if(!input.isConnected||input.value.trim()!==q)return;results.replaceChildren();products.forEach(p=>{const b=node('button','mw-option');b.type='button';const copy=node('span');copy.append(node('strong','',p.name),node('small','',[p.brand,p.vendorItemCode?'Vendor item code '+p.vendorItemCode:'Vendor item code unavailable',p.accountSku?'Account SKU '+p.accountSku:null,p.identifier?'Barcode '+p.identifier:null,p.identifier?.toLowerCase().includes(q.toLowerCase())?'Matches barcode':null].filter(Boolean).join(' · ')));b.append(thumbnail(p.id,p.imageUrl),copy);b.onclick=()=>{input.value=identityLabel(p);row.querySelector('.mw-selected-summary').textContent=identityLabel(p);row.querySelector('.mw-identity-help').textContent=identityHelp(p);id.value=p.id;row.querySelector('.mw-selection-status').textContent='';picture(row,p);results.replaceChildren();update()};results.append(b)});if(!products.length){const link=node('a','','No match — add a catalogue product ↗');link.href='/app/catalog?addProduct=true';link.target='_blank';link.rel='noopener';results.append(link)}}catch(e){if(e.name!=='AbortError')results.textContent='Search unavailable. Please try again.'}},200)};
+ row.querySelector('.mw-remove').onclick=()=>{controller?.abort();if(dialog.querySelectorAll('.mw-line').length===1){input.value='';id.value='';row.querySelector('.mw-selected-summary').textContent='';row.querySelector('.mw-identity-help').textContent='';row.querySelector('.mw-selection-status').textContent='';picture(row);results.replaceChildren()}else row.remove();update()};
  if(dialog.dataset.canEdit!=='true')row.querySelectorAll('input,button').forEach(e=>e.disabled=true);
  return row;
 }
@@ -81,7 +88,7 @@ async function open(trigger){
  d.querySelector('h2').textContent=data.sellerSku||stage?.dataset.sellerSku||'';
  d.querySelector('[data-title]').textContent=data.productTitle||stage?.dataset.productTitle||'';
  const photo=d.querySelector('.mw-product-image');photo.replaceChildren();const image=data.image||stage?.querySelector('img')?.src;
- if(image){const img=node('img');img.src=image;img.alt='';photo.append(img)}else photo.textContent='▦';
+ if(image){const img=node('img');img.src=image;img.alt='';photo.append(imageFrame(img))}else photo.textContent='▦';
  attachEditor(photo);
  d.querySelectorAll('form > input[type=hidden]').forEach(e=>e.remove());
  const hidden=(name,value)=>{const e=node('input');e.type='hidden';e.name=name;e.value=value;d.querySelector('form').append(e)};
@@ -93,6 +100,6 @@ async function open(trigger){
  d.showModal();
  try{const r=await fetch('/app/marketplace-skus/mappings/components?sku='+encodeURIComponent(d.querySelector('h2').textContent));if(!r.ok)throw Error();const products=await r.json();if(version!==requestNumber||!d.open)return;(products.length?products:[null]).forEach(line);d.querySelector('.mw-feedback').textContent='';d.querySelector('.mw-clear').disabled=!products.length;update()}catch{if(version===requestNumber)d.querySelector('.mw-feedback').textContent='Could not load mapping. Close and try again; nothing has changed.'}
 }
-window.NextAiMappingWidget={picture,option,open,attachEditor};
+window.NextAiMappingWidget={picture,option,open,attachEditor,identityLabel};
 window.openOrderMapping=open;
 })();

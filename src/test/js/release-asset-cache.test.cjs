@@ -7,14 +7,17 @@ const refs=html=>[...html.matchAll(/["'](\/(?:css|js)\/[^"'?]+)(\?[^"']*)?["']/g
 const html=file=>fs.readFileSync(path.join(templates,file),'utf8');
 function assetUrl(file,asset){const found=refs(html(file)).find(r=>r.asset===asset);assert.ok(found,`${file} references ${asset}`);return found.asset+found.query;}
 test('all changed released asset references use one fresh canonical cache version',()=>{
+ assert.deepEqual(Object.keys(inventory.versions).sort(),[...inventory.assets].sort(),'Every inventoried asset has an explicit release cache version');
+ const actualFiles=fs.readdirSync(templates,{recursive:true}).filter(file=>file.endsWith('.html')&&refs(html(file)).some(ref=>inventory.assets.includes(ref.asset))).sort();
+ assert.deepEqual([...inventory.templates].sort(),actualFiles,'Inventory covers every template reference, including shared fragments');
  let count=0;
  for(const file of inventory.templates)for(const ref of refs(html(file)))if(inventory.assets.includes(ref.asset)){
-  assert.equal(ref.query,'?v=1.7.1',`${file}: ${ref.asset} must not reuse a released stale cache URL`);count++;
+  assert.equal(ref.query,'?v='+inventory.versions[ref.asset],`${file}: ${ref.asset} must not reuse a released stale cache URL`);count++;
  }
  assert.equal(count,inventory.reference_count);
  for(const asset of ['/js/table-widget.js','/css/table-widget.css'])assert.equal(assetUrl('marketplace-skus.html',asset),assetUrl('fragments/sidebar-user.html',asset),'Head and shared fragment must request the same version');
  for(const asset of ['/js/table-data-tools.js','/js/profit.js']){
-  const matches=inventory.templates.flatMap(file=>refs(html(file))).filter(ref=>ref.asset===asset);assert.ok(matches.length);assert.ok(matches.every(ref=>ref.query==='?v=1.7.1'));
+  const matches=inventory.templates.flatMap(file=>refs(html(file))).filter(ref=>ref.asset===asset);assert.ok(matches.length);assert.ok(matches.every(ref=>ref.query==='?v='+inventory.versions[asset]));
  }
 });
 let browser,server,origin,requests=[];

@@ -121,7 +121,8 @@
 </div>
 </td>
 <td>
-<strong th:text="${item.vendorItemCode ?: 'Not assigned'}">Vendor code</strong>
+<strong th:text="${!#strings.isEmpty(#strings.trim(item.vendorItemCode)) ? item.vendorItemCode : 'Vendor item code unavailable'}">Vendor code</strong>
+<small class="cell-note" th:if="${!#strings.isEmpty(#strings.trim(item.accountSku))}" th:text="${'Account SKU '+item.accountSku}">Account SKU</small>
 <small class="cell-note" th:if="${item.vendorName != null}" th:text="${item.vendorName}">Vendor</small>
 </td>
 <td th:with="refs=${skusByItem == null ? null : skusByItem[item.id]}"><div class="marketplace-sku-stack" th:if="${refs != null and !#lists.isEmpty(refs)}"><span th:each="ref,status:${refs}" th:if="${status.index < 3}"><strong th:text="${ref.sku}" th:title="${ref.sku}">SKU</strong><nav data-marketplace-shortcuts th:attr="data-sku=${ref.sku},data-asin=${ref.asin},data-channel=${ref.channel},data-amazon-domain=${ref.amazonDomain}"></nav><small th:text="${'× '+#numbers.formatDecimal(ref.quantity,1,0)}">× 1</small></span><button th:if="${#lists.size(refs) > 3}" type="button" th:attr="data-target=|skus-${item.id}|" onclick="document.getElementById(this.dataset.target).showModal()" th:text="${'+'+(#lists.size(refs)-3)+' more'}">+2 more</button></div><span th:if="${refs == null or #lists.isEmpty(refs)}" class="cell-note">No marketplace SKU mapped</span></td>
@@ -170,7 +171,7 @@
 <dialog th:each="item:${items}" th:id="|account-edit-${item.id}|" class="invite-dialog">
 <form method="post" th:action="|/app/catalog/products/${item.id}|" class="dialog-shell">
 <div class="dialog-header"><div><span class="eyebrow dark">Account product</span><h2>Edit product</h2><p>The UPC/EAN remains global; these details apply only to this account.</p></div><button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button></div>
-<div class="dialog-body catalog-form"><label>Account display name<input name="displayName" th:value="${item.name}"></label><label>Account item code<input name="accountSku" th:value="${item.accountSku}"></label><label>Status<select name="status"><option value="ACTIVE" th:selected="${item.status == 'ACTIVE'}">Active</option><option value="INACTIVE" th:selected="${item.status == 'INACTIVE'}">Inactive</option><option value="DISCONTINUED" th:selected="${item.status == 'DISCONTINUED'}">Discontinued</option></select></label><p class="cell-note">Edit a vendor item code from “View vendor prices” for that vendor.</p></div>
+<div class="dialog-body catalog-form"><label>Account display name<input name="displayName" th:value="${item.name}"></label><label>Account SKU<input name="accountSku" th:value="${item.accountSku}"></label><label>Status<select name="status"><option value="ACTIVE" th:selected="${item.status == 'ACTIVE'}">Active</option><option value="INACTIVE" th:selected="${item.status == 'INACTIVE'}">Inactive</option><option value="DISCONTINUED" th:selected="${item.status == 'DISCONTINUED'}">Discontinued</option></select></label><p class="cell-note">Edit a vendor item code from “View vendor prices” for that vendor.</p></div>
 <div class="catalog-form dialog-body"><label>Default item cost / each<input name="itemCost" type="number" min="0" max="100000" step="0.0001" required th:value="${item.currentBuyingCost}"></label><label th:if="${item.currentBuyingCost == null}">Cost vendor<select name="costVendorId" required data-standard-choice><option value="">Choose vendor</option><option th:each="vendor:${vendors}" th:value="${vendor.id}" th:text="${vendor.name}"></option></select></label><p class="cell-note">Net buying cost per individual item, after discount. Mapped packs calculate SKU cost from their quantities. Existing receipt costs and Amazon prices stay unchanged.</p></div>
 <div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button" type="submit">Save changes</button></div>
 </form>
@@ -276,7 +277,7 @@
 <div class="form-pair">
 <label>Brand<input name="brand" placeholder="Brand name">
 </label>
-<label>Item Code<input name="accountSku" placeholder="Your internal item code">
+<label>Account SKU<input name="accountSku" placeholder="Your internal item code">
 </label>
 </div>
 <div class="form-pair">

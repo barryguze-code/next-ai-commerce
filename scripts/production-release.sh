@@ -26,6 +26,20 @@ require_release_false() {
     return 1
   fi
 }
+# BEGIN CATALOGUE MINOR BASELINE
+verify_catalogue_minor_baseline() {
+  # Exact reviewed 1.8.0 -> 1.9.0 application-only transition. This is not a backup waiver.
+  test "${1:-}" = OWNER_APPROVED_CATALOGUE_MINOR_1_9
+  test "$(sha256sum /opt/next-ai-commerce/next-ai-commerce.jar | cut -d' ' -f1)" = fec818b5a4ff56b33d264f41c0c6f42a9dd6fac318057af507b23d954270a4dd
+  test "$(sha256sum "$runtime_config" | cut -d' ' -f1)" = e606097b8e990ee6675de0a0c78b8fd59328c5aa9e88ae12053d6fdbe49cbe95
+  test "$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT max(version::int) FROM flyway_schema_history WHERE success AND version IS NOT NULL")" = 114
+  test "$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")" = 114
+  test "$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM flyway_schema_history WHERE NOT success")" = 0
+  for setting in SPRING_FLYWAY_ENABLED AMAZON_PRODUCT_FEES_ENABLED AMAZON_PRODUCT_FEES_BATCH_ENABLED AMAZON_PRODUCT_FEES_RECURRING_ENABLED AMAZON_FEE_EVIDENCE_ENABLED AMAZON_FEE_APPROVALS_ENABLED AMAZON_FEE_PILOT_ENABLED AMAZON_FEE_PILOT_ONLY_SCHEDULING; do
+    require_release_false "$setting"
+  done
+}
+# END CATALOGUE MINOR BASELINE
 # Owner-approved eligible UI-only 1.8.1 hotfix. Default releases still take a dump.
 ui_hotfix=false
 if [[ "$version" == "1.8.1" && "${4:-}" == "OWNER_APPROVED_UI_HOTFIX_NO_NEW_BACKUP" ]]; then
@@ -50,6 +64,8 @@ if [[ "$version" == "1.8.0" ]]; then
   verified_package_bytes=$(printf '%s\n' "$manifest_result" | sed -n 's/^FEE_PACKAGE_BYTES=//p')
   test -f "$verified_preddl_dump" && test ! -L "$verified_preddl_dump"
   [[ "$verified_dump_sha" =~ ^[0-9a-f]{64}$ && "$verified_dump_bytes" =~ ^[1-9][0-9]*$ && "$verified_package_bytes" =~ ^[1-9][0-9]*$ ]]
+elif [[ "$version" == "1.9.0" ]]; then
+  verify_catalogue_minor_baseline "${4:-}"
 elif [[ "$ui_hotfix" == true ]]; then
   : # Preserve the previously reviewed live worker policy and read-only fee UI.
 else

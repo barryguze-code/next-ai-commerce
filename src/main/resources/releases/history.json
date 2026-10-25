@@ -1,5 +1,25 @@
 [
 {
+  "version": "1.9.0",
+  "title": "Clear catalogue identity and safer supplier imports",
+  "sections": [
+    {
+      "title": "Catalogue safeguards",
+      "items": [
+        "Conflicting vendor item codes are flagged before an import or supplier update can assign them to another product. Existing stock, saved mappings and history remain unchanged.",
+        "Vendor item codes and Account SKUs are labelled separately when reviewing product mappings; barcode search matches are explained."
+      ]
+    },
+    {
+      "title": "Workspace refinements",
+      "items": [
+        "Mapping pictures stay within their frames and picture menus fit their content. Shared action menus use consistent left-aligned labels.",
+        "Catalogue tables retain their sorting controls, Marketplace priorities remain readable, and mapped products link to their Inventory Ledger."
+      ]
+    }
+  ]
+},
+{
   "version": "1.8.0",
   "title": "Preparing clearer Amazon fee reviews",
   "sections": [

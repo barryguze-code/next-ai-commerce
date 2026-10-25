@@ -179,6 +179,10 @@ class TemplateRenderingTest {
             "Account Catalogue", "Upload catalogue", "Set price", "Test Product", "Vendor item code", "53383",
             "id=\"location-dialog\"", "Storage locations", "Add new location", "sort=cost", "sort=product", "direction=desc", "aria-sort=\"ascending\"");
 
+        context.setVariable("items",List.of(new AccountItemView(UUID.randomUUID(),UUID.randomUUID(),
+            "Donuts Vanilla Glazed","Drumroll",null,null,null,"2302326",0,null,"USD",false,"ACTIVE","COMPLETE")));
+        assertThat(engine.process("account-catalog",context)).contains("Vendor item code unavailable","Account SKU 2302326","Account SKU<input name=\"accountSku\" value=\"2302326\"")
+            .doesNotContain("Not assigned");
         var globalContext = webContext();
         globalContext.setVariables(Map.ofEntries(
             Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),

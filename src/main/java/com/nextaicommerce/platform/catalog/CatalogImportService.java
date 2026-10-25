@@ -162,10 +162,14 @@ public class CatalogImportService {
         List<SourceRow> rows=jdbc.query("SELECT id,row_number,source_data::text FROM catalog_import_rows WHERE tenant_id=? AND catalog_import_id=? ORDER BY row_number",
             (rs,row)->new SourceRow(rs.getObject(1,UUID.class),rs.getInt(2),readMap(rs.getString(3))),tenantId,importId);
         if(rows.isEmpty())throw new IllegalArgumentException("This file has no product rows.");
+        UUID importVendor=jdbc.queryForObject("SELECT vendor_id FROM catalog_imports WHERE tenant_id=? AND id=?",UUID.class,tenantId,importId);
+        var bindings=CatalogIdentity.vendorBindings(jdbc,tenantId,importVendor,null);
         Map<String,Integer> itemCodes=new java.util.HashMap<>(),identifiers=new java.util.HashMap<>();
         for(SourceRow row:rows){count(itemCodes,normalizedVendorCode(value(row.data(),mapping,"vendorItemCode")));count(identifiers,normalized(value(row.data(),mapping,"identifier")));}
         List<Object[]> updates=new ArrayList<>(rows.size());int valid=0,rejected=0;
         for(SourceRow row:rows){List<String> problems=new ArrayList<>();String code=normalizedVendorCode(value(row.data(),mapping,"vendorItemCode"));String identifier=normalized(value(row.data(),mapping,"identifier"));
+            String bindingProblem=CatalogIdentity.bindingProblem(bindings,value(row.data(),mapping,"vendorItemCode"),mapping.getOrDefault("identifierType","UPC"),identifier);
+            if(bindingProblem!=null)problems.add(bindingProblem);
             if(value(row.data(),mapping,"productName").isBlank())problems.add("Product name is missing");
             if(code.isBlank()&&identifier.isBlank())problems.add("Both vendor item code and UPC / EAN are missing");
             else if(code.isBlank())problems.add("Vendor item code is missing");
@@ -205,8 +209,15 @@ public class CatalogImportService {
             SELECT id,row_number,source_data::text FROM catalog_import_rows
             WHERE tenant_id=? AND catalog_import_id=? ORDER BY row_number
             """, (rs,row)->new SourceRow(rs.getObject(1,UUID.class),rs.getInt(2),readMap(rs.getString(3))), tenantId, importId);
+        var bindings=CatalogIdentity.vendorBindings(jdbc,tenantId,source.vendorId(),null);
+        Map<String,Integer> codes=new java.util.HashMap<>();
+        for(SourceRow row:rows)count(codes,normalizedVendorCode(value(row.data(),mapping,"vendorItemCode")));
         List<String> errors = new ArrayList<>();
         for (SourceRow row : rows) {
+            String problem=CatalogIdentity.bindingProblem(bindings,value(row.data(),mapping,"vendorItemCode"),mapping.getOrDefault("identifierType","UPC"),value(row.data(),mapping,"identifier"));
+            if(problem!=null)errors.add("Row "+row.number()+": "+problem);
+            if(codes.getOrDefault(normalizedVendorCode(value(row.data(),mapping,"vendorItemCode")),0)>1)
+                errors.add("Row "+row.number()+": vendor item code is duplicated in this file; review the source before importing.");
             if (value(row.data(),mapping,"productName").isBlank()) errors.add("Row "+row.number()+": product name is missing.");
             if (value(row.data(),mapping,"vendorItemCode").isBlank()) errors.add("Row "+row.number()+": vendor item code is missing.");
             try { money(value(row.data(),mapping,"listCost")); }

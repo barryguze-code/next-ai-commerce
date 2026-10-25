@@ -169,9 +169,7 @@ public class CatalogRepository {
             SELECT item.id, item.global_product_id,
                    coalesce(item.display_name, product.canonical_name) display_name, product.brand,
                    offer.vendor_name,offer.vendor_item_code,identifier.identifier_value,
-                   CASE WHEN nullif(regexp_replace(upper(coalesce(item.account_sku,'')),'[^A-Z0-9]','','g'),'')
-                     =nullif(regexp_replace(upper(coalesce(offer.vendor_item_code,'')),'[^A-Z0-9]','','g'),'')
-                     THEN NULL ELSE item.account_sku END account_sku,
+                   item.account_sku,
                    item.status, product.requires_expiration_date,item.completion_status,
                    (SELECT count(DISTINCT offer.vendor_id) FROM vendor_catalog_offers offer
                     WHERE offer.tenant_id=item.tenant_id AND offer.account_catalog_item_id=item.id
@@ -292,9 +290,7 @@ public class CatalogRepository {
         List<AccountItemView> rows=jdbc.query(selected+"""
             SELECT item.id,item.global_product_id,coalesce(item.display_name,product.canonical_name) display_name,product.brand,
               offer.vendor_name,offer.vendor_item_code,identifier.identifier_value,
-              CASE WHEN nullif(regexp_replace(upper(coalesce(item.account_sku,'')),'[^A-Z0-9]','','g'),'')
-                =nullif(regexp_replace(upper(coalesce(offer.vendor_item_code,'')),'[^A-Z0-9]','','g'),'')
-                THEN NULL ELSE item.account_sku END account_sku,item.status,
+              item.account_sku,item.status,
               product.requires_expiration_date,item.completion_status,
               (SELECT count(DISTINCT x.vendor_id) FROM vendor_catalog_offers x WHERE x.tenant_id=item.tenant_id
                 AND x.account_catalog_item_id=item.id AND x.effective_to IS NULL) vendor_count,
@@ -345,9 +341,7 @@ public class CatalogRepository {
         return jdbc.query("""
             SELECT item.id,item.global_product_id,coalesce(item.display_name,product.canonical_name) display_name,
                    product.brand,offer.vendor_name,offer.vendor_item_code,identifier.identifier_value,
-                   CASE WHEN nullif(regexp_replace(upper(coalesce(item.account_sku,'')),'[^A-Z0-9]','','g'),'')
-                     =nullif(regexp_replace(upper(coalesce(offer.vendor_item_code,'')),'[^A-Z0-9]','','g'),'')
-                     THEN NULL ELSE item.account_sku END account_sku,
+                   item.account_sku,
                    item.status,product.requires_expiration_date,item.completion_status,
                    0 vendor_count,offer.buying_cost,offer.currency,
                    location.id location_id,location.code location_code,location.name location_name,
@@ -539,17 +533,17 @@ public class CatalogRepository {
         CatalogIdentity.lock(jdbc);
         String cleanVendorCode=normalizeVendorItemCode(vendorItemCode);
         if(cleanVendorCode.isBlank())throw new IllegalArgumentException("Vendor item code is required.");
-        UUID existing=jdbc.query("""
-            SELECT account_catalog_item_id FROM vendor_catalog_offers
-            WHERE tenant_id=? AND vendor_id=? AND upper(regexp_replace(vendor_item_code,'[^A-Za-z0-9]','','g'))=?
-              AND effective_to IS NULL LIMIT 1
-            """,rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,vendorId,cleanVendorCode);
+        var binding=CatalogIdentity.vendorBindings(jdbc,tenantId,vendorId,CatalogIdentity.vendorCode(vendorItemCode)).get(CatalogIdentity.vendorCode(vendorItemCode));
+        if(binding!=null&&binding.items().size()>1)
+            throw new IllegalArgumentException("Vendor item code "+vendorItemCode+" is linked to multiple products in this account/vendor. Review the existing conflict before receiving; no stock was reassigned.");
+        UUID existing=binding==null?null:binding.items().iterator().next();
         if(existing!=null){
             String incomingIdentifier=normalizeIdentifier(identifierType,identifier);
             if(!incomingIdentifier.isBlank()){
                 UUID existingGlobal=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenantId,existing);
                 UUID identifierGlobal=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identity_key=catalog_identifier_key(?,?)",
                     rs->rs.next()?rs.getObject(1,UUID.class):null,identifierType.toUpperCase(Locale.ROOT),incomingIdentifier);
+                requireCompatibleBarcode(existingGlobal,identifierGlobal,incomingIdentifier);
                 if(identifierGlobal!=null&&!identifierGlobal.equals(existingGlobal)){
                     Boolean alreadyPresent=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM account_catalog_items WHERE tenant_id=? AND global_product_id=? AND id<>?)",Boolean.class,tenantId,identifierGlobal,existing);
                     if(Boolean.TRUE.equals(alreadyPresent))throw new IllegalArgumentException("This UPC/EAN is already present in the account catalogue. Merge the duplicate account product before receiving it.");
@@ -715,7 +709,7 @@ public class CatalogRepository {
     }
 
     private void requireCompatibleBarcode(UUID product,UUID matched,String barcode){
-        if(!barcode.isBlank()&&matched==null&&Boolean.TRUE.equals(jdbc.queryForObject(
+        if(!barcode.isBlank()&&(matched==null||!matched.equals(product))&&Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT EXISTS(SELECT 1 FROM global_product_identifiers WHERE global_product_id=? AND is_primary)",Boolean.class,product)))
             throw new IllegalArgumentException("Barcode differs from the existing product. Review the supplier DC / branch; a different barcode cannot silently replace its identity.");
     }
@@ -884,6 +878,7 @@ public class CatalogRepository {
             throw new IllegalArgumentException("Discount must be between 0 and 100 percent.");
         if(currency==null||!currency.trim().matches("[A-Za-z]{3}"))throw new IllegalArgumentException("Enter a three-letter currency code such as USD.");
         UUID actorId = actorId(actorEmail);
+        CatalogIdentity.requireVendorItem(jdbc,tenantId,vendorId,vendorItemCode,itemId);
         UUID preferredVendor=jdbc.queryForObject("SELECT preferred_vendor_id FROM account_catalog_items WHERE tenant_id=? AND id=?",
             UUID.class,tenantId,itemId);
         boolean makeDefault=preferredVendor==null||preferredVendor.equals(vendorId);
