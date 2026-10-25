@@ -215,6 +215,45 @@ class AmazonFeeEvidenceDatabaseTest {
 
  @Test void prospectiveSkuApprovalNeverRecostsHistoricalOrder(){UUID comparison=approvalFixture();var fees=approvals(true);tx.execute(s->fees.approve(tenant,store,comparison,UUID.randomUUID(),null,"admin"));jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,currency,referral_fee,fulfillment_fee,effective_at,raw_payload,source_document_id) VALUES (?,?,?,?,'USD',3,5,now(),'{}',?)",tenant,store,market,sku,source);var costs=new com.nextaicommerce.platform.profit.ProfitCostRepository(jdbc);var profit=new com.nextaicommerce.platform.profit.ProfitRepository(jdbc,costs);org.springframework.test.util.ReflectionTestUtils.setField(profit,"acceptedFees",fees);assertThat(tx.execute(s->profit.skus(tenant,store,List.of(sku))).get(sku).fbaFee()).isEqualByComparingTo("6");assertThat(tx.execute(s->profit.orders(tenant,store,List.of("ORDER"))).get("ORDER").fbaFee()).isEqualByComparingTo("10");}
 
+ @Test void incompleteSiblingCannotCountAsCompleteExpectedCoverage(){
+  quote(time,"5");order(time.plusSeconds(1));
+  jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered,quantity_shipped,item_price,shipping_price,item_tax,shipping_tax,shipping_discount,currency) VALUES (?,?,'ORDER','SIBLING',?,1,1,30,0,0,0,0,'USD')",tenant,store,sku);
+  tx.executeWithoutResult(s->evidence.bindOrder(tenant,store,market,"ORDER"));
+  assertThat(tx.<Map<String,Map<String,BigDecimal>>>execute(s->approvals(false).orderBasis(tenant,store,List.of("ORDER"))).getOrDefault("ORDER",Map.of())).doesNotContainKey("FBA");
+ }
+ com.nextaicommerce.platform.profit.ProfitRepository profitWithFrozenBasis(){
+  var profit=new com.nextaicommerce.platform.profit.ProfitRepository(jdbc,new com.nextaicommerce.platform.profit.ProfitCostRepository(jdbc));
+  org.springframework.test.util.ReflectionTestUtils.setField(profit,"acceptedFees",approvals(false));return profit;
+ }
+ @Test void frozenExpectedTotalsCoverEachItemAndFeeIndependently(){
+  quote(time,"5");order(time.plusSeconds(1));
+  var other=(tools.jackson.databind.node.ObjectNode)basis();((tools.jackson.databind.node.ObjectNode)other.path("PriceToEstimateFees").path("ListingPrice")).put("Amount",31);
+  tx.executeWithoutResult(s->evidence.quote(tenant,store,market,sku,source,"price31",other,null,new BigDecimal("6"),time));
+  jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered,quantity_shipped,item_price,shipping_price,item_tax,shipping_tax,promotion_discount,shipping_discount,currency) VALUES (?,?,'ORDER','SECOND-EXACT',?,1,1,31,0,0,0,0,0,'USD')",tenant,store,sku);
+  tx.executeWithoutResult(s->evidence.bindOrder(tenant,store,market,"ORDER"));
+  var frozen=tx.<Map<String,Map<String,BigDecimal>>>execute(s->approvals(false).orderBasis(tenant,store,List.of("ORDER"))).get("ORDER");assertThat(frozen.get("FBA")).isEqualByComparingTo("16");assertThat(frozen).doesNotContainKey("REFERRAL");
+  var view=tx.execute(s->profitWithFrozenBasis().orders(tenant,store,List.of("ORDER"))).get("ORDER");assertThat(view.fbaFee()).isEqualByComparingTo("16");assertThat(view.fbaReferralFee()).isNull();
+  jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,currency,referral_fee,fulfillment_fee,effective_at,raw_payload,source_document_id) VALUES (?,?,?,?,'USD',5,99,now(),'{}',?)",tenant,store,market,sku,source);
+  view=tx.execute(s->profitWithFrozenBasis().orders(tenant,store,List.of("ORDER"))).get("ORDER");assertThat(view.fbaFee()).isEqualByComparingTo("16");assertThat(view.fbaReferralFee()).isEqualByComparingTo("15");
+  assertThat(view.feeSource()).contains("Expected FBA fees fixed at purchase","historical referral basis unavailable").doesNotContain("historical FBA basis unavailable");
+ }
+ @Test void laterQuotesAndActualApprovalsCannotReplaceAnOlderFrozenOrder(){
+  UUID comparison=approvalFixture();var approved=approvals(true);tx.execute(s->approved.approve(tenant,store,comparison,UUID.randomUUID(),null,"owner"));quote(Instant.now().minusSeconds(1),"9");
+  jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,currency,referral_fee,fulfillment_fee,effective_at,raw_payload,source_document_id) VALUES (?,?,?,?,'USD',3,9,now(),jsonb_build_object('_platformFeeContract','FINAL_FEE_V1','FeesEstimateIdentifier','{}'::jsonb),?)",tenant,store,market,sku,source);
+  jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,currency,referral_fee,fulfillment_fee,effective_at,raw_payload,source_document_id) VALUES (?,?,?,?,'USD',99,99,now()-interval '1 day','{}',?)",tenant,store,market,sku,source);
+  long before=count("amazon_fee_comparisons");var view=tx.execute(s->profitWithFrozenBasis().orders(tenant,store,List.of("ORDER"))).get("ORDER");
+  assertThat(view.fbaFee()).isEqualByComparingTo("10");assertThat(view.fbaReferralFee()).isEqualByComparingTo("6");assertThat(view.feeSource()).contains("fixed at purchase").doesNotContain("historical FBA basis unavailable","historical referral basis unavailable","Current report estimate");assertThat(count("amazon_fee_comparisons")).isEqualTo(before);
+ }
+ @Test void changedShippingOrCurrencyCannotReuseFrozenHistoricalAmounts(){
+  quote(time,"5");order(time.plusSeconds(1));assertThat(tx.<Map<String,Map<String,BigDecimal>>>execute(s->approvals(false).orderBasis(tenant,store,List.of("ORDER"))).get("ORDER").get("FBA")).isEqualByComparingTo("10");
+  jdbc.update("UPDATE amazon_order_items SET shipping_price=2 WHERE tenant_id=?",tenant);assertThat(tx.<Map<String,Map<String,BigDecimal>>>execute(s->approvals(false).orderBasis(tenant,store,List.of("ORDER")))).isEmpty();
+  jdbc.update("UPDATE amazon_order_items SET shipping_price=0,currency='CAD' WHERE tenant_id=?",tenant);jdbc.update("UPDATE amazon_orders SET currency='CAD' WHERE tenant_id=?",tenant);assertThat(tx.<Map<String,Map<String,BigDecimal>>>execute(s->approvals(false).orderBasis(tenant,store,List.of("ORDER")))).isEmpty();
+  assertThatThrownBy(()->tx.<Map<String,Map<String,BigDecimal>>>execute(s->approvals(false).orderBasis(UUID.randomUUID(),store,List.of("ORDER")))).hasMessageContaining("Choose an Amazon store");
+ }
+ @Test void postPurchaseQuotesNeverInventAFrozenHistoricalBasis(){
+  order(time);quote(time.plusSeconds(1),"5");tx.executeWithoutResult(s->evidence.bindOrder(tenant,store,market,"ORDER"));
+  assertThat(tx.<Map<String,Map<String,BigDecimal>>>execute(s->approvals(false).orderBasis(tenant,store,List.of("ORDER")))).isEmpty();assertThat(tx.execute(s->profitWithFrozenBasis().orders(tenant,store,List.of("ORDER"))).get("ORDER").fbaFee()).isNull();
+ }
  @Test void taxedOrDiscountedBasisCannotCreateFalseVariance(){quote(time,"5");order(time.plusSeconds(1));jdbc.update("UPDATE amazon_order_items SET promotion_discount=2 WHERE tenant_id=?",tenant);actual("-12");assertThat(state()).isEqualTo("NOT_COMPARABLE");}
  @Test void unknownOnlyChargeIsVisibleAsUnresolved(){quote(time,"5");order(time.plusSeconds(1));var root=(tools.jackson.databind.node.ObjectNode)payload("-12","Shipment","RELEASED");((tools.jackson.databind.node.ObjectNode)root.path("payload").path("transactions").get(0).path("items").get(0).path("breakdowns").get(0)).put("breakdownType","UnsupportedFee");tx.executeWithoutResult(s->evidence.finances(tenant,store,market,source,root));assertThat(state()).isEqualTo("NOT_COMPARABLE");}
 

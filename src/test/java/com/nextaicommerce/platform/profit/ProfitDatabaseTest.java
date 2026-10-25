@@ -96,6 +96,20 @@ class ProfitDatabaseTest {
   assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").fbaReferralFee()).isEqualByComparingTo("6.51");
   assertThat(repo.skus(tenant,UUID.randomUUID(),List.of("SKU"))).isEmpty();
  });}
+ @Test void laterPerSkuQuoteCannotReplaceAnOlderOrdersLegacyEstimate(){tx.executeWithoutResult(s->{
+  jdbc.update("UPDATE amazon_listings SET fulfillment_channel='AMAZON_NA' WHERE tenant_id=?",tenant);jdbc.update("UPDATE amazon_orders SET fulfillment_channel='AFN' WHERE tenant_id=?",tenant);
+  jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_fee,referral_fee,currency,effective_at,raw_payload) VALUES (?,?,'ATVPDKIKX0DER','SKU',5,3,'USD','2025-05-01','{}')",tenant,connection);
+  assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").fbaFee()).isEqualByComparingTo("15");
+  jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_fee,referral_fee,currency,effective_at,raw_payload) VALUES (?,?,'ATVPDKIKX0DER','SKU',9,6,'USD',now(),'{\"_platformFeeContract\":\"FINAL_FEE_V1\",\"FeesEstimateIdentifier\":{\"IdType\":\"SellerSKU\",\"IdValue\":\"SKU\"}}')",tenant,connection);
+  var old=repo.orders(tenant,connection,List.of("ORDER")).get("ORDER");assertThat(old.fbaFee()).isEqualByComparingTo("15");
+  assertThat(old.feeSource()).contains("Current report estimate","historical FBA basis unavailable","historical referral basis unavailable");
+  assertThat(repo.skus(tenant,connection,List.of("SKU")).get("SKU").fbaFee()).isEqualByComparingTo("9");
+ });}
+ @Test void laterQuoteWithoutAnyHistoricalBasisRemainsUnavailable(){tx.executeWithoutResult(s->{
+  jdbc.update("UPDATE amazon_orders SET fulfillment_channel='AFN' WHERE tenant_id=?",tenant);
+  jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_fee,referral_fee,currency,effective_at,raw_payload) VALUES (?,?,'ATVPDKIKX0DER','SKU',9,6,'USD',now(),'{\"FeesEstimateIdentifier\":{\"IdType\":\"SellerSKU\",\"IdValue\":\"SKU\"}}')",tenant,connection);
+  assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").fbaFee()).isNull();
+ });}
  @Test void latestCompletePostedShipmentCostsRemainExplicitEstimates(){tx.executeWithoutResult(s->{
   jdbc.update("UPDATE amazon_listings SET fulfillment_channel='AFN' WHERE tenant_id=?",tenant);
   jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_fee,referral_fee,currency,effective_at) VALUES (?,?,'ATVPDKIKX0DER','SKU',5.25,2.17,'USD',now())",tenant,connection);

@@ -92,6 +92,47 @@ public class AmazonFeeVarianceRepository {
     @Transactional(readOnly=true)
     public long count(UUID tenant,UUID store,boolean skus){if(!visible)return 0;scope(tenant,store);
         return jdbc.queryForObject("SELECT count(DISTINCT "+(skus?"seller_sku":"order_id")+") FROM amazon_fee_comparisons WHERE tenant_id=? AND marketplace_connection_id=? AND state IN ('HIGHER','LOWER')",Long.class,tenant,store);}
+    /** Read frozen expected totals once per requested order; never substitute a later quote or approval. */
+    @Transactional(readOnly=true)
+    public Map<String,Map<String,BigDecimal>> orderBasis(UUID tenant,UUID store,Collection<String> orders){
+        if(!evidence.enabled()||orders.isEmpty())return Map.of();
+        var exact=new LinkedHashSet<>(orders);if(exact.size()>200||exact.stream().anyMatch(k->k==null||k.isBlank()||k.length()>80))throw new IllegalArgumentException("Choose at most 200 exact orders");
+        scope(tenant,store);var args=new ArrayList<Object>();Collections.addAll(args,tenant,store);args.addAll(exact);
+        var rows=jdbc.queryForList("""
+            SELECT o.amazon_order_id,t.fee_type,
+              CASE WHEN count(*) FILTER (WHERE f.expected_amount IS NOT NULL AND f.expected_amount>=0
+                AND f.order_id=o.amazon_order_id AND f.seller_sku=i.seller_sku AND f.currency=i.currency AND f.currency=o.currency
+                AND f.marketplace_id=o.marketplace_id AND f.marketplace_id=c.marketplace_identifier
+                AND f.quantity=i.quantity_ordered AND f.unit_price*f.quantity=i.item_price
+                AND f.shipping*f.quantity=i.shipping_price AND f.purchase_at=o.purchase_date
+                AND i.promotion_discount=0 AND i.shipping_discount=0
+                AND upper(o.fulfillment_channel) IN ('AFN','FBA','AMAZON')
+                AND ((q.id IS NOT NULL AND q.fulfillment='FBA' AND q.basis->>'IsAmazonFulfilled'='true'
+                  AND q.basis->>'MarketplaceId'=o.marketplace_id AND q.basis->>'_platformSellerId'=c.seller_identifier
+                  AND f.approval_id IS NULL AND q.observed_at<o.purchase_date
+                  AND q.observed_at>=o.purchase_date-interval '24 hours' AND q.boundary_at=f.boundary_at
+                  AND q.seller_sku=f.seller_sku AND q.currency=f.currency AND q.fee_type=t.fee_type
+                  AND q.unit_price=f.unit_price AND q.shipping=f.shipping AND q.amount*f.quantity=f.expected_amount)
+                 OR (a.id IS NOT NULL AND a.fulfillment='FBA' AND f.observation_id IS NULL AND a.effective_from<o.purchase_date
+                  AND a.effective_from=f.boundary_at AND a.seller_sku=f.seller_sku AND a.currency=f.currency
+                  AND a.fee_type=t.fee_type AND a.unit_price=f.unit_price AND a.shipping=f.shipping
+                  AND a.amount*f.quantity=f.expected_amount)))=count(*) THEN sum(f.expected_amount) END amount
+            FROM amazon_orders o JOIN marketplace_connections c ON c.tenant_id=o.tenant_id AND c.id=o.marketplace_connection_id
+            JOIN amazon_order_items i ON i.tenant_id=o.tenant_id AND i.marketplace_connection_id=o.marketplace_connection_id AND i.amazon_order_id=o.amazon_order_id
+            CROSS JOIN (VALUES ('FBA'),('REFERRAL')) t(fee_type)
+            LEFT JOIN LATERAL (SELECT b.* FROM amazon_fee_comparisons b
+              WHERE b.tenant_id=i.tenant_id AND b.marketplace_connection_id=i.marketplace_connection_id
+                AND b.marketplace_id=o.marketplace_id AND b.order_item_id=i.id AND b.fee_type=t.fee_type
+                AND (b.revision_key='BASIS' OR b.revision_key LIKE 'BASIS:RECOVERED:%')
+              ORDER BY b.revision_seq DESC LIMIT 1) f ON true
+            LEFT JOIN amazon_fee_observations q ON q.tenant_id=f.tenant_id AND q.marketplace_connection_id=f.marketplace_connection_id AND q.marketplace_id=f.marketplace_id AND q.id=f.observation_id
+            LEFT JOIN amazon_fee_approvals a ON a.tenant_id=f.tenant_id AND a.marketplace_connection_id=f.marketplace_connection_id AND a.marketplace_id=f.marketplace_id AND a.id=f.approval_id
+            WHERE o.tenant_id=? AND o.marketplace_connection_id=? AND i.quantity_ordered>0 AND o.amazon_order_id IN (
+            """+String.join(",",Collections.nCopies(exact.size(),"?"))+") GROUP BY o.amazon_order_id,t.fee_type",args.toArray());
+        Map<String,Map<String,BigDecimal>> result=new LinkedHashMap<>();
+        for(var row:rows)if(row.get("amount") instanceof BigDecimal amount)result.computeIfAbsent(row.get("amazon_order_id").toString(),key->new LinkedHashMap<>()).put(row.get("fee_type").toString(),amount);
+        return result;
+    }
     public record Choice(UUID comparison,UUID expectedApproval){}
     @Transactional
     public List<UUID> approveAll(UUID tenant,UUID store,List<Choice> choices,UUID request,String actor){

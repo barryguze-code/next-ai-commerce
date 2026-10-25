@@ -173,6 +173,8 @@ public class ProfitRepository {
     private Map<String,View> withFbaFees(UUID tenant,UUID connection,Map<String,View> views){
         var skus=views.values().stream().filter(View::fba).flatMap(v->v.lines().stream()).map(Line::sku).distinct().toList();
         if(skus.isEmpty())return views;
+        boolean historical=views.values().stream().allMatch(v->"ORDER".equals(v.kind()));
+        var frozen=historical&&acceptedFees!=null?acceptedFees.orderBasis(tenant,connection,views.keySet()):Map.<String,Map<String,BigDecimal>>of();
         var fees=named.queryForList("""
             SELECT DISTINCT ON (f.seller_sku,f.currency) f.seller_sku,f.fulfillment_fee,f.referral_fee,f.currency,
               to_char(f.effective_at AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') imported_at_utc,
@@ -186,11 +188,13 @@ public class ProfitRepository {
               AND d.marketplace_connection_id=f.marketplace_connection_id AND d.id=f.source_document_id
             WHERE f.tenant_id=:tenant AND f.marketplace_connection_id=:connection AND f.seller_sku IN (:skus)
               AND f.marketplace_id=c.marketplace_identifier
+              AND (:historical=false OR (NOT jsonb_exists(f.raw_payload,'FeesEstimateIdentifier')
+                AND NOT jsonb_exists(f.raw_payload,'_platformQuoteBasis') AND NOT jsonb_exists(f.raw_payload,'_platformFeeContract')))
               AND (NOT(jsonb_exists(f.raw_payload,'currency')) OR f.raw_payload->>'currency'=f.currency)
               AND f.currency=(SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=f.marketplace_id)
               AND (NOT jsonb_exists(f.raw_payload,'amazon-store') OR f.raw_payload->>'amazon-store'=(SELECT country_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=f.marketplace_id))
             ORDER BY f.seller_sku,f.currency,f.effective_at DESC,f.id
-            """,Map.of("tenant",tenant,"connection",connection,"skus",skus));
+            """,Map.of("tenant",tenant,"connection",connection,"skus",skus,"historical",historical));
         var inbound=named.queryForList("""
             WITH charges AS MATERIALIZED (
               SELECT amazon_order_id shipment_id,max(posted_date) posted_at,
@@ -231,13 +235,21 @@ public class ProfitRepository {
             BigDecimal total=BigDecimal.ZERO,referral=BigDecimal.ZERO;boolean known=true,referralKnown=true;
             BigDecimal transport=BigDecimal.ZERO,placement=BigDecimal.ZERO;boolean transportKnown=true,placementKnown=true;
             var sources=new LinkedHashSet<String>();var feeSources=new LinkedHashSet<String>();var feeSummaries=new LinkedHashSet<String>();
+            var basis=frozen.getOrDefault(v.key(),Map.of());
             for(var line:v.lines()){
                 var fee=fees.stream().filter(f->line.sku().equals(f.get("seller_sku"))&&v.currency().equals(f.get("currency"))).findFirst().orElse(null);
                 if(fee!=null){
                     long age=((Number)fee.get("import_age_days")).longValue();
-                    feeSummaries.add(fee.get("source_label")+" · imported "+fee.get("imported_at_utc").toString().substring(0,10)+" UTC");
-                    feeSources.add(line.sku()+" · "+fee.get("source_label")+" · imported "+fee.get("imported_at_utc")
-                        +" UTC · "+(age<0?"import time needs review":age+" days since import")+"; freshness not assessed");
+                    var provenance=new ArrayList<String>();
+                    if(!historical)provenance.add(fee.get("source_label").toString());
+                    else{
+                        if(!basis.containsKey("FBA")&&fee.get("fulfillment_fee")!=null)provenance.add("FBA · Current report estimate; historical FBA basis unavailable · "+fee.get("source_label"));
+                        if(!basis.containsKey("REFERRAL")&&fee.get("referral_fee")!=null)provenance.add("Referral · Current report estimate; historical referral basis unavailable · "+fee.get("source_label"));
+                    }
+                    for(String label:provenance){
+                        feeSummaries.add(label+" · imported "+fee.get("imported_at_utc").toString().substring(0,10)+" UTC");
+                        feeSources.add(line.sku()+" · "+label+" · imported "+fee.get("imported_at_utc")+" UTC · "+(age<0?"import time needs review":age+" days since import")+"; freshness not assessed");
+                    }
                 }
                 // Explicitly prospective SKU planning only. Historical Orders retain their prior path/basis.
                 if("SKU".equals(v.kind())&&acceptedFees!=null&&acceptedFees.prospectiveEnabled()){
@@ -264,7 +276,9 @@ public class ProfitRepository {
                 else placement=placement.add(((BigDecimal)shipping.get("placement_unit")).multiply(BigDecimal.valueOf(line.quantity())));
                 if(shipping!=null)sources.add(shipping.get("shipment_id")+" · charges posted "+shipping.get("estimate_date"));
             }
-            String note=v.note()+" Inbound estimate uses each SKU's latest complete shipment by posted charge date, not a historical order-to-replenishment match."+(sources.isEmpty()?"":" Source: "+String.join(", ",sources)+".");
+            if(basis.containsKey("FBA")){total=basis.get("FBA");known=true;feeSources.add("Expected FBA fees fixed at purchase · complete exact item coverage");feeSummaries.add("FBA basis fixed at purchase");}
+            if(basis.containsKey("REFERRAL")){referral=basis.get("REFERRAL");referralKnown=true;feeSources.add("Expected referral fees fixed at purchase · complete exact item coverage");feeSummaries.add("Referral basis fixed at purchase");}
+            String note=v.note()+(historical?" Later per-SKU quotes cannot replace an order's purchase-time basis; any current report fallback is an estimate, not a historical charge.":"")+" Inbound estimate uses each SKU's latest complete shipment by posted charge date, not a historical order-to-replenishment match."+(sources.isEmpty()?"":" Source: "+String.join(", ",sources)+".");
             ProfitEstimate.Breakdown breakdown=null;
             if("USD".equals(v.currency())&&!v.lines().isEmpty()){
                 BigDecimal revenue=v.lines().stream().allMatch(l->l.unitPrice()!=null&&l.customerShipping()!=null)?v.lines().stream().map(l->l.unitPrice().multiply(BigDecimal.valueOf(l.quantity())).add(l.customerShipping())).reduce(BigDecimal.ZERO,BigDecimal::add):null;
