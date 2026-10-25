@@ -56,6 +56,16 @@ public class AmazonSyncStore {
     }
 
     private Job claimForTenant(UUID tenant,String worker,boolean orderRefreshOnly) {
+        return claimForTenant(tenant,worker,orderRefreshOnly,null,null,null);
+    }
+
+    /** Called inside the fee provider's transaction after locking and validating the exact grant. */
+    Job claimFeePilot(UUID tenant,UUID connection,String marketplace,UUID job,String worker) {
+        return transactions.execute(status -> claimForTenant(tenant,worker,false,job,connection,marketplace));
+    }
+
+    private Job claimForTenant(UUID tenant,String worker,boolean orderRefreshOnly,
+                               UUID feeJob,UUID feeConnection,String feeMarketplace) {
         setTenant(tenant);
         List<Job> jobs = jdbc.query("""
             SELECT j.id,j.tenant_id,j.sync_run_id,j.marketplace_connection_id,j.job_type,r.sync_profile,
@@ -72,6 +82,9 @@ public class AmazonSyncStore {
                 OR (j.status='RUNNING' AND j.lease_expires_at<now())
               )
                   AND (?=false OR r.sync_profile='ORDER_CHANGES')
+                  AND ((CAST(? AS uuid) IS NULL AND NOT (j.job_type='FEES_SNAPSHOT' AND jsonb_exists(j.cursor,'feeRun')))
+                    OR (CAST(? AS uuid) IS NOT NULL AND j.id=? AND j.job_type='FEES_SNAPSHOT'
+                      AND j.marketplace_connection_id=? AND c.marketplace_identifier=? AND jsonb_exists(j.cursor,'feeRun')))
                   AND NOT EXISTS (SELECT 1 FROM marketplace_sync_jobs prior WHERE prior.sync_run_id=j.sync_run_id
                   AND prior.sequence_number<j.sequence_number AND prior.status NOT IN ('COMPLETED','SKIPPED')
                   AND NOT (j.job_type<>'FINAL_RECONCILIATION'
@@ -87,7 +100,7 @@ public class AmazonSyncStore {
                 rs.getObject(3,UUID.class),rs.getObject(4,UUID.class),rs.getString(5),rs.getString(6),rs.getString(7),
                 rs.getTimestamp(8).toInstant(),rs.getTimestamp(9).toInstant(),rs.getString(10),rs.getInt(11),
                 rs.getInt(12),rs.getBoolean(13),rs.getTimestamp(14)==null?null:rs.getTimestamp(14).toInstant()),
-            tenant,orderRefreshOnly);
+            tenant,orderRefreshOnly,feeJob,feeJob,feeJob,feeConnection,feeMarketplace);
         if (jobs.isEmpty()) return null;
         Job job=jobs.getFirst();
         if("FEES_SNAPSHOT".equals(job.type())){

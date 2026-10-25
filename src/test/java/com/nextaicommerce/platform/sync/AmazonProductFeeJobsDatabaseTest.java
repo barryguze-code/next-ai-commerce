@@ -141,7 +141,7 @@ class AmazonProductFeeJobsDatabaseTest {
     ObjectNode pilot(){
         batchScope();var contract=json.createObjectNode().put("format","FEE_RUN_V1").put("approval",UUID.randomUUID().toString())
             .put("tenant",tenant.toString()).put("connection",connection.toString()).put("marketplace",MARKET).put("seller",connection.toString())
-            .put("maxTargets",20).put("maxHttp",3).put("maxOauth",2).put("maxSeconds",300);
+            .put("maxTargets",20).put("maxHttp",3).put("maxOauth",2).put("maxSeconds",300).put("approvalExpiresAt",Instant.now().plusSeconds(600).toString()).put("publicationMode","ARCHIVE_ONLY");
         contract.putArray("skus").add(SKU);
         var basis=json.createArrayNode();basis.addArray().add(SKU).add("30").add("USD").add("FBA").add("0");
         contract.put("basisSha256",com.nextaicommerce.platform.fees.AmazonFeeEvidence.digest(basis.toString()));pilot(contract);return contract;
@@ -238,6 +238,65 @@ class AmazonProductFeeJobsDatabaseTest {
         fixture();pilot();jobs.batchNext(job);assertThat(jobs.reserve(job,SKU,"UNKNOWN")).isFalse();assertThat(fee().path("oauth").asInt()).isZero();
         fixture();pilot();jobs.batchNext(job);state("batchPending",List.of("tampered"));assertThat(jobs.reserve(job,SKU,"FEE")).isFalse();assertThat(fee().path("http").asInt()).isZero();
         fixture();pilot();jobs.batchNext(job);state("itemAttempts",Map.of("unknown",-1));assertThat(jobs.reserve(job,SKU,"FEE")).isFalse();assertThat(fee().path("http").asInt()).isZero();
+    }
+    @Test void feeOnlyClaimUsesExactApprovedJobAndLeavesOtherQueuedWorkUntouched(){
+        pilot();jobs.batchNext(job);String hash=fee().path("runContractHash").asText();
+        jdbc.update("UPDATE marketplace_sync_jobs SET status='QUEUED',lease_owner=NULL,lease_expires_at=NULL,attempt_count=0 WHERE id=?",id);
+        UUID unrelated=UUID.randomUUID();jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,status) VALUES (?,?,?,?,'INVENTORY_SNAPSHOT',2,'QUEUED')",unrelated,tenant,run,connection);
+        var claimed=jobs.claimPilot(tenant,connection,MARKET,id,hash,"fee-only");assertThat(claimed).isNotNull();assertThat(claimed.id()).isEqualTo(id);assertThat(claimed.leaseOwner()).isEqualTo("fee-only");
+        assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,unrelated)).isEqualTo("QUEUED");assertThat(jobs.matchesPilot(claimed,hash)).isTrue();
+    }
+    @Test void feeOnlyClaimRejectsWrongScopeHashExpiredGrantAndCancelledRun(){
+        var contract=pilot();String hash=jobs.pilotContractHash(contract);
+        jdbc.update("UPDATE marketplace_sync_jobs SET status='QUEUED',lease_owner=NULL,lease_expires_at=NULL,attempt_count=0,started_at=NULL WHERE id=?",id);
+        assertThat(jobs.claimPilot(tenant,connection,MARKET,UUID.randomUUID(),hash,"pilot")).isNull();
+        assertThat(jobs.claimPilot(UUID.randomUUID(),connection,MARKET,id,hash,"pilot")).isNull();
+        assertThat(jobs.claimPilot(tenant,UUID.randomUUID(),MARKET,id,hash,"pilot")).isNull();
+        assertThat(jobs.claimPilot(tenant,connection,"OTHER",id,hash,"pilot")).isNull();
+        assertThat(jobs.claimPilot(tenant,connection,MARKET,id,"0".repeat(64),"pilot")).isNull();assertThat(status()).isEqualTo("QUEUED");
+        contract.put("approvalExpiresAt",Instant.now().minusSeconds(1).toString());pilot(contract);
+        assertThat(jobs.claimPilot(tenant,connection,MARKET,id,jobs.pilotContractHash(contract),"pilot")).isNull();assertThat(status()).isEqualTo("QUEUED");
+        contract.put("approvalExpiresAt",Instant.now().plusSeconds(600).toString()).put("publicationMode","ARCHIVE_ONLY");pilot(contract);jdbc.update("UPDATE marketplace_sync_runs SET status='CANCELLED' WHERE id=?",run);
+        assertThat(jobs.claimPilot(tenant,connection,MARKET,id,jobs.pilotContractHash(contract),"pilot")).isNull();assertThat(status()).isEqualTo("QUEUED");
+    }
+    @Test void feeOnlyClaimCannotRenewAnExpiredOriginalDeadline(){
+        var contract=pilot();jobs.batchNext(job);String hash=jobs.pilotContractHash(contract);
+        jdbc.update("UPDATE marketplace_sync_jobs SET status='QUEUED',lease_owner=NULL,lease_expires_at=NULL,attempt_count=0,started_at=now()-interval '301 seconds' WHERE id=?",id);
+        assertThat(jobs.claimPilot(tenant,connection,MARKET,id,hash,"pilot")).isNull();assertThat(status()).isEqualTo("QUEUED");
+    }
+    @Test void absoluteApprovalExpiryCapsDeadlineAndBlocksLatePublication(){
+        var contract=pilot().put("approvalExpiresAt",Instant.now().plusSeconds(30).toString());pilot(contract);jobs.batchNext(job);
+        assertThat(Instant.parse(fee().path("deadline").asText())).isEqualTo(Instant.parse(contract.path("approvalExpiresAt").asText()));
+        var targets=jobs.batchNext(job);jdbc.update("UPDATE marketplace_sync_jobs SET lease_expires_at=now()-interval '1 second' WHERE id=?",id);
+        jobs.publishBatch(job,targets,new AmazonProductFeeBatch.Result(List.of(),List.of()),response());
+        assertThat(count("amazon_source_documents")).isZero();assertThat(count("amazon_fee_estimates")).isZero();
+    }
+    @Test void absoluteExpiryAfterDispatchBlocksPublicationWithoutAStateRewrite(){
+        var contract=pilot().put("approvalExpiresAt",Instant.now().plusSeconds(5).toString());pilot(contract);var targets=jobs.batchNext(job);
+        assertThat(targets).hasSize(1);assertThat(jobs.reserve(job,SKU,"FEE")).isTrue();jobs.received(job);
+        jdbc.queryForObject("SELECT pg_sleep(greatest(0,extract(epoch FROM CAST(? AS timestamptz)-clock_timestamp()))+0.05)",Object.class,contract.path("approvalExpiresAt").asText());
+        jobs.publishBatch(job,targets,new AmazonProductFeeBatch.Result(List.of(),List.of()),response());
+        assertThat(reason()).isEqualTo("FEE_DEADLINE");assertThat(fee().path("http").asInt()).isEqualTo(1);
+        assertThat(count("amazon_source_documents")).isZero();assertThat(count("amazon_fee_estimates")).isZero();
+    }
+    @Test void genericQueueCannotClaimControlledFeeJobs(){
+        pilot();jdbc.update("UPDATE marketplace_sync_jobs SET status='QUEUED',lease_owner=NULL,lease_expires_at=NULL,attempt_count=0 WHERE id=?",id);
+        assertThat(store.claim("general")).isNull();assertThat(store.claimOrderRefresh("orders")).isNull();assertThat(status()).isEqualTo("QUEUED");
+    }
+    @Test void controlledJobsNeverDefaultOrWidenPublicationMode(){
+        var contract=pilot();contract.remove("publicationMode");pilot(contract);assertThat(jobs.batchNext(job)).isEmpty();assertThat(reason()).isEqualTo("FEE_RUN_INVALID");assertThat(count("amazon_source_documents")).isZero();
+        fixture();contract=pilot().put("publicationMode","ESTIMATES_AND_EVIDENCE");pilot(contract);assertThat(jobs.batchNext(job)).isEmpty();assertThat(reason()).isEqualTo("FEE_RUN_INVALID");assertThat(count("amazon_fee_estimates")).isZero();
+    }
+    @Test void archiveOnlyResponseNeverPublishesEstimatesOrComparisonEvidence(){
+        pilot();var targets=jobs.batchNext(job);var target=targets.getFirst();var basis=jobs.basis(job,target);
+        var raw=(ObjectNode)response().json().path("payload").path("FeesEstimateResult").deepCopy();var identifier=(ObjectNode)raw.path("FeesEstimateIdentifier");
+        identifier.put("SellerId",connection.toString()).put("SellerInputIdentifier","archive-only").put("IsAmazonFulfilled",true);identifier.set("PriceToEstimateFees",basis.path("PriceToEstimateFees"));
+        for(var fee:raw.path("FeesEstimate").path("FeeDetailList"))((ObjectNode)fee).set("FinalFee",fee.path("FeeAmount").deepCopy());
+        var requests=List.of(new AmazonProductFeeBatch.Request(target,basis,"archive-only"));var envelope=json.createArrayNode().add(raw);var verified=AmazonProductFeeBatch.verify(requests,envelope);
+        assertThat(verified.accepted()).hasSize(1);var evidence=mock(com.nextaicommerce.platform.fees.AmazonFeeEvidence.class);jobs.configureFeeEvidence(evidence);
+        jobs.publishBatch(job,targets,verified,new AmazonSpApiClient.ApiResponse(200,"synthetic",envelope,envelope.toString()));
+        assertThat(count("amazon_source_documents")).isOne();assertThat(count("amazon_fee_estimates")).isZero();verifyNoInteractions(evidence);
+        assertThat(count("amazon_fee_observations")).isZero();assertThat(count("amazon_fee_comparisons")).isZero();assertThat(count("amazon_fee_approvals")).isZero();
     }
     @Test void batchShippingScopeMustBeExplicit(){assertThat(jobs.batchNext(job)).isEmpty();assertThat(reason()).isEqualTo("FEE_SHIPPING_BASIS_REQUIRES_APPROVAL");}
     @Test void batchFreezesExactTargetsAndDoesNotFollowLaterPrice(){batchScope();var targets=jobs.batchNext(job);assertThat(targets).hasSize(1);jdbc.update("UPDATE amazon_listings SET price=77 WHERE tenant_id=?",tenant);assertThat(jobs.batchNext(job).getFirst().price()).isEqualByComparingTo(targets.getFirst().price());}

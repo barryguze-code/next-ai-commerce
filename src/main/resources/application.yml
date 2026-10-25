@@ -88,6 +88,9 @@ app:
     fee-evidence-enabled: ${AMAZON_FEE_EVIDENCE_ENABLED:false}
     fee-variance-ui-enabled: ${AMAZON_FEE_VARIANCE_UI_ENABLED:false}
     fee-approvals-enabled: ${AMAZON_FEE_APPROVALS_ENABLED:false}
+    fee-pilot:
+      enabled: ${AMAZON_FEE_PILOT_ENABLED:false}
+      only-scheduling: ${AMAZON_FEE_PILOT_ONLY_SCHEDULING:false}
     product-fees-requests-per-second: ${AMAZON_PRODUCT_FEES_REQUESTS_PER_SECOND:0.5}
     variation:
       operator-enabled: false
