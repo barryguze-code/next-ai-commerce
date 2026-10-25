@@ -27,9 +27,15 @@ require_release_false() {
   fi
 }
 # BEGIN REVIEWED RELEASE GUARDS
+if [[ "$version" == "1.8.0" ]]; then
+  # Exact reviewed helper is delivered beside this script by the protected workflow.
+  # No DDL or activation is performed here; missing evidence fails before downloads.
+  python3 "${FEE_RELEASE_GUARD:?Reviewed 1.8 manifest guard required}" "$revision" "$version" "$package_sha" "${4:?Reviewed manifest checksum required}"
+else
 for setting in APP_FEDEX_CONFIRMATION_ENABLED APP_SCHEDULING_ENABLED SPRING_FLYWAY_ENABLED MAIL_ENABLED   AMAZON_PRODUCT_FEES_ENABLED AMAZON_SYNC_ENABLED AMAZON_RECURRING_SYNC_ENABLED   AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED AMAZON_WRITE_ENABLED   AMAZON_LISTING_ACTIONS_ENABLED AMAZON_INVENTORY_PUBLICATION_ENABLED AMAZON_SHELF_SALE_ENABLED AMAZON_BUY_SHIPPING_ENABLED AMAZON_UNRESOLVED_ORDER_CHECKS_ENABLED APP_AMAZON_RECIPIENT_IMPORT_ENABLED APP_AMAZON_CATALOG_BARCODES_ENABLED APP_AMAZON_CATALOG_IMAGES_ENABLED   APP_AMAZON_VARIATION_OPERATOR_ENABLED APP_AMAZON_VARIATION_SYNC_ENABLED   APP_AMAZON_VARIATION_COVERAGE_ENABLED APP_AMAZON_VARIATION_INVENTORY_ENFORCEMENT_ENABLED   APP_AMAZON_VARIATION_TRIAL_ONLY_SCHEDULING; do
   require_release_false "$setting"
 done
+fi
 # END REVIEWED RELEASE GUARDS
 # Migrations require a separate approved operation before this Flyway-disabled launch.
 # Verify the complete newly introduced dependency range before changing the service.
@@ -79,7 +85,7 @@ sudo -u postgres pg_dump --format=custom --lock-wait-timeout=10s next_ai_commerc
 test -s "$backup_dir/database.dump"
 pg_restore --list "$backup_dir/database.dump" >/dev/null
 sha256sum "$backup_dir/database.dump" "$backup_dir/previous.jar"
-echo "Pre-release backup verified at $backup_dir"
+echo "Application-deployment recovery backup verified at $backup_dir (separate from the reviewed pre-DDL recovery set)."
 
 # Version metadata and read-only recovery only. Preserve publishing and mail policies.
 grep -Eq 'APP_BUILD_VERSION=[0-9]+\.[0-9]+\.[0-9]+' "$runtime_config"
@@ -151,6 +157,14 @@ test "$healthy" = true
 # did not finish migrating. No business rows or credentials are printed.
 migration_count=$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM public.flyway_schema_history WHERE version IN ('91','92','93','94','95','96','97','98','99','100','101','102','103','104','105','106','107','108','109','110','111','112') AND success")
 test "$migration_count" = 22
+if [[ "$version" == "1.8.0" ]]; then
+  fee_schema_count=$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM public.flyway_schema_history WHERE version IN ('113','114') AND success")
+  test "$fee_schema_count" = 2
+fi
 echo "Profit, refund, cost-default and collaboration schema migrations V91–V112 verified."
 trap - ERR
-echo "Release v$version completed; existing Amazon publishing policies unchanged."
+if [[ "$version" == "1.8.0" ]]; then
+  echo "Release v$version staged; existing worker policies preserved. Fee collection awaits its separately reviewed bounded activation."
+else
+  echo "Release v$version completed; existing Amazon publishing policies unchanged."
+fi
