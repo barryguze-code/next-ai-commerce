@@ -55,13 +55,16 @@ public class CatalogController {
     String accountCatalog(Authentication authentication, HttpSession session, Model model,
             @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue=com.nextaicommerce.platform.web.TablePaging.DEFAULT_PARAMETER) int size,@RequestParam(required=false) Integer goToPage,
-            @RequestParam(required=false) String open) {
+            @RequestParam(required=false) String open,
+            @RequestParam(defaultValue="product") String sort,@RequestParam(defaultValue="asc") String direction) {
         UUID tenantId = tenantId(session);
         if (tenantId == null) return "redirect:/app/select-account";
         PageController.addTenantModel(session, model);
         PageController.addAccessModel(authentication, model);
         int requestedPage=goToPage==null?page:Math.max(0,goToPage-1);
-        var snapshot=reads.page(tenantId,q,requestedPage,size);
+        var snapshot=reads.page(tenantId,q,requestedPage,size,sort,direction);
+        model.addAttribute("catalogSort",CatalogRepository.catalogSort(sort));
+        model.addAttribute("catalogDirection",CatalogRepository.catalogDirection(direction));
         var catalogPage=snapshot.page();
         model.addAttribute("items",catalogPage.rows());
         model.addAttribute("catalogPage",catalogPage);

@@ -259,8 +259,25 @@ public class CatalogRepository {
         return new AccountQuery(prefix,from+" WHERE item.tenant_id=(SELECT tenant_id FROM search_input)"
             +" AND item.id IN(SELECT id FROM matched_items)",List.of(tenantId,pattern));
     }
+    // Fixed SQL expressions only. User input is never an SQL identifier or fragment.
+    private static final Map<String,String> CATALOG_SORTS=Map.of(
+        "product","lower(coalesce(item.display_name,product.canonical_name))",
+        "vendorCode","(SELECT lower(v.vendor_item_code) FROM vendor_catalog_offers v WHERE v.tenant_id=item.tenant_id AND v.account_catalog_item_id=item.id AND v.effective_to IS NULL ORDER BY v.is_default DESC,v.updated_at DESC LIMIT 1)",
+        "marketplace","(SELECT min(m.marketplace_sku) FROM marketplace_sku_mapping_components c JOIN marketplace_sku_mappings m ON m.tenant_id=c.tenant_id AND m.id=c.marketplace_sku_mapping_id WHERE c.tenant_id=item.tenant_id AND c.account_catalog_item_id=item.id AND m.status='ACTIVE')",
+        "identifier","(SELECT i.identifier_value FROM global_product_identifiers i WHERE i.global_product_id=product.id ORDER BY i.is_primary DESC,i.created_at LIMIT 1)",
+        "vendors","(SELECT count(DISTINCT v.vendor_id) FROM vendor_catalog_offers v WHERE v.tenant_id=item.tenant_id AND v.account_catalog_item_id=item.id AND v.effective_to IS NULL)",
+        "cost","(SELECT round(v.list_cost*(1-v.discount_rate/100),4) FROM vendor_catalog_offers v WHERE v.tenant_id=item.tenant_id AND v.account_catalog_item_id=item.id AND v.effective_to IS NULL ORDER BY v.is_default DESC,v.updated_at DESC LIMIT 1)",
+        "location","(SELECT lower(l.code) FROM account_catalog_item_locations a JOIN warehouse_locations l ON l.tenant_id=a.tenant_id AND l.id=a.location_id WHERE a.tenant_id=item.tenant_id AND a.account_catalog_item_id=item.id AND a.is_default LIMIT 1)",
+        "receiving","product.requires_expiration_date",
+        "status","CASE WHEN item.completion_status='NEEDS_COMPLETION' THEN 'NEEDS COMPLETION' ELSE item.status END");
+    public static String catalogSort(String value){return CATALOG_SORTS.containsKey(value==null?"":value)?value:"product";}
+    public static String catalogDirection(String value){return "desc".equalsIgnoreCase(value)?"desc":"asc";}
     @Transactional(readOnly=true)
     public AccountItemPage pageAccountItems(UUID tenantId,String search,int page,int size){
+        return pageAccountItems(tenantId,search,page,size,"product","asc");
+    }
+    @Transactional(readOnly=true)
+    public AccountItemPage pageAccountItems(UUID tenantId,String search,int page,int size,String sort,String direction){
         setTenant(tenantId);String query=search==null?"":search.trim();size=Math.max(10,Math.min(100,size));page=Math.max(0,page);
         var searchQuery=accountQuery(tenantId,query);
         String matches=searchQuery.from();
@@ -269,8 +286,9 @@ public class CatalogRepository {
         int pages=Math.max(1,(int)Math.ceil(total/(double)size));page=Math.min(page,pages-1);
         parameters.add(size);parameters.add((long)page*size);
         // Materialize ONLY the page IDs before image, price, vendor and location enrichment.
-        String selected=searchQuery.prefix()+(searchQuery.prefix().isEmpty()?"WITH ":", ")+"selected AS MATERIALIZED (SELECT item.id,lower(coalesce(item.display_name,product.canonical_name)) sort_name"
-            +matches+" ORDER BY sort_name,item.id LIMIT ? OFFSET ?) ";
+        String ordering=catalogDirection(direction).equals("desc")?"DESC":"ASC";
+        String selected=searchQuery.prefix()+(searchQuery.prefix().isEmpty()?"WITH ":", ")+"selected AS MATERIALIZED (SELECT item.id,"+CATALOG_SORTS.get(catalogSort(sort))+" sort_value"
+            +matches+" ORDER BY sort_value "+ordering+" NULLS LAST,item.id LIMIT ? OFFSET ?) ";
         List<AccountItemView> rows=jdbc.query(selected+"""
             SELECT item.id,item.global_product_id,coalesce(item.display_name,product.canonical_name) display_name,product.brand,
               offer.vendor_name,offer.vendor_item_code,identifier.identifier_value,
@@ -305,8 +323,8 @@ public class CatalogRepository {
                   WHERE all_components.tenant_id=mapping.tenant_id AND all_components.marketplace_sku_mapping_id=mapping.id)=1
               ORDER BY listing.last_seen_at DESC LIMIT 1
             ) image ON true
-            ORDER BY selected.sort_name,item.id
-            """,(rs,row)->new AccountItemView(rs.getObject("id",UUID.class),rs.getObject("global_product_id",UUID.class),
+            ORDER BY selected.sort_value
+            """+" "+ordering+" NULLS LAST,item.id",(rs,row)->new AccountItemView(rs.getObject("id",UUID.class),rs.getObject("global_product_id",UUID.class),
                 rs.getString("display_name"),rs.getString("brand"),rs.getString("vendor_name"),rs.getString("vendor_item_code"),
                 rs.getString("identifier_value"),rs.getString("account_sku"),rs.getInt("vendor_count"),rs.getBigDecimal("buying_cost"),
                 rs.getString("currency"),rs.getBoolean("requires_expiration_date"),rs.getString("status"),rs.getString("completion_status"),

@@ -177,7 +177,7 @@ class TemplateRenderingTest {
         ));
         assertThat(engine.process("account-catalog", context)).contains(
             "Account Catalogue", "Upload catalogue", "Set price", "Test Product", "Vendor item code", "53383",
-            "id=\"location-dialog\"", "Storage locations", "Add new location");
+            "id=\"location-dialog\"", "Storage locations", "Add new location", "sort=cost", "sort=product", "direction=desc", "aria-sort=\"ascending\"");
 
         var globalContext = webContext();
         globalContext.setVariables(Map.ofEntries(

@@ -15,17 +15,20 @@ public class CatalogReadService {
     private final CatalogRepository catalog;
     private final PlatformReadCache cache;
     public CatalogReadService(CatalogRepository catalog,PlatformReadCache cache){this.catalog=catalog;this.cache=cache;}
-    private record Query(String text,int page,int size) {}
+    private record Query(String text,int page,int size,String sort,String direction) {}
     public record Snapshot(CatalogRepository.AccountItemPage page,List<CatalogRepository.VendorView> vendors,
             List<CatalogRepository.LocationView> locations,Map<UUID,List<CatalogRepository.VendorOfferView>> offers,
             Map<UUID,List<CatalogRepository.MarketplaceSkuRef>> skus) {}
     public Snapshot page(UUID tenant,String search,int page,int size){
+        return page(tenant,search,page,size,"product","asc");
+    }
+    public Snapshot page(UUID tenant,String search,int page,int size,String sort,String direction){
         String text=search==null?"":search.trim();
         if(text.length()>160)throw new org.springframework.web.server.ResponseStatusException(
             org.springframework.http.HttpStatus.BAD_REQUEST,"Search must be 160 characters or fewer.");
-        Query key=new Query(text,Math.max(0,page),TablePaging.size(size));
+        Query key=new Query(text,Math.max(0,page),TablePaging.size(size),CatalogRepository.catalogSort(sort),CatalogRepository.catalogDirection(direction));
         return cache.get(tenant,"catalogue",key,()->{
-            var result=catalog.pageAccountItems(tenant,text,key.page,key.size);
+            var result=catalog.pageAccountItems(tenant,text,key.page,key.size,key.sort,key.direction);
             var ids=result.rows().stream().map(CatalogRepository.AccountItemView::id).toList();
             return new Snapshot(result,List.copyOf(catalog.listVendors(tenant)),List.copyOf(catalog.listLocations(tenant)),
                 group(catalog.listVendorOffers(tenant,ids),CatalogRepository.VendorOfferView::itemId),

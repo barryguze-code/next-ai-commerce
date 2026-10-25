@@ -575,6 +575,35 @@ class ReceivingWorkflowDatabaseTest {
         assertThat(catalog.searchAccountItems(tenant,"B0TESTASIN1",20)).extracting(CatalogRepository.AccountItemView::id).containsExactly(first.product());
         assertThat(catalog.pageAccountItems(tenant,"%",0,25).rows()).isEmpty();
     }
+    @Test void catalogueServerSortPrecedesPagingAndKeepsTenantSearchCacheAndValues(){
+        List<UUID> ids=new ArrayList<>();
+        for(int i=0;i<12;i++){
+            var f=fixture("INVOICE");ids.add(f.product());final int index=i;
+            tx.executeWithoutResult(t->{setTenant();jdbc.update("UPDATE account_catalog_items SET display_name=? WHERE tenant_id=? AND id=?",String.format("Sort %02d",index),tenant,f.product());
+                jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,vendor_item_code,list_cost,is_default) VALUES (?,?,?,?,?,true)",tenant,vendor,f.product(),"CODE-"+index,new BigDecimal(12-index));});
+        }
+        UUID foreign=UUID.randomUUID(),global=UUID.randomUUID();
+        tx.executeWithoutResult(t->{jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,'Other tenant')",foreign,"foreign-"+foreign);
+            jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Sort 99')",global);
+            jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,foreign.toString());
+            jdbc.update("INSERT INTO account_catalog_items(tenant_id,global_product_id,display_name) VALUES (?,?,'Sort 99')",foreign,global);});
+        var repo=context.getBean(CatalogRepository.class);var reads=context.getBean(com.nextaicommerce.platform.catalog.CatalogReadService.class);
+        var first=reads.page(tenant,"Sort",0,10,"product","asc");
+        assertThat(first.page().total()).isEqualTo(12);assertThat(first.page().rows()).hasSize(12);assertThat(first.page().rows().getFirst().name()).isEqualTo("Sort 00");
+        assertThat(reads.page(tenant,"Sort",0,10,"product","asc")).isSameAs(first);
+        assertThat(reads.page(tenant,"Sort",0,10,"product","desc").page().rows().getFirst().name()).isEqualTo("Sort 11");
+        assertThat(repo.pageAccountItems(tenant,"Sort",1,10,"product","asc").rows()).extracting(CatalogRepository.AccountItemView::name).containsExactly("Sort 10","Sort 11");
+        assertThat(reads.page(tenant,"Sort",0,10,"cost","asc").page().rows().getFirst().name()).isEqualTo("Sort 11");
+        for(String key:List.of("product","vendorCode","marketplace","identifier","vendors","cost","location","receiving","status")){
+            assertThat(repo.pageAccountItems(tenant,"Sort",0,10,key,"desc").total()).isEqualTo(12);
+        }
+        assertThat(repo.pageAccountItems(tenant,"Sort",0,10,"vendors","desc").rows()).extracting(CatalogRepository.AccountItemView::id)
+            .containsExactlyElementsOf(ids.stream().sorted(java.util.Comparator.comparing(UUID::toString)).limit(10).toList());
+        assertThat(repo.pageAccountItems(tenant,"Sort 11",0,10,"cost","desc").rows()).extracting(CatalogRepository.AccountItemView::id).containsExactly(ids.getLast());
+        assertThat(repo.pageAccountItems(tenant,"Sort",0,10,"product; DROP TABLE vendors","DESC; SELECT 1").rows().getFirst().name()).isEqualTo("Sort 00");
+        tx.executeWithoutResult(t->{setTenant();assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
+            assertThat(jdbc.queryForObject("SELECT sum(list_cost) FROM vendor_catalog_offers WHERE tenant_id=?",BigDecimal.class,tenant)).isEqualByComparingTo("78");});
+    }
     @Test void catalogueCacheInvalidatesOnlyAfterCommittedWrites(){
         var f=fixture("INVOICE");var reads=context.getBean(com.nextaicommerce.platform.catalog.CatalogReadService.class);
         var first=reads.page(tenant,"",0,25);

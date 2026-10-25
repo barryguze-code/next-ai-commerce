@@ -137,6 +137,7 @@ class SecurityConfigTest {
                 @Override public List<UUID> globalProductImageIds() { return List.of(); }
                 @Override public List<AccountItemView> listAccountItems(UUID tenantId) { return List.of(); }
                 @Override public AccountItemPage pageAccountItems(UUID tenantId,String search,int page,int size) { return new AccountItemPage(List.of(),0,0,size); }
+                @Override public AccountItemPage pageAccountItems(UUID tenantId,String search,int page,int size,String sort,String direction) { return new AccountItemPage(List.of(),0,0,size); }
                 @Override public List<VendorView> listVendors(UUID tenantId) { return List.of(); }
                 @Override public List<VendorOfferView> listVendorOffers(UUID tenantId) { return List.of(); }
                 @Override public List<VendorOfferView> listVendorOffers(UUID tenantId,List<UUID> itemIds) { return List.of(); }
