@@ -13,20 +13,20 @@ class ReleaseNotesControllerTest {
         var controller=new ReleaseNotesController(new ObjectMapper());
         var model=new ExtendedModelMap();
         assertThat(controller.releases(null,null,model)).isEqualTo("release-notes");
-        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.8.0");
+        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.9.0");
         controller.releases("1.0.2",null,model);
         assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.0.2");
         controller.releases("unknown",null,model);
-        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.8.0");
+        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.9.0");
         assertThat((java.util.List<?>)model.get("releases")).hasSizeLessThanOrEqualTo(5);
         var resolver=new ClassLoaderTemplateResolver();resolver.setPrefix("templates/");resolver.setSuffix(".html");
         var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);
         assertThat(engine.process("release-notes",new Context(null,model)))
-            .contains("Preparing clearer Amazon fee reviews","v1.8.0","Deployment history","/css/release-notes.css");
-        assertThat(controller.history().getFirst().version()).isEqualTo("1.8.0");
+            .contains("Clear catalogue identity and safer supplier imports","v1.9.0","Deployment history","/css/release-notes.css");
+        assertThat(controller.history().getFirst().version()).isEqualTo("1.9.0");
         assertThat(controller.history().subList(0,5)).extracting(ReleaseNotesController.Release::version)
-            .containsExactly("1.8.0","1.7.3","1.7.2","1.7.1","1.7.0");
+            .containsExactly("1.9.0","1.8.0","1.7.3","1.7.2","1.7.1");
         assertThat(controller.history().subList(5, controller.history().size())).extracting(ReleaseNotesController.Release::version)
-            .containsExactly("1.6.10","1.6.9","1.6.8","1.6.7","1.6.6","1.6.5","1.6.4","1.6.3","1.6.2","1.6.1","1.6.0","1.5.0","1.4.3","1.4.2","1.4.1","1.4.0","1.3.14","1.3.13","1.3.12","1.3.11","1.3.10","1.3.9","1.3.8","1.3.7","1.3.6","1.3.5","1.3.4","1.3.3","1.3.2","1.3.1","1.3.0","1.2.7","1.2.6","1.2.5","1.2.4","1.2.3","1.2.2","1.2.1","1.2.0","1.1.1","1.1.0","1.0.5","1.0.4","1.0.3","1.0.2","1.0.1","1.0.0");
+            .containsExactly("1.7.0","1.6.10","1.6.9","1.6.8","1.6.7","1.6.6","1.6.5","1.6.4","1.6.3","1.6.2","1.6.1","1.6.0","1.5.0","1.4.3","1.4.2","1.4.1","1.4.0","1.3.14","1.3.13","1.3.12","1.3.11","1.3.10","1.3.9","1.3.8","1.3.7","1.3.6","1.3.5","1.3.4","1.3.3","1.3.2","1.3.1","1.3.0","1.2.7","1.2.6","1.2.5","1.2.4","1.2.3","1.2.2","1.2.1","1.2.0","1.1.1","1.1.0","1.0.5","1.0.4","1.0.3","1.0.2","1.0.1","1.0.0");
     }
 }
