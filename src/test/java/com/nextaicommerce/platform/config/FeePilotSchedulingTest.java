@@ -57,4 +57,11 @@ class FeePilotSchedulingTest {
         runner().withPropertyValues(safe()).withPropertyValues("app.amazon.product-fees-marketplace-currency-fallback=guess").run(c->assertThat(c).hasFailed());
         runner().withPropertyValues(Arrays.stream(safe()).filter(v->!v.startsWith("app.amazon.product-fees-marketplace-currency-fallback=")).toArray(String[]::new)).run(c->assertThat(c).hasFailed());
     }
+    @Test void prospectiveModeRequiresExplicitEvidenceAndKeepsAllOtherGuards(){
+        runner().withPropertyValues(safe()).withPropertyValues("app.amazon.fee-pilot.publication-mode=ESTIMATES_AND_EVIDENCE","app.amazon.fee-evidence-enabled=true").run(c->assertThat(c).hasNotFailed());
+        runner().withPropertyValues(safe()).withPropertyValues("app.amazon.fee-pilot.publication-mode=ESTIMATES_AND_EVIDENCE").run(c->assertThat(c).hasFailed());
+        runner().withPropertyValues(safe()).withPropertyValues("app.amazon.fee-evidence-enabled=true").run(c->assertThat(c).hasFailed());
+        runner().withPropertyValues(safe()).withPropertyValues("app.amazon.fee-pilot.publication-mode=guess").run(c->assertThat(c).hasFailed());
+    }
+
 }

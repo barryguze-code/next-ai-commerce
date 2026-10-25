@@ -22,6 +22,7 @@ public class AmazonProductFeeJobs {
     private final JdbcTemplate jdbc;private final TransactionTemplate tx;private final ObjectMapper json;
     private final AmazonSyncStore store;private final long baseInterval;
     @Value("${app.amazon.product-fees-marketplace-currency-fallback:false}") private boolean currencyFallback;
+    @Value("${app.amazon.fee-pilot.publication-mode:ARCHIVE_ONLY}") private String publicationMode="ARCHIVE_ONLY";
     private com.nextaicommerce.platform.fees.AmazonFeeEvidence feeEvidence;
     @Autowired(required=false) void configureFeeEvidence(com.nextaicommerce.platform.fees.AmazonFeeEvidence evidence){feeEvidence=evidence;}
     record Target(String sku,BigDecimal price,String currency) {}
@@ -33,6 +34,10 @@ public class AmazonProductFeeJobs {
     }
     /** No enqueue: only an existing, operator-approved local job can acquire this lease. */
     AmazonSyncStore.Job claimPilot(UUID tenant,UUID connection,String market,UUID job,String approvedHash,String worker){
+        return claimPilot(tenant,connection,market,job,approvedHash,worker,"ARCHIVE_ONLY");
+    }
+    AmazonSyncStore.Job claimPilot(UUID tenant,UUID connection,String market,UUID job,String approvedHash,String worker,String configuredMode){
+        if(!publicationMode.equals(configuredMode))return null;
         if(approvedHash==null||!approvedHash.matches("[a-f0-9]{64}")||worker==null||worker.isBlank())return null;
         return tx.execute(status->{
             jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());
@@ -47,6 +52,7 @@ public class AmazonProductFeeJobs {
                 """,tenant,connection,job,market);
             if(rows.size()!=1)return null;var row=rows.getFirst();var cursor=json.readTree(row.get("cursor").toString());var contract=cursor.path("feeRun");
             if(!cursor.isObject()||!validRun(contract,tenant,connection,market,row.get("seller_identifier").toString())||!approvedHash.equals(digest(canonical(contract))))return null;
+            if(publishes(contract)&&!publicationReady())return null;
             Instant now=((Timestamp)row.get("db_now")).toInstant();Instant expiry=Instant.parse(contract.path("approvalExpiresAt").asText());
             if(!now.isBefore(expiry)||(cursor.has("pilotApprovalHash")&&!approvedHash.equals(cursor.path("pilotApprovalHash").asText())))return null;
             if(cursor.has("productFees")&&row.get("started_at")==null)return null;
@@ -110,6 +116,7 @@ public class AmazonProductFeeJobs {
             if(controlled){
                 var contract=cursor.path("feeRun");
                 if(!validRun(contract,job.tenantId(),job.connectionId(),job.marketplaceId(),data.get("seller_identifier").toString())){rejectRun(job,"FEE_RUN_INVALID");return absent;}
+                if(publishes(contract)&&!publicationReady()){rejectRun(job,"FEE_PUBLICATION_NOT_READY");return absent;}
                 if(cursor.has("pilotApprovalHash")&&!cursor.path("pilotApprovalHash").asText().equals(digest(canonical(contract)))){rejectRun(job,"FEE_RUN_STATE_INVALID");return absent;}
                 if(!fee.has("runContract")){
                     if(cursor.has("feeRunFrozen")||fee.path("http").asInt()!=0||fee.path("oauth").asInt()!=0||fee.has("pendingKind")){
@@ -141,10 +148,12 @@ public class AmazonProductFeeJobs {
         try{
             Set<String> keys=new HashSet<>();c.properties().forEach(e->keys.add(e.getKey()));
             if(!c.isObject()||!keys.equals(Set.of("format","approval","tenant","connection","marketplace","seller","skus","maxTargets","maxHttp","maxOauth","maxSeconds","basisSha256","approvalExpiresAt","publicationMode")))return false;
-            if(!"FEE_RUN_V1".equals(c.path("format").asText())||!tenant.toString().equals(c.path("tenant").asText())
+            if(!Set.of("FEE_RUN_V1","FEE_RUN_V2").contains(c.path("format").asText())||!tenant.toString().equals(c.path("tenant").asText())
                 ||!connection.toString().equals(c.path("connection").asText())||!marketplace.equals(c.path("marketplace").asText())
                 ||!seller.equals(c.path("seller").asText())||!c.path("basisSha256").asText().matches("[a-f0-9]{64}"))return false;
-            if(!"ARCHIVE_ONLY".equals(c.path("publicationMode").asText()))return false;
+            String mode=c.path("publicationMode").asText();
+            if(!Set.of("ARCHIVE_ONLY","ESTIMATES_AND_EVIDENCE").contains(mode)||!publicationMode.equals(mode))return false;
+            if(publishes(c)&&(!"FEE_RUN_V2".equals(c.path("format").asText())||c.path("maxTargets").asInt()>20||c.path("maxHttp").asInt()>1||c.path("maxSeconds").asInt()>300))return false;
             UUID.fromString(c.path("approval").asText());Instant.parse(c.path("approvalExpiresAt").asText());
             Map<String,Integer> ceilings=Map.of("maxTargets",1000,"maxHttp",HTTP_LIMIT,"maxOauth",OAUTH_LIMIT,"maxSeconds",(int)RUN_LIMIT.toSeconds());
             for(var e:ceilings.entrySet())if(!c.path(e.getKey()).isInt()||c.path(e.getKey()).asInt()<1||c.path(e.getKey()).asInt()>e.getValue())return false;
@@ -152,6 +161,35 @@ public class AmazonProductFeeJobs {
             Set<String> skus=new HashSet<>();for(var sku:c.path("skus"))if(!sku.isString()||sku.asText().isBlank()||sku.asText().codePointCount(0,sku.asText().length())>240||!skus.add(sku.asText()))return false;
             return true;
         }catch(RuntimeException error){return false;}
+    }
+    private static boolean publishes(JsonNode contract){return "ESTIMATES_AND_EVIDENCE".equals(contract.path("publicationMode").asText());}
+    private boolean publicationReady(){
+        if(feeEvidence==null||!feeEvidence.enabled())return false;
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT to_regclass('amazon_fee_observations') IS NOT NULL AND to_regclass('flyway_schema_history') IS NOT NULL",Boolean.class)))return false;
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT NOT role.rolsuper AND NOT role.rolbypassrls AND NOT role.rolinherit
+             AND NOT role.rolcreatedb AND NOT role.rolcreaterole AND NOT role.rolreplication
+             AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member=role.oid)
+             AND (SELECT count(*) FROM flyway_schema_history WHERE success AND version IN ('113','114'))=2
+             AND has_table_privilege(current_user,'amazon_fee_estimates','SELECT')
+             AND has_table_privilege(current_user,'amazon_fee_estimates','INSERT')
+             AND NOT has_table_privilege(current_user,'amazon_fee_estimates','UPDATE')
+             AND NOT has_table_privilege(current_user,'amazon_fee_estimates','DELETE')
+             AND has_table_privilege(current_user,'amazon_fee_observations','SELECT')
+             AND has_table_privilege(current_user,'amazon_fee_observations','INSERT')
+             AND NOT has_table_privilege(current_user,'amazon_fee_observations','UPDATE')
+             AND NOT has_table_privilege(current_user,'amazon_fee_observations','DELETE')
+             AND (SELECT count(*) FROM pg_class WHERE oid IN (to_regclass('amazon_fee_observations'),to_regclass('amazon_fee_estimates')) AND relowner<>role.oid AND relrowsecurity AND relforcerowsecurity)=2
+             AND NOT has_any_column_privilege(current_user,'amazon_source_documents','UPDATE')
+             AND NOT has_table_privilege(current_user,'amazon_source_documents','DELETE')
+             AND NOT EXISTS(SELECT 1 FROM unnest(ARRAY['amazon_inventory_snapshots','inventory_ledger_entries',
+                'marketplace_sku_mappings','marketplace_sku_mapping_components','amazon_orders','amazon_order_items',
+                'amazon_order_fee_charge_observations','amazon_fee_comparisons','amazon_fee_approvals']) blocked(name)
+                WHERE has_any_column_privilege(current_user,blocked.name,'INSERT')
+                   OR has_any_column_privilege(current_user,blocked.name,'UPDATE')
+                   OR has_table_privilege(current_user,blocked.name,'DELETE'))
+            FROM pg_roles role WHERE rolname=current_user
+            """,Boolean.class));
     }
     private static Instant runDeadline(Instant started,JsonNode contract){
         Instant cap=started.plusSeconds(contract.path("maxSeconds").asInt()),expiry=Instant.parse(contract.path("approvalExpiresAt").asText());
@@ -226,9 +264,10 @@ public class AmazonProductFeeJobs {
     private String batchSummary(Row r){
         int accepted=r.fee().path("acceptedCount").asInt(),unsupported=r.fee().path("unsupportedCount").asInt();
         int remaining=Math.max(0,r.fee().path("batchManifest").size()-r.fee().path("batchIndex").asInt());
-        return (r.fee().has("runContract")?"Archived fee quotes: ":"Saved fee quotes: ")+accepted+" passed validation; "+unsupported+" unsupported; "+remaining+" unresolved results. "
+        boolean archiveOnly=r.fee().has("runContract")&&!publishes(r.fee().path("runContract"));
+        return (archiveOnly?"Archived fee quotes: ":"Saved fee quotes: ")+accepted+" passed validation; "+unsupported+" unsupported; "+remaining+" unresolved results. "
             +"Comparable per-unit FBA fees: "+r.fee().path("fbaComparableCount").asInt()+" of "+accepted+". "
-            +"Quotes reused: "+r.fee().path("cacheHits").asInt()+"."+(r.fee().has("runContract")?" Estimates unchanged.":"");
+            +"Quotes reused: "+r.fee().path("cacheHits").asInt()+"."+(archiveOnly?" Estimates unchanged.":"");
     }
     public void stop(AmazonSyncStore.Job j,String reason){owned(j,r->{stop(r,reason);return true;},false);}
     private void defer(Row r,Instant until){
@@ -464,7 +503,8 @@ public class AmazonProductFeeJobs {
                 if(candidates.size()!=contract.path("skus").size()||!basisDigest(candidates).equals(contract.path("basisSha256").asText())){stop(r,"FEE_RUN_BASIS_CHANGED");return List.of();}
                 var frozen=r.fee().putArray("runManifest");for(var c:candidates)frozen.addObject().put("sku",c.path("sku").asText()).put("price",c.path("price").decimalValue()).put("currency",c.path("currency").asText());
             }
-            Set<String> cached=new HashSet<>(jdbc.queryForList(BATCH_CACHE_SQL,String.class,candidates.toString(),
+            // A controlled publication establishes a genuinely new receipt boundary, never a cached/archive replay.
+            Set<String> cached=publishes(r.fee().path("runContract"))?Set.of():new HashSet<>(jdbc.queryForList(BATCH_CACHE_SQL,String.class,candidates.toString(),
                 j.tenantId(),j.connectionId(),j.marketplaceId(),Timestamp.from(r.now().minus(CACHE_AGE)),Timestamp.from(r.now()),AmazonProductFeeBatch.CONTRACT));
             for(var candidate:candidates){
                 if(cached.contains(candidate.path("sku").asText()))r.fee().put("cacheHits",r.fee().path("cacheHits").asInt()+1);
@@ -500,8 +540,19 @@ public class AmazonProductFeeJobs {
         for(var terminal:result.rejected())if(!result.unresolved().contains(terminal.request())||!rejected.add(terminal.request()))return false;
         return expected.equals(observed);
     }
+    private boolean publicationResponseMatches(Row r,AmazonProductFeeBatch.Result result,AmazonSpApiClient.ApiResponse response){
+        if(r.fee().path("http").asInt()!=1||!r.fee().path("pendingKind").asText().isEmpty()||response.status()!=200)return false;
+        var requests=new ArrayList<AmazonProductFeeBatch.Request>();result.accepted().forEach(a->requests.add(a.request()));requests.addAll(result.unresolved());
+        for(var request:requests){String prefix=r.job().id()+":";if(!request.identifier().startsWith(prefix))return false;
+            try{UUID.fromString(request.identifier().substring(prefix.length()));}catch(RuntimeException bad){return false;}}
+        return true;
+    }
     void publishBatch(AmazonSyncStore.Job j,List<Target> targets,AmazonProductFeeBatch.Result result,AmazonSpApiClient.ApiResponse response){owned(j,r->{
         if(!matchesPendingBatch(r,targets,result)){stop(r,"FEE_RESPONSE_STATE_INVALID");return false;}
+        boolean publication=publishes(r.fee().path("runContract"));
+        if(publication&&!publicationResponseMatches(r,result,response)){
+            archive(r,"batch:"+r.fee().path("batchIndex").asInt(),response.body(),response.requestId(),false,0);stop(r,"FEE_PUBLICATION_RESPONSE_INVALID");return false;
+        }
         observe(r,response.rateLimit());
         for(var accepted:result.accepted()){
             var t=accepted.request().target();
@@ -509,8 +560,8 @@ public class AmazonProductFeeJobs {
             if(current.size()!=1){archive(r,"batch:"+r.fee().path("batchIndex").asInt(),response.body(),response.requestId(),false,0);stop(r,"FEE_BASIS_CHANGED");return false;}
         }
         UUID source=archive(r,"batch:"+r.fee().path("batchIndex").asInt(),response.body(),response.requestId(),!result.accepted().isEmpty(),result.accepted().size());
-        // The initial controlled pilot is archive-only. Legacy publication remains unchanged.
-        if(!r.fee().has("runContract"))for(var accepted:result.accepted()){
+        // Publication is explicit and frozen. V1/archive pilots never acquire financial writes.
+        if(!r.fee().has("runContract")||publishes(r.fee().path("runContract")))for(var accepted:result.accepted()){
             var t=accepted.request().target();
             ObjectNode raw=(ObjectNode)accepted.result().deepCopy();raw.set("_platformQuoteBasis",accepted.request().basis());raw.put("_platformFeeContract",AmazonProductFeeBatch.CONTRACT);
             String key=digest(raw.toString());

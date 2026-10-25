@@ -15,13 +15,13 @@ class AmazonFeePilotRunnerTest {
     AmazonSyncStore.Job job(){return new AmazonSyncStore.Job(id,tenant,UUID.randomUUID(),connection,"FEES_SNAPSHOT","FBA_FEES",market,Instant.now(),Instant.now(),null,0,0,false,null,"pilot");}
     @Test void constructionDoesNotEnqueueOrDispatch(){runner();verifyNoInteractions(jobs,sync);}
     @Test void exactClaimAndDispatchBothRequireTheApprovedContract(){
-        var job=job();when(jobs.claimPilot(eq(tenant),eq(connection),eq(market),eq(id),eq(hash),anyString())).thenReturn(job);
+        var job=job();when(jobs.claimPilot(eq(tenant),eq(connection),eq(market),eq(id),eq(hash),anyString(),eq("ARCHIVE_ONLY"))).thenReturn(job);
         runner().tick();verifyNoInteractions(sync);
         when(jobs.matchesPilot(job,hash)).thenReturn(true);runner().tick();verify(sync).processPage(job);
     }
     @Test void missingGrantOrClaimFailureNeverUsesAGenericFallback(){
         runner().tick();verifyNoInteractions(sync);
-        when(jobs.claimPilot(any(),any(),anyString(),any(),anyString(),anyString())).thenThrow(new IllegalStateException("synthetic"));
+        when(jobs.claimPilot(any(),any(),anyString(),any(),anyString(),anyString(),eq("ARCHIVE_ONLY"))).thenThrow(new IllegalStateException("synthetic"));
         runner().tick();verifyNoInteractions(sync);
     }
     @Test void missingIdentityOrSelectiveModeFailsBeforeAnyWork(){

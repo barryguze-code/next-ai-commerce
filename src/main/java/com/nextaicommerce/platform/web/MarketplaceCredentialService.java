@@ -44,7 +44,13 @@ public class MarketplaceCredentialService {
         this.encryptionKey = decodeKey(encodedKey);
     }
 
+    /** Operator credential reader: no connection validation, persistence or enqueue capability. */
+    public static MarketplaceCredentialService readOnly(WorkspaceAccessRepository repository, String encodedKey) {
+        return new MarketplaceCredentialService(repository, null, encodedKey);
+    }
+
     public void connect(UUID tenantId, UUID connectionId, Map<String, String> form) {
+        if (initializationService == null) throw new IllegalStateException("Connection changes are unavailable in the credential reader.");
         var connection = repository.findConnection(tenantId, connectionId);
         Map<String, String> credentials = credentialsFor(connection.channel(), form);
         validate(connection.channel(), connection.marketplaceId(), credentials);

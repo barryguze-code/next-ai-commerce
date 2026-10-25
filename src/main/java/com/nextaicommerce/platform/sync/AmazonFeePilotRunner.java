@@ -15,6 +15,7 @@ public class AmazonFeePilotRunner {
     private static final Logger log=LoggerFactory.getLogger(AmazonFeePilotRunner.class);
     private final AmazonProductFeeJobs jobs;private final AmazonProductFeeSync sync;
     private final UUID tenant,connection,job;private final String marketplace,contractHash;
+    @Value("${app.amazon.fee-pilot.publication-mode:ARCHIVE_ONLY}") private String publicationMode="ARCHIVE_ONLY";
     private final String worker="fee-pilot-"+UUID.randomUUID();
     public AmazonFeePilotRunner(AmazonProductFeeJobs jobs,AmazonProductFeeSync sync,
             @Value("${app.amazon.fee-pilot.only-scheduling:false}") boolean selective,
@@ -31,7 +32,7 @@ public class AmazonFeePilotRunner {
     @Scheduled(fixedDelayString="${app.amazon.fee-pilot.delay-ms:5000}",initialDelay=5000)
     public void tick(){
         try{
-            var claimed=jobs.claimPilot(tenant,connection,marketplace,job,contractHash,worker);
+            var claimed=jobs.claimPilot(tenant,connection,marketplace,job,contractHash,worker,publicationMode);
             if(claimed!=null&&jobs.matchesPilot(claimed,contractHash))sync.processPage(claimed);
         }catch(RuntimeException error){
             // Existing lease/budget state survives a worker failure; no generic retry or enqueue.

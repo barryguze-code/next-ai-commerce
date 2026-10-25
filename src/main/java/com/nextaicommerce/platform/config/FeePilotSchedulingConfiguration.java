@@ -43,7 +43,12 @@ public class FeePilotSchedulingConfiguration {
     static ScheduledAnnotationBeanPostProcessor feePilotScheduling(Environment environment,ConfigurableListableBeanFactory beans){
         if(!environment.acceptsProfiles(Profiles.of("local"))||environment.getActiveProfiles().length!=1)
             throw new IllegalStateException("Fee pilot requires the sole local profile");
-        REQUIRED.forEach((key,value)->{if(!value.equals(environment.getProperty(key)))throw new IllegalStateException("Fee pilot requires explicit guard: "+key);});
+        String mode=environment.getProperty("app.amazon.fee-pilot.publication-mode","ARCHIVE_ONLY");
+        if(!java.util.Set.of("ARCHIVE_ONLY","ESTIMATES_AND_EVIDENCE").contains(mode))throw new IllegalStateException("Fee pilot publication mode is invalid");
+        REQUIRED.forEach((key,value)->{
+            String expected=key.equals("app.amazon.fee-evidence-enabled")&&mode.equals("ESTIMATES_AND_EVIDENCE")?"true":value;
+            if(!expected.equals(environment.getProperty(key)))throw new IllegalStateException("Fee pilot requires explicit guard: "+key);
+        });
         String fallback=environment.getProperty("app.amazon.product-fees-marketplace-currency-fallback");
         if(!"true".equals(fallback)&&!"false".equals(fallback))throw new IllegalStateException("Fee pilot requires explicit currency fallback policy");
         return new ScheduledAnnotationBeanPostProcessor(){

@@ -14,7 +14,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 class AmazonProductFeeJobsDatabaseTest {
-    static String schema;static JdbcTemplate jdbc;static TransactionTemplate tx;
+    static String schema;static JdbcTemplate jdbc;static TransactionTemplate tx;static String publicationRole;
     static io.zonky.test.db.postgres.embedded.EmbeddedPostgres embedded;
     final ObjectMapper json=new ObjectMapper();UUID tenant,connection,run,id;AmazonSyncStore store;AmazonProductFeeJobs jobs;AmazonSyncStore.Job job;
     static final String MARKET="ATVPDKIKX0DER",SKU="00001 / Exact";
@@ -25,8 +25,15 @@ class AmazonProductFeeJobsDatabaseTest {
         var ds=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);
         org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
         jdbc=new JdbcTemplate(ds);tx=new TransactionTemplate(new DataSourceTransactionManager(ds));
+        publicationRole=schema+"_pub";jdbc.execute("CREATE ROLE "+publicationRole+" NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT");
+        jdbc.execute("GRANT USAGE ON SCHEMA "+schema+" TO "+publicationRole);
+        jdbc.execute("GRANT SELECT ON tenants,marketplace_connections,marketplace_definitions,marketplace_sync_jobs,marketplace_sync_runs,amazon_listings,amazon_variation_classifications,amazon_fee_estimates,amazon_fee_observations,amazon_source_documents,flyway_schema_history TO "+publicationRole);
+        jdbc.execute("GRANT SELECT(tenant_id,sync_job_id,created_at) ON amazon_report_requests TO "+publicationRole);
+        jdbc.execute("GRANT INSERT ON amazon_source_documents,amazon_fee_estimates,amazon_fee_observations TO "+publicationRole);
+        jdbc.execute("GRANT UPDATE ON marketplace_sync_jobs,marketplace_sync_runs TO "+publicationRole);
+        jdbc.execute("GRANT UPDATE(updated_at) ON marketplace_connections,amazon_listings TO "+publicationRole);
     }
-    @AfterAll static void cleanup()throws Exception{if(jdbc!=null&&schema.matches("fee_jobs_[a-f0-9]{32}"))jdbc.execute("DROP SCHEMA "+schema+" CASCADE");if(embedded!=null)embedded.close();}
+    @AfterAll static void cleanup()throws Exception{if(jdbc!=null&&schema.matches("fee_jobs_[a-f0-9]{32}")){jdbc.execute("DROP SCHEMA "+schema+" CASCADE");jdbc.execute("DROP ROLE "+publicationRole);}if(embedded!=null)embedded.close();}
     @BeforeEach void fixture(){
         jdbc.execute("TRUNCATE "+schema+".tenants CASCADE");tenant=UUID.randomUUID();connection=UUID.randomUUID();run=UUID.randomUUID();id=UUID.randomUUID();
         jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,'Synthetic')",tenant,tenant.toString());
@@ -307,9 +314,10 @@ class AmazonProductFeeJobsDatabaseTest {
     BatchFixture batchResponse(List<AmazonProductFeeJobs.Target> targets,String promotionSku,String missingSku){
         var requests=new ArrayList<AmazonProductFeeBatch.Request>();var envelope=json.createArrayNode();
         for(var target:targets){
-            var basis=jobs.basis(job,target);String correlation="fixture-"+target.sku();requests.add(new AmazonProductFeeBatch.Request(target,basis,correlation));
+            var basis=jobs.basis(job,target);String correlation=id+":"+UUID.randomUUID();requests.add(new AmazonProductFeeBatch.Request(target,basis,correlation));
             var raw=(ObjectNode)response().json().path("payload").path("FeesEstimateResult").deepCopy();
             var identifier=(ObjectNode)raw.path("FeesEstimateIdentifier");identifier.put("IdValue",target.sku()).put("SellerId",connection.toString()).put("SellerInputIdentifier",correlation).put("IsAmazonFulfilled",true);identifier.set("PriceToEstimateFees",basis.path("PriceToEstimateFees"));
+            ((ObjectNode)raw.path("FeesEstimate")).put("TimeOfFeesEstimation",Instant.now().toString());
             for(var f:raw.path("FeesEstimate").path("FeeDetailList"))((ObjectNode)f).set("FinalFee",f.path("FeeAmount").deepCopy());
             if(target.sku().equals(missingSku))continue; // A missing sibling can retry within its existing budget.
             if(target.sku().equals(promotionSku)){
@@ -418,6 +426,163 @@ class AmazonProductFeeJobsDatabaseTest {
         assertThat(reader.listCurrentSyncStatuses(tenant)).singleElement().satisfies(view->assertThat(view.status()).isEqualTo("ENRICHING"));
         jdbc.update("INSERT INTO marketplace_sync_jobs(tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,status,required_for_ready) VALUES (?,?,?,'FINAL_RECONCILIATION',3,'COMPLETED',true)",tenant,run,connection);
         assertThat(reader.listCurrentSyncStatuses(tenant)).singleElement().satisfies(view->{assertThat(view.status()).isEqualTo("COMPLETED");assertThat(view.message()).isEqualTo("Amazon data is ready");});
+    }
+    ObjectNode publicationContract(boolean second){
+        var c=pilot().put("format","FEE_RUN_V2").put("publicationMode","ESTIMATES_AND_EVIDENCE").put("maxHttp",1);
+        if(second){((tools.jackson.databind.node.ArrayNode)c.path("skus")).add("SECOND");var digest=json.createArrayNode();for(String sku:List.of(SKU,"SECOND"))digest.addArray().add(sku).add("30").add("USD").add("FBA").add("0");c.put("basisSha256",com.nextaicommerce.platform.fees.AmazonFeeEvidence.digest(digest.toString()));}
+        pilot(c);return c;
+    }
+    void restrictedPublisher(boolean enabled){
+        var original=jdbc.getDataSource();var scoped=new org.springframework.jdbc.datasource.AbstractDataSource(){
+            private java.sql.Connection scoped(java.sql.Connection c)throws java.sql.SQLException{try(var statement=c.createStatement()){statement.execute("SET ROLE "+publicationRole);}return c;}
+            public java.sql.Connection getConnection()throws java.sql.SQLException{return scoped(original.getConnection());}
+            public java.sql.Connection getConnection(String user,String password)throws java.sql.SQLException{return scoped(original.getConnection(user,password));}
+        };
+        var db=new JdbcTemplate(scoped);var transaction=new TransactionTemplate(new DataSourceTransactionManager(scoped));jobs=new AmazonProductFeeJobs(db,transaction,json,new AmazonSyncStore(db,transaction),0.5);
+        org.springframework.test.util.ReflectionTestUtils.setField(jobs,"publicationMode","ESTIMATES_AND_EVIDENCE");jobs.configureFeeEvidence(new com.nextaicommerce.platform.fees.AmazonFeeEvidence(db,json,enabled));
+    }
+    BatchFixture withComparableFba(BatchFixture f){
+        for(var accepted:f.verified().accepted())for(var node:accepted.result().path("FeesEstimate").path("FeeDetailList"))if("FBAFees".equals(node.path("FeeType").asText())){
+            var child=((ObjectNode)node).putArray("IncludedFeeDetailList").addObject().put("FeeType","FBAPerUnitFulfillmentFee");child.set("FeeAmount",node.path("FeeAmount").deepCopy());child.set("FinalFee",node.path("FinalFee").deepCopy());
+        }
+        var requests=new ArrayList<AmazonProductFeeBatch.Request>();f.verified().accepted().forEach(a->requests.add(a.request()));requests.addAll(f.verified().unresolved());
+        var body=f.response().json();return new BatchFixture(f.targets(),AmazonProductFeeBatch.verify(requests,body),new AmazonSpApiClient.ApiResponse(200,"synthetic-publication",body,body.toString()));
+    }
+    @Test void controlledPublicationWritesOnlySupportedNewQuotesUnderNonBypassRole(){
+        publicationContract(true);restrictedPublisher(true);var f=withComparableFba(partialBatch(true));
+        var before=jdbc.queryForObject("SELECT clock_timestamp()",java.sql.Timestamp.class);assertThat(jobs.reserve(job,SKU,"FEE")).isTrue();jobs.received(job);jobs.publishBatch(job,f.targets(),f.verified(),f.response());
+        assertThat(count("amazon_fee_estimates")).isOne();assertThat(count("amazon_fee_observations")).isEqualTo(2);assertThat(count("amazon_source_documents")).isOne();
+        for(String sequence:List.of("amazon_order_fee_charge_observations_observation_seq_seq","amazon_fee_comparisons_revision_seq_seq"))assertThat(jdbc.queryForObject("SELECT has_sequence_privilege(?, ?, 'USAGE')",Boolean.class,publicationRole,schema+"."+sequence)).as("unrelated sequence "+sequence).isFalse();
+        var scopedDb=(JdbcTemplate)org.springframework.test.util.ReflectionTestUtils.getField(jobs,"jdbc");var scopedTx=(TransactionTemplate)org.springframework.test.util.ReflectionTestUtils.getField(jobs,"tx");
+        scopedTx.executeWithoutResult(x->{scopedDb.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,UUID.randomUUID().toString());assertThat(scopedDb.queryForObject("SELECT count(*) FROM amazon_fee_observations",Integer.class)).isZero();});
+        scopedTx.executeWithoutResult(x->{scopedDb.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());assertThat(scopedDb.queryForObject("SELECT count(*) FROM amazon_fee_observations WHERE marketplace_connection_id=?",Integer.class,UUID.randomUUID())).isZero();});
+        assertThat(jdbc.queryForObject("SELECT min(boundary_at)>=? FROM amazon_fee_observations",Boolean.class,before)).isTrue();
+        for(String table:List.of("amazon_order_fee_charge_observations","amazon_fee_comparisons","amazon_fee_approvals","amazon_inventory_snapshots","inventory_ledger_entries"))assertThat(count(table)).as(table).isZero();
+        resumed();assertThat(jobs.batchNext(job)).isEmpty();assertThat(jdbc.queryForObject("SELECT user_message FROM marketplace_sync_runs WHERE id=?",String.class,run)).contains("Saved fee quotes: 1 passed validation; 1 unsupported").doesNotContain("Estimates unchanged");
+        assertThat(jdbc.queryForObject("SELECT has_table_privilege(?, 'amazon_fee_approvals', 'INSERT') OR has_table_privilege(?, 'amazon_fee_comparisons', 'INSERT') OR has_table_privilege(?, 'amazon_order_fee_charge_observations', 'INSERT')",Boolean.class,publicationRole,publicationRole,publicationRole)).isFalse();
+    }
+    @Test void disabledEvidenceMissingRightsAndPrivilegedRuntimeCannotDispatchPublication(){
+        publicationContract(false);restrictedPublisher(false);assertThat(jobs.batchNext(job)).isEmpty();assertThat(reason()).isEqualTo("FEE_PUBLICATION_NOT_READY");assertThat(count("amazon_source_documents")).isZero();
+        fixture();publicationContract(false);restrictedPublisher(true);jdbc.execute("REVOKE INSERT ON amazon_fee_observations FROM "+publicationRole);
+        try{assertThat(jobs.batchNext(job)).isEmpty();assertThat(reason()).isEqualTo("FEE_PUBLICATION_NOT_READY");}finally{jdbc.execute("GRANT INSERT ON amazon_fee_observations TO "+publicationRole);}
+        fixture();publicationContract(false);org.springframework.test.util.ReflectionTestUtils.setField(jobs,"publicationMode","ESTIMATES_AND_EVIDENCE");jobs.configureFeeEvidence(new com.nextaicommerce.platform.fees.AmazonFeeEvidence(jdbc,json,true));
+        assertThat(jobs.batchNext(job)).isEmpty();assertThat(reason()).isEqualTo("FEE_PUBLICATION_NOT_READY");
+    }
+    @Test void publicationCannotWidenV1OrUseWrongModeOrMoreThanOneBatch(){
+        for(String bad:List.of("v1","mode","targets","http","seconds")){
+            fixture();var c=publicationContract(false);restrictedPublisher(true);
+            switch(bad){case "v1"->c.put("format","FEE_RUN_V1");case "mode"->c.put("publicationMode","ARCHIVE_ONLY");case "targets"->c.put("maxTargets",21);case "http"->c.put("maxHttp",2);case "seconds"->c.put("maxSeconds",301);}
+            pilot(c);assertThat(jobs.batchNext(job)).as(bad).isEmpty();assertThat(reason()).as(bad).isEqualTo("FEE_RUN_INVALID");assertThat(count("amazon_source_documents")).isZero();
+        }
+    }
+    @Test void observationFailureRollsBackArchiveEstimateProgressAndManifest(){
+        publicationContract(true);restrictedPublisher(true);var f=withComparableFba(partialBatch(true));assertThat(jobs.reserve(job,SKU,"FEE")).isTrue();jobs.received(job);var before=fee().toString();
+        jdbc.execute("CREATE FUNCTION "+schema+".reject_quote_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture observation failure'; END $$");jdbc.execute("CREATE TRIGGER reject_quote_fixture BEFORE INSERT ON amazon_fee_observations FOR EACH ROW EXECUTE FUNCTION "+schema+".reject_quote_fixture()");
+        try{assertThatThrownBy(()->jobs.publishBatch(job,f.targets(),f.verified(),f.response())).isInstanceOf(RuntimeException.class);assertThat(fee().toString()).isEqualTo(before);for(String table:List.of("amazon_source_documents","amazon_fee_estimates","amazon_fee_observations"))assertThat(count(table)).as(table).isZero();assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isZero();}
+        finally{jdbc.execute("DROP TRIGGER reject_quote_fixture ON amazon_fee_observations");jdbc.execute("DROP FUNCTION "+schema+".reject_quote_fixture()");}
+    }
+    @Test void controlledPublicationBypassesCompatibleCacheWithoutBackdatingItsBoundary(){
+        publicationContract(false);var basis=json.createObjectNode().put("MarketplaceId",MARKET).put("IsAmazonFulfilled",true).put("_platformSellerId",connection.toString()).put("_platformShippingApproved",true);
+        var prices=basis.putObject("PriceToEstimateFees");prices.putObject("ListingPrice").put("CurrencyCode","USD").put("Amount",30);prices.putObject("Shipping").put("CurrencyCode","USD").put("Amount",0);
+        var raw=(ObjectNode)response().json().path("payload").path("FeesEstimateResult").deepCopy();((ObjectNode)raw.path("FeesEstimateIdentifier")).put("SellerId",connection.toString());raw.set("_platformQuoteBasis",basis);raw.put("_platformFeeContract",AmazonProductFeeBatch.CONTRACT);
+        UUID source=UUID.randomUUID();jdbc.update("INSERT INTO amazon_source_documents(id,tenant_id,marketplace_connection_id,source_type,source_key,sha256,payload,received_at) VALUES (?,?,?,'FEES_SNAPSHOT','old-cache',?,'{}',now()-interval '1 hour')",source,tenant,connection,source.toString());
+        jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,currency,estimated_fee_total,referral_fee,fulfillment_fee,effective_at,raw_payload,source_document_id) VALUES (?,?,?,?,'USD',8,3,5,now()-interval '1 hour',CAST(? AS jsonb),?)",tenant,connection,MARKET,SKU,raw.toString(),source);
+        var prior=jdbc.queryForMap("SELECT * FROM amazon_fee_estimates");var candidate=json.createArrayNode();candidate.addObject().put("sku",SKU).put("currency","USD").set("basis",basis);
+        assertThat(jdbc.queryForList(AmazonProductFeeJobs.BATCH_CACHE_SQL,String.class,candidate.toString(),tenant,connection,MARKET,java.sql.Timestamp.from(Instant.now().minusSeconds(86400)),java.sql.Timestamp.from(Instant.now()),AmazonProductFeeBatch.CONTRACT)).containsExactly(SKU);
+        restrictedPublisher(true);var targets=jobs.batchNext(job);assertThat(targets).hasSize(1);assertThat(fee().path("cacheHits").asInt()).isZero();var f=withComparableFba(batchResponse(targets,null,null));
+        var before=jdbc.queryForObject("SELECT clock_timestamp()",java.sql.Timestamp.class);assertThat(jobs.reserve(job,SKU,"FEE")).isTrue();jobs.received(job);jobs.publishBatch(job,targets,f.verified(),f.response());
+        assertThat(count("amazon_fee_estimates")).isEqualTo(2);assertThat(count("amazon_fee_observations")).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT min(boundary_at)>=? FROM amazon_fee_observations",Boolean.class,before)).isTrue();assertThat(jdbc.queryForMap("SELECT * FROM amazon_fee_estimates WHERE source_document_id=?",source)).isEqualTo(prior);
+    }
+    @Test void publicationHasAnAbsoluteTwentyEstimateFortyObservationCeiling(){
+        var c=publicationContract(false);var names=(tools.jackson.databind.node.ArrayNode)c.path("skus");var digest=json.createArrayNode();digest.addArray().add(SKU).add("30").add("USD").add("FBA").add("0");
+        for(int n=1;n<=19;n++){String sku="TWENTY-"+String.format("%02d",n);names.add(sku);digest.addArray().add(sku).add("30").add("USD").add("FBA").add("0");jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,price,currency,fulfillment_channel,listing_status) VALUES (?,?,?,?,30,'USD','AFN','ACTIVE')",tenant,connection,MARKET,sku);}
+        c.put("basisSha256",com.nextaicommerce.platform.fees.AmazonFeeEvidence.digest(digest.toString()));pilot(c);restrictedPublisher(true);var targets=jobs.batchNext(job);var f=withComparableFba(batchResponse(targets,null,null));assertThat(targets).hasSize(20);
+        assertThat(jobs.reserve(job,SKU,"FEE")).isTrue();jobs.received(job);jobs.publishBatch(job,targets,f.verified(),f.response());jobs.publishBatch(job,targets,f.verified(),f.response());
+        assertThat(count("amazon_fee_estimates")).isEqualTo(20);assertThat(count("amazon_fee_observations")).isEqualTo(40);assertThat(count("amazon_source_documents")).isOne();assertThat(jdbc.queryForObject("SELECT records_processed FROM marketplace_sync_jobs WHERE id=?",Long.class,id)).isEqualTo(20);
+        resumed();assertThat(jobs.batchNext(job)).isEmpty();assertThat(status()).isEqualTo("COMPLETED");
+    }
+    @Test void amazonEstimationTimeCannotBackdateNewResponseReceiptBoundary(){
+        publicationContract(false);restrictedPublisher(true);var targets=jobs.batchNext(job);var f=withComparableFba(batchResponse(targets,null,null));
+        ((ObjectNode)f.verified().accepted().getFirst().result().path("FeesEstimate")).put("TimeOfFeesEstimation","2000-01-01T00:00:00Z");
+        var before=jdbc.queryForObject("SELECT clock_timestamp()",java.sql.Timestamp.class);assertThat(jobs.reserve(job,SKU,"FEE")).isTrue();jobs.received(job);
+        jobs.publishBatch(job,targets,f.verified(),new AmazonSpApiClient.ApiResponse(200,"synthetic-time",f.response().json(),f.response().json().toString()));
+        assertThat(count("amazon_fee_estimates")).isOne();assertThat(count("amazon_fee_observations")).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT min(boundary_at)>=? AND min(observed_at)>=? FROM amazon_fee_observations",Boolean.class,before,before)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT text_payload FROM amazon_source_documents",String.class)).contains("2000-01-01T00:00:00Z");
+    }
+    @Test void publicationRequiresItsOwnDurableRequestAndCannotReplayAnotherJobArchive(){
+        publicationContract(false);restrictedPublisher(true);var targets=jobs.batchNext(job);var f=withComparableFba(batchResponse(targets,null,null));jobs.publishBatch(job,targets,f.verified(),f.response());
+        assertThat(reason()).isEqualTo("FEE_PUBLICATION_RESPONSE_INVALID");assertThat(count("amazon_fee_estimates")).isZero();assertThat(count("amazon_fee_observations")).isZero();
+        fixture();publicationContract(false);restrictedPublisher(true);targets=jobs.batchNext(job);f=withComparableFba(batchResponse(targets,null,null));var accepted=f.verified().accepted().getFirst();String old=UUID.randomUUID()+":"+UUID.randomUUID();((ObjectNode)accepted.result().path("FeesEstimateIdentifier")).put("SellerInputIdentifier",old);
+        var request=new AmazonProductFeeBatch.Request(accepted.request().target(),accepted.request().basis(),old);var checked=AmazonProductFeeBatch.verify(List.of(request),f.response().json());
+        assertThat(jobs.reserve(job,SKU,"FEE")).isTrue();jobs.received(job);jobs.publishBatch(job,targets,checked,new AmazonSpApiClient.ApiResponse(200,"synthetic-replay",f.response().json(),f.response().json().toString()));
+        assertThat(reason()).isEqualTo("FEE_PUBLICATION_RESPONSE_INVALID");assertThat(count("amazon_fee_estimates")).isZero();assertThat(count("amazon_fee_observations")).isZero();
+    }
+    @Test void publicationClaimRequiresTheSameExplicitConfiguredModeAndFrozenContract(){
+        var c=publicationContract(false);restrictedPublisher(true);jdbc.update("UPDATE marketplace_sync_jobs SET status='QUEUED',lease_owner=NULL,lease_expires_at=NULL,attempt_count=0 WHERE id=?",id);String hash=jobs.pilotContractHash(c);
+        assertThat(jobs.claimPilot(tenant,connection,MARKET,id,hash,"publication")).isNull();
+        var claimed=jobs.claimPilot(tenant,connection,MARKET,id,hash,"publication","ESTIMATES_AND_EVIDENCE");assertThat(claimed).isNotNull();assertThat(jobs.matchesPilot(claimed,hash)).isTrue();assertThat(jobs.batchNext(claimed)).hasSize(1);
+        pilot(c.put("publicationMode","ARCHIVE_ONLY"));assertThat(jobs.batchNext(claimed)).isEmpty();assertThat(reason()).isEqualTo("FEE_RUN_INVALID");assertThat(count("amazon_source_documents")).isZero();
+    }
+    @Test void unrelatedDmlOrInheritedMembershipBlocksPublicationBeforeAnyRequest(){
+        publicationContract(false);restrictedPublisher(true);jdbc.execute("GRANT UPDATE(quantity_ordered) ON amazon_order_items TO "+publicationRole);
+        try{assertThat(jobs.batchNext(job)).isEmpty();assertThat(reason()).isEqualTo("FEE_PUBLICATION_NOT_READY");assertThat(count("amazon_source_documents")).isZero();}finally{jdbc.execute("REVOKE UPDATE(quantity_ordered) ON amazon_order_items FROM "+publicationRole);}
+        fixture();publicationContract(false);restrictedPublisher(true);String broader=publicationRole+"_group";jdbc.execute("CREATE ROLE "+broader+" NOLOGIN");jdbc.execute("GRANT "+broader+" TO "+publicationRole);
+        try{assertThat(jobs.batchNext(job)).isEmpty();assertThat(reason()).isEqualTo("FEE_PUBLICATION_NOT_READY");assertThat(count("amazon_source_documents")).isZero();}finally{jdbc.execute("REVOKE "+broader+" FROM "+publicationRole);jdbc.execute("DROP ROLE "+broader);}
+    }
+    AmazonFeeOperator.Grant operatorGrant(ObjectNode contract){
+        var identity=jdbc.queryForMap("SELECT current_database() db,inet_server_addr()::text address,inet_server_port() port,(SELECT oid::bigint FROM pg_database WHERE datname=current_database()) oid");
+        var original=java.net.URI.create(((DriverManagerDataSource)jdbc.getDataSource()).getUrl().substring(5));
+        String url="jdbc:postgresql://"+original.getHost()+":"+original.getPort()+original.getPath()+"?currentSchema="+schema;
+        return new AmazonFeeOperator.Grant("FEE_OPERATOR_V1",url,identity.get("db").toString(),schema,identity.get("address").toString(),((Number)identity.get("port")).intValue(),((Number)identity.get("oid")).longValue(),publicationRole,tenant,connection,MARKET,id,jobs.pilotContractHash(contract),contract.path("publicationMode").asText(),Instant.parse(contract.path("approvalExpiresAt").asText()),false);
+    }
+    void queueOperator(){jdbc.update("UPDATE marketplace_sync_jobs SET status='QUEUED',lease_owner=NULL,lease_expires_at=NULL,attempt_count=0 WHERE id=?",id);}
+    AmazonFeeOperator.Result operate(AmazonFeeOperator.Grant grant,AmazonProductFeeSync sync)throws Exception{
+        var db=(JdbcTemplate)org.springframework.test.util.ReflectionTestUtils.getField(jobs,"jdbc");var transaction=(TransactionTemplate)org.springframework.test.util.ReflectionTestUtils.getField(jobs,"tx");
+        return AmazonFeeOperator.execute(grant,db,transaction,jobs,sync,()->{jdbc.update("UPDATE marketplace_sync_jobs SET available_at=clock_timestamp()-interval '1 second' WHERE id=?",id);});
+    }
+    @org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"ARCHIVE_ONLY","ESTIMATES_AND_EVIDENCE"})
+    void foregroundOperatorUsesActualRestrictedClaimAndSyncForBothModes(String mode)throws Exception{
+        var c=publicationContract(false).put("publicationMode",mode);pilot(c);restrictedPublisher(true);org.springframework.test.util.ReflectionTestUtils.setField(jobs,"publicationMode",mode);var g=operatorGrant(c);queueOperator();
+        var api=mock(AmazonSpApiClient.class);
+        when(api.quoteProductFees(eq(tenant),eq(connection),anyString(),any())).thenAnswer(call->{
+            var permit=(AmazonSpApiClient.FeePermit)call.getArgument(3);assertThat(permit.getAsBoolean()).isTrue();permit.completed();
+            var request=json.readTree((String)call.getArgument(2)).get(0).path("FeesEstimateRequest");
+            var item=(ObjectNode)response().json().path("payload").path("FeesEstimateResult").deepCopy();
+            var identifier=(ObjectNode)item.path("FeesEstimateIdentifier");identifier.put("SellerId",connection.toString()).put("IsAmazonFulfilled",true).put("SellerInputIdentifier",request.path("Identifier").asText());identifier.set("PriceToEstimateFees",request.path("PriceToEstimateFees"));
+            for(var f:item.path("FeesEstimate").path("FeeDetailList")){((ObjectNode)f).set("FinalFee",f.path("FeeAmount").deepCopy());if("FBAFees".equals(f.path("FeeType").asText())){
+                var child=((ObjectNode)f).putArray("IncludedFeeDetailList").addObject().put("FeeType","FBAPerUnitFulfillmentFee");child.set("FeeAmount",f.path("FeeAmount").deepCopy());child.set("FinalFee",f.path("FinalFee").deepCopy());}}
+            var envelope=json.createArrayNode().add(item);return new AmazonSpApiClient.ApiResponse(200,"synthetic-operator",envelope,envelope.toString());
+        });
+        var sync=new AmazonProductFeeSync(api,jobs,true);org.springframework.test.util.ReflectionTestUtils.setField(sync,"batchEnabled",true);
+        assertThat(operate(g,sync)).as("reason=%s",reason()).isEqualTo(AmazonFeeOperator.Result.COMPLETED);verify(api,times(1)).quoteProductFees(eq(tenant),eq(connection),anyString(),any());
+        assertThat(count("amazon_fee_estimates")).isEqualTo(mode.equals("ARCHIVE_ONLY")?0:1);assertThat(count("amazon_fee_observations")).isEqualTo(mode.equals("ARCHIVE_ONLY")?0:2);assertThat(count("amazon_inventory_snapshots")).isZero();
+        assertThat(count("amazon_orders")).isZero();assertThat(count("amazon_fee_comparisons")).isZero();
+    }
+    @Test void foregroundOperatorMissingScopeHashModeJobAndCancellationNeverDispatch()throws Exception{
+        var c=publicationContract(false);restrictedPublisher(true);var g=operatorGrant(c);queueOperator();var sync=mock(AmazonProductFeeSync.class);
+        for(String key:List.of("tenant","connection","marketplace","job","contractSha256","publicationMode")){
+            var value=(ObjectNode)json.valueToTree(g);value.put(key,switch(key){case "marketplace"->"OTHER";case "contractSha256"->"0".repeat(64);case "publicationMode"->"ARCHIVE_ONLY";default->UUID.randomUUID().toString();});
+            assertThat(operate(json.treeToValue(value,AmazonFeeOperator.Grant.class),sync)).isEqualTo(AmazonFeeOperator.Result.BLOCKED);
+        }
+        jdbc.update("UPDATE marketplace_sync_runs SET status='CANCELLED' WHERE id=?",run);assertThat(operate(g,sync)).isEqualTo(AmazonFeeOperator.Result.CANCELLED);verifyNoInteractions(sync);
+    }
+    @Test void foregroundOperatorExpiryAndUncertainRequestCannotRestartBudgets()throws Exception{
+        var c=publicationContract(false);restrictedPublisher(true);var g=operatorGrant(c);queueOperator();var sync=mock(AmazonProductFeeSync.class);
+        jdbc.update("UPDATE marketplace_sync_jobs SET started_at=now()-interval '6 minutes' WHERE id=?",id);assertThat(operate(g,sync)).isEqualTo(AmazonFeeOperator.Result.EXPIRED);verifyNoInteractions(sync);
+        fixture();c=publicationContract(false);restrictedPublisher(true);g=operatorGrant(c);jobs.batchNext(job);assertThat(jobs.reserve(job,SKU,"FEE")).isTrue();
+        jdbc.update("UPDATE marketplace_sync_jobs SET lease_expires_at=now()-interval '1 second' WHERE id=?",id);
+        var api=mock(AmazonSpApiClient.class);var actual=new AmazonProductFeeSync(api,jobs,true);org.springframework.test.util.ReflectionTestUtils.setField(actual,"batchEnabled",true);
+        assertThat(operate(g,actual)).isEqualTo(AmazonFeeOperator.Result.COMPLETED_WITH_WARNINGS);assertThat(reason()).isEqualTo("FEE_REQUEST_OUTCOME_UNKNOWN");verifyNoInteractions(api);assertThat(fee().path("http").asInt()).isOne();
+    }
+    @Test void operatorDatabaseIdentityUsesARealRestrictedLoginNotAnAdminRoleSwitch()throws Exception{
+        var c=publicationContract(false);var g=operatorGrant(c);String password="synthetic-"+UUID.randomUUID();jdbc.execute("ALTER ROLE "+publicationRole+" LOGIN PASSWORD '"+password+"'");
+        try{var actual=new JdbcTemplate(new DriverManagerDataSource(g.jdbcUrl(),publicationRole,password));AmazonFeeOperator.verifyDatabase(actual,g);
+            var transaction=new TransactionTemplate(new DataSourceTransactionManager(actual.getDataSource()));
+            transaction.executeWithoutResult(s->{actual.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,UUID.randomUUID().toString());assertThat(actual.queryForObject("SELECT count(*) FROM amazon_listings",Integer.class)).isZero();});
+            var jsonGrant=(ObjectNode)json.valueToTree(g);jsonGrant.put("databaseOid",g.databaseOid()+1);assertThatThrownBy(()->AmazonFeeOperator.verifyDatabase(actual,json.treeToValue(jsonGrant,AmazonFeeOperator.Grant.class))).isInstanceOf(IllegalStateException.class);
+        }finally{jdbc.execute("ALTER ROLE "+publicationRole+" NOLOGIN");}
     }
     @Test void batchShippingScopeMustBeExplicit(){assertThat(jobs.batchNext(job)).isEmpty();assertThat(reason()).isEqualTo("FEE_SHIPPING_BASIS_REQUIRES_APPROVAL");}
     @Test void batchFreezesExactTargetsAndDoesNotFollowLaterPrice(){batchScope();var targets=jobs.batchNext(job);assertThat(targets).hasSize(1);jdbc.update("UPDATE amazon_listings SET price=77 WHERE tenant_id=?",tenant);assertThat(jobs.batchNext(job).getFirst().price()).isEqualByComparingTo(targets.getFirst().price());}
