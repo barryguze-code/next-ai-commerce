@@ -35,9 +35,11 @@ async function fixture(options={}){
    if(options.historyError||(options.olderError&&pageNumber))return route.fulfill({status:500,body:'unavailable'});
    let rows=options.pages?Array.from({length:pageNumber?1:100},(_,i)=>({...row(pageNumber?'ORDER-PRIOR-100':i?'ORDER-PRIOR-'+i:order,i+pageNumber*100),
     ...(i||pageNumber?{current_revision:false,currency:'EUR',quantity:3}: {})})): [row(order),{...row('ORDER-PRIOR-1',1),currency:'EUR',quantity:3}];
+   if(options.emptyOlder&&pageNumber)rows=[];
+   if(options.projectionPages)rows=pageNumber===0?[row(order),...Array.from({length:99},(_,i)=>({...row(order,i+1),current_revision:false,state:'AWAITING'}))]:pageNumber===1?Array.from({length:100},(_,i)=>({...row(order,i+100),current_revision:false,state:'AWAITING'})):[{...row('ORDER-PRIOR-100',201),seller_sku:'SKU-A',currency:'EUR',quantity:3},{...row('ORDER-PRIOR-101',202),seller_sku:'SKU-A',currency:'EUR',quantity:3}];
    if(options.mixedItems)rows=[row(order),{...row(order),id:'other-comparison',order_item_id:'other-item',fee_type:'REFERRAL'}];
    rows=rows.map(r=>({...r,already_approved:saved.has(r.id)}));
-   return route.fulfill({json:{rows,canApprove:!options.sku,hasMore:!!options.pages&&!pageNumber,snapshot:101,
+   return route.fulfill({json:{rows,canApprove:!options.sku,hasMore:options.projectionPages?pageNumber<2:!!options.pages&&!pageNumber,snapshot:101,
     scope:{display_name:'Synthetic store',marketplace_identifier:'TEST'}}});
   }
   const rows=['A','B'].map(x=>`<article data-fee-order="ORDER-${x}" data-fee-sku="SKU-${x}" id="row-${x}"><span class="order-actions"></span></article>`).join('');
@@ -70,7 +72,7 @@ test('history pagination restores stable dialog focus after replacing its button
   await f.open('A');await f.page.getByRole('button',{name:'Older fee evidence',exact:true}).click();
   await f.page.getByRole('button',{name:'Newest fee evidence',exact:true}).waitFor();
   assert.equal(await f.page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Close fee comparison');
-  assert.match(await f.page.locator('[data-fee-feedback]').innerText(),/Showing|Loaded/);
+  assert.match(await f.page.locator('[data-fee-feedback]').innerText(),/Loaded/);
  }finally{await f.close();}
 });
 
@@ -181,7 +183,7 @@ test('failed older history keeps newest evidence reachable without closing compa
   await f.page.getByRole('button',{name:'Newest fee evidence',exact:true}).waitFor({timeout:1000});
   await f.page.getByRole('button',{name:'Newest fee evidence',exact:true}).click();
   await f.page.getByRole('button',{name:'Older fee evidence',exact:true}).waitFor();
-  assert.match(await f.page.locator('[data-fee-feedback]').innerText(),/Showing 100/);
+  assert.match(await f.page.locator('[data-fee-feedback]').innerText(),/Loaded 100/);
  }finally{await f.close();}
 });
 
@@ -192,5 +194,39 @@ test('closed comparison response cannot replace a newer record context',async()=
   f.historyRelease.resolve();await f.page.locator('#fee-comparison .fee-detail').first().waitFor();
   assert.equal(await f.page.locator('[data-fee-identity]').innerText(),'Order ORDER-B');
   assert.match(await f.page.locator('#fee-comparison .fee-detail').first().innerText(),/ORDER-B/);
+ }finally{await f.close();}
+});
+
+
+test('raw projection pages disclose rendered counts and keep later distinct same-SKU orders reachable',async()=>{
+ const f=await fixture({projectionPages:true});try{
+  await f.open('A');
+  assert.match(await f.page.locator('[data-fee-feedback]').innerText(),/100 evidence records.*1 current comparison.*0 earlier differences/);
+  await f.page.getByRole('button',{name:'Older fee evidence',exact:true}).click();
+  await f.page.getByRole('button',{name:'Newest fee evidence',exact:true}).waitFor();
+  assert.match(await f.page.locator('[data-fee-feedback]').innerText(),/100 evidence records.*0 current comparisons.*0 earlier differences/);
+  assert.match(await f.page.locator('[data-fee-body]').innerText(),/No distinct comparisons or earlier differences are displayed on this page/);
+  assert.equal(await f.page.locator('.fee-detail').count(),0);
+  assert.equal(await f.page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Close fee comparison');
+  await f.page.getByRole('button',{name:'Older fee evidence',exact:true}).click();
+  await f.page.getByText('Earlier fee differences',{exact:true}).waitFor();
+  await f.page.getByText('Earlier fee differences',{exact:true}).click();
+  const entries=await f.page.locator('#fee-comparison details p').allTextContents();
+  assert.equal(entries.length,2);assert.match(entries[0],/ORDER-PRIOR-100.*EUR.*total for 3 units/);assert.match(entries[1],/ORDER-PRIOR-101.*EUR.*total for 3 units/);
+  assert.match(await f.page.locator('[data-fee-feedback]').innerText(),/2 evidence records.*0 current comparisons.*2 earlier differences/);
+  await f.page.getByRole('button',{name:'Newest fee evidence',exact:true}).click();
+  await f.page.locator('.fee-detail').waitFor();
+ }finally{await f.close();}
+});
+
+
+test('zero-row older evidence page preserves newest recovery and dialog focus',async()=>{
+ const f=await fixture({pages:true,emptyOlder:true});try{
+  await f.open('A');await f.page.getByRole('button',{name:'Older fee evidence',exact:true}).click();
+  await f.page.locator('[data-fee-feedback]').getByText(/Loaded 0/).waitFor();
+  await f.page.getByRole('button',{name:'Newest fee evidence',exact:true}).waitFor({timeout:1000});
+  assert.equal(await f.page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Close fee comparison');
+  await f.page.getByRole('button',{name:'Newest fee evidence',exact:true}).click();
+  await f.page.locator('.fee-detail').waitFor();
  }finally{await f.close();}
 });

@@ -21,8 +21,8 @@
   const sequence=++comparisonSequence;comparisonController?.abort();comparisonController=new AbortController();const body=dialog.querySelector('[data-fee-body]'),feedback=dialog.querySelector('[data-fee-feedback]');
   if(dialog.open&&body.contains(document.activeElement))dialog.querySelector('[data-fee-close]')?.focus();
   body.replaceChildren();body.setAttribute('aria-busy','true');feedback.textContent='Loading fee evidence…';dialog.querySelector('[data-fee-identity]').textContent=order?'Order '+order:'SKU '+sku;if(!dialog.open)show(dialog,button);
-  try{const qs=new URLSearchParams({order:order||'',sku:sku||'',page:String(page)});if(snapshot!=null)qs.set('snapshot',String(snapshot));const response=await fetch('/app/fee-variance?'+qs,{headers:{Accept:'application/json'},signal:comparisonController.signal});if(!response.ok)throw new Error('Fee evidence could not be loaded. Try again.');const data=await response.json();if(sequence!==comparisonSequence||!dialog.open)return;body.replaceChildren();feedback.textContent='Showing '+data.rows.length+' fee evidence '+(data.rows.length===1?'record.':'records.');
-   if(!data.rows.length){body.append(text('p','No comparable fee differences. Missing evidence remains unavailable.'));return;}
+  try{const qs=new URLSearchParams({order:order||'',sku:sku||'',page:String(page)});if(snapshot!=null)qs.set('snapshot',String(snapshot));const response=await fetch('/app/fee-variance?'+qs,{headers:{Accept:'application/json'},signal:comparisonController.signal});if(!response.ok)throw new Error('Fee evidence could not be loaded. Try again.');const data=await response.json();if(sequence!==comparisonSequence||!dialog.open)return;body.replaceChildren();feedback.textContent='Loaded 0 evidence records; displaying 0 current comparisons and 0 earlier differences.';
+   if(!data.rows.length){body.append(text('p','No comparable fee differences. Missing evidence remains unavailable.'));if(page>0){const back=text('button','Newest fee evidence');back.type='button';back.addEventListener('click',()=>open(button,order,sku,0,null));body.append(back);}return;}
    const host=button.parentElement;host.querySelectorAll('[data-fee-approval-id]').forEach(n=>n.remove());
    const eligible=data.rows.filter(r=>order&&data.canApprove&&r.current_revision&&r.shipping_verified&&r.unit_actual!=null&&!r.already_approved&&['HIGHER','LOWER'].includes(r.state));
    if(coherent(eligible)&&!completed.has(choiceKey(eligible.map(r=>({comparison:r.id,expectedApproval:r.current_approval||null}))))){const use=text('button','Use actual fees');use.type='button';use.dataset.feeApprovalId='group';
@@ -36,16 +36,17 @@
    if(order&&data.caseUrl&&!host.querySelector('[data-fee-case-link]')){const link=text('a','Open Seller Central case log');link.href=data.caseUrl;link.target='_blank';link.rel='noopener noreferrer';link.dataset.feeCaseLink='true';host.append(link);}
    const current=data.rows.filter(r=>r.current_revision),differences=current.filter(r=>['HIGHER','LOWER'].includes(r.state));
    const shown=differences.length?differences:current.filter(r=>r.state!=='MATCHES');
-   if(!shown.length)body.append(text('p','No comparable fee differences.'));
+   const prior=earlierDifferences(data.rows);
+   feedback.textContent='Loaded '+data.rows.length+' evidence '+(data.rows.length===1?'record':'records')+'; displaying '+shown.length+' current '+(shown.length===1?'comparison':'comparisons')+' and '+prior.length+' earlier '+(prior.length===1?'difference.':'differences.');
+   if(!shown.length&&!prior.length)body.append(text('p',page>0?'No distinct comparisons or earlier differences are displayed on this page.'+(data.hasMore?' Continue to older evidence.':' Return to newest evidence.'):'No comparable fee differences.'));
    for(const r of shown){const section=text('section','','fee-detail');section.append(text('h3',(r.fee_type==='FBA'?'FBA':'Referral')+' · '+r.order_id),text('p',r.seller_sku+' · '+r.currency+' · total for '+r.quantity+(r.quantity===1?' unit':' units')+(r.current_revision?'':' · Earlier evidence')));
     const values=text('div','','fee-values');for(const [label,value] of [['Basis at order',money(r.expected_amount,r.currency)],['Charged',money(r.actual_amount,r.currency)],['Difference',delta(r)]]){const cell=text('div','');cell.append(text('span',label),text('strong',value,label==='Difference'?(r.state==='HIGHER'?'fee-higher':r.state==='LOWER'?'fee-lower':''):''));values.append(cell);}section.append(values,text('p','Change detected: '+date(r.boundary_at)+' · Charge received: '+date(r.charge_received_at),'fee-sources'));body.append(section);
    }
-   const prior=earlierDifferences(data.rows);
    if(prior.length){const details=text('details','');details.append(text('summary','Earlier fee differences'));
     for(const r of prior)details.append(text('p',(r.fee_type==='FBA'?'FBA':'Referral')+' · '+r.order_id+' · '+r.currency+' · total for '+r.quantity+(r.quantity===1?' unit':' units')+' · '+delta(r)+' · Charge received '+date(r.charge_received_at)));
     body.append(details);
    }
-   if(data.hasMore){const more=text('button','Older fee evidence');more.type='button';more.addEventListener('click',()=>open(button,order,sku,page+1,data.snapshot));body.append(text('p','Showing up to 100 evidence records on this page.'),more);}
+   if(data.hasMore){const more=text('button','Older fee evidence');more.type='button';more.addEventListener('click',()=>open(button,order,sku,page+1,data.snapshot));body.append(more);}
    if(page>0){const back=text('button','Newest fee evidence');back.type='button';back.addEventListener('click',()=>open(button,order,sku,0,null));body.append(back);}
   }catch(e){if(sequence===comparisonSequence&&dialog.open&&e.name!=='AbortError'){body.replaceChildren();feedback.textContent='Fee evidence could not be loaded. Try again.';const retry=text('button',page>0?'Newest fee evidence':'Try again');retry.type='button';retry.addEventListener('click',()=>open(button,order,sku,0,null));body.append(retry);}}finally{if(sequence===comparisonSequence)body.setAttribute('aria-busy','false');}
  }
