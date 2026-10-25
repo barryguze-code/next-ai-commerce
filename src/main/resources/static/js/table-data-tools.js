@@ -245,6 +245,22 @@ function init(root){
     const previousFooter=card.querySelector('.table-footer:not(.table-pagination)');
     if(previousFooter&&/^Showing\b/.test(normalize(previousFooter.textContent))){previousFooter.querySelectorAll('a').forEach(link=>footer.append(link));previousFooter.hidden=true}
   }
+  // Fully loaded catalogue collections only; server sorting/paging stays authoritative.
+  if(!isServer&&root.hasAttribute('data-table-client-sort')){
+   const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
+   for(const col of cols){
+    if(col.el.dataset.noSort==='true'||col.el.hasAttribute('data-context-actions')||col.id==='record-context'||col.el.querySelector('a,input,button:not(.column-info)'))continue;
+    col.el.classList.add('sortable-column');
+    const button=document.createElement('button');button.type='button';button.className='table-sort-trigger';button.textContent=col.title.replace(/\s+i$/,'');
+    button.title='Sort '+col.title;button.setAttribute('aria-label',button.title);col.el.replaceChildren(button,...col.el.querySelectorAll('.column-info'));
+    button.onclick=()=>{
+     const descending=col.el.getAttribute('aria-sort')==='ascending';
+     for(const other of cols)other.el.removeAttribute('aria-sort');col.el.setAttribute('aria-sort',descending?'descending':'ascending');
+     const body=root.tBodies[0];rows(root).sort((a,b)=>collator.compare(textOf(columnCell(root,a,col)),textOf(columnCell(root,b,col)))*(descending?-1:1)).forEach(row=>body.append(row));
+     if(!isServer)saved.page=1;render();
+    };
+   }
+  }
   let searchValues=new WeakMap();
   function matches(row){
     // The default view needs no text extraction. Filtered views reuse text until
@@ -323,7 +339,7 @@ function init(root){
   const observer=new MutationObserver(records=>{if(!root.isConnected){observer.disconnect();return}records.forEach(record=>invalidate(record.target));scheduleRender();});
   observer.observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['hidden','style','data-export-value']});
   for(const event of ['input','change'])root.addEventListener(event,e=>{invalidate(e.target);scheduleRender();});
-  search.addEventListener('input',()=>{saved.page=1;updateActiveFilterState();scheduleRender()});
+  search.addEventListener('input',()=>{if(!isServer&&root.hasAttribute('data-table-client-sort'))saved.query=search.value;saved.page=1;updateActiveFilterState();scheduleRender()});
   root.addEventListener('table:filter',()=>{saved.page=1;render()});
   root.addEventListener('table:reset-filters',()=>{saved.filters={};saved.query='';saved.page=1;panel.querySelectorAll('input').forEach(input=>input.value='');render()});
   const sourceQuery=new URL(location.href).searchParams.get('q');

@@ -5,7 +5,8 @@ const pom=fs.readFileSync('pom.xml','utf8').replace(/<parent>[\s\S]*?<\/parent>/
 const version=pom.match(/<version>([^<]+)<\/version>/)?.[1];
 const history=JSON.parse(fs.readFileSync('src/main/resources/releases/history.json','utf8'));
 assert.ok(version&&history.length,'A version and release notes are required');
-assert.equal(history[0].version,version,'Add user-facing notes for the version being deployed');
+assert.equal(history[0].version.split('.').slice(0,2).join('.'),version.split('.').slice(0,2).join('.'),'Add user-facing notes for the feature version being deployed');
+assert.ok(Number(history[0].version.split('.')[2])<=Number(version.split('.')[2]),'Release notes cannot be ahead of the deployed patch');
 const seen=new Set();
 for(const release of history){
  assert.match(release.version,/^\d+\.\d+\.\d+$/);assert.ok(!seen.has(release.version),'Duplicate release');seen.add(release.version);

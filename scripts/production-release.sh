@@ -26,6 +26,18 @@ require_release_false() {
     return 1
   fi
 }
+# Owner-approved eligible UI-only 1.8.1 hotfix. Default releases still take a dump.
+ui_hotfix=false
+if [[ "$version" == "1.8.1" && "${4:-}" == "OWNER_APPROVED_UI_HOTFIX_NO_NEW_BACKUP" ]]; then
+  test "$(sha256sum /opt/next-ai-commerce/next-ai-commerce.jar | cut -d' ' -f1)" = fec818b5a4ff56b33d264f41c0c6f42a9dd6fac318057af507b23d954270a4dd
+  test "$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT max(version::int) FROM flyway_schema_history WHERE success AND version IS NOT NULL")" = 114
+  test "$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM flyway_schema_history WHERE NOT success")" = 0
+  test -s /opt/next-ai-commerce/backups/v1.8.0-31340369-recovery-20261025a/recovery-receipt.json
+  for setting in SPRING_FLYWAY_ENABLED AMAZON_PRODUCT_FEES_ENABLED AMAZON_PRODUCT_FEES_BATCH_ENABLED AMAZON_PRODUCT_FEES_RECURRING_ENABLED AMAZON_FEE_EVIDENCE_ENABLED AMAZON_FEE_APPROVALS_ENABLED AMAZON_FEE_PILOT_ENABLED AMAZON_FEE_PILOT_ONLY_SCHEDULING; do
+    require_release_false "$setting"
+  done
+  ui_hotfix=true
+fi
 # BEGIN REVIEWED RELEASE GUARDS
 if [[ "$version" == "1.8.0" ]]; then
   # Exact reviewed helper is delivered beside this script by the protected workflow.
@@ -38,6 +50,8 @@ if [[ "$version" == "1.8.0" ]]; then
   verified_package_bytes=$(printf '%s\n' "$manifest_result" | sed -n 's/^FEE_PACKAGE_BYTES=//p')
   test -f "$verified_preddl_dump" && test ! -L "$verified_preddl_dump"
   [[ "$verified_dump_sha" =~ ^[0-9a-f]{64}$ && "$verified_dump_bytes" =~ ^[1-9][0-9]*$ && "$verified_package_bytes" =~ ^[1-9][0-9]*$ ]]
+elif [[ "$ui_hotfix" == true ]]; then
+  : # Preserve the previously reviewed live worker policy and read-only fee UI.
 else
 for setting in APP_FEDEX_CONFIRMATION_ENABLED APP_SCHEDULING_ENABLED SPRING_FLYWAY_ENABLED MAIL_ENABLED   AMAZON_PRODUCT_FEES_ENABLED AMAZON_SYNC_ENABLED AMAZON_RECURRING_SYNC_ENABLED   AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED AMAZON_WRITE_ENABLED   AMAZON_LISTING_ACTIONS_ENABLED AMAZON_INVENTORY_PUBLICATION_ENABLED AMAZON_SHELF_SALE_ENABLED AMAZON_BUY_SHIPPING_ENABLED AMAZON_UNRESOLVED_ORDER_CHECKS_ENABLED APP_AMAZON_RECIPIENT_IMPORT_ENABLED APP_AMAZON_CATALOG_BARCODES_ENABLED APP_AMAZON_CATALOG_IMAGES_ENABLED   APP_AMAZON_VARIATION_OPERATOR_ENABLED APP_AMAZON_VARIATION_SYNC_ENABLED   APP_AMAZON_VARIATION_COVERAGE_ENABLED APP_AMAZON_VARIATION_INVENTORY_ENFORCEMENT_ENABLED   APP_AMAZON_VARIATION_TRIAL_ONLY_SCHEDULING; do
   require_release_false "$setting"
@@ -55,7 +69,9 @@ database_bytes=$(sudo -u postgres psql -XAtqc "SELECT pg_database_size('next_ai_
 [[ "$database_bytes" =~ ^[0-9]+$ ]]
 current_jar_bytes=$(stat -Lc %s /opt/next-ai-commerce/next-ai-commerce.jar)
 required_bytes=$((database_bytes * 2 + current_jar_bytes * 3 + 1073741824))
-if [[ "$version" == "1.8.0" ]]; then
+if [[ "$ui_hotfix" == true ]]; then
+  required_bytes=$((current_jar_bytes * 3 + 1073741824))
+elif [[ "$version" == "1.8.0" ]]; then
   # The verified pre-DDL dump and restored database are already on disk. No second
   # full dump is created. Reserve three largest JARs plus 1 GiB for live growth.
   largest_jar=$((current_jar_bytes > verified_package_bytes ? current_jar_bytes : verified_package_bytes))
@@ -111,16 +127,21 @@ with b.open('rb') as f:
 assert h.hexdigest()==sys.argv[3]
 PY
 }
-if [[ "$version" == "1.8.0" ]]; then
+if [[ "$ui_hotfix" == true ]]; then
+  printf '%s\n' 'Owner-approved UI-only hotfix: no new database dump; existing recovery retained.' > "$backup_dir/database-backup-waiver.txt"
+elif [[ "$version" == "1.8.0" ]]; then
   reuse_verified_dump
   printf '%s\n' 'Database recovery uses the verified pre-DDL V112 dump; this is not a post-DDL snapshot.'
 else
   sudo -u postgres pg_dump --format=custom --lock-wait-timeout=10s next_ai_commerce > "$backup_dir/database.dump"
 fi
 # END VERIFIED BACKUP REUSE
-test -s "$backup_dir/database.dump"
-pg_restore --list "$backup_dir/database.dump" >/dev/null
-sha256sum "$backup_dir/database.dump" "$backup_dir/previous.jar"
+if [[ "$ui_hotfix" != true ]]; then
+  test -s "$backup_dir/database.dump"
+  pg_restore --list "$backup_dir/database.dump" >/dev/null
+  sha256sum "$backup_dir/database.dump"
+fi
+sha256sum "$backup_dir/previous.jar"
 echo "Application-deployment recovery backup verified at $backup_dir (separate from the reviewed pre-DDL recovery set)."
 
 # Version metadata and read-only recovery only. Preserve publishing and mail policies.
@@ -193,7 +214,7 @@ test "$healthy" = true
 # did not finish migrating. No business rows or credentials are printed.
 migration_count=$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM public.flyway_schema_history WHERE version IN ('91','92','93','94','95','96','97','98','99','100','101','102','103','104','105','106','107','108','109','110','111','112') AND success")
 test "$migration_count" = 22
-if [[ "$version" == "1.8.0" ]]; then
+if [[ "$version" == "1.8.0" || "$ui_hotfix" == true ]]; then
   fee_schema_count=$(sudo -u postgres psql -d next_ai_commerce -XAtqc "SELECT count(*) FROM public.flyway_schema_history WHERE version IN ('113','114') AND success")
   test "$fee_schema_count" = 2
 fi

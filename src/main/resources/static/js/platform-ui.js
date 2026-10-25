@@ -49,10 +49,11 @@
  function enhance(root){
   const matches=[...(root.matches?.(titles)?[root]:[]),...root.querySelectorAll(titles)];
   matches.forEach(title=>{
-   if(title.dataset.uiProduct!==undefined||!title.closest('tbody tr,.order-item'))return;
+   if(title.dataset.uiTitleReady||title.dataset.uiProduct!==undefined||!title.closest('tbody tr,.order-item'))return;
+   title.dataset.uiTitleReady='true';
    const name=recordName(title).toLowerCase();
    const action=title.closest('.inventory-row')||title.closest('.order-item')?.querySelector('.mapping-summary-button.is-mapped')?'Inventory Ledger':'View '+name+' details';
-   title.dataset.uiProduct='';title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label',action+': '+title.textContent.trim());title.title=action;
+   if(!title.matches('.sku-approved-title')){title.dataset.uiProduct='';title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label',action+': '+title.textContent.trim());title.title=action;}
    delete title.dataset.orderCopy;
    const heading=make('span','ui-product-heading');title.before(heading);heading.append(title);
    const copy=make('button','ui-copy-title');copy.type='button';copy.title='Copy '+name+' name';copy.setAttribute('aria-label','Copy '+name+' name');copy.dataset.uiCopy=title.textContent.trim();

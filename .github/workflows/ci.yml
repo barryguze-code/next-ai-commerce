@@ -48,3 +48,10 @@ jobs:
           name: minor-1-8-package
           path: target/next-ai-commerce-1.8.0.jar
           if-no-files-found: error
+      - name: Preserve tested UI hotfix artifact
+        if: github.ref == 'refs/heads/codex/ui-hotfix-1-8-1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-hotfix-1-8-1-package
+          path: target/next-ai-commerce-1.8.1.jar
+          if-no-files-found: error

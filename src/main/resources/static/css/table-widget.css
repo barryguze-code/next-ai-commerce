@@ -265,3 +265,11 @@ html[data-theme=dark] .table-column-activity{background:#17222e;color:#dbe5f1;bo
 html[data-theme=dark] .table-column-activity[data-state=attention]{border-color:#bd914c}
 html[data-theme=dark] .table-column-activity>button{color:#a8cbff;border-color:#4e83bd}
 @media(any-pointer:coarse){.table-column-panel:has(.table-column-activity:not([hidden])){grid-template-rows:auto auto auto minmax(56px,1fr) auto}}
+
+/* Only the tab strip scrolls; labels/order and page width remain stable. */
+.table-tab-overflow{display:flex;align-items:center;min-width:0;max-width:100%;position:relative;gap:4px;overflow:hidden}
+.table-tab-overflow>.table-tab-viewport{min-width:0!important;width:0;max-width:100%;flex:1 1 auto;display:flex;flex-wrap:nowrap!important;overflow-x:auto!important;scrollbar-width:none;overscroll-behavior-x:contain}
+.table-tab-viewport::-webkit-scrollbar{display:none}.table-tab-viewport>a,.table-tab-viewport>button{flex-shrink:0;white-space:nowrap}
+.table-tab-arrow{flex:0 0 30px;width:30px;min-height:34px;border:1px solid var(--border,#dbe3ee);border-radius:8px;background:var(--surface,#fff);color:var(--text,#14253c);font:inherit;font-size:24px;cursor:pointer}
+.table-tab-arrow[hidden]{display:none!important}.table-tab-arrow:focus-visible{outline:2px solid var(--accent,#3270db);outline-offset:-3px}
+.table-sort-trigger{background:none;border:0;padding:0;color:inherit;font:inherit;font-weight:inherit;text-align:left;cursor:pointer}.table-sort-trigger:focus-visible{outline:2px solid var(--accent,#3270db)}

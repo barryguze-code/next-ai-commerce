@@ -1,6 +1,6 @@
 <!doctype html><html xmlns:th="http://www.thymeleaf.org"><body>
 <th:block th:fragment="runtime" th:if="${feeVarianceEnabled == true}">
-<link rel="stylesheet" href="/css/fee-variance.css?v=1.8.0"><script defer src="/js/fee-variance.js?v=1.8.0"></script>
+<link rel="stylesheet" href="/css/fee-variance.css?v=1.8.1"><script defer src="/js/fee-variance.js?v=1.8.1"></script>
 <dialog id="fee-comparison" class="fee-dialog" aria-labelledby="fee-comparison-title"><header><div><h2 id="fee-comparison-title">Compare fees</h2><p data-fee-identity></p></div><button type="button" data-fee-close aria-label="Close fee comparison">×</button></header><div class="fee-dialog-body" data-fee-body></div><p class="fee-feedback" data-fee-feedback role="status"></p><footer><button type="button" data-fee-close>Close</button></footer></dialog>
 <dialog id="fee-approval" class="fee-dialog" aria-labelledby="fee-approval-title"><header><h2 id="fee-approval-title">Use actual fees?</h2><button type="button" data-fee-close aria-label="Close fee approval">×</button></header><div class="fee-dialog-body"><p data-fee-approval-identity></p><p data-fee-approval-amount></p><strong>Applies to future estimates for this SKU.</strong><p>Past differences stay visible. This does not request a refund.</p></div><p class="fee-feedback" role="status"></p><footer><button type="button" data-fee-close>Cancel</button><button type="button" data-fee-approve>Use actual fees</button></footer></dialog>
 </th:block></body></html>

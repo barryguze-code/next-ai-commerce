@@ -339,7 +339,44 @@ function init(root){
   requestAnimationFrame(()=>{const scroller=root.closest('.table-wrap');if(scroller)scroller.scrollLeft=0});
 }
 function initPageJump(form){if(form.dataset.pageJumpReady)return;form.dataset.pageJumpReady='true';const input=form.querySelector('[name="goToPage"]');if(!input)return;let starting=input.value;const clean=()=>{input.value=input.value.replace(/\D/g,'')};input.addEventListener('input',clean);form.addEventListener('submit',event=>{clean();const max=Math.max(1,Number(input.dataset.pageMax)||1),value=Number(input.value);if(!Number.isFinite(value)||value<1){event.preventDefault();input.value='1';input.focus();return}input.value=String(Math.min(max,Math.floor(value)))});input.addEventListener('blur',()=>{clean();if(input.value&&input.value!==starting)form.requestSubmit()});input.addEventListener('focus',()=>input.select())}
-function boot(){document.querySelectorAll('.desk-table:not([data-table-widget])').forEach(root=>{root.dataset.tableWidget='shipping-ready';root.dataset.gridRow='.candidate-row';const header=root.querySelector('.desk-table-head');header?.classList.add('table-grid-header');[...header.children].forEach((cell,index)=>{cell.dataset.column=['record-context','select','product','order','package','shipping','action'][index];cell.dataset.columnRequired=String(index===0||index===1||index===2||index===6);if(index===1)cell.dataset.title='Select'})});document.querySelectorAll('.data-card table:not([data-table-widget])').forEach((root,index)=>{if(root.tHead&&!root.closest('dialog'))root.dataset.tableWidget=location.pathname.replace(/\W+/g,'-')+'-'+index});document.querySelectorAll('[data-table-widget]:not([data-table-widget-ready])').forEach(root=>{root.dataset.tableWidgetReady='true';init(root)});document.querySelectorAll('[data-page-jump]').forEach(initPageJump);window.NextAiTableDataTools?.refresh();window.NextAiStandardTables?.enhance()}
+// Shared overflow affordance; tab links and domain handlers remain authoritative.
+function prepareTabOverflow(){
+ document.querySelectorAll('.sku-filter-bar,.order-filters,.inventory-filter-bar,[data-table-tabs]').forEach(tabs=>{
+  if(tabs.dataset.tabOverflowReady)return;tabs.dataset.tabOverflowReady='true';
+  const frame=document.createElement('div');frame.className='table-tab-overflow';tabs.before(frame);
+  const previous=document.createElement('button'),next=document.createElement('button');
+  for(const [button,label,glyph]of [[previous,'Show previous table tabs','‹'],[next,'Show next table tabs','›']]){
+   button.type='button';button.className='table-tab-arrow';button.setAttribute('aria-label',label);button.textContent=glyph;button.hidden=true;
+  }
+  frame.append(previous,tabs,next);tabs.classList.add('table-tab-viewport');
+  let selected,lastSelected,scheduled=false,pendingReveal=false;
+  const active=()=>tabs.querySelector('[aria-current="page"]')||tabs.querySelector('.active,[aria-selected="true"]');
+  function update(reveal=false){
+   scheduled=false;if(!tabs.isConnected)return;
+   selected=active();
+   // Arrow visibility changes the inner viewport. Settle containment after each layout.
+   for(let pass=0;pass<3;pass++){
+    if(reveal&&selected){const a=selected.getBoundingClientRect(),b=tabs.getBoundingClientRect();if(a.width>b.width||a.left<b.left)tabs.scrollLeft+=a.left-b.left;else if(a.right>b.right)tabs.scrollLeft+=a.right-b.right;}
+    const max=Math.max(0,tabs.scrollWidth-tabs.clientWidth),left=Math.max(0,tabs.scrollLeft);
+    previous.hidden=left<=1;next.hidden=left>=max-1;
+   }
+   const focused=document.activeElement;
+   if((focused===previous&&previous.hidden)||(focused===next&&next.hidden)){
+    const target=!previous.hidden?previous:!next.hidden?next:selected||tabs.querySelector('a,button');target?.focus({preventScroll:true});
+   }
+   lastSelected=selected;
+  }
+  const schedule=(reveal=false)=>{pendingReveal=pendingReveal||reveal;if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{const requested=pendingReveal;pendingReveal=false;update(requested);});};
+  previous.onclick=()=>{tabs.scrollBy({left:-tabs.clientWidth,behavior:'auto'});update();};
+  next.onclick=()=>{tabs.scrollBy({left:tabs.clientWidth,behavior:'auto'});update();};
+  tabs.addEventListener('scroll',()=>schedule(),{passive:true});
+  tabs.addEventListener('focusin',event=>{const a=event.target.getBoundingClientRect(),b=tabs.getBoundingClientRect();if(a.left<b.left)tabs.scrollLeft-=b.left-a.left;else if(a.right>b.right)tabs.scrollLeft+=a.right-b.right;schedule();});
+  new ResizeObserver(()=>schedule(true)).observe(frame);
+  new MutationObserver(()=>schedule(active()!==lastSelected)).observe(tabs,{childList:true,subtree:true,attributes:true,attributeFilter:['class','aria-current','aria-selected','hidden']});
+  requestAnimationFrame(()=>update(true));
+ });
+}
+function boot(){prepareTabOverflow();document.querySelectorAll('.desk-table:not([data-table-widget])').forEach(root=>{root.dataset.tableWidget='shipping-ready';root.dataset.gridRow='.candidate-row';const header=root.querySelector('.desk-table-head');header?.classList.add('table-grid-header');[...header.children].forEach((cell,index)=>{cell.dataset.column=['record-context','select','product','order','package','shipping','action'][index];cell.dataset.columnRequired=String(index===0||index===1||index===2||index===6);if(index===1)cell.dataset.title='Select'})});document.querySelectorAll('.data-card table:not([data-table-widget])').forEach((root,index)=>{if(root.tHead&&!root.closest('dialog'))root.dataset.tableWidget=location.pathname.replace(/\W+/g,'-')+'-'+index});document.querySelectorAll('[data-table-widget]:not([data-table-widget-ready])').forEach(root=>{root.dataset.tableWidgetReady='true';init(root)});document.querySelectorAll('[data-page-jump]').forEach(initPageJump);window.NextAiTableDataTools?.refresh();window.NextAiStandardTables?.enhance()}
 function prepareMetricTables(){document.querySelectorAll('[data-rp-sales]').forEach(prepareSalesBars);}
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>{boot();prepareMetricTables();}):(boot(),prepareMetricTables());window.NextAiTableWidget={refresh:boot};
 })();

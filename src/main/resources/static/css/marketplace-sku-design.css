@@ -122,3 +122,5 @@ html[data-theme=dark] .sku-workspace .sku-sync-button{border-color:#385676;backg
 .sku-workspace .sku-sync-status form{display:flex;align-items:center;min-height:32px}
 .sku-workspace .sku-sync-button::after{content:"";position:absolute;left:0;right:0;top:50%;height:max(100%,32px);transform:translateY(-50%)}
 @media(any-pointer:coarse){.sku-workspace .sku-sync-status form{min-height:44px}.sku-workspace .sku-sync-button::after{height:max(100%,44px)}}
+
+.sku-component-ledgers{display:flex;gap:6px;flex-wrap:wrap;font-size:12px}.sku-approved-title[href]{color:inherit;text-decoration:none}.sku-approved-title[href]:hover{text-decoration:underline}.sku-approved-title[href]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}

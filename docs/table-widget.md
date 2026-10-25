@@ -64,6 +64,14 @@ cross-page selection. Opening either view does not post stock.
   Progress appears in the shared task tray. Client CSV jobs require keeping the
   current page open until the download starts; they are not durable server jobs.
 
+## Table tab overflow
+
+Shared status strips keep their labels, order and query handlers. Previous/next
+arrows appear only when tabs are hidden in that direction and scroll by the visible
+strip width. Selection is revealed after refresh/resize; keyboard focus is retained.
+Fully loaded tables may opt into `data-table-client-sort`; server-paged tables
+retain database-owned sorting and explicitly page-scoped column filters.
+
 ## Record context and presentation
 
 Existing `.collaboration-row-button` controls move into the pinned

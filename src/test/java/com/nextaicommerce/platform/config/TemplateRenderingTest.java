@@ -310,6 +310,14 @@ class TemplateRenderingTest {
                 Instant.parse("2026-08-29T12:00:00Z"),"Standard shipping",new BigDecimal("12.00"))),1,0,100))
         ));
         String rendered=templateEngine().process("marketplace-skus",context);
+        UUID ledgerItem=UUID.randomUUID(),secondItem=UUID.randomUUID();
+        var component=new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.MappingComponentView(ledgerItem,"Mapped product","CODE","ACCOUNT",BigDecimal.ONE);
+        context.setVariable("mappingComponents",Map.of("IB-TEST-SKU",List.of(component)));
+        assertThat(templateEngine().process("marketplace-skus",context)).contains("href=\"/app/inventory/ledger?itemId="+ledgerItem+"\"");
+        context.setVariable("mappingComponents",Map.of("IB-TEST-SKU",List.of(component,new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.MappingComponentView(secondItem,"Second product","OTHER","OTHER",BigDecimal.ONE))));
+        assertThat(templateEngine().process("marketplace-skus",context)).contains("Inventory Ledgers:","itemId="+ledgerItem,"itemId="+secondItem);
+        context.setVariable("mappingComponents",Map.of());
+
         context.setVariable("listingSync",new com.nextaicommerce.platform.sync.AmazonManualListingSync.Availability(false,"Already running",true,Instant.parse("2026-10-18T12:00:00Z")));
         String syncing=templateEngine().process("marketplace-skus",context);
         assertThat(syncing).contains("sku-sync-button","Syncing…","Refreshing","Last Amazon SKU check")

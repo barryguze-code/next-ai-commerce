@@ -81,7 +81,7 @@ test('failed guard stops before download or restart and a valid guard preserves 
 });
 test('verified backup reuse checks inode, bytes, private mode and hash without a copy fallback',()=>{
  const script=fs.readFileSync('scripts/production-release.sh','utf8');
- const reuse=script.slice(script.indexOf('reuse_verified_dump()'),script.indexOf('if [[ "$version" == "1.8.0" ]]; then\n  reuse_verified_dump'));
+ const reuse=script.slice(script.indexOf('reuse_verified_dump()'),script.indexOf('if [[ "$ui_hotfix" == true ]]; then\n  printf'));
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fee-backup-reuse-'));
  try{
   const source=path.join(dir,'source'),destination=path.join(dir,'rollback');fs.mkdirSync(destination);
@@ -94,7 +94,7 @@ test('verified backup reuse checks inode, bytes, private mode and hash without a
    const target=path.join(dir,name);fs.mkdirSync(target);assert.notEqual(invoke(target,sha,extra).status,0);assert.deepEqual(fs.readFileSync(source),bytes);
   }
   const publicMode=path.join(dir,'wrong-mode');fs.mkdirSync(publicMode);fs.chmodSync(source,0o644);assert.notEqual(invoke(publicMode).status,0);
-  assert.match(script,/if \[\[ "\$version" == "1\.8\.0" \]\]; then\n  reuse_verified_dump[\s\S]*else\n  sudo -u postgres pg_dump/);
+  assert.match(script,/elif \[\[ "\$version" == "1\.8\.0" \]\]; then\n  reuse_verified_dump[\s\S]*else\n  sudo -u postgres pg_dump/);
   assert.doesNotMatch(reuse,/\bcp\b|ln -[fn]|pg_dump/);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
