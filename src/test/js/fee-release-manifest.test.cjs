@@ -6,11 +6,11 @@ const path=require('node:path');
 const {spawnSync}=require('node:child_process');
 const flags=['AMAZON_PRODUCT_FEES_ENABLED','AMAZON_PRODUCT_FEES_BATCH_ENABLED','AMAZON_PRODUCT_FEES_RECURRING_ENABLED','AMAZON_FEE_EVIDENCE_ENABLED','AMAZON_FEE_VARIANCE_UI_ENABLED','AMAZON_FEE_APPROVALS_ENABLED','AMAZON_FEE_PILOT_ENABLED','AMAZON_FEE_PILOT_ONLY_SCHEDULING','SPRING_FLYWAY_ENABLED'];
 function fixture(){
- const expected={revision:'a'.repeat(40),version:'1.8.0',package_sha256:'b'.repeat(64)};
+ const expected={revision:'a'.repeat(40),version:'1.8.0',package_sha256:'b'.repeat(64),operation_revision:'1'.repeat(40)};
  const source={jar_sha256:'c'.repeat(64),argv_sha256:'d'.repeat(64),start_sha256:'e'.repeat(64)};
  const recovery={format:'FEE_RECOVERY_V1',source_database:'next_ai_commerce',source_max_version:112,dump_sha256:'f'.repeat(64),completed_at:'2026-10-25T00:55:00Z',migration_owner:'nextcommerce',preservation_verified:true,migration_rehearsal_verified:true,previous_application_compatibility_verified:true,ddl_lock_timeout_seconds:10,ddl_statement_timeout_seconds:300};
  const versions=Array.from({length:24},(_,i)=>91+i);
- return {expected,m:{...expected,format:'FEE_RELEASE_V1',stage:'INSTALL_ONLY',expires_at:'2026-10-25T02:00:00Z',source:{...source},database:'next_ai_commerce',application_role:'nextcommerce',migration_owner:'nextcommerce',activation:'SEPARATE_BOUNDED_GRANT',automatic_collection:false},o:{source,database:'next_ai_commerce',application_role:'nextcommerce',migration_versions:versions,failed_migrations:0,role_restricted:true,tables_ready:true,sequences_ready:true,settings:Object.fromEntries(flags.map(f=>[f,'false'])),recovery,dump_sha256:'f'.repeat(64),restore_versions:[...versions],restore_failed_migrations:0,restore_tables_ready:true,activation_plan:{status:'PROPOSED_NOT_AUTHORIZED',publication_mode:'ESTIMATES_AND_EVIDENCE',tenant:'1'.repeat(36),connection:'2'.repeat(36),marketplace:'SYNTHETIC',basis_sha256:'3'.repeat(64),target_count:20,max_http:1,max_oauth:2,max_seconds:300}}};
+ return {expected,m:{...expected,format:'FEE_RELEASE_V1',operation_script_sha256:'2'.repeat(64),operation_guard_sha256:'3'.repeat(64),backup_strategy:'REUSE_VERIFIED_PRE_DDL',package_bytes:81310044,stage:'INSTALL_ONLY',expires_at:'2026-10-25T02:00:00Z',source:{...source},database:'next_ai_commerce',application_role:'nextcommerce',migration_owner:'nextcommerce',activation:'SEPARATE_BOUNDED_GRANT',automatic_collection:false},o:{source,operation_script_sha256:'2'.repeat(64),operation_guard_sha256:'3'.repeat(64),database:'next_ai_commerce',application_role:'nextcommerce',migration_versions:versions,failed_migrations:0,role_restricted:true,tables_ready:true,sequences_ready:true,settings:Object.fromEntries(flags.map(f=>[f,'false'])),recovery,dump_sha256:'f'.repeat(64),restore_versions:[...versions],restore_failed_migrations:0,restore_tables_ready:true,activation_plan:{status:'PROPOSED_NOT_AUTHORIZED',publication_mode:'ESTIMATES_AND_EVIDENCE',tenant:'1'.repeat(36),connection:'2'.repeat(36),marketplace:'SYNTHETIC',basis_sha256:'3'.repeat(64),target_count:20,max_http:1,max_oauth:2,max_seconds:300}}};
 }
 function check(f){return spawnSync('python3',['-c',`import runpy,json,sys,datetime
 g=runpy.run_path('scripts/fee-release-manifest.py')
@@ -23,8 +23,14 @@ test('reviewed manifest permits staged installation while existing worker policy
  assert.match(script,/fee_schema_count.*[\s\S]*test "\$fee_schema_count" = 2/);
  assert.doesNotMatch(script,/AMAZON_FEE_EVIDENCE_ENABLED=true|AMAZON_PRODUCT_FEES_ENABLED=true/);
 });
+test('only explicitly reviewed read-only fee UI may be enabled during installation',()=>{
+ const f=fixture();f.m.read_only_ui_enabled=true;f.o.settings.AMAZON_FEE_VARIANCE_UI_ENABLED='true';assert.equal(check(f).status,0);
+ f.o.settings.AMAZON_FEE_EVIDENCE_ENABLED='true';assert.notEqual(check(f).status,0);
+ f.o.settings.AMAZON_FEE_EVIDENCE_ENABLED='false';f.m.read_only_ui_enabled='true';assert.notEqual(check(f).status,0);
+ delete f.m.read_only_ui_enabled;assert.notEqual(check(f).status,0);
+});
 test('missing or changed identity, package, recovery, migrations, permissions and flags fail closed',()=>{
- const changes=[
+ const changes=[f=>delete f.o.recovery,f=>f.m.backup_strategy='UNVERIFIED',f=>f.m.operation_revision='0'.repeat(40),f=>f.o.operation_script_sha256='0'.repeat(64),
   f=>f.m.revision='0'.repeat(40),f=>f.m.package_sha256='0'.repeat(64),f=>f.m.source.argv_sha256='0'.repeat(64),f=>f.m.source.start_sha256='0'.repeat(64),f=>f.m.source.jar_sha256='0'.repeat(64),
   f=>f.m.expires_at='2026-10-25T00:59:00Z',f=>f.m.expires_at='2026-10-26T00:59:00Z',f=>f.o.failed_migrations=1,f=>f.o.migration_versions.pop(),
   f=>f.o.tables_ready=false,f=>f.o.sequences_ready=false,f=>f.o.role_restricted=false,f=>f.o.database='wrong',f=>f.o.application_role='other',
@@ -66,10 +72,29 @@ test('failed guard stops before download or restart and a valid guard preserves 
   const configBytes='AMAZON_SYNC_ENABLED=true\nAMAZON_WRITE_ENABLED=true\n'+flags.map(f=>f+'=false\n').join('');
   const argumentBytes=Buffer.from('java\0-jar\0existing.jar\0');fs.writeFileSync(config,configBytes);fs.writeFileSync(argv,argumentBytes);
   for(const status of [1,0]){
-   const code=`set -e\nruntime_config=$1\nversion=1.8.0\nrevision=revision\npackage_sha=sha\nFEE_RELEASE_GUARD=reviewed-helper\npython3(){ return ${status}; }\ncurl(){ echo download >> "$2"; }\nsystemctl(){ echo restart >> "$2"; }\n${fn}\n${guards}\ncurl dummy "$2"\nsystemctl dummy "$2"`;
+   const code=`set -e\nruntime_config=$1\nversion=1.8.0\nrevision=revision\npackage_sha=sha\nFEE_RELEASE_GUARD=reviewed-helper\npython3(){ if [[ ${status} = 0 ]]; then printf 'FEE_VERIFIED_DUMP=%s\\nFEE_VERIFIED_DUMP_SHA256=%s\\nFEE_VERIFIED_DUMP_BYTES=1\\nFEE_PACKAGE_BYTES=81310044\\n' "$runtime_config" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; fi; return ${status}; }\ncurl(){ echo download >> "$2"; }\nsystemctl(){ echo restart >> "$2"; }\n${fn}\n${guards}\ncurl dummy "$2"\nsystemctl dummy "$2"`;
    const r=spawnSync('bash',['-c',code,'guard-check',config,marker,'unused','manifest-sha'],{encoding:'utf8'});
    assert.equal(r.status,status);assert.equal(fs.existsSync(marker),status===0);
    assert.equal(fs.readFileSync(config,'utf8'),configBytes);assert.deepEqual(fs.readFileSync(argv),argumentBytes);
   }
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('verified backup reuse checks inode, bytes, private mode and hash without a copy fallback',()=>{
+ const script=fs.readFileSync('scripts/production-release.sh','utf8');
+ const reuse=script.slice(script.indexOf('reuse_verified_dump()'),script.indexOf('if [[ "$version" == "1.8.0" ]]; then\n  reuse_verified_dump'));
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fee-backup-reuse-'));
+ try{
+  const source=path.join(dir,'source'),destination=path.join(dir,'rollback');fs.mkdirSync(destination);
+  const bytes=Buffer.from('Synthetic verified pre-DDL recovery archive');fs.writeFileSync(source,bytes,{mode:0o600});
+  const hash=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
+  const invoke=(name,sha=hash,extra='')=>spawnSync('bash',['-c',`set -e\nverified_preddl_dump=$1\nbackup_dir=$2\nverified_dump_sha=$3\nverified_dump_bytes=$4\n${extra}\n${reuse}\nreuse_verified_dump`,'reuse-test',source,name,sha,String(bytes.length)],{encoding:'utf8'});
+  assert.equal(invoke(destination).status,0);assert.equal(fs.statSync(source).ino,fs.statSync(path.join(destination,'database.dump')).ino);
+  assert.notEqual(invoke(destination).status,0);assert.deepEqual(fs.readFileSync(source),bytes);
+  for(const [name,sha,extra] of [['bad-hash','0'.repeat(64),''],['bad-link',hash,'ln(){ return 1; }']]){
+   const target=path.join(dir,name);fs.mkdirSync(target);assert.notEqual(invoke(target,sha,extra).status,0);assert.deepEqual(fs.readFileSync(source),bytes);
+  }
+  const publicMode=path.join(dir,'wrong-mode');fs.mkdirSync(publicMode);fs.chmodSync(source,0o644);assert.notEqual(invoke(publicMode).status,0);
+  assert.match(script,/if \[\[ "\$version" == "1\.8\.0" \]\]; then\n  reuse_verified_dump[\s\S]*else\n  sudo -u postgres pg_dump/);
+  assert.doesNotMatch(reuse,/\bcp\b|ln -[fn]|pg_dump/);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });

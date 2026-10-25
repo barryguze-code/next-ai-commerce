@@ -30,7 +30,14 @@ require_release_false() {
 if [[ "$version" == "1.8.0" ]]; then
   # Exact reviewed helper is delivered beside this script by the protected workflow.
   # No DDL or activation is performed here; missing evidence fails before downloads.
-  python3 "${FEE_RELEASE_GUARD:?Reviewed 1.8 manifest guard required}" "$revision" "$version" "$package_sha" "${4:?Reviewed manifest checksum required}"
+  manifest_result=$(FEE_RELEASE_OPERATION_SCRIPT="${BASH_SOURCE[0]}" python3 "${FEE_RELEASE_GUARD:?Reviewed 1.8 manifest guard required}" "$revision" "$version" "$package_sha" "${4:?Reviewed manifest checksum required}")
+  printf '%s\n' "$manifest_result"
+  verified_preddl_dump=$(printf '%s\n' "$manifest_result" | sed -n 's/^FEE_VERIFIED_DUMP=//p')
+  verified_dump_sha=$(printf '%s\n' "$manifest_result" | sed -n 's/^FEE_VERIFIED_DUMP_SHA256=//p')
+  verified_dump_bytes=$(printf '%s\n' "$manifest_result" | sed -n 's/^FEE_VERIFIED_DUMP_BYTES=//p')
+  verified_package_bytes=$(printf '%s\n' "$manifest_result" | sed -n 's/^FEE_PACKAGE_BYTES=//p')
+  test -f "$verified_preddl_dump" && test ! -L "$verified_preddl_dump"
+  [[ "$verified_dump_sha" =~ ^[0-9a-f]{64}$ && "$verified_dump_bytes" =~ ^[1-9][0-9]*$ && "$verified_package_bytes" =~ ^[1-9][0-9]*$ ]]
 else
 for setting in APP_FEDEX_CONFIRMATION_ENABLED APP_SCHEDULING_ENABLED SPRING_FLYWAY_ENABLED MAIL_ENABLED   AMAZON_PRODUCT_FEES_ENABLED AMAZON_SYNC_ENABLED AMAZON_RECURRING_SYNC_ENABLED   AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED AMAZON_WRITE_ENABLED   AMAZON_LISTING_ACTIONS_ENABLED AMAZON_INVENTORY_PUBLICATION_ENABLED AMAZON_SHELF_SALE_ENABLED AMAZON_BUY_SHIPPING_ENABLED AMAZON_UNRESOLVED_ORDER_CHECKS_ENABLED APP_AMAZON_RECIPIENT_IMPORT_ENABLED APP_AMAZON_CATALOG_BARCODES_ENABLED APP_AMAZON_CATALOG_IMAGES_ENABLED   APP_AMAZON_VARIATION_OPERATOR_ENABLED APP_AMAZON_VARIATION_SYNC_ENABLED   APP_AMAZON_VARIATION_COVERAGE_ENABLED APP_AMAZON_VARIATION_INVENTORY_ENFORCEMENT_ENABLED   APP_AMAZON_VARIATION_TRIAL_ONLY_SCHEDULING; do
   require_release_false "$setting"
@@ -48,6 +55,12 @@ database_bytes=$(sudo -u postgres psql -XAtqc "SELECT pg_database_size('next_ai_
 [[ "$database_bytes" =~ ^[0-9]+$ ]]
 current_jar_bytes=$(stat -Lc %s /opt/next-ai-commerce/next-ai-commerce.jar)
 required_bytes=$((database_bytes * 2 + current_jar_bytes * 3 + 1073741824))
+if [[ "$version" == "1.8.0" ]]; then
+  # The verified pre-DDL dump and restored database are already on disk. No second
+  # full dump is created. Reserve three largest JARs plus 1 GiB for live growth.
+  largest_jar=$((current_jar_bytes > verified_package_bytes ? current_jar_bytes : verified_package_bytes))
+  required_bytes=$((largest_jar * 3 + 1073741824))
+fi
 for directory in /opt/next-ai-commerce/releases /opt/next-ai-commerce/backups; do
   available_bytes=$(df -B1 --output=avail "$directory" | tail -n 1 | tr -d ' ')
   if (( available_bytes < required_bytes )); then
@@ -70,6 +83,7 @@ curl --fail --location --silent --show-error --proto '=https' --proto-redir '=ht
   "https://github.com/barryguze-code/next-ai-commerce/releases/download/build-${revision}/next-ai-commerce-${version}-${revision}.jar" \
   --output "$package_file"
 printf '%s  %s\n' "$package_sha" "$package_file" | sha256sum --check --status
+if [[ "$version" == "1.8.0" ]]; then test "$(stat -Lc %s "$package_file")" = "$verified_package_bytes"; fi
 release_jar="/opt/next-ai-commerce/releases/next-ai-commerce-${version}-${revision:0:12}.jar"
 install -o nextaicommerce -g nextaicommerce -m 0640 "$package_file" "$release_jar"
 cleanup_package
@@ -81,7 +95,29 @@ cp -p "$runtime_config" "$backup_dir/start"
 cp -L /opt/next-ai-commerce/next-ai-commerce.jar "$backup_dir/previous.jar"
 chmod 0600 "$backup_dir/previous.jar"
 umask 077
-sudo -u postgres pg_dump --format=custom --lock-wait-timeout=10s next_ai_commerce > "$backup_dir/database.dump"
+# BEGIN VERIFIED BACKUP REUSE
+reuse_verified_dump() {
+  # ln fails on another filesystem or an existing destination; no copy/overwrite fallback.
+  ln -- "$verified_preddl_dump" "$backup_dir/database.dump"
+  python3 - "$verified_preddl_dump" "$backup_dir/database.dump" "$verified_dump_sha" "$verified_dump_bytes" <<'PY'
+import hashlib, pathlib, stat, sys
+a,b=map(pathlib.Path,sys.argv[1:3]);x,y=a.stat(),b.stat()
+assert not a.is_symlink() and not b.is_symlink()
+assert (x.st_dev,x.st_ino,x.st_uid,x.st_size)==(y.st_dev,y.st_ino,y.st_uid,y.st_size)
+assert stat.S_IMODE(x.st_mode)==stat.S_IMODE(y.st_mode)==0o600 and y.st_size==int(sys.argv[4])
+h=hashlib.sha256()
+with b.open('rb') as f:
+    for block in iter(lambda:f.read(1048576),b''):h.update(block)
+assert h.hexdigest()==sys.argv[3]
+PY
+}
+if [[ "$version" == "1.8.0" ]]; then
+  reuse_verified_dump
+  printf '%s\n' 'Database recovery uses the verified pre-DDL V112 dump; this is not a post-DDL snapshot.'
+else
+  sudo -u postgres pg_dump --format=custom --lock-wait-timeout=10s next_ai_commerce > "$backup_dir/database.dump"
+fi
+# END VERIFIED BACKUP REUSE
 test -s "$backup_dir/database.dump"
 pg_restore --list "$backup_dir/database.dump" >/dev/null
 sha256sum "$backup_dir/database.dump" "$backup_dir/previous.jar"

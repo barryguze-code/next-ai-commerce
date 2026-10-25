@@ -60,7 +60,7 @@ jobs:
         run: |
           [[ -z "$REVIEWED_MANIFEST_SHA256" || "$REVIEWED_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
           encoded=$(tar -czf - scripts/production-release.sh scripts/fee-release-manifest.py | base64 -w0)
-          command="set -eu; work=\$(mktemp -d /opt/next-ai-commerce/releases/.release-tools-XXXXXX); trap 'rm -f \"\$work/scripts/production-release.sh\" \"\$work/scripts/fee-release-manifest.py\"; rmdir \"\$work/scripts\" \"\$work\"' EXIT; printf '%s' '$encoded' | base64 -d | tar -xzf - -C \"\$work\"; FEE_RELEASE_GUARD=\"\$work/scripts/fee-release-manifest.py\" bash \"\$work/scripts/production-release.sh\" '$REVISION' '$RELEASE_VERSION' '$PACKAGE_SHA256' '$REVIEWED_MANIFEST_SHA256'"
+          command="set -eu; work=\$(mktemp -d /opt/next-ai-commerce/releases/.release-tools-XXXXXX); trap 'rm -f \"\$work/scripts/production-release.sh\" \"\$work/scripts/fee-release-manifest.py\"; rmdir \"\$work/scripts\" \"\$work\"' EXIT; printf '%s' '$encoded' | base64 -d | tar -xzf - -C \"\$work\"; FEE_RELEASE_OPERATION_REVISION='$REVISION' FEE_RELEASE_GUARD=\"\$work/scripts/fee-release-manifest.py\" bash \"\$work/scripts/production-release.sh\" '$REVISION' '$RELEASE_VERSION' '$PACKAGE_SHA256' '$REVIEWED_MANIFEST_SHA256'"
           parameters=$(jq -n --arg command "$command" '{commands:[$command],executionTimeout:["1800"]}')
           command_id=$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --parameters "$parameters" --query 'Command.CommandId' --output text)
           for attempt in $(seq 1 120); do

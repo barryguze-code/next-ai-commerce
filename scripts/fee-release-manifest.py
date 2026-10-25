@@ -65,6 +65,10 @@ def protected(path, parent):
 def validate(m, expected, observed, now):
     require(m['format'] == 'FEE_RELEASE_V1' and m['version'] == '1.8.0')
     require(all(m[k] == expected[k] for k in ('revision', 'version', 'package_sha256')))
+    require(m['operation_revision'] == expected['operation_revision'])
+    require(m['operation_script_sha256'] == observed['operation_script_sha256']
+            and m['operation_guard_sha256'] == observed['operation_guard_sha256'])
+    require(m['backup_strategy'] == 'REUSE_VERIFIED_PRE_DDL' and 0 < m['package_bytes'] < 200000000)
     require(now < instant(m['expires_at']) <= now + dt.timedelta(hours=2))
     require(all(re.fullmatch('[a-f0-9]{64}', m['source'][k]) for k in ('jar_sha256', 'argv_sha256', 'start_sha256')))
     require(m['source'] == observed['source'])
@@ -72,7 +76,9 @@ def validate(m, expected, observed, now):
             and m['application_role'] == observed['application_role'] == 'nextcommerce')
     require(observed['migration_versions'] == list(range(91, 115)) and observed['failed_migrations'] == 0)
     require(observed['role_restricted'] and observed['tables_ready'] and observed['sequences_ready'])
-    require(all(observed['settings'].get(k) == 'false' for k in NEW_FLAGS))
+    ui = m.get('read_only_ui_enabled', False)
+    require(isinstance(ui, bool))
+    require(all(observed['settings'].get(k) == ('true' if ui and k == 'AMAZON_FEE_VARIANCE_UI_ENABLED' else 'false') for k in NEW_FLAGS))
     # Existing worker/write policy is bound by the full startup-file checksum, not switched OFF.
     require(m['stage'] == 'INSTALL_ONLY' and m['activation'] == 'SEPARATE_BOUNDED_GRANT' and m['automatic_collection'] is False)
     plan = observed['activation_plan']
@@ -118,6 +124,7 @@ def main(args):
     require(digest(receipt_path) == m['recovery_receipt_sha256'])
     recovery = json.loads(receipt_path.read_text())
     dump = protected(recovery['dump'], ROOT / 'backups')
+    require(stat.S_IMODE(dump.stat().st_mode) == 0o600)
     require(dump.stat().st_size > 0 and int(recovery['dump_bytes']) == dump.stat().st_size)
     subprocess.run(['pg_restore', '--list', str(dump)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     restore_db = recovery['restore_database']
@@ -146,8 +153,15 @@ def main(args):
         settings=settings, recovery=recovery, dump_sha256=digest(dump), restore_versions=versions(restore_db),
         restore_failed_migrations=int(sql(restore_db, 'SELECT count(*) FROM public.flyway_schema_history WHERE NOT success')),
         restore_tables_ready=ready(restore_db, m['migration_owner'], role))
-    validate(m, dict(revision=revision, version=version, package_sha256=package_sha), observed, dt.datetime.now(dt.timezone.utc))
+    observed.update(operation_script_sha256=digest(Path(os.environ['FEE_RELEASE_OPERATION_SCRIPT'])),
+                    operation_guard_sha256=digest(Path(__file__)))
+    validate(m, dict(revision=revision, version=version, package_sha256=package_sha,
+                     operation_revision=os.environ['FEE_RELEASE_OPERATION_REVISION']), observed, dt.datetime.now(dt.timezone.utc))
     print('Reviewed 1.8 manifest, preserved runtime, recovery and V113/V114 prerequisites verified. No activation performed.')
+    print('FEE_VERIFIED_DUMP=' + str(dump))
+    print('FEE_VERIFIED_DUMP_SHA256=' + observed['dump_sha256'])
+    print('FEE_VERIFIED_DUMP_BYTES=' + str(dump.stat().st_size))
+    print('FEE_PACKAGE_BYTES=' + str(m['package_bytes']))
 
 if __name__ == '__main__':
     try:
