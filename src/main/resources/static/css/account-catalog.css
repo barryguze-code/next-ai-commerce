@@ -1,0 +1,17 @@
+/* Same header structure and density as Orders, loaded after the shared cascade. */
+.account-catalog-workspace .workspace-header>div:first-child{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.account-catalog-workspace .workspace-header .page-intro{margin:0;font-size:12px}
+.account-catalog-workspace .workspace-header{padding-bottom:12px;min-height:40px}
+.account-catalog-workspace .context-switcher{min-height:38px;height:38px;padding:3px 9px;gap:8px;box-sizing:border-box}
+.account-catalog-workspace .context-brand-logo,.account-catalog-workspace .context-icon,.account-catalog-workspace .context-selected-channel,.account-catalog-workspace .context-selected-channel img{width:28px;height:28px;min-width:28px}
+.account-catalog-workspace .context-copy strong{font-size:12px}.account-catalog-workspace .context-copy small{font-size:10px}
+.account-catalog-workspace .card-toolbar:empty{display:none}
+
+.account-catalog-workspace .catalog-card{margin-top:8px}
+.account-catalog-workspace .catalog-section-heading{display:flex;align-items:center;gap:16px;flex-wrap:wrap;min-width:0}
+.account-catalog-workspace .catalog-section-heading h2{flex:none}.account-catalog-workspace .catalog-section-heading p{margin:0;min-width:0}
+.catalog-empty-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.account-catalog-workspace .vendor-grid article{position:relative;min-width:0;padding-right:92px}
+.catalog-vendor-logo{position:absolute;top:16px;right:16px;width:60px;height:60px;object-fit:contain;border-radius:10px}
+.catalog-vendor-logo[hidden]{display:none}
+.account-catalog-workspace .vendor-grid dl{margin-right:-76px}

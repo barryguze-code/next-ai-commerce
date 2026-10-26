@@ -215,7 +215,7 @@ public class CollaborationController {
             .header("X-Content-Type-Options","nosniff").body(attachment.bytes());
     }
 
-    private List<CollaborationRepository.AttachmentUpload> attachments(List<MultipartFile> files){
+    static List<CollaborationRepository.AttachmentUpload> attachments(List<MultipartFile> files){
         if(files==null)return List.of();var present=files.stream().filter(file->file!=null&&!file.isEmpty()).toList();
         if(present.size()>3)throw new IllegalArgumentException("Attach up to three files to one message.");
         long total=present.stream().mapToLong(MultipartFile::getSize).sum();if(total>10_000_000)throw new IllegalArgumentException("Keep all attachments under 10 MB per message.");

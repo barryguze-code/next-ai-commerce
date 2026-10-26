@@ -1,7 +1,7 @@
 (()=>{
   if(window.NextAiCollaborationReady)return;
   window.NextAiCollaborationReady=true;
-  let membersPromise,state=null,huddleSocket=null,huddleReconnect=null,lastPong=Date.now(),summariesRefreshing=false;
+  let state=null,huddleSocket=null,huddleReconnect=null,lastPong=Date.now(),summariesRefreshing=false;
   const $=(selector,scope=document)=>scope.querySelector(selector);
   const $$=(selector,scope=document)=>[...scope.querySelectorAll(selector)];
   const escape=value=>{const node=document.createElement('span');node.textContent=value??'';return node.innerHTML};
@@ -10,10 +10,13 @@
   const formatBytes=value=>Number(value)<1024?value+' B':Number(value)<1048576?Math.ceil(Number(value)/1024)+' KB':(Number(value)/1048576).toFixed(1)+' MB';
   const dialog=()=>$('#contextual-thread-dialog');
   const view=()=>({dialog:dialog(),list:$('#thread-conversation-list'),start:$('#thread-conversation-start'),reply:$('#thread-conversation-reply')});
-  const historyUrl=(type,key)=>'/app/collaboration?view=ALL&entityType='+encodeURIComponent(type)+'&subjectKey='+encodeURIComponent(key);
+  const memberRequests=new Map();
+  const globalScope=()=>state?.type==='GLOBAL_PRODUCT';
+  const api=(suffix,type=state?.type)=>(type==='GLOBAL_PRODUCT'?'/app/platform/catalog/discussions':'/app/collaboration')+suffix;
+  const historyUrl=(type,key)=>type==='GLOBAL_PRODUCT'?'/app/platform/catalog':'/app/collaboration?view=ALL&entityType='+encodeURIComponent(type)+'&subjectKey='+encodeURIComponent(key);
   const socketOpen=()=>huddleSocket?.readyState===WebSocket.OPEN;
   const sendHuddle=payload=>{if(!socketOpen())return false;huddleSocket.send(JSON.stringify(payload));return true;};
-  async function members(){if(!membersPromise)membersPromise=fetch('/app/collaboration/members',{headers:{Accept:'application/json'}}).then(response=>response.ok?response.json():[]).catch(()=>[]);return membersPromise;}
+  async function members(){const url=api('/members');if(!memberRequests.has(url))memberRequests.set(url,fetch(url,{headers:{Accept:'application/json'}}).then(response=>response.ok?response.json():[]).catch(()=>[]));return memberRequests.get(url);}
   function mentionState(field){const before=field.value.slice(0,field.selectionStart??field.value.length),match=before.match(/(^|\s)@([A-Za-z0-9._-]*)$/);return match?{query:match[2].toLowerCase(),start:before.length-match[2].length-1,end:before.length}:null;}
   const composerFor=field=>field.closest('.collaboration-composer,.huddle-composer');
   function closeMentionMenu(field){const menu=composerFor(field)?.querySelector('.mention-menu');if(menu)menu.hidden=true;}
@@ -45,7 +48,7 @@
       marketplace:button.dataset.marketplace,tracking:button.dataset.tracking,package:button.dataset.package,image:button.dataset.image};
     return Object.fromEntries(Object.entries(pairs).filter(([,value])=>value!=null&&value!==''));
   }
-  function renderAttachments(attachments){if(!attachments?.length)return '';return '<div class="thread-attachments">'+attachments.map(file=>'<a href="/app/collaboration/attachments/'+encodeURIComponent(file.id)+'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 12 5.5-5.5a3 3 0 014.2 4.2l-7.4 7.4a5 5 0 01-7.1-7.1l7.1-7.1"/></svg><span><strong>'+escape(file.fileName)+'</strong><small>'+escape(formatBytes(file.sizeBytes))+'</small></span></a>').join('')+'</div>';}
+  function renderAttachments(attachments){if(!attachments?.length)return '';return '<div class="thread-attachments">'+attachments.map(file=>'<a href="'+api('/attachments/')+encodeURIComponent(file.id)+'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 12 5.5-5.5a3 3 0 014.2 4.2l-7.4 7.4a5 5 0 01-7.1-7.1l7.1-7.1"/></svg><span><strong>'+escape(file.fileName)+'</strong><small>'+escape(formatBytes(file.sizeBytes))+'</small></span></a>').join('')+'</div>';}
   function renderMessages(conversation,showBack){
     const review=conversation.review,messages=conversation.messages||[],privateMode=conversation.messageType==='PRIVATE_NOTE';
     const empty='<div class="thread-feed-empty"><strong>'+(privateMode?'No private notes yet':'No team messages yet')+'</strong><span>'+(privateMode?'Only you will be able to read notes added here.':'Send the first team reply in this thread.')+'</span></div>';
@@ -54,13 +57,23 @@
       (messages.length?'<section class="conversation-thread"><div class="conversation-thread-meta"><span>Started '+escape(formatDate(review.createdAt))+' by '+escape(review.requester)+'</span><span>'+escape(review.participants||review.requester)+'</span></div><div class="conversation-messages">'+messages.map(message=>'<article><div class="conversation-avatar">'+escape((message.senderName||message.authorEmail||'?').charAt(0).toUpperCase())+'</div><div><header><strong>'+escape(message.senderName||message.authorEmail)+'</strong><time>'+escape(formatDate(message.createdAt))+'</time></header><p>'+formattedBody(message.body)+'</p>'+renderAttachments(message.attachments)+'</div></article>').join('')+'</div></section>':empty);
   }
   function configureForms(){
-    if(dialog())dialog().dataset.visibility=state.messageType;
+    if(dialog()){dialog().dataset.visibility=state.messageType;dialog().dataset.scope=state.type;}
     $$('.chat-add-person',dialog()).forEach(button=>button.hidden=state.messageType==='PRIVATE_NOTE');
     const management=$('#thread-management');if(management)management.hidden=!state.currentReview||!state.canCollaborate||state.currentReview.status!=='ACTIVE'||state.messageType==='PRIVATE_NOTE';
-    const elements=view(),snapshot=JSON.stringify(state.snapshot||{});if(elements.start){const form=elements.start;form.elements.subjectType.value=state.type;form.elements.subjectKey.value=state.key;form.elements.subjectLabel.value=state.label;form.elements.title.value='Conversation about '+state.label;form.elements.messageType.value=state.messageType;form.elements.contextSnapshot.value=snapshot;form.elements.parentUrl.value=state.parentUrl||location.pathname+location.search;}
+    const elements=view(),snapshot=JSON.stringify(state.snapshot||{});if(elements.start)elements.start.action=api('/reviews');
+    $$('[data-thread-tab=PRIVATE_NOTE]',dialog()).forEach(button=>button.hidden=globalScope());
+    const audience=$('[data-thread-tab=TEAM_CHAT] small',dialog());if(audience)audience.textContent=globalScope()?'Shared with platform administrators across accounts.':'Visible to permitted teammates';if(elements.start){const form=elements.start;form.elements.subjectType.value=state.type;form.elements.subjectKey.value=state.key;form.elements.subjectLabel.value=state.label;form.elements.title.value='Conversation about '+state.label;form.elements.messageType.value=state.messageType;form.elements.contextSnapshot.value=snapshot;form.elements.parentUrl.value=state.parentUrl||location.pathname+location.search;}
     if(elements.reply)elements.reply.elements.messageType.value=state.messageType;
     $$('.collaboration-composer textarea',elements.dialog).forEach(field=>{field.placeholder=state.messageType==='PRIVATE_NOTE'?'Write a private note…':'Write a message… Type @ to mention a teammate';});
-    $$('[data-thread-composer-hint]',elements.dialog).forEach(hint=>hint.textContent=state.messageType==='PRIVATE_NOTE'?'Visible only to your signed-in account.':'Type @ to notify a teammate by email.');
+    $$('[data-thread-composer-hint]',elements.dialog).forEach(hint=>hint.textContent=globalScope()?'Shared with platform administrators across accounts. Email notifications are off.':state.messageType==='PRIVATE_NOTE'?'Visible only to your signed-in account.':'Type @ to notify a teammate by email.');
+  }
+  async function sendGlobal(form,submitter){
+    const current=state;if(!globalScope()||form.dataset.saving)return;form.dataset.saving='true';
+    let feedback=form.querySelector('[data-global-feedback]');if(!feedback){feedback=document.createElement('p');feedback.dataset.globalFeedback='';feedback.setAttribute('role','status');form.append(feedback);}feedback.textContent='Saving…';
+    const data=new FormData(form);if(submitter?.name==='status')data.set('status',submitter.value);
+    const url=submitter?.name==='reopen'?api('/reviews/'+encodeURIComponent(submitter.value)+'/reopen'):form.action;
+    try{const response=await fetch(url,{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json();if(!response.ok)throw Error(result.error||'The shared discussion could not be saved.');if(state!==current)return;form.reset();feedback.textContent='';await loadConversation(result.reviewId,true);await markRecordConversationActive('GLOBAL_PRODUCT',state.key);}
+    catch(error){if(state===current)feedback.textContent=error.message;}finally{delete form.dataset.saving;}
   }
   function handleHuddleEvent(event){lastPong=Date.now();window.LiveHuddleUI?.event(event,sendHuddle);}
   function updateAssignment(review){
@@ -76,14 +89,14 @@
   async function saveAssignment(id,people){
     const body=new FormData();$$('input[type=hidden]',view().reply).filter(input=>input.name.includes('csrf')).forEach(input=>body.set(input.name,input.value));
     people.forEach(person=>body.append('people',person));
-    const response=await fetch('/app/collaboration/reviews/'+encodeURIComponent(id)+'/assignees',{method:'POST',body,headers:{Accept:'application/json'}});
+    const response=await fetch(api('/reviews/')+encodeURIComponent(id)+'/assignees',{method:'POST',body,headers:{Accept:'application/json'}});
     if(!response.ok)throw new Error('Assignment could not be saved. Please try again.');
     const review=await response.json();updateAssignment(review);if(state?.type&&state?.key)await markRecordConversationActive(state.type,state.key);return review;
   }
   window.assignConversationToMe=async(id,email,button)=>{
     button.disabled=true;
     try{
-      const response=await fetch('/app/collaboration/reviews/'+encodeURIComponent(id),{headers:{Accept:'application/json'}});
+      const response=await fetch(api('/reviews/')+encodeURIComponent(id),{headers:{Accept:'application/json'}});
       if(!response.ok)throw new Error('Conversation could not be loaded.');
       const conversation=await response.json(),team=await members(),emails=new Set((conversation.review.assigneeEmail||'').toLowerCase().split(',').map(x=>x.trim()));
       emails.add((email||'').toLowerCase());
@@ -95,6 +108,8 @@
   };
   async function renderManagement(review){
     const root=$('#thread-management');if(!root)return;updateAssignment(review);
+    if(globalScope()){root.hidden=!state.canCollaborate||review.status!=='ACTIVE';const close=$('.conversation-close-button',root);if(close)close.setAttribute('onclick',"return confirm('Close this shared discussion?')");return;}
+    $('.conversation-close-button',root)?.setAttribute('onclick',"return confirm('Close this conversation? Everyone involved will be notified by email.')");
     const assigned=(review.assigneeEmail||'').toLowerCase().split(',').map(value=>value.trim()).includes((root.dataset.currentEmail||'').toLowerCase());
     const statusIcon=$('#thread-status-icon');if(statusIcon){statusIcon.src=window.NextAiIcons.source(review.status==='ACTIVE'&&assigned?'collaboration-assigned-red':review.messageCount>0?'collaboration-blue':'collaboration-no-message-gray');statusIcon.alt=assigned?'Assigned to you':review.messageCount>0?'Active conversation':'No messages';}
     window.CollaborationTaskDates?.prepare(review);
@@ -147,7 +162,7 @@
       const keys=[...new Set(buttons.map(button=>button.dataset.entityId))];
       for(let start=0;start<keys.length;start+=250){try{
         const params=new URLSearchParams({entityType:type});keys.slice(start,start+250).forEach(key=>params.append('entityId',key));
-        const response=await fetch('/app/collaboration/summaries?'+params,{headers:{Accept:'application/json'},cache:'no-store',signal:AbortSignal.timeout(10000)});if(!response.ok)continue;const summaries=await response.json();
+        const response=await fetch(api('/summaries?',type)+params,{headers:{Accept:'application/json'},cache:'no-store',signal:AbortSignal.timeout(10000)});if(!response.ok)continue;const summaries=await response.json();
         buttons.filter(button=>keys.slice(start,start+250).includes(button.dataset.entityId)).forEach(button=>{
           const summary=summaries[button.dataset.entityId]||{};['activeCount','totalCount','closedCount','originCount','relatedCount','mineCount','urgentUnreadMentionCount','unreadMessageCount','directMessageCount','relatedMessageCount'].forEach(field=>{if(summary[field]===undefined)delete button.dataset[field];else button.dataset[field]=String(summary[field]);});decorateRecordConversationButton(button);
         });
@@ -160,7 +175,7 @@
     const nodes=$$('[data-entity-type="'+CSS.escape(type)+'"][data-entity-id="'+CSS.escape(key)+'"]');
     try{
       const params=new URLSearchParams({entityType:type,entityId:key});
-      const response=await fetch('/app/collaboration/summaries?'+params,{headers:{Accept:'application/json'},cache:'no-store'});
+      const response=await fetch(api('/summaries?',type)+params,{headers:{Accept:'application/json'},cache:'no-store'});
       if(!response.ok)throw new Error('Summary unavailable');
       const summary=(await response.json())[key]||{};
       nodes.forEach(node=>{const button=node.matches('.collaboration-row-button')?node:$('.collaboration-row-button',node);if(!button)return;
@@ -175,7 +190,7 @@
     huddleSocket.addEventListener('open',()=>{lastPong=Date.now();});huddleSocket.addEventListener('message',message=>{try{handleHuddleEvent(JSON.parse(message.data))}catch(error){console.warn('A live huddle update could not be displayed.',error);}});huddleSocket.addEventListener('close',event=>{window.LiveHuddleUI?.event({type:'OFFLINE'},sendHuddle);if(event.code!==1003&&event.code!==1008)huddleReconnect=setTimeout(connectHuddles,2000);});huddleSocket.addEventListener('error',()=>huddleSocket.close());
   }
   function selectTab(type,reload=true){
-    if(!state)return;state.mode='PERSISTENT';state.messageType=type==='PRIVATE_NOTE'?'PRIVATE_NOTE':'TEAM_CHAT';
+    if(!state)return;state.mode='PERSISTENT';state.messageType=!globalScope()&&type==='PRIVATE_NOTE'?'PRIVATE_NOTE':'TEAM_CHAT';
     $$('[data-thread-tab]',dialog()).forEach(button=>button.setAttribute('aria-selected',String(button.dataset.threadTab===state.messageType)));
     configureForms();if(!reload)return;if(state.currentReviewId)loadConversation(state.currentReviewId,state.showBack);else if(state.active?.length)loadConversation(state.active[0].id,false);else showNewConversation();
   }
@@ -192,22 +207,23 @@
     const requestedType=state.messageType;
     document.dispatchEvent(new Event('collaboration-thread-loading'));
     try{
-      const response=await fetch('/app/collaboration/reviews/'+encodeURIComponent(reviewId)+'?messageType='+requestedType,{headers:{Accept:'application/json'},cache:'no-store'});
+      const response=await fetch(api('/reviews/')+encodeURIComponent(reviewId)+'?messageType='+requestedType,{headers:{Accept:'application/json'},cache:'no-store'});
       if(!response.ok)throw new Error();const conversation=await response.json();
       if(state.currentReviewId!==reviewId||state.messageType!==requestedType)return;
       state.currentReview=conversation.review;
       setParentLink(conversation.review.parentUrl,conversation.review.subjectType,conversation.review.subjectKey,conversation.review.subjectLabel);
       elements.list.innerHTML=renderMessages(conversation,showBack);
-      elements.reply.action='/app/collaboration/reviews/'+conversation.review.id+'/reply';
+      if(globalScope()&&conversation.review.status==='CLOSED'){const reopen=document.createElement('button');reopen.type='button';reopen.className='secondary-button';reopen.textContent='Reopen conversation';reopen.onclick=()=>sendGlobal(view().reply,{name:'reopen',value:conversation.review.id});elements.list.append(reopen);}
+      elements.reply.action=api('/reviews/')+conversation.review.id+'/reply';
       elements.reply.hidden=!state.canCollaborate||conversation.review.status==='CLOSED';configureForms();renderManagement(conversation.review);
       $('[data-conversation-back]',elements.list)?.addEventListener('click',showPicker);
       if(!elements.reply.hidden)$('textarea',elements.reply).focus();elements.list.scrollTop=elements.list.scrollHeight;
-      document.dispatchEvent(new CustomEvent('collaboration-thread-rendered',{detail:{reviewId,messageType:requestedType,messageIds:conversation.messages.map(message=>message.id),unreadMentionMessageIds:conversation.unreadMentionMessageIds||[]}}));
+      document.dispatchEvent(new CustomEvent('collaboration-thread-rendered',{detail:{reviewId,messageType:requestedType,messageIds:conversation.messages.map(message=>message.id),scope:state.type,unreadMentionMessageIds:conversation.unreadMentionMessageIds||[]}}));
     }catch(_){elements.list.innerHTML='<div class="history-error">This conversation could not be loaded. Please try again.</div>';}
   }
   async function loadSubject(forcePicker){
     const elements=view();elements.list.innerHTML='<div class="conversation-loading">Loading conversations…</div>';elements.start.hidden=true;elements.reply.hidden=true;
-    try{const response=await fetch('/app/collaboration/subject?subjectType='+encodeURIComponent(state.type)+'&subjectKey='+encodeURIComponent(state.key),{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();const conversations=await response.json(),threads=conversations.map(item=>item.review).filter(review=>review.status==='ACTIVE'),active=threads.filter(review=>review.status==='ACTIVE');Object.assign(state,{threads,active,closedCount:threads.length-active.length,historyUrl:historyUrl(state.type,state.key)});if((forcePicker||threads.length>1)&&threads.length)showPicker();else if(active.length)loadConversation(active[0].id,false);else if(threads.length===1)loadConversation(threads[0].id,false);else showNewConversation();}catch(_){elements.list.innerHTML='<div class="history-error">These conversations could not be loaded. Please try again.</div>';}
+    try{const response=await fetch(api('/subject?subjectType=')+encodeURIComponent(state.type)+'&subjectKey='+encodeURIComponent(state.key),{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();const conversations=await response.json(),threads=conversations.map(item=>item.review).filter(review=>globalScope()||review.status==='ACTIVE'),active=threads.filter(review=>review.status==='ACTIVE');Object.assign(state,{threads,active,closedCount:threads.length-active.length,historyUrl:historyUrl(state.type,state.key)});if((globalScope()||forcePicker||threads.length>1)&&threads.length)showPicker();else if(active.length)loadConversation(active[0].id,false);else if(threads.length===1)loadConversation(threads[0].id,false);else showNewConversation();}catch(_){elements.list.innerHTML='<div class="history-error">These conversations could not be loaded. Please try again.</div>';}
   }
   function setHeader(button){
     $('#thread-record-type').textContent=(button.dataset.entityType||button.dataset.type||'Record').replaceAll('_',' ')+' collaboration';$('#thread-record-title').textContent=button.dataset.title||button.dataset.product||'Record conversation';
@@ -243,7 +259,7 @@
   function boot(){
     document.addEventListener('collaboration-messages-read',()=>{clearTimeout(recordRefreshTimer);recordRefreshTimer=setTimeout(refreshRecordSummaries,100);
       const id=state?.currentReviewId;
-      if(id&&$$('tr[data-review-id]').some(row=>row.dataset.reviewId===String(id)))fetch('/app/collaboration/reviews/'+encodeURIComponent(id),{cache:'no-store',headers:{Accept:'application/json'}}).then(r=>r.ok?r.json():null).then(c=>{if(c)updateAssignment(c.review);}).catch(()=>{});
+      if(id&&$$('tr[data-review-id]').some(row=>row.dataset.reviewId===String(id)))fetch(api('/reviews/')+encodeURIComponent(id),{cache:'no-store',headers:{Accept:'application/json'}}).then(r=>r.ok?r.json():null).then(c=>{if(c)updateAssignment(c.review);}).catch(()=>{});
     });
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshRecordSummaries();});
     setInterval(()=>{refreshRecordSummaries();},120000);
@@ -261,7 +277,7 @@
       added.forEach(button=>window.prepareRecordCollaboration(button));
     }).observe(document.body,{childList:true,subtree:true});
     $$('[data-collaboration-composer]').forEach(field=>{wireComposer(field);wireEnterToSend(field,field.closest('form'));});wireAttachments();$$('[data-thread-tab]').forEach(button=>button.addEventListener('click',()=>selectTab(button.dataset.threadTab)));
-    $$('.collaboration-composer').forEach(form=>form.addEventListener('submit',event=>{const field=$('textarea',form),files=$('input[type=file]',form)?.files;if(!event.submitter?.name&&!field.value.trim()&&!files?.length){event.preventDefault();field.focus();}}));
+    $$('.collaboration-composer').forEach(form=>form.addEventListener('submit',event=>{const field=$('textarea',form),files=$('input[type=file]',form)?.files;if(!event.submitter?.name&&!field.value.trim()&&!files?.length){event.preventDefault();field.focus();return;}if(globalScope()){event.preventDefault();sendGlobal(form,event.submitter);}}));
     $$('[data-thread-dialog-close]').forEach(button=>button.addEventListener('click',()=>dialog().close()));
     dialog()?.addEventListener('click',event=>{if(event.target===event.currentTarget)dialog().close();});
     const auto=$('[data-thread-autopen="true"]');if(auto)setTimeout(()=>window.openCollaborationReview(auto),80);

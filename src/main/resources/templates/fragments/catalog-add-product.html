@@ -1,0 +1,69 @@
+<dialog xmlns:th="http://www.thymeleaf.org" th:fragment="dialog" id="product-dialog" class="invite-dialog catalog-product-dialog" aria-labelledby="catalog-add-title">
+<form method="post" th:action="@{/app/catalog/products}" class="dialog-shell">
+<div class="dialog-header">
+<div>
+
+<h2 id="catalog-add-title">Add a product</h2>
+<p>Choose or create a product, then set its buying terms.</p>
+</div>
+<button class="dialog-close" type="button" aria-label="Close Add a product" onclick="this.closest('dialog').close()">×</button>
+</div>
+<div class="dialog-body catalog-form">
+<section data-global-search hidden>
+<label for="catalog-global-query">Search Global Catalogue</label>
+<input id="catalog-global-query" type="search" placeholder="UPC, product name or brand" maxlength="160" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="catalog-global-results" aria-expanded="false" aria-describedby="catalog-global-feedback">
+
+<div id="catalog-global-results" class="catalog-global-results" role="listbox" aria-label="Global Catalogue products" hidden></div>
+<button data-global-retry class="secondary-button compact-button" type="button" hidden>Retry search</button>
+<button data-global-create class="secondary-button compact-button" type="button" hidden>Create new product</button>
+</section>
+<p id="catalog-global-feedback" class="cell-note" role="status" aria-live="polite">Search by UPC, product name or brand.</p>
+<input type="hidden" name="globalProductId" disabled><input type="hidden" name="globalRevision" disabled>
+<section data-global-selected class="catalog-global-selected" aria-label="Selected global product" hidden></section>
+<fieldset data-create-product class="catalog-new-product">
+<legend>New global product</legend>
+<label>Product name<input name="name" required placeholder="Enter the product name">
+<small>Use the consumer-facing product name, without vendor pricing.</small>
+</label>
+<div class="form-pair">
+<label>Brand<input name="brand" placeholder="Brand name">
+</label>
+<label>Size<input name="size" maxlength="80" placeholder="e.g. 12 oz or 6 pieces"></label>
+</div>
+<div class="form-pair three">
+<label>Unit<input name="unitOfMeasure" value="EA" maxlength="30" required placeholder="EA"></label>
+<label>Identifier type<select name="identifierType">
+<option>UPC</option>
+<option>EAN</option>
+<option>GTIN</option>
+</select>
+</label>
+<label>Identifier<input name="identifier" required placeholder="Scan or enter UPC, EAN, or GTIN">
+</label>
+</div>
+<label class="check-line">
+<input type="checkbox" name="expirationRequired" value="true">
+<span>
+<strong>Track expiration dates</strong>
+<small>Receiving will require an expiration date for this product.</small>
+</span>
+</label>
+</fieldset>
+<section data-account-details class="catalog-account-details">
+<input type="hidden" name="accountSku">
+<header class="catalog-buying-heading"><h3>Buying terms</h3><small th:text="${selectedAccountName ?: 'Selected account'}">Selected account</small></header>
+<div class="catalog-buying-grid">
+<label>Vendor<select name="vendorId"><option value="" th:text="${vendors == null or #lists.isEmpty(vendors) ? 'No active vendors in this account' : 'Choose a vendor'}">Choose a vendor</option><option th:each="vendor:${vendors}" th:value="${vendor.id}" th:attr="data-currency=${vendor.currency}" th:text="${vendor.name}">Vendor</option></select></label>
+<label>Vendor item code<input name="vendorItemCode" maxlength="160" disabled><small data-vendor-code-source role="status"></small></label>
+<label>Cost / each<input name="unitCost" type="number" min="0" max="100000" step="0.0001" disabled><small data-cost-currency>Select a vendor to enter cost.</small></label>
+</div>
+<p class="cell-note" th:if="${vendors == null or #lists.isEmpty(vendors)}">Add a vendor from <a href="/app/catalog">Account Catalogue</a>.</p>
+</section>
+</div>
+<div class="dialog-actions">
+<button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button>
+<a data-global-existing class="primary-button compact-button" hidden>Open existing item</a>
+<button data-add-to-account class="primary-button compact-button" type="submit">Add to account</button>
+</div>
+</form>
+</dialog>

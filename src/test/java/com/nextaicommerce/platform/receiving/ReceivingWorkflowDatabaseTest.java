@@ -234,7 +234,9 @@ class ReceivingWorkflowDatabaseTest {
         var client=org.mockito.Mockito.mock(com.nextaicommerce.platform.sync.AmazonSpApiClient.class);
         var controller=new com.nextaicommerce.platform.sync.CatalogImageSyncController(jdbc,tx,client,context.getBean(CatalogRepository.class));
         var session=new org.springframework.mock.web.MockHttpSession();session.setAttribute("selectedTenantId",tenant);
-        var response=controller.sync(fixture("INVOICE").product(),session,org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class));
+        var auth=org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class);org.mockito.Mockito.when(auth.getName()).thenReturn(actor);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,"access",context.getBean(com.nextaicommerce.platform.web.WorkspaceAccessRepository.class));
+        var response=controller.sync(fixture("INVOICE").product(),session,auth);
         assertThat(response.getStatusCode().value()).isEqualTo(400);
         assertThat(response.getBody().get("error")).contains("No active Amazon SKU");
         org.mockito.Mockito.verifyNoInteractions(client);

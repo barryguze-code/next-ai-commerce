@@ -8,6 +8,19 @@ if(window.NextAiTableDataTools)return;
 const states=new Map();
 const normalize=value=>String(value??'').replace(/\s+/g,' ').trim();
 const csvCell=value=>{let text=normalize(value);if(/^[=+\-@\t\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"'};
+// Orders and opted-in server tables share one live-search contract.
+function bindServerSearch(input){
+ if(input.dataset.liveSearch)return;input.dataset.liveSearch='true';let timer,composing=false;
+ const key='nextai.table.search-focus.'+location.pathname;
+ try{const saved=JSON.parse(sessionStorage.getItem(key)||'null');sessionStorage.removeItem(key);if(saved&&saved.q===(new URL(location.href).searchParams.get(input.name||'q')||'')){input.focus({preventScroll:true});input.setSelectionRange(saved.start,saved.end);}}catch{}
+ const run=()=>{clearTimeout(timer);if(composing)return;timer=setTimeout(()=>{
+  const value=input.value.trim(),next=new URL(location.href);if(value.length===1||value===(next.searchParams.get(input.name||'q')||''))return;
+  next.searchParams.set(input.name||'q',value);next.searchParams.delete('page');next.searchParams.delete('goToPage');
+  try{sessionStorage.setItem(key,JSON.stringify({q:value,start:input.selectionStart,end:input.selectionEnd}));}catch{}
+  input.setAttribute('aria-busy','true');location.assign(next);
+ },700);};
+ input.addEventListener('input',run);input.addEventListener('compositionstart',()=>{composing=true;clearTimeout(timer)});input.addEventListener('compositionend',()=>{composing=false;run()});input.form?.addEventListener('submit',()=>clearTimeout(timer));
+}
 function headers(root){return [...root.querySelectorAll('thead th,.table-grid-header [data-column]')].map((el,index)=>({id:el.dataset.column||'column-'+index,title:el.dataset.title||normalize(el.textContent).replace(/[↑↓]/g,''),el,index})).sort((a,b)=>Number(a.el.style.order||a.index)-Number(b.el.style.order||b.index));}
 function rows(root){return root.matches('table')?[...root.tBodies].flatMap(body=>[...body.rows]).filter(row=>![...row.cells].some(cell=>cell.colSpan>1)):[...root.querySelectorAll(root.dataset.gridRow||'.order-item')];}
 function textOf(cell){
@@ -162,6 +175,7 @@ function init(root){
     toolbar.prepend(label);search=label.querySelector('input');search.value=saved.query;
     search.addEventListener('input',()=>{saved.query=search.value;saved.page=1;render()});
   }
+  if(isServer&&(root.dataset.tableWidget==='orders'||root.dataset.tableLiveSearch==='true'))bindServerSearch(search);
   // One search presentation, retaining the original input and its domain listeners.
   let searchLabel=search.closest('label');
   if(!searchLabel){searchLabel=document.createElement('label');search.before(searchLabel);searchLabel.append(search)}
@@ -347,6 +361,6 @@ function init(root){
   render();
 }
 function refresh(){document.querySelectorAll('[data-table-widget-ready]').forEach(init)}
-window.NextAiTableDataTools={refresh,csvCell,exportColumns,exportValues,resetFilters:key=>{const saved=states.get(key);if(saved){saved.filters={};saved.query='';saved.page=1;}}};
+window.NextAiTableDataTools={bindServerSearch,refresh,csvCell,exportColumns,exportValues,resetFilters:key=>{const saved=states.get(key);if(saved){saved.filters={};saved.query='';saved.page=1;}}};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{window.NextAiTableWidget?.refresh();refresh()});else{window.NextAiTableWidget?.refresh();refresh()}
 })();

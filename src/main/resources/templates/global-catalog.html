@@ -7,10 +7,10 @@
 <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
 <link rel="stylesheet" href="/css/app.css">
 <link rel="stylesheet" href="/css/brand.css?v=20260909-1">
-<link rel="stylesheet" href="/css/access.css">
+<link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/table-widget.css?v=1.9.0"><script defer src="/js/table-preferences.js?v=20261002-perf1"></script><script defer src="/js/table-widget.js?v=1.9.1"></script>
 <script defer src="/js/theme.js?v=20260905-1">
 </script>
-<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><script defer src="/js/platform-ui.js?v=1.8.1"></script><link rel="stylesheet" href="/css/standard-record-tables.css?v=20260922-32"><script defer src="/js/standard-record-tables.js?v=1.7.2"></script></head>
+<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><script defer src="/js/platform-ui.js?v=1.8.1"></script><link rel="stylesheet" href="/css/standard-record-tables.css?v=1.9.1"><script defer src="/js/standard-record-tables.js?v=1.9.1"></script><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31"><link rel="stylesheet" href="/css/global-catalog.css?v=1.9.1"></head>
 <body class="app-page platform-standard-tables">
 <aside class="sidebar">
 <a class="brand brand-lockup" href="/app">
@@ -28,12 +28,11 @@
 <div th:replace="~{fragments/sidebar-user :: user}">
 </div>
 </aside>
-<main class="workspace">
+<main class="workspace global-catalog-workspace">
 <header class="workspace-header">
 <div>
-<span class="eyebrow dark">Super Admin</span>
 <h1>Global Catalogue</h1>
-<p class="page-intro">Canonical product identities shared safely across every business account.</p>
+<p class="page-intro">Shared product identities. Account prices, codes and inventory stay separate.</p>
 </div>
 <div class="header-actions">
 <div th:replace="~{fragments/context-switcher :: switcher}">
@@ -42,43 +41,28 @@
 </header>
 <p class="notice" th:if="${catalogSuccess}" th:text="${catalogSuccess}">Saved.</p>
 <p class="notice error" th:if="${catalogError}" th:text="${catalogError}">Error.</p>
-<section class="callout">
-<span class="callout-icon">G</span>
-<div>
-<strong>Product identity only</strong>
-<p>UPC, EAN, or GTIN is the global identity. Vendor item codes, prices, SKUs, and inventory remain private to each account.</p>
-</div>
-</section>
+
 <section class="data-card catalog-card">
 <div class="card-toolbar">
-<div>
-<h2>Products</h2>
-<p>Products are created as accounts approve their catalogue imports or add an unmatched item.</p>
-</div>
-<div class="toolbar-tools">
-<label class="search-field">
-<span>⌕</span>
-<input type="search" placeholder="Search products" aria-label="Search products">
-</label>
-</div>
+<form class="toolbar-tools" method="get" action="/app/platform/catalog"><input type="hidden" name="size" th:value="${globalPage.size}"><input type="hidden" name="sort" th:value="${globalSort}"><input type="hidden" name="direction" th:value="${globalDirection}"><label class="search-field"><span>⌕</span><input name="q" type="search" maxlength="160" th:value="${query}" placeholder="Search product, brand, UPC / EAN" aria-label="Search products"></label><button class="secondary-button compact-button" type="submit">Search</button></form>
 </div>
 <div class="table-wrap">
-<table data-table-widget="global-catalogue" data-table-client-sort data-table-min-width="1000">
+<table data-table-widget="global-catalogue" data-table-live-search="true" data-server-sort data-table-min-width="1000">
 <thead>
 <tr>
-<th data-column-required="true">Product</th>
-<th>UPC / EAN</th>
-<th>Unit</th>
-<th>Handling</th>
-<th>Status</th>
+<th data-column-required="true"><a class="table-sort-link" th:href="@{/app/platform/catalog(q=${query},size=${globalPage.size},sort='product',direction=${globalSort=='product' and globalDirection=='asc'?'desc':'asc'})}">Product</a></th>
+<th><a class="table-sort-link" th:href="@{/app/platform/catalog(q=${query},size=${globalPage.size},sort='identifier',direction=${globalSort=='identifier' and globalDirection=='asc'?'desc':'asc'})}">UPC / EAN</a></th>
+<th><a class="table-sort-link" th:href="@{/app/platform/catalog(q=${query},size=${globalPage.size},sort='unit',direction=${globalSort=='unit' and globalDirection=='asc'?'desc':'asc'})}">Unit</a></th>
+<th><a class="table-sort-link" th:href="@{/app/platform/catalog(q=${query},size=${globalPage.size},sort='handling',direction=${globalSort=='handling' and globalDirection=='asc'?'desc':'asc'})}">Handling</a></th>
+<th><a class="table-sort-link" th:href="@{/app/platform/catalog(q=${query},size=${globalPage.size},sort='status',direction=${globalSort=='status' and globalDirection=='asc'?'desc':'asc'})}">Status</a></th>
 <th data-column-required="true" data-context-actions>Action</th>
 </tr>
 </thead>
 <tbody>
-<tr class="catalog-row" th:each="product:${products}" th:attr="data-search=${#strings.toLowerCase(product.name + ' ' + (product.brand ?: '') + ' ' + (product.identifier ?: ''))}">
+<tr class="catalog-row" th:each="product:${products}" th:attr="data-picture-global=${product.id},data-can-edit-picture=${isSuperAdmin},data-entity-type='GLOBAL_PRODUCT',data-entity-id=${product.id},data-title=${product.name},data-can-collaborate=${isSuperAdmin},data-search=${#strings.toLowerCase(product.name + ' ' + (product.brand ?: '') + ' ' + (product.identifier ?: ''))}">
 <td>
 <div class="product-cell">
-<span class="product-avatar"><img th:if="${globalProductImageIds != null and globalProductImageIds.contains(product.id)}" th:src="@{/app/platform/catalog/products/{id}/image(id=${product.id})}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:contain" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><b th:hidden="${globalProductImageIds != null and globalProductImageIds.contains(product.id)}" th:text="${#strings.substring(product.name,0,1)}">P</b></span>
+<span class="product-avatar"><img th:src="@{/app/platform/catalog/products/{id}/image(id=${product.id})}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:contain" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><b hidden th:text="${#strings.substring(product.name,0,1)}">P</b></span>
 <div>
 <strong th:text="${product.name}">Product</strong>
 <small th:text="${product.brand ?: 'Brand not specified'}">Brand</small>
@@ -94,7 +78,7 @@
 <span class="catalog-pill" th:text="${product.expirationRequired ? 'Expiration tracked' : 'Standard'}">Standard</span>
 </td>
 <td>
-<span class="status-badge active">
+<span class="status-badge" th:classappend="${product.status == 'ACTIVE' ? 'active' : ''}">
 <i>
 </i>
 <span th:text="${product.status}">ACTIVE</span>
@@ -105,16 +89,17 @@
 <tr th:if="${#lists.isEmpty(products)}">
 <td colspan="6">
 <div class="table-empty">
-<strong>No global products yet</strong>
-<span>The first approved account product will create the catalogue.</span>
+<strong>No global products match this search</strong>
+<span>Try a product name, brand, UPC, EAN or GTIN.</span>
 </div>
 </td>
 </tr>
 </tbody>
 </table>
 </div>
-<div class="table-footer">
-<span th:text="${'Showing '+products.size()+' global product(s)'}">Showing products</span>
+<div class="table-footer table-pagination" th:attr="data-page=${globalPage.page},data-page-max=${globalPage.totalPages()},data-page-size=${globalPage.size}">
+<span th:text="${globalPage.total == 0 ? 'Showing 0 products' : 'Showing '+#numbers.formatInteger(globalPage.firstItem(),1,'COMMA')+'–'+#numbers.formatInteger(globalPage.lastItem(),1,'COMMA')+' of '+#numbers.formatInteger(globalPage.total,1,'COMMA')+' products'}">Showing products</span>
+<nav aria-label="Catalogue pages"><a th:if="${globalPage.hasPrevious()}" th:href="@{/app/platform/catalog(q=${query},page=0,size=${globalPage.size},sort=${globalSort ?: 'product'},direction=${globalDirection ?: 'asc'})}">First</a><a th:if="${globalPage.hasPrevious()}" th:href="@{/app/platform/catalog(q=${query},page=${globalPage.page-1},size=${globalPage.size},sort=${globalSort ?: 'product'},direction=${globalDirection ?: 'asc'})}">Previous</a><form method="get" action="/app/platform/catalog" class="page-jump" data-page-jump><input type="hidden" name="sort" th:value="${globalSort ?: 'product'}"><input type="hidden" name="direction" th:value="${globalDirection ?: 'asc'}"><input type="hidden" name="size" th:value="${globalPage.size}"><input type="hidden" name="q" th:value="${query}"><label><span>Page</span><input type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" name="goToPage" th:attr="data-page-max=${globalPage.totalPages()}" th:value="${globalPage.displayPage()}" aria-label="Page number"><span th:text="${'of '+globalPage.totalPages()}">of 1</span></label></form><a th:if="${globalPage.hasNext()}" th:href="@{/app/platform/catalog(q=${query},page=${globalPage.page+1},size=${globalPage.size},sort=${globalSort ?: 'product'},direction=${globalDirection ?: 'asc'})}">Next</a><a th:if="${globalPage.hasNext()}" th:href="@{/app/platform/catalog(q=${query},page=${globalPage.totalPages()-1},size=${globalPage.size},sort=${globalSort ?: 'product'},direction=${globalDirection ?: 'asc'})}">Last</a></nav>
 </div>
 </section>
 <dialog th:each="product:${products}" th:id="|global-edit-${product.id}|" class="invite-dialog">

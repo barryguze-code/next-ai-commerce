@@ -334,7 +334,7 @@ public class MarketplaceSkuAutoMapper {
             components.isEmpty()||componentTotal==Math.max(1,quantity),explicitBundle);
     }
 
-    private static String normalizeCode(String value){
+    static String normalizeCode(String value){
         String normalized=value==null?"":value.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]","");
         return normalized.matches("\\d+")?normalized.replaceFirst("^0+(?!$)",""):normalized;
     }

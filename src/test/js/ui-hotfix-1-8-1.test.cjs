@@ -9,7 +9,7 @@ const script=n=>'src/main/resources/static/js/'+n;
 async function fixture(html){const page=await browser.newPage({viewport:{width:900,height:700}});await page.route('**/*',r=>r.request().url()==='http://fixture.test/'?r.fulfill({contentType:'text/html',body:html}):r.abort());await page.goto('http://fixture.test/');await page.addStyleTag({path:'src/main/resources/static/css/table-widget.css'});return page;}
 test('shared tab arrows preserve order, reveal selection, resize and dynamic refresh',async()=>{
  const names=Array.from({length:12},(_,i)=>'Synthetic tab '+i); // Test-only overflow, never product tabs.
- const page=await fixture('<div style="width:360px" id="host"><nav class="order-filters" style="gap:12px">'+names.map((n,i)=>`<a href="#${i}" style="padding:12px" ${i===11?'aria-current="page"':''}>${n}</a>`).join('')+'</nav></div>');
+ const page=await fixture('<div style="width:360px" id="host"><nav class="order-filters" data-table-tabs style="gap:12px">'+names.map((n,i)=>`<a href="#${i}" style="padding:12px" ${i===11?'aria-current="page"':''}>${n}</a>`).join('')+'</nav></div>');
  try{
   await page.addScriptTag({path:script('table-widget.js')});
   const prev=page.getByRole('button',{name:'Show previous table tabs'}),next=page.getByRole('button',{name:'Show next table tabs'});

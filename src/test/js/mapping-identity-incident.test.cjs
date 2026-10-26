@@ -19,7 +19,7 @@ test('saved account SKU is not represented as a vendor code; hydration preserves
   assert.equal(await page.locator('.mw-line [name=productId]').inputValue(),'00000000-0000-4000-8000-000000000001');
   assert.equal(await page.locator('.mw-line [name=quantity]').inputValue(),'4');
   const label=await page.locator('.mw-line [type=search]').inputValue();
-  assert.match(label,/Account SKU[: ]+2302326/);assert.match(await page.locator('.mw-identity-help').innerText(),/vendor item code unavailable/i);
+  assert.equal(label,'Donuts Vanilla Glazed');assert.equal(await page.locator('.mw-identity-help').count(),0);
   assert.equal(await page.locator('.mw-save').isEnabled(),true);
  }finally{await page.close();}
 });
@@ -42,7 +42,7 @@ test('mapping pictures and picture action menu remain contained at desktop and p
    await page.locator('.mapping-component-picture img').waitFor();
    const geometry=await page.locator('.mapping-component-picture').evaluate(e=>{const h=e.getBoundingClientRect(),i=e.querySelector('img').getBoundingClientRect();return {h:{x:h.x,y:h.y,width:h.width,height:h.height},i:{x:i.x,y:i.y,width:i.width,height:i.height}}});
    assert.ok(geometry.i.width<=geometry.h.width&&geometry.i.height<=geometry.h.height,JSON.stringify(geometry));
-   if(width===390){assert.equal(await page.locator('.mw-selected-summary').isVisible(),true);assert.match(await page.locator('.mw-selected-summary').innerText(),/Vendor item code 0123 · Kinder/);}
+   assert.match(await page.locator('.mw-line [type=search]').inputValue(),/Kinder/);assert.equal(await page.locator('.mw-selected-summary').count(),0);
    if(process.env.VISUAL_EVIDENCE_DIRECTORY)await page.screenshot({path:process.env.VISUAL_EVIDENCE_DIRECTORY+'/mapping-'+width+'.png'});
    await page.locator('.mapping-component-picture .mw-picture-edit').click();
    const menu=await page.locator('dialog.mw-picture-menu').boundingBox();
@@ -73,10 +73,10 @@ test('lookup text stays unselected until a product is chosen and uses the same i
   await page.locator('.mw-line [type=search]').fill('299402');
   await page.locator('.mw-option').waitFor();
   assert.equal(await page.locator('.mw-line [name=productId]').inputValue(),'');
-  assert.equal(await page.locator('.mw-selected-summary').innerText(),'');
+  assert.equal(await page.locator('.mw-selected-summary').count(),0);
   assert.equal(await page.locator('.mw-save').isEnabled(),false);
   assert.match(await page.locator('.mw-selection-status').innerText(),/Select a product to map/);
-  assert.match(await page.locator('.mw-option').innerText(),/Vendor item code 399644.*Account SKU INTERNAL-MOLE.*Barcode 850032994026.*Matches barcode/s);
+  assert.match(await page.locator('.mw-option').innerText(),/Sauce Mole.*399644/s);
   await page.locator('.mw-option').click();
   const expected=await page.evaluate(()=>window.NextAiMappingWidget.identityLabel({name:'Sauce Mole',vendorItemCode:'399644',accountSku:'INTERNAL-MOLE'}));
   assert.equal(await page.locator('.mw-line [type=search]').inputValue(),expected);

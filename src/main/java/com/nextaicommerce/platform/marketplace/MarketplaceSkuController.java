@@ -31,6 +31,7 @@ public class MarketplaceSkuController {
     @Autowired private com.nextaicommerce.platform.fba.FbaReadRepository fba;
     private final WorkspaceAccessRepository workspace;
     private final CatalogRepository catalog;
+    @Autowired private MarketplaceMappingDraft mappingDraft;
     @Autowired(required=false) private MarketplaceSkuFamilies families;
     private CollaborationRepository collaboration;
     private com.nextaicommerce.platform.sync.AmazonManualListingSync listingSync;
@@ -180,6 +181,13 @@ public class MarketplaceSkuController {
     List<MarketplaceSkuRepository.MappingComponentView> mappingComponents(@RequestParam String sku,HttpSession session){
         UUID tenantId=requiredTenant(session);UUID connectionId=requiredAmazonConnection(tenantId,session);
         return skus.mappingComponents(tenantId,connectionId,List.of(sku)).getOrDefault(sku,List.of());
+    }
+
+    @GetMapping("/app/marketplace-skus/mappings/draft") @ResponseBody
+    MarketplaceMappingDraft.Suggestion mappingDraft(@RequestParam String sku,HttpSession session,Authentication authentication){
+        UUID tenant=requiredTenant(session),connection=requiredAmazonConnection(tenant,session);
+        if(!maySync(tenant,connection,authentication))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+        return mappingDraft.suggest(tenant,sku);
     }
 
     @GetMapping("/app/marketplace-skus/mappings/ledger")

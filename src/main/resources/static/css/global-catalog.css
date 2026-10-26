@@ -1,0 +1,8 @@
+/* Same header structure and density as Orders, loaded after the shared cascade. */
+.global-catalog-workspace .workspace-header>div:first-child{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.global-catalog-workspace .workspace-header .page-intro{margin:0;font-size:12px}
+.global-catalog-workspace .workspace-header{padding-bottom:12px;min-height:40px}
+.global-catalog-workspace .context-switcher{min-height:38px;height:38px;padding:3px 9px;gap:8px;box-sizing:border-box}
+.global-catalog-workspace .context-brand-logo,.global-catalog-workspace .context-icon,.global-catalog-workspace .context-selected-channel,.global-catalog-workspace .context-selected-channel img{width:28px;height:28px;min-width:28px}
+.global-catalog-workspace .context-copy strong{font-size:12px}.global-catalog-workspace .context-copy small{font-size:10px}
+.global-catalog-workspace .card-toolbar:empty{display:none}

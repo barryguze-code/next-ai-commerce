@@ -52,3 +52,11 @@
 /* The first column owns actions; remove the obsolete in-product spacer. */
 .platform-standard-tables .available-inventory-table .inventory-product-stage>.inventory-stage-actions{display:none!important;height:0;min-height:0}
 .platform-standard-tables .available-inventory-table .inventory-product-stage{min-height:0!important}
+
+/* Saved SKU choices reuse the shared picture menu and its focus/escape behavior. */
+.standard-picture-menu{max-height:calc(100dvh - 24px);overflow:auto}
+.catalog-picture-choices{display:grid;gap:6px;max-height:260px;overflow:auto;margin:8px 0}
+.catalog-picture-choice{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink);text-align:left;cursor:pointer}
+.catalog-picture-choice[aria-pressed=true]{border-color:var(--blue);background:var(--sky)}
+.catalog-picture-choice img{width:54px;height:60px;object-fit:contain;flex:none}
+.catalog-picture-choice span{min-width:0;overflow-wrap:anywhere}.catalog-picture-choice strong,.catalog-picture-choice small{display:block;font-size:12px}

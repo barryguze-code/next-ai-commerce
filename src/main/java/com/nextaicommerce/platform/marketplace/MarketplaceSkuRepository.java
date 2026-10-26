@@ -149,7 +149,8 @@ public class MarketplaceSkuRepository {
             tenantId,connectionId,tenantId,connectionId);
     }
     public record MappingComponentView(UUID itemId,String productName,String vendorItemCode,
-            String accountSku,BigDecimal quantity){
+            String accountSku,BigDecimal quantity,String brand){
+        public MappingComponentView(UUID itemId,String productName,String vendorItemCode,String accountSku,BigDecimal quantity){this(itemId,productName,vendorItemCode,accountSku,quantity,null);}
         public String selectionLabel(){
             String code=vendorItemCode==null||vendorItemCode.isBlank()?"No vendor code":vendorItemCode;
             String sku=accountSku==null||accountSku.isBlank()?"":" · "+accountSku;
@@ -252,7 +253,7 @@ public class MarketplaceSkuRepository {
         List<Object[]> rows=jdbc.query("""
             SELECT mapping.marketplace_sku,component.account_catalog_item_id,
                    coalesce(item.display_name,product.canonical_name) product_name,
-                   offer.vendor_item_code,item.account_sku,component.quantity
+                   offer.vendor_item_code,item.account_sku,component.quantity,product.brand
             FROM marketplace_sku_mappings mapping
             JOIN marketplace_sku_mapping_components component
               ON component.tenant_id=mapping.tenant_id
@@ -268,7 +269,7 @@ public class MarketplaceSkuRepository {
             """+skuFilter+"""
             ORDER BY mapping.marketplace_sku,component.sort_order,component.created_at
             """,(rs,row)->new Object[]{rs.getString(1),new MappingComponentView(rs.getObject(2,UUID.class),
-                rs.getString(3),rs.getString(4),rs.getString(5),rs.getBigDecimal(6))},parameters.toArray());
+                rs.getString(3),rs.getString(4),rs.getString(5),rs.getBigDecimal(6),rs.getString(7))},parameters.toArray());
         Map<String,List<MappingComponentView>> result=new LinkedHashMap<>();
         for(Object[] row:rows)result.computeIfAbsent((String)row[0],ignored->new ArrayList<>())
             .add((MappingComponentView)row[1]);

@@ -98,3 +98,5 @@ html[data-theme=dark] .sidebar-huddle-menu,html[data-theme=dark] .sidebar-huddle
 .sidebar{z-index:500}.sidebar-huddle-menu,.sidebar-huddle-live-slot{z-index:3000}.chat-sound-wave{transform-origin:15px 11px}.sidebar-collaboration.is-ringing .sidebar-huddle-trigger{animation:huddle-chat-nudge .9s ease-in-out infinite}.sidebar-collaboration.is-ringing .chat-sound-wave.inner{animation:huddle-sound-wave .9s ease-out infinite}.sidebar-collaboration.is-ringing .chat-sound-wave.outer{animation:huddle-sound-wave .9s .14s ease-out infinite}
 @keyframes huddle-chat-nudge{0%,100%{transform:translateY(0)}35%{transform:translateY(-1px)}55%{transform:translateY(0)}}@keyframes huddle-sound-wave{0%{opacity:.2;transform:scale(.82)}50%{opacity:1}100%{opacity:.25;transform:scale(1.12)}}
 @media(prefers-reduced-motion:reduce){.sidebar-collaboration.is-ringing .chat-sound-wave{animation:none}}
+
+#contextual-thread-dialog[data-scope=GLOBAL_PRODUCT] :is([data-thread-tab=PRIVATE_NOTE],.thread-assignment,[data-thread-assign-self],[data-edit-due],.conversation-history-link){display:none!important}

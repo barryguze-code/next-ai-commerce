@@ -47,6 +47,11 @@ import org.springframework.test.web.servlet.MockMvc;
 class SecurityConfigTest {
     private static final UUID TENANT_ID = UUID.randomUUID();
     @Autowired MockMvc mvc;
+    @Test void viewerCannotSubmitGlobalCatalogueSelection()throws Exception{
+        mvc.perform(post("/app/catalog/products").with(user("viewer@example.com").roles("VIEWER")).with(csrf())
+            .sessionAttr("selectedTenantId",TENANT_ID).param("globalProductId",UUID.randomUUID().toString()).param("globalRevision","reviewed"))
+            .andExpect(status().isForbidden());
+    }
     @Test void publicOrderAssetsRevalidateWithoutRedownloadingButPrivatePagesStayUncached() throws Exception {
         var result=mvc.perform(get("/js/order-design.js")).andExpect(status().isOk()).andReturn();
         org.assertj.core.api.Assertions.assertThat(result.getResponse().getHeader("Cache-Control"))

@@ -23,11 +23,7 @@
    const nav=document.createElement('nav');nav.className='order-fulfillment-tabs';nav.setAttribute('aria-label','Fulfillment channel');
    for(const [value,label] of [['','All'],['FBM','FBM'],['FBA','FBA']]){const link=document.createElement('a'),next=new URL(location.href);next.searchParams.set('f_channel',value);next.searchParams.delete('page');next.searchParams.delete('goToPage');link.href=next;link.textContent=label;if(value===selected)link.setAttribute('aria-current','page');link.onclick=()=>{document.cookie=cookie+'='+value+'; Max-Age=31536000; Path=/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');};nav.append(link);}plus.before(nav);
   }
-  const input=document.querySelector('.order-search input[name=q]');
-  if(input&&!input.dataset.liveSearch){input.dataset.liveSearch='true';let timer,composing=false;
-   const run=()=>{clearTimeout(timer);if(composing)return;timer=setTimeout(()=>{const value=input.value.trim();if(value.length===1||value===(new URL(location.href).searchParams.get('q')||''))return;const next=new URL(location.href);next.searchParams.set('q',value);next.searchParams.delete('page');next.searchParams.delete('goToPage');location.assign(next);},700);};
-   input.addEventListener('input',run);input.addEventListener('compositionstart',()=>{composing=true;clearTimeout(timer)});input.addEventListener('compositionend',()=>{composing=false;run()});input.form?.addEventListener('submit',()=>clearTimeout(timer));
-  }
+
  }
  let pending=false;new MutationObserver(()=>{if(pending)return;pending=true;queueMicrotask(()=>{pending=false;enhance()})}).observe(document.querySelector('.orders-workspace'),{childList:true,subtree:true});enhance();
  function loadSummary(){

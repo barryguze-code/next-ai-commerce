@@ -31,6 +31,7 @@ public class OrderController {
     @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceUi;
     @Autowired(required=false) private com.nextaicommerce.platform.fees.AmazonFeeVarianceRepository feeVariances;
     @Autowired private OrderProfitSummary profitSummary;
+    @Autowired private com.nextaicommerce.platform.catalog.CatalogRepository catalog;
     @Autowired private SkuRefundHistory refundHistory;
     @Autowired private com.nextaicommerce.platform.fba.FbaReadRepository fba;
     @GetMapping("/app/orders/refund-history") @ResponseBody
@@ -57,7 +58,7 @@ public class OrderController {
             Authentication auth,HttpSession session,Model model,@RequestParam Map<String,String> smartParameters){
         if(!PageController.addTenantModel(session,model))return "redirect:/app/select-account";
         PageController.addAccessModel(auth,model);model.addAttribute("selectedStatus",status.toUpperCase());model.addAttribute("query",q);
-        UUID tenant=tenant(session);Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        UUID tenant=tenant(session);model.addAttribute("vendors",Boolean.TRUE.equals(model.asMap().get("canEditCatalog"))&&catalog!=null?catalog.listVendorChoices(tenant):java.util.List.of());Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection)){model.addAttribute("storeSelectionRequired",true);model.addAttribute("chooseStore",true);return "orders";}
         var identity=workspace.findConnection(tenant,connection);
         if(!"AMAZON".equalsIgnoreCase(identity.channel())){model.addAttribute("unsupportedChannel",true);return "orders";}

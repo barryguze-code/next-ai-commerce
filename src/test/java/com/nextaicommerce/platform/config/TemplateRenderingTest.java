@@ -39,6 +39,22 @@ import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 class TemplateRenderingTest {
+    @Test void globalCatalogueRendersBoundedServerControls(){
+        var context=webContext();context.setVariable("products",List.of());context.setVariable("globalPage",new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductPage(List.of(),32412,0,25));
+        context.setVariable("query","339807");context.setVariable("globalSort","product");context.setVariable("globalDirection","asc");
+        String html=templateEngine().process("global-catalog",context);
+        assertThat(html).contains("/css/global-catalog.css?v=picture-feedback-2","data-table-live-search=\"true\"","data-server-sort","name=\"q\"","339807","table-pagination","data-page-max=\"1297\"","/js/table-widget.js").doesNotContain("class=\"callout\"");
+    }
+    @Test void catalogueAddDialogRendersWithoutAnOptionalVendorModel(){
+        var context=webContext();context.setVariable("selectedAccountName","Test account");
+        String html=templateEngine().process("fragments/catalog-add-product",context);
+        assertThat(html).contains("id=\"product-dialog\"","Search Global Catalogue","No active vendors in this account","Add to account","name=\"size\"","name=\"unitOfMeasure\"","type=\"hidden\" name=\"accountSku\"","catalog-buying-grid").doesNotContain("Account SKU (optional)","Your account","You can add a vendor using");
+    }
+    @Test void emptyAccountCatalogueOffersPrefilledGlobalSearchAndCompactVendorPresentation(){
+        var c=webContext();c.setVariables(Map.ofEntries(Map.entry("items",List.of()),Map.entry("canEditCatalog",true),Map.entry("query","079834140503"),Map.entry("selectedAccountName","Own account"),Map.entry("catalogPage",new com.nextaicommerce.platform.catalog.CatalogRepository.AccountItemPage(List.of(),0,0,25)),Map.entry("vendors",List.of(new VendorView(UUID.randomUUID(),"Own vendor","V","USD",new BigDecimal("18.0000"),BigDecimal.ZERO,0,"ACTIVE"))),Map.entry("offersByItem",Map.of()),Map.entry("locations",List.of())));
+        String html=templateEngine().process("account-catalog",c);
+        assertThat(html).contains("account-catalog-workspace","Search Global Catalogue","Create new product","data-query=\"079834140503\"","See Vendors","catalog-vendor-logo","18%","name=\"size\"","name=\"unitOfMeasure\"").doesNotContain("catalog-readiness","Open vendor directory","18.0000%");
+    }
     @Test void sharedNavigationKeepsPermissionAwareLinksForMobileShell(){
         var c=webContext();
         c.setVariables(Map.of("active","marketplace-skus","canViewOperations",false,"canEditCatalog",false,
@@ -192,8 +208,9 @@ class TemplateRenderingTest {
             Map.entry("products", List.of(new GlobalProductView(UUID.randomUUID(), "Test Product",
                 "Test Brand", "KeHE", "53383", "012345678905", "EA", true, "ACTIVE")))
         ));
+        globalContext.setVariable("globalPage",new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductPage(List.of(),1,0,25));globalContext.setVariable("globalSort","product");globalContext.setVariable("globalDirection","asc");globalContext.setVariable("query","");
         assertThat(engine.process("global-catalog", globalContext)).contains(
-            "Global Catalogue", "Product identity only", "UPC, EAN, or GTIN is the global identity",
+            "Global Catalogue", "Shared product identities. Account prices, codes and inventory stay separate.",
             "012345678905", "Edit global product");
     }
 

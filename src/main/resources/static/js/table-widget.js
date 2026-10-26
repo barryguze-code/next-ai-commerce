@@ -68,7 +68,7 @@ function prepareContextColumn(root){
       const batch=buttons.slice(offset,offset+250),params=new URLSearchParams({entityType:type});
       [...new Set(batch.map(button=>button.dataset.entityId))].forEach(id=>params.append('entityId',id));
       try{
-        const response=await fetch('/app/collaboration/summaries?'+params,{headers:{Accept:'application/json'}});
+        const response=await fetch((type==='GLOBAL_PRODUCT'?'/app/platform/catalog/discussions':'/app/collaboration')+'/summaries?'+params,{headers:{Accept:'application/json'}});
         if(!response.ok)throw new Error('History unavailable');
         const summaries=await response.json();
         batch.forEach(button=>{const summary=summaries[button.dataset.entityId]||{};
@@ -93,7 +93,7 @@ function prepareContextColumn(root){
     if(!isTable)root.querySelectorAll('.order-actions').forEach(el=>el.hidden=true);
     return;
   }
-  if(!records.some(row=>row.querySelector('.collaboration-row-button')||row.closest('.order-row')?.querySelector('.collaboration-row-button')))return;
+  if(!records.some(row=>row.querySelector('.collaboration-row-button')||row.closest('.order-row')?.querySelector('.collaboration-row-button'))&&root.dataset.tableCollaboration!=='none')return;
   if(header.firstElementChild)header.firstElementChild.dataset.columnRequired='true';
   const heading=document.createElement(isTable?'th':'span');heading.dataset.column='record-context';heading.dataset.title='Conversation and alerts';heading.dataset.columnRequired='true';heading.dataset.noSort='true';heading.setAttribute('aria-label','Conversation and alerts');header.prepend(heading);
   if(isTable)root.querySelectorAll('tbody [colspan]').forEach(cell=>cell.colSpan++);
@@ -186,7 +186,7 @@ function prepareOverview(root){
     }
     const chat=rail.querySelector('.collaboration-row-button')||row.querySelector('.collaboration-row-button');
     if(chat)rail.prepend(chat);
-    else{const button=document.createElement('button');button.type='button';button.disabled=true;button.title='Collaboration unavailable for this record';button.append(overviewIcon('collaboration-no-message-gray'));rail.prepend(button);}
+    else if(root.dataset.tableCollaboration!=='none'){const button=document.createElement('button');button.type='button';button.disabled=true;button.title='Collaboration unavailable for this record';button.append(overviewIcon('collaboration-no-message-gray'));rail.prepend(button);}
     const action=row.querySelector('[data-context-action]');
     if(action&&!rail.contains(action)){actionTrigger(action,action.dataset.warningText);rail.append(action);}
     if(!rail.querySelector('.table-action-trigger')){
@@ -341,7 +341,7 @@ function init(root){
 function initPageJump(form){if(form.dataset.pageJumpReady)return;form.dataset.pageJumpReady='true';const input=form.querySelector('[name="goToPage"]');if(!input)return;let starting=input.value;const clean=()=>{input.value=input.value.replace(/\D/g,'')};input.addEventListener('input',clean);form.addEventListener('submit',event=>{clean();const max=Math.max(1,Number(input.dataset.pageMax)||1),value=Number(input.value);if(!Number.isFinite(value)||value<1){event.preventDefault();input.value='1';input.focus();return}input.value=String(Math.min(max,Math.floor(value)))});input.addEventListener('blur',()=>{clean();if(input.value&&input.value!==starting)form.requestSubmit()});input.addEventListener('focus',()=>input.select())}
 // Shared overflow affordance; tab links and domain handlers remain authoritative.
 function prepareTabOverflow(){
- document.querySelectorAll('.sku-filter-bar,.order-filters,.inventory-filter-bar,[data-table-tabs]').forEach(tabs=>{
+ document.querySelectorAll('.sku-filter-bar,.inventory-filter-bar,[data-table-tabs]').forEach(tabs=>{
   if(tabs.dataset.tabOverflowReady)return;tabs.dataset.tabOverflowReady='true';
   const frame=document.createElement('div');frame.className='table-tab-overflow';tabs.before(frame);
   const previous=document.createElement('button'),next=document.createElement('button');

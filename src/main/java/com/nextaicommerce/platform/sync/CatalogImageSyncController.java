@@ -23,6 +23,8 @@ public class CatalogImageSyncController {
     private final TransactionTemplate tx;
     private final AmazonSpApiClient amazon;
     private final CatalogRepository catalog;
+    @org.springframework.beans.factory.annotation.Autowired private com.nextaicommerce.platform.catalog.CatalogPictureService savedPictures;
+    @org.springframework.beans.factory.annotation.Autowired private com.nextaicommerce.platform.web.WorkspaceAccessRepository access;
     public CatalogImageSyncController(JdbcTemplate jdbc,TransactionTemplate tx,AmazonSpApiClient amazon,CatalogRepository catalog){
         this.jdbc=jdbc;this.tx=tx;this.amazon=amazon;this.catalog=catalog;
     }
@@ -33,6 +35,7 @@ public class CatalogImageSyncController {
         Object selected=session.getAttribute("selectedTenantId");
         UUID tenantId=selected instanceof UUID id?id:selected instanceof String value?UUID.fromString(value):null;
         if(tenantId==null)return ResponseEntity.badRequest().body(Map.of("error","Choose an account first."));
+        if(auth==null||!access.canOperateAccount(tenantId,auth.getName()))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
         try{
             Source source=tx.execute(s->{tenant(tenantId);return jdbc.query("""
                 SELECT item.global_product_id,listing.marketplace_connection_id,listing.marketplace_id,listing.asin
@@ -67,13 +70,9 @@ public class CatalogImageSyncController {
                 UUID current=jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=? FOR UPDATE",UUID.class,tenantId,itemId);
                 if(!source.globalId().equals(current))throw new IllegalArgumentException("The item changed during sync. Please try again.");
                 catalog.saveProductImage(tenantId,auth.getName(),itemId,imageType,"amazon-"+source.asin(),bytes);
-                jdbc.update("""
-                    INSERT INTO global_catalog_product_images(global_product_id,image_bytes,image_content_type,source_asin,source_tenant_id)
-                    VALUES (?,?,?,?,?) ON CONFLICT(global_product_id) DO UPDATE SET image_bytes=EXCLUDED.image_bytes,
-                    image_content_type=EXCLUDED.image_content_type,source_asin=EXCLUDED.source_asin,source_tenant_id=EXCLUDED.source_tenant_id,updated_at=now()
-                    """,current,bytes,imageType,source.asin(),tenantId);
+
             });
-            return ResponseEntity.ok(Map.of("message","Account and Global Catalogue pictures updated from Amazon ("+source.asin()+").","imageUrl","/app/catalog/products/"+itemId+"/image"));
+            return ResponseEntity.ok(Map.of("message","Account picture updated from Amazon ("+source.asin()+").","imageUrl","/app/catalog/products/"+itemId+"/image"));
         }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
         catch(Exception e){if(e instanceof InterruptedException)Thread.currentThread().interrupt();return ResponseEntity.status(502).body(Map.of("error","Amazon image sync is temporarily unavailable. No picture was changed. Please try again later."));}
     }
@@ -83,9 +82,17 @@ public class CatalogImageSyncController {
     }
     private static String encode(String value){return URLEncoder.encode(value,StandardCharsets.UTF_8);}
     @GetMapping("/app/platform/catalog/products/{id}/image")
-    public ResponseEntity<byte[]> globalImage(@PathVariable UUID id){
+    public ResponseEntity<byte[]> globalImage(@PathVariable UUID id,Authentication auth){
+        savedPictures.requireAdministrator(auth.getName());
+        var stored=globalImage(id);if(stored.getStatusCode().is2xxSuccessful())return stored;
+        String fallback=savedPictures.fallback(auth.getName(),id);
+        return fallback==null?ResponseEntity.notFound().build():ResponseEntity.status(302).cacheControl(CacheControl.noStore()).location(URI.create(fallback)).build();
+    }
+    /** Internal canonical-asset reader; the HTTP handler above enforces active platform administration. */
+    public ResponseEntity<byte[]> globalImage(UUID id){
         var image=jdbc.query("SELECT image_bytes,image_content_type FROM global_catalog_product_images WHERE global_product_id=?",
             rs->rs.next()?new CatalogRepository.ProductImage(rs.getBytes(1),rs.getString(2)):null,id);
         return image==null?ResponseEntity.notFound().build():ResponseEntity.ok().cacheControl(CacheControl.noCache()).contentType(MediaType.parseMediaType(image.contentType())).body(image.bytes());
     }
+
 }

@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,6 +27,104 @@ public class CatalogRepository {
             this(id,name,brand,vendorName,vendorItemCode,"UPC",identifier,unitOfMeasure,expirationRequired,status);
         }
     }
+    /** Canonical fields only; the optional account reference belongs exclusively to the caller's tenant. */
+    public record GlobalChoice(UUID id,String name,String brand,String identifierType,String identifier,
+            String size,String unitOfMeasure,boolean expirationRequired,String revision,UUID accountItemId,String imageUrl) {}
+    public record AccountProductDraft(UUID globalProductId,String revision,String name,String brand,
+            String identifierType,String identifier,String accountSku,UUID vendorId,String vendorItemCode,BigDecimal unitCost,boolean expirationRequired,String size,String unitOfMeasure) {
+        public AccountProductDraft(UUID global,String revision,String name,String brand,String type,String identifier,String sku,UUID vendor,String vendorCode,BigDecimal cost,boolean expiry){this(global,revision,name,brand,type,identifier,sku,vendor,vendorCode,cost,expiry,null,"EA");}
+    }
+    public record AccountAddition(UUID itemId,boolean created,String identifier) {}
+
+    private static final String GLOBAL_CHOICE_SELECT="""
+        SELECT p.id,p.canonical_name,p.brand,b.identifier_type,b.identifier_value,p.package_size,p.unit_of_measure,
+          p.requires_expiration_date,a.id account_item_id,
+          md5(concat_ws('|',p.updated_at::text,p.canonical_name,p.brand,b.identifier_type,b.identifier_value,
+            p.package_size,p.unit_of_measure,p.requires_expiration_date::text,p.status)) revision,
+          CASE WHEN EXISTS(SELECT 1 FROM global_catalog_product_images g WHERE g.global_product_id=p.id)
+            THEN '/app/catalog/global-products/'||p.id||'/image' END image_url
+        FROM global_catalog_products p
+        JOIN LATERAL (SELECT identifier_type,identifier_value FROM global_product_identifiers
+          WHERE global_product_id=p.id AND identifier_type IN ('UPC','EAN','GTIN')
+          ORDER BY is_primary DESC,created_at,id LIMIT 1) b ON true
+        LEFT JOIN account_catalog_items a ON a.tenant_id=? AND a.global_product_id=p.id
+        WHERE p.status='ACTIVE'
+        """;
+    private static GlobalChoice globalChoice(java.sql.ResultSet rs,int row)throws java.sql.SQLException{
+        return new GlobalChoice(rs.getObject("id",UUID.class),rs.getString("canonical_name"),rs.getString("brand"),
+            rs.getString("identifier_type"),rs.getString("identifier_value"),rs.getString("package_size"),
+            rs.getString("unit_of_measure"),rs.getBoolean("requires_expiration_date"),rs.getString("revision"),
+            rs.getObject("account_item_id",UUID.class),rs.getString("image_url"));
+    }
+    @Transactional(readOnly=true)
+    public List<GlobalChoice> searchGlobalProducts(UUID tenantId,String search){
+        setTenant(tenantId);String text=search==null?"":search.trim();
+        if(text.length()>160)throw new IllegalArgumentException("Search must be 160 characters or fewer.");
+        if(text.length()<2)return List.of();
+        String pattern="%"+text.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";
+        return jdbc.query(GLOBAL_CHOICE_SELECT+"""
+            AND (p.canonical_name ILIKE ? OR p.brand ILIKE ? OR EXISTS(
+              SELECT 1 FROM global_product_identifiers i WHERE i.global_product_id=p.id
+                AND (i.identifier_value ILIKE ? OR i.identity_key=catalog_identifier_key('GTIN',?))))
+            ORDER BY CASE WHEN EXISTS(SELECT 1 FROM global_product_identifiers i WHERE i.global_product_id=p.id
+              AND i.identity_key=catalog_identifier_key('GTIN',?)) THEN 0 ELSE 1 END,lower(p.canonical_name),p.id LIMIT 20
+            """,CatalogRepository::globalChoice,tenantId,pattern,pattern,pattern,text,text);
+    }
+    @Transactional(readOnly=true)
+    public ProductImage sharedGlobalImage(UUID productId){
+        return jdbc.query("SELECT g.image_bytes,g.image_content_type FROM global_catalog_product_images g JOIN global_catalog_products p ON p.id=g.global_product_id WHERE g.global_product_id=? AND p.status='ACTIVE'",
+            rs->rs.next()?new ProductImage(rs.getBytes(1),rs.getString(2)):null,productId);
+    }
+    /** Explicit Add product transaction. Never upserts an existing account item or changes global data. */
+    @Transactional
+    public AccountAddition addProductToAccount(UUID tenantId,String actor,AccountProductDraft draft){
+        setTenant(tenantId);CatalogIdentity.lock(jdbc);
+        UUID global=draft.globalProductId();String identifier=draft.identifier();GlobalChoice selected=null;
+        if(global!=null){
+            var choices=jdbc.query(GLOBAL_CHOICE_SELECT+" AND p.id=?",CatalogRepository::globalChoice,tenantId,global);
+            if(choices.isEmpty())throw new IllegalArgumentException("This global product is no longer available. Search again.");
+            selected=choices.getFirst();identifier=selected.identifier();
+            if(!selected.revision().equals(draft.revision()))throw new IllegalArgumentException("The global product changed. Search again and review its latest details.");
+        }else{
+            String type=draft.identifierType()==null?"UPC":draft.identifierType().toUpperCase(Locale.ROOT);
+            if(!java.util.Set.of("UPC","EAN","GTIN").contains(type)
+                    ||com.nextaicommerce.platform.marketplace.BarcodePackRules.gtin(identifier)==null)
+                throw new IllegalArgumentException("Enter a valid UPC, EAN, or GTIN, including its check digit.");
+            global=jdbc.query("SELECT global_product_id FROM global_product_identifiers WHERE identity_key=catalog_identifier_key(?,?)",
+                rs->rs.next()?rs.getObject(1,UUID.class):null,type,identifier);
+        }
+        if(global!=null){
+            UUID existing=jdbc.query("SELECT id FROM account_catalog_items WHERE tenant_id=? AND global_product_id=?",
+                rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,global);
+            if(existing!=null)return new AccountAddition(existing,false,identifier);
+            if(selected==null)throw new IllegalArgumentException("This identifier already exists in Global Catalogue. Search for it and choose the product to review.");
+        }
+        String code=blankToNull(draft.accountSku());
+        if(code!=null){
+            if(code.length()>160)throw new IllegalArgumentException("Account SKU must be 160 characters or fewer.");
+            String normalized=code.replaceAll("[^A-Za-z0-9]","").toUpperCase(Locale.ROOT);
+            if(normalized.isBlank())throw new IllegalArgumentException("Enter an account SKU containing letters or numbers.");
+            if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM account_catalog_items WHERE tenant_id=? AND upper(regexp_replace(coalesce(account_sku,''),'[^A-Za-z0-9]','','g'))=?)",Boolean.class,tenantId,normalized)))
+                throw new IllegalArgumentException("That account SKU is already assigned in this account. Open the existing item or use a different code.");
+        }
+        String currency=null;
+        if(draft.vendorId()!=null){
+            currency=jdbc.query("SELECT currency FROM vendors WHERE tenant_id=? AND id=? AND status='ACTIVE'",rs->rs.next()?rs.getString(1):null,tenantId,draft.vendorId());
+            if(currency==null)throw new IllegalArgumentException("Choose an active vendor from this account.");
+            if(draft.unitCost()==null||draft.unitCost().signum()<0||draft.unitCost().scale()>4||draft.unitCost().compareTo(new BigDecimal("100000"))>0)
+                throw new IllegalArgumentException("Enter this vendor's unit cost between 0 and 100,000, with up to four decimals.");
+            if(draft.vendorItemCode()!=null&&draft.vendorItemCode().length()>160)throw new IllegalArgumentException("Vendor item code must be 160 characters or fewer.");
+        }else if(blankToNull(draft.vendorItemCode())!=null||draft.unitCost()!=null)throw new IllegalArgumentException("Choose a vendor before entering vendor details.");
+        UUID item;
+        if(selected!=null){
+            item=jdbc.queryForObject("INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku,created_by) VALUES(?,?,?,?) RETURNING id",UUID.class,tenantId,global,code,actorId(actor));
+        }else{
+            if(draft.name()==null||draft.name().isBlank()||draft.name().length()>500)throw new IllegalArgumentException("Enter a product name of up to 500 characters.");
+            item=addAccountProduct(tenantId,actor,draft.name(),draft.brand(),draft.identifierType(),identifier,code,draft.expirationRequired(),draft.size(),draft.unitOfMeasure());
+        }
+        if(draft.vendorId()!=null)saveVendorOffer(tenantId,actor,item,draft.vendorId(),draft.vendorItemCode(),draft.unitCost(),BigDecimal.ZERO,currency);
+        return new AccountAddition(item,true,identifier);
+    }
     public record AccountItemView(UUID id, UUID globalProductId, String name, String brand,
             String vendorName, String vendorItemCode, String identifier, String accountSku,
             int vendorCount, BigDecimal currentBuyingCost, String currency,
@@ -47,12 +146,14 @@ public class CatalogRepository {
     }
     public record VendorView(UUID id, String name, String code, String currency,
             BigDecimal discountRate, BigDecimal defaultFreightAmount, int productCount, String status,String distributionCenter) {
+        public String discountDisplay(){return percentage(discountRate);}
         public VendorView(UUID id,String name,String code,String currency,BigDecimal discountRate,BigDecimal freight,int count,String status){this(id,name,code,currency,discountRate,freight,count,status,"");}
     }
     public record InlineProductResult(UUID productId, UUID vendorId, String vendorName) {}
     public record VendorOfferView(UUID itemId, UUID vendorId, String vendorName, String vendorItemCode,
             BigDecimal listCost, BigDecimal discountRate, BigDecimal buyingCost, String currency,
-            boolean preferred) {}
+            boolean preferred) { public String discountDisplay(){return percentage(discountRate);} }
+    static String percentage(BigDecimal value){return value==null?"—":value.setScale(2,java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()+"%";}
     public record LocationView(UUID id,String code,String name,String status) {}
     public record MarketplaceSkuRef(UUID itemId,String sku,BigDecimal quantity,String status,
             String channel,Integer marketplaceQuantity,String fulfillment,String asin,
@@ -130,8 +231,48 @@ public class CatalogRepository {
     @Transactional(readOnly=true)
     public ProductImage productImage(UUID tenantId,UUID itemId){
         setTenant(tenantId);
-        return jdbc.query("SELECT image_bytes,image_content_type FROM account_catalog_product_images WHERE tenant_id=? AND account_catalog_item_id=?",
+        ProductImage uploaded=jdbc.query("SELECT image_bytes,image_content_type FROM account_catalog_product_images WHERE tenant_id=? AND account_catalog_item_id=?",
             rs->rs.next()?new ProductImage(rs.getBytes(1),rs.getString(2)):null,tenantId,itemId);
+        if(uploaded!=null)return uploaded;
+        return jdbc.query("SELECT g.image_bytes,g.image_content_type FROM account_catalog_items i JOIN global_catalog_product_images g ON g.global_product_id=i.global_product_id WHERE i.tenant_id=? AND i.id=?",
+            rs->rs.next()?new ProductImage(rs.getBytes(1),rs.getString(2)):null,tenantId,itemId);
+    }
+
+    public record GlobalProductPage(List<GlobalProductView> rows,long total,int page,int size){
+        public int totalPages(){return Math.max(1,(int)Math.ceil(total/(double)size));}
+        public boolean hasPrevious(){return page>0;} public boolean hasNext(){return page+1<totalPages();}
+        public int displayPage(){return page+1;} public long firstItem(){return total==0?0:(long)page*size+1;}
+        public long lastItem(){return Math.min(total,(long)(page+1)*size);}
+    }
+    private static final Map<String,String> GLOBAL_SORTS=Map.of("product","lower(product.canonical_name)","brand","lower(product.brand)",
+        "identifier","(SELECT min(identifier_value) FROM global_product_identifiers WHERE global_product_id=product.id)",
+        "unit","product.unit_of_measure","handling","product.requires_expiration_date","status","product.status");
+    public static String globalSort(String sort){return GLOBAL_SORTS.containsKey(sort==null?"":sort)?sort:"product";}
+    private static final String GLOBAL_MATCHES="""
+        FROM global_catalog_products product WHERE (?='' OR lower(product.canonical_name) LIKE ? OR lower(coalesce(product.brand,'')) LIKE ?
+          OR EXISTS(SELECT 1 FROM global_product_identifiers matched WHERE matched.global_product_id=product.id AND lower(matched.identifier_value) LIKE ?))
+        """;
+    @Transactional(readOnly=true)
+    public GlobalProductPage pageGlobalProducts(String search,int page,int size,String sort,String direction){
+        String q=search==null?"":search.trim();if(q.length()>160)q=q.substring(0,160);
+        size=com.nextaicommerce.platform.web.TablePaging.size(size);String pattern="%"+q.toLowerCase(java.util.Locale.ROOT)+"%";
+        var parameters=new java.util.ArrayList<Object>(List.of(q,pattern,pattern,pattern));
+        long total=jdbc.queryForObject("SELECT count(*) "+GLOBAL_MATCHES,Long.class,parameters.toArray());
+        page=Math.max(0,Math.min(page,Math.max(1,(int)Math.ceil(total/(double)size))-1));parameters.add(size);parameters.add((long)page*size);
+        String order=GLOBAL_SORTS.get(globalSort(sort))+" "+catalogDirection(direction)+" NULLS LAST,product.id";
+        var rows=jdbc.query("WITH selected AS MATERIALIZED (SELECT product.* "+GLOBAL_MATCHES+" ORDER BY "+order+" LIMIT ? OFFSET ?) "+"""
+            SELECT product.id,product.canonical_name,product.brand,identifier.identifier_type,identifier.identifier_value,
+                   product.unit_of_measure,product.requires_expiration_date,product.status
+            FROM selected product LEFT JOIN LATERAL (SELECT identifier_type,identifier_value FROM global_product_identifiers
+              WHERE global_product_id=product.id ORDER BY is_primary DESC,created_at,id LIMIT 1) identifier ON true
+            """+" ORDER BY "+order,(rs,row)->new GlobalProductView(rs.getObject("id",UUID.class),rs.getString("canonical_name"),rs.getString("brand"),
+                null,null,rs.getString("identifier_type"),rs.getString("identifier_value"),rs.getString("unit_of_measure"),rs.getBoolean("requires_expiration_date"),rs.getString("status")),parameters.toArray());
+        return new GlobalProductPage(rows,total,page,size);
+    }
+    @Transactional(readOnly=true)
+    public List<UUID> globalProductImageIds(List<UUID> ids){
+        if(ids.isEmpty())return List.of();
+        return jdbc.query("SELECT global_product_id FROM global_catalog_product_images WHERE global_product_id IN ("+String.join(",",java.util.Collections.nCopies(ids.size(),"?"))+")",(rs,row)->rs.getObject(1,UUID.class),ids.toArray());
     }
 
     @Transactional(readOnly = true)
@@ -295,7 +436,7 @@ public class CatalogRepository {
               (SELECT count(DISTINCT x.vendor_id) FROM vendor_catalog_offers x WHERE x.tenant_id=item.tenant_id
                 AND x.account_catalog_item_id=item.id AND x.effective_to IS NULL) vendor_count,
               offer.buying_cost,offer.currency,location.id location_id,location.code location_code,location.name location_name,
-              CASE WHEN uploaded.account_catalog_item_id IS NOT NULL
+              CASE WHEN uploaded.account_catalog_item_id IS NOT NULL OR EXISTS(SELECT 1 FROM global_catalog_product_images shared WHERE shared.global_product_id=product.id)
                 THEN '/app/catalog/products/'||item.id||'/image' ELSE image.image_url END image_url
             FROM selected JOIN account_catalog_items item ON item.id=selected.id
             JOIN global_catalog_products product ON product.id=item.global_product_id
@@ -493,6 +634,11 @@ public class CatalogRepository {
     @Transactional
     public UUID addAccountProduct(UUID tenantId, String actorEmail, String name, String brand,
             String identifierType, String identifier, String accountSku, boolean expirationRequired) {
+        return addAccountProduct(tenantId,actorEmail,name,brand,identifierType,identifier,accountSku,expirationRequired,null,"EA");
+    }
+    @Transactional
+    public UUID addAccountProduct(UUID tenantId,String actorEmail,String name,String brand,String identifierType,String identifier,String accountSku,boolean expirationRequired,String size,String unitOfMeasure){
+        String packageSize=newProductSize(size),unit=newProductUnit(unitOfMeasure);
         setTenant(tenantId);
         CatalogIdentity.lock(jdbc);
         UUID reactivated=reactivateAccountSkuIfPresent(tenantId,accountSku,name,brand,identifierType,identifier,expirationRequired);
@@ -506,11 +652,7 @@ public class CatalogRepository {
             """, rs -> rs.next() ? rs.getObject(1, UUID.class) : null,
             identifierType.toUpperCase(Locale.ROOT), cleanIdentifier);
         if (globalId == null) {
-            globalId = jdbc.queryForObject("""
-                INSERT INTO global_catalog_products
-                    (canonical_name,brand,requires_expiration_date,source_tenant_id,created_by)
-                VALUES (?,?,?,?,?) RETURNING id
-                """, UUID.class, name.trim(), blankToNull(brand), expirationRequired, tenantId, actorId);
+            globalId = insertGlobalProduct(tenantId,actorId,name,brand,expirationRequired,packageSize,unit);
             if (!cleanIdentifier.isBlank()) jdbc.update("""
                 INSERT INTO global_product_identifiers
                     (global_product_id,identifier_type,identifier_value,is_primary) VALUES (?,?,?,true)
@@ -525,6 +667,17 @@ public class CatalogRepository {
             """, UUID.class, tenantId, globalId, blankToNull(accountSku), actorId);
     }
 
+    static String newProductSize(String value){String size=blankToNull(value);if(size!=null&&size.length()>80)throw new IllegalArgumentException("Size must be 80 characters or fewer.");return size;}
+    static String newProductUnit(String value){String unit=value==null||value.isBlank()?"EA":value.trim().toUpperCase(Locale.ROOT);if(unit.length()>30||!unit.matches("[A-Z0-9][A-Z0-9 /.-]*"))throw new IllegalArgumentException("Enter a unit of up to 30 letters or numbers.");return unit;}
+    UUID insertGlobalProduct(UUID tenant,UUID actor,String name,String brand,boolean expiry,String size,String unit){
+        return jdbc.queryForObject("INSERT INTO global_catalog_products(canonical_name,brand,requires_expiration_date,source_tenant_id,created_by,package_size,unit_of_measure) VALUES (?,?,?,?,?,?,?) RETURNING id",UUID.class,name.trim(),blankToNull(brand),expiry,tenant,actor,newProductSize(size),newProductUnit(unit));
+    }
+    public record ProductReference(String name,String brand,String identifier,String size,String unitOfMeasure){}
+    @Transactional(readOnly=true)
+    public Map<UUID,ProductReference> accountProductReferences(UUID tenant,List<UUID> items){
+        setTenant(tenant);if(items.isEmpty())return Map.of();List<Object> args=new java.util.ArrayList<>();args.add(tenant);args.addAll(items);Map<UUID,ProductReference> result=new java.util.HashMap<>();
+        jdbc.query("SELECT i.id,p.canonical_name,p.brand,b.identifier_value,p.package_size,p.unit_of_measure FROM account_catalog_items i JOIN global_catalog_products p ON p.id=i.global_product_id LEFT JOIN LATERAL(SELECT identifier_value FROM global_product_identifiers WHERE global_product_id=p.id ORDER BY is_primary DESC,id LIMIT 1)b ON true WHERE i.tenant_id=? AND i.id IN ("+String.join(",",java.util.Collections.nCopies(items.size(),"?"))+")",(org.springframework.jdbc.core.RowCallbackHandler)r->result.put(r.getObject(1,UUID.class),new ProductReference(r.getString(2),r.getString(3),r.getString(4),r.getString(5),r.getString(6))),args.toArray());return result;
+    }
     @Transactional
     public UUID addImportedVendorProduct(UUID tenantId, String actorEmail, UUID vendorId,
             String vendorItemCode, String name, String brand, String identifierType,
@@ -674,6 +827,40 @@ public class CatalogRepository {
         if(cost==null)throw new IllegalArgumentException("Default item cost is required. Enter the cost per each.");
         updateAccountProduct(tenant,item,name,code,status);
         saveItemCost(tenant,actor,item,cost,vendor);
+    }
+
+    public record EntryDefaults(String accountSku,String vendorItemCode,BigDecimal unitCost,String currency){}
+    @Transactional(readOnly=true)
+    public EntryDefaults entryDefaults(UUID tenant,UUID product,UUID vendor){
+        setTenant(tenant);
+        var vendors=jdbc.query("SELECT coalesce(vendor_code,name),distribution_center,currency FROM vendors WHERE tenant_id=? AND id=? AND status='ACTIVE'",(r,n)->new String[]{r.getString(1),r.getString(2),r.getString(3)},tenant,vendor);
+        if(vendors.size()!=1)throw new IllegalArgumentException("Choose an active vendor from this account.");
+        String[] selected=vendors.getFirst();String accountSku=jdbc.query("SELECT account_sku FROM account_catalog_items WHERE tenant_id=? AND global_product_id=?",r->r.next()?r.getString(1):null,tenant,product);
+        var offers=jdbc.query("SELECT o.vendor_item_code,CASE WHEN o.currency=? THEN o.list_cost*(1-o.discount_rate/100) END cost FROM vendor_catalog_offers o JOIN account_catalog_items i ON i.tenant_id=o.tenant_id AND i.id=o.account_catalog_item_id WHERE o.tenant_id=? AND o.vendor_id=? AND i.global_product_id=? AND o.effective_from<=current_date AND (o.effective_to IS NULL OR o.effective_to>=current_date) ORDER BY o.is_default DESC,o.effective_from DESC,o.id LIMIT 1",(r,n)->new EntryDefaults(accountSku,r.getString(1),r.getBigDecimal(2),selected[2]),selected[2],tenant,vendor,product);
+        if(!offers.isEmpty())return offers.getFirst();
+        List<String> codes=jdbc.query("SELECT vendor_item_code FROM global_product_vendor_codes WHERE global_product_id=? AND vendor_key=? AND catalog_scope=? AND source_tenant_id=? ORDER BY last_seen_at DESC,id",(r,n)->r.getString(1),product,normalizeVendorKey(selected[0]),CatalogIdentity.scope(tenant,selected[1]),tenant);
+        Set<String> identities=new java.util.HashSet<>();for(String code:codes)identities.add(CatalogIdentity.vendorCode(code));
+        String code=identities.size()==1&&!identities.contains("")?codes.getFirst():null;
+        return new EntryDefaults(accountSku,code,null,selected[2]);
+    }
+    @Transactional
+    public void updateAccountProductVendor(UUID tenant,UUID item,String name,String accountSku,String status,BigDecimal cost,UUID vendor,String vendorItemCode,String actor){
+        if(vendor==null){updateAccountProductWithCost(tenant,item,name,accountSku,status,cost,null,actor);return;}
+        setTenant(tenant);CatalogIdentity.lock(jdbc);
+        if(cost==null||cost.signum()<0||cost.scale()>4||cost.compareTo(new BigDecimal("100000"))>0)throw new IllegalArgumentException("Enter an item cost between 0 and 100,000 with up to four decimals.");
+        String currency=jdbc.query("SELECT currency FROM vendors WHERE tenant_id=? AND id=? AND status='ACTIVE'",r->r.next()?r.getString(1):null,tenant,vendor);
+        if(currency==null)throw new IllegalArgumentException("Choose an active vendor from this account.");
+        String internal=blankToNull(accountSku);if(internal!=null){
+            if(internal.length()>160)throw new IllegalArgumentException("Account SKU must be 160 characters or fewer.");
+            String normalized=internal.replaceAll("[^A-Za-z0-9]","").toUpperCase(Locale.ROOT);
+            if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM account_catalog_items WHERE tenant_id=? AND id<>? AND upper(regexp_replace(coalesce(account_sku,''),'[^A-Za-z0-9]','','g'))=?)",Boolean.class,tenant,item,normalized)))throw new IllegalArgumentException("That account SKU is already assigned to another product in this account.");
+        }
+        if(vendorItemCode!=null&&vendorItemCode.length()>160)throw new IllegalArgumentException("Vendor item code must be 160 characters or fewer.");
+        updateAccountProduct(tenant,item,name,accountSku,status);
+        var current=jdbc.queryForList("SELECT i.preferred_vendor_id,o.vendor_item_code,o.currency,o.list_cost*(1-o.discount_rate/100) cost FROM account_catalog_items i JOIN vendor_catalog_offers o ON o.tenant_id=i.tenant_id AND o.account_catalog_item_id=i.id AND o.vendor_id=? WHERE i.tenant_id=? AND i.id=? AND o.effective_from<=current_date AND (o.effective_to IS NULL OR o.effective_to>=current_date) ORDER BY o.is_default DESC,o.effective_from DESC,o.id LIMIT 1",vendor,tenant,item);
+        if(!current.isEmpty()&&vendor.equals(current.getFirst().get("preferred_vendor_id"))&&currency.equals(current.getFirst().get("currency"))&&java.util.Objects.equals(blankToNull(vendorItemCode),blankToNull((String)current.getFirst().get("vendor_item_code")))&&cost.compareTo((BigDecimal)current.getFirst().get("cost"))==0)return;
+        jdbc.update("UPDATE account_catalog_items SET preferred_vendor_id=?,updated_at=now() WHERE tenant_id=? AND id=?",vendor,tenant,item);
+        saveVendorOffer(tenant,actor,item,vendor,vendorItemCode,cost,BigDecimal.ZERO,currency,"MANUAL","Account product editor");
     }
 
     /** Reuses an account SKU that is already present but hidden from active operational lookups. */

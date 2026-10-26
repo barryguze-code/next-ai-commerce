@@ -33,3 +33,8 @@
 .orders-workspace .item-fees dt{color:var(--muted,#718096);white-space:nowrap}
 .orders-workspace .item-fees dd{margin:0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
 .orders-workspace .fee-default-edit{border:0;background:transparent;color:#2c6ce5;padding:4px;cursor:pointer;font-size:16px}
+
+.orders-workspace .compact-order-tabs .order-filters a.order-informative-tab,.orders-workspace .compact-order-tabs .order-filters a.order-informative-tab:hover,.orders-workspace .compact-order-tabs .order-filters a.order-informative-tab.active{--ui-action-text:#a96514;--ui-action-soft:#fff2dc;--ui-action-line:#e4a14f;color:#a96514;background:#fff2dc;border-color:#e4a14f}
+.orders-workspace .compact-order-tabs .order-filters a.order-informative-tab .order-tab-count,.orders-workspace .compact-order-tabs .order-filters a.order-informative-tab.active .order-tab-count{background:#fbe4bd;color:inherit}
+html[data-theme=dark] .orders-workspace .compact-order-tabs .order-filters a.order-informative-tab,html[data-theme=dark] .orders-workspace .compact-order-tabs .order-filters a.order-informative-tab:hover,html[data-theme=dark] .orders-workspace .compact-order-tabs .order-filters a.order-informative-tab.active{--ui-action-text:var(--amber,#e4a14f);--ui-action-soft:#332718;--ui-action-line:#825d2d;color:var(--amber,#e4a14f);background:#332718;border-color:#825d2d}
+html[data-theme=dark] .orders-workspace .compact-order-tabs .order-filters a.order-informative-tab .order-tab-count{background:#49351c}

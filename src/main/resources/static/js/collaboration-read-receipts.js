@@ -19,7 +19,7 @@
  }
  document.addEventListener('collaboration-thread-loading',stop);
  document.addEventListener('collaboration-thread-rendered',event=>{
-  stop();if(event.detail.messageType!=='TEAM_CHAT')return;
+  stop();if(event.detail.scope==='GLOBAL_PRODUCT'||event.detail.messageType!=='TEAM_CHAT')return;
   const dialog=document.querySelector('#contextual-thread-dialog'),list=dialog.querySelector('#thread-conversation-list');
   const nodes=[...list.querySelectorAll('.conversation-messages article')];
   nodes.forEach((node,index)=>node.dataset.readMessageId=event.detail.messageIds[index]);

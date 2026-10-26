@@ -2,19 +2,16 @@
 (()=>{'use strict';
 const endpoint=id=>'/app/catalog/products/'+encodeURIComponent(id)+'/image';
 function thumbnail(id,source){const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';img.src=source||endpoint(id);img.onerror=()=>{img.hidden=true};return img}
-function identityLabel(product){
- const vendor=product.vendorItemCode?.trim(),account=product.accountSku?.trim(),name=product.productName||product.name||'';
- return [vendor?'Vendor item code '+vendor:account?'Account SKU '+account:'Vendor item code unavailable',name].filter(Boolean).join(' · ');
-}
-function identityHelp(product){const vendor=product.vendorItemCode?.trim(),account=product.accountSku?.trim();return !vendor?'Vendor item code unavailable':account?'Account SKU '+account:''}
+function identityLabel(product){const name=product.productName||product.name||'',brand=product.brand?.trim();return brand&&!name.toLowerCase().includes(brand.toLowerCase())?name+' · '+brand:name;}
+function identityHelp(product){return '';}
 
 function imageFrame(img){const frame=document.createElement('span');frame.className='mw-image-frame';frame.append(img);return frame}
 function picture(line,product){
  const id=product?.id||product?.itemId||line.querySelector('[name=productId]')?.value;
  let holder=line.querySelector('.mapping-component-picture');if(!holder){holder=document.createElement('span');holder.className='mapping-component-picture';line.prepend(holder)}
  holder.style.backgroundImage='none';holder.replaceChildren();holder.classList.remove('has-image');
- if(!id){holder.textContent='＋';return}
- holder.append(imageFrame(thumbnail(id,product?.imageUrl)));
+ if(!id){holder.hidden=true;return}holder.hidden=false;
+ const img=thumbnail(id,product?.imageUrl);img.onerror=()=>{holder.hidden=true};holder.append(imageFrame(img));
  if(line.closest('dialog').dataset.canEdit!=='true')return;
  attachEditor(holder,id);
 }
@@ -67,18 +64,30 @@ function shell(){
 }
 function valid(){return [...dialog.querySelectorAll('.mw-line')].length>0&&[...dialog.querySelectorAll('.mw-line')].every(l=>l.querySelector('[name=productId]').value&&l.querySelector('[name=quantity]').checkValidity())}
 function update(){const disabled=dialog.dataset.canEdit!=='true'||!valid();dialog.querySelector('.mw-add').disabled=disabled;dialog.querySelector('.mw-save').disabled=disabled}
-function line(product){
- const row=node('div','mw-line');row.innerHTML='<label><span>Account catalogue product</span><input type="search" placeholder="Search product, UPC, or vendor item code" autocomplete="off" required><input type="hidden" name="productId"><small class="mw-selected-summary"></small><small class="mw-identity-help"></small><small class="mw-selection-status" role="status"></small><div class="mw-results"></div></label><label><span>Quantity</span><input type="number" name="quantity" min="1" max="10000" step="1" value="1" required></label><button type="button" class="mw-remove" aria-label="Remove product">−</button>';
+function line(product,defaultQuantity=1,itemCode=null){
+ const row=node('div','mw-line');row.dataset.itemCode=itemCode||'';row.innerHTML='<div class="mw-picker"><label><span>Product</span><input type="search" placeholder="Search product, UPC, or vendor item code" autocomplete="off" required><input type="hidden" name="productId"><small class="mw-selection-status" role="status"></small></label><div class="mw-results"></div><button type="button" class="mw-create-product">Add to catalogue</button></div><label><span>Quantity</span><input type="number" name="quantity" min="1" max="10000" step="1" value="1" required></label><button type="button" class="mw-remove" aria-label="Remove product">−</button>';
  dialog.querySelector('.mw-lines').append(row);
  const input=row.querySelector('[type=search]'),id=row.querySelector('[name=productId]'),results=row.querySelector('.mw-results');
- if(product){input.value=identityLabel(product);row.querySelector('.mw-selected-summary').textContent=identityLabel(product);row.querySelector('.mw-identity-help').textContent=identityHelp(product);id.value=product.itemId||product.id;row.querySelector('[name=quantity]').value=product.quantity||1}
+ row.querySelector('[name=quantity]').value=product?.quantity||defaultQuantity;
+ if(product){input.value=identityLabel(product);id.value=product.itemId||product.id;row.querySelector('[name=quantity]').value=product.quantity||defaultQuantity}
  picture(row,product);
+ const addProduct=row.querySelector('.mw-create-product');addProduct.onclick=()=>{
+  const version=requestNumber;
+  window.openCatalogAddProduct({query:input.value.trim(),vendorItemCode:dialog.querySelectorAll('.mw-line').length===1?row.dataset.itemCode:'',lastQuery:input.dataset.lastQuery||'',onClose:()=>addProduct.focus(),onSelect:(p,created)=>{
+   if(!row.isConnected||!dialog.open||version!==requestNumber)return;
+   clearTimeout(timer);controller?.abort();input.value=identityLabel(p);id.value=p.id;
+   row.querySelector('.mw-selection-status').textContent=created?'Product added to your account. Save mapping to apply this selection.':'Existing account product selected. Save mapping to apply this selection.';
+   results.replaceChildren();picture(row,p);update();input.focus();
+  }});
+ };
  let timer,controller;
- input.oninput=()=>{id.value='';row.querySelector('.mw-selected-summary').textContent='';row.querySelector('.mw-identity-help').textContent='';row.querySelector('.mw-selection-status').textContent='Select a product to map';picture(row);update();clearTimeout(timer);controller?.abort();results.replaceChildren();const q=input.value.trim();if(q.length<2)return;timer=setTimeout(async()=>{controller=new AbortController();try{const response=await fetch('/app/catalog/product-search?q='+encodeURIComponent(q),{signal:controller.signal});if(!response.ok)throw Error();const products=await response.json();if(!input.isConnected||input.value.trim()!==q)return;results.replaceChildren();products.forEach(p=>{const b=node('button','mw-option');b.type='button';const copy=node('span');copy.append(node('strong','',p.name),node('small','',[p.brand,p.vendorItemCode?'Vendor item code '+p.vendorItemCode:'Vendor item code unavailable',p.accountSku?'Account SKU '+p.accountSku:null,p.identifier?'Barcode '+p.identifier:null,p.identifier?.toLowerCase().includes(q.toLowerCase())?'Matches barcode':null].filter(Boolean).join(' · ')));b.append(thumbnail(p.id,p.imageUrl),copy);b.onclick=()=>{input.value=identityLabel(p);row.querySelector('.mw-selected-summary').textContent=identityLabel(p);row.querySelector('.mw-identity-help').textContent=identityHelp(p);id.value=p.id;row.querySelector('.mw-selection-status').textContent='';picture(row,p);results.replaceChildren();update()};results.append(b)});if(!products.length){const link=node('a','','No match — add a catalogue product ↗');link.href='/app/catalog?addProduct=true';link.target='_blank';link.rel='noopener';results.append(link)}}catch(e){if(e.name!=='AbortError')results.textContent='Search unavailable. Please try again.'}},200)};
- row.querySelector('.mw-remove').onclick=()=>{controller?.abort();if(dialog.querySelectorAll('.mw-line').length===1){input.value='';id.value='';row.querySelector('.mw-selected-summary').textContent='';row.querySelector('.mw-identity-help').textContent='';row.querySelector('.mw-selection-status').textContent='';picture(row);results.replaceChildren()}else row.remove();update()};
+ input.oninput=()=>{id.value='';row.querySelector('.mw-selection-status').textContent='Select a product to map';picture(row);update();clearTimeout(timer);controller?.abort();results.replaceChildren();const q=input.value.trim();input.dataset.lastQuery=q;if(q.length<2)return;timer=setTimeout(async()=>{controller=new AbortController();try{const response=await fetch('/app/catalog/product-search?q='+encodeURIComponent(q),{signal:controller.signal});if(!response.ok)throw Error();const products=await response.json();if(!input.isConnected||input.value.trim()!==q)return;results.replaceChildren();products.forEach(p=>{const b=node('button','mw-option');b.type='button';const copy=node('span');copy.append(node('strong','',p.name),node('small','',[p.brand,p.vendorItemCode||p.accountSku].filter(Boolean).join(' · ')));if(p.imageUrl)b.append(thumbnail(p.id,p.imageUrl));b.append(copy);b.onclick=()=>{input.value=identityLabel(p);id.value=p.id;row.querySelector('.mw-selection-status').textContent='';picture(row,p);results.replaceChildren();update()};results.append(b)});}catch(e){if(e.name!=='AbortError')results.textContent='Search unavailable. Please try again.'}},200)};
+ row.querySelector('.mw-remove').onclick=()=>{controller?.abort();if(dialog.querySelectorAll('.mw-line').length===1){input.value='';id.value='';row.querySelector('.mw-selection-status').textContent='';picture(row);results.replaceChildren()}else row.remove();update()};
  if(dialog.dataset.canEdit!=='true')row.querySelectorAll('input,button').forEach(e=>e.disabled=true);
  return row;
 }
+function draftQuantity(suggestion){const quantity=Number(suggestion?.quantity);return Number.isInteger(quantity)&&quantity>=1&&quantity<=10000?quantity:1;}
+
 async function open(trigger){
  opener=trigger;const d=shell(),version=++requestNumber;
  const record=trigger.dataset.target?document.getElementById(trigger.dataset.target):trigger;
@@ -88,7 +97,7 @@ async function open(trigger){
  d.querySelector('h2').textContent=data.sellerSku||stage?.dataset.sellerSku||'';
  d.querySelector('[data-title]').textContent=data.productTitle||stage?.dataset.productTitle||'';
  const photo=d.querySelector('.mw-product-image');photo.replaceChildren();const image=data.image||stage?.querySelector('img')?.src;
- if(image){const img=node('img');img.src=image;img.alt='';photo.append(imageFrame(img))}else photo.textContent='▦';
+ photo.hidden=!image;if(image){const img=node('img');img.src=image;img.alt='';img.onerror=()=>photo.hidden=true;photo.append(imageFrame(img))}
  attachEditor(photo);
  d.querySelectorAll('form > input[type=hidden]').forEach(e=>e.remove());
  const hidden=(name,value)=>{const e=node('input');e.type='hidden';e.name=name;e.value=value;d.querySelector('form').append(e)};
@@ -98,7 +107,14 @@ async function open(trigger){
  d.querySelectorAll('.mw-save,.mw-add,.mw-clear').forEach(b=>b.disabled=true);
  d.querySelector('.mw-clear').hidden=d.dataset.canEdit!=='true';
  d.showModal();
- try{const r=await fetch('/app/marketplace-skus/mappings/components?sku='+encodeURIComponent(d.querySelector('h2').textContent));if(!r.ok)throw Error();const products=await r.json();if(version!==requestNumber||!d.open)return;(products.length?products:[null]).forEach(line);d.querySelector('.mw-feedback').textContent='';d.querySelector('.mw-clear').disabled=!products.length;update()}catch{if(version===requestNumber)d.querySelector('.mw-feedback').textContent='Could not load mapping. Close and try again; nothing has changed.'}
+ try{
+  const sku=d.querySelector('h2').textContent,r=await fetch('/app/marketplace-skus/mappings/components?sku='+encodeURIComponent(sku));if(!r.ok)throw Error();const products=await r.json();if(version!==requestNumber||!d.open)return;
+  if(products.length){products.forEach(p=>line(p));d.querySelector('.mw-feedback').textContent='';}
+  else{let suggestion=null;try{const response=await fetch('/app/marketplace-skus/mappings/draft?sku='+encodeURIComponent(sku));if(response.ok)suggestion=await response.json();}catch{}if(version!==requestNumber||!d.open)return;
+   line(suggestion?.product||null,draftQuantity(suggestion),suggestion?.itemCode);d.querySelector('.mw-feedback').textContent=suggestion?.product?'Product suggested from an exact account code. Review and Save mapping.':suggestion?.quantity>1?'Quantity detected from the SKU. Choose a product, then Save mapping.':'';
+  }
+  d.querySelector('.mw-clear').disabled=!products.length;update();
+ }catch{if(version===requestNumber)d.querySelector('.mw-feedback').textContent='Could not load mapping. Close and try again; nothing has changed.'}
 }
 window.NextAiMappingWidget={picture,option,open,attachEditor,identityLabel};
 window.openOrderMapping=open;
