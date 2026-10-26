@@ -153,9 +153,11 @@ public class MarketplaceSkuController {
             @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="ALL") String status,
             @RequestParam(defaultValue="status") String sort,@RequestParam(defaultValue="asc") String direction,
             @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String returnTo,
-            HttpSession session,RedirectAttributes redirect){
+            HttpSession session,RedirectAttributes redirect,Authentication authentication){
+        UUID tenantId=requiredTenant(session);UUID connectionId=requiredAmazonConnection(tenantId,session);
+        if(!maySync(tenantId,connectionId,authentication))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
         try{
-            UUID tenantId=requiredTenant(session);UUID connectionId=requiredAmazonConnection(tenantId,session);
             skus.saveMapping(tenantId,connectionId,sellerSku,productIds,quantities);
             redirect.addFlashAttribute("mappingSuccess","Marketplace SKU mapping saved.");
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("mappingError",e.getMessage());}

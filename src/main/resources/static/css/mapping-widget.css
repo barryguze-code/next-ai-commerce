@@ -73,15 +73,14 @@ html[data-theme=dark] .mapping-unmapped-badge{background:#40272c;color:#ef9ca2}
 .mapping-widget .mw-create-help{font-size:12px;color:var(--muted);line-height:1.4}
 
 /* Product and quantity are one compact choice row; a missing image reserves no tile. */
-.mapping-widget .mw-line{grid-template-columns:minmax(0,1fr) 90px 32px;align-items:start}
-.mapping-widget .mw-picker{grid-column:1;position:relative;padding-bottom:24px}
-.mapping-widget .mw-line>label{grid-column:2}
-.mapping-widget .mw-remove{grid-column:3;margin-top:25px}
-.mapping-widget .mapping-component-picture{grid-column:1;grid-row:1;position:absolute;width:34px;height:38px;left:22px;top:39px;border-radius:7px}
-.mapping-widget .mw-line{position:relative}
-.mapping-widget .mw-line:has(.mapping-component-picture:not([hidden])) .mw-picker input[type=search]{padding-left:48px}
+.mapping-widget .mw-line{grid-template-columns:minmax(0,1fr) 90px 32px;grid-template-areas:"product quantity remove";align-items:start}
+.mapping-widget .mw-line:has(>.mapping-component-picture:not([hidden])){grid-template-columns:44px minmax(0,1fr) 90px 32px;grid-template-areas:"picture product quantity remove"}
+.mapping-widget .mw-picker{grid-area:product;position:relative;padding-bottom:24px}
+.mapping-widget .mw-line>label{grid-area:quantity}
+.mapping-widget .mw-remove{grid-area:remove;margin-top:25px}
+.mapping-widget .mw-line>.mapping-component-picture{grid-area:picture;position:relative;align-self:center;width:44px;height:44px;left:auto;top:auto;border-radius:10px}
 .mapping-widget .mw-create-product{position:absolute;bottom:0;left:0;padding:2px 0;border:0;background:transparent;color:var(--blue);font:inherit;font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 .mapping-widget .mw-selection-status{margin:3px 0 0}
 .mapping-widget .mw-line>.mapping-component-picture[hidden]{display:none}
 .mapping-widget .mw-picker input[type=search]{font-weight:500}
-@media(max-width:560px){.mapping-widget .mw-line{grid-template-columns:minmax(0,1fr) 64px 28px;gap:8px}.mapping-widget .mw-line>.mapping-component-picture{left:20px;top:37px;width:30px;height:36px}}
+@media(max-width:560px){.mapping-widget .mw-line{grid-template-columns:minmax(0,1fr) 64px 28px;gap:8px}.mapping-widget .mw-line:has(>.mapping-component-picture:not([hidden])){grid-template-columns:40px minmax(0,1fr) 64px 28px}.mapping-widget .mw-line>.mapping-component-picture{width:40px;height:44px}}

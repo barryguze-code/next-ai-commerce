@@ -292,7 +292,21 @@ public class MarketplaceSkuRepository {
                 SELECT EXISTS(SELECT 1 FROM amazon_listings
                   WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?)
                 """,Boolean.class,tenantId,connectionId,sellerSku);
-            if(!Boolean.TRUE.equals(listingExists))throw new IllegalArgumentException("This marketplace SKU is no longer available in the selected store.");
+            if(!Boolean.TRUE.equals(listingExists)){
+                // Orders retain legitimate seller SKUs after Amazon removes their live listing.
+                // Identity remains exact and store-scoped; an ASIN conflict requires review.
+                List<String> orderAsins=jdbc.query("""
+                    SELECT DISTINCT nullif(btrim(asin),'') FROM amazon_order_items
+                    WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?
+                    LIMIT 3
+                    """,(rs,row)->rs.getString(1),tenantId,connectionId,sellerSku);
+                if(orderAsins.isEmpty())throw new IllegalArgumentException("This marketplace SKU is not available in the selected store's listings or order history.");
+                var knownAsins=orderAsins.stream().filter(java.util.Objects::nonNull).toList();
+                if(knownAsins.size()>1)throw new IllegalArgumentException("This seller SKU has conflicting ASINs in order history. Review it before mapping.");
+                if(knownAsins.isEmpty()||orderAsins.contains(null))
+                    throw new IllegalArgumentException("Order history does not establish a complete ASIN for this seller SKU. Review it before mapping.");
+                asin=knownAsins.getFirst();
+            }
         }
         if(productIds==null||quantities==null||productIds.size()!=quantities.size()||productIds.isEmpty())
             throw new IllegalArgumentException("Choose at least one catalogue product and quantity.");
