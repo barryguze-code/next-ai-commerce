@@ -66,6 +66,8 @@
  .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=action]{flex:0 0 var(--order-actions-width)!important}
  .orders-workspace .order-list .order-item>.order-picture-cell{display:flex;flex-flow:row nowrap;gap:6px}
  .orders-workspace .order-picture-cell .order-product-stage{width:var(--order-picture-size)!important;height:var(--order-picture-size)!important;flex:0 0 var(--order-picture-size)!important;min-width:0!important;min-height:0!important;margin:0!important}
+ /* Keep the photo inside its density slot despite the shared auto-sized thumbnail rule. */
+ .orders-workspace .order-list.table-widget .order-picture-cell .order-product-stage.product-thumbnail-slot>img:not([hidden]){position:absolute;inset:0;box-sizing:border-box;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain}
  .orders-workspace .order-picture-cell>.order-engagement{flex:0 0 28px;gap:6px}
  .orders-workspace .order-list .order-engagement>:is(.order-stage-chat,.order-picture-more){width:28px!important;height:28px!important;min-width:28px;padding:0!important}
  .orders-workspace .order-engagement>:is(.order-stage-chat,.order-picture-more)>.platform-icon{width:26px!important;height:26px!important;max-width:26px}
