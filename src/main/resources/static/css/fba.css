@@ -27,18 +27,12 @@
 /* Keep inventory facts contained in their column, independently of chart sizing. */
 .fba-stock-totals{grid-template-columns:minmax(0,1fr) max-content;width:100%;gap:3px 12px}
 .fba-stock-totals dt{white-space:nowrap}
-.orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column="available"],.orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column="four-week-sales"]{flex:0 0 160px;min-width:160px;width:160px;padding-inline:12px;box-sizing:border-box}
-.orders-workspace .order-list.table-widget .item-weekly-sales{max-width:160px}
-.orders-workspace .order-list.table-widget:has(.fba-stock){overflow-x:auto}
-.orders-workspace .order-list.table-widget:has(.fba-stock)>.order-row,.orders-workspace .order-list.table-widget:has(.fba-stock)>.order-item-grid-header{min-width:1200px}
 .orders-workspace .order-filters a.order-alert-tab.has-issues,.orders-workspace .order-filters a.order-alert-tab.has-issues.active{color:var(--danger,#c73547);background:var(--danger-soft,#fff1f2);border-color:var(--danger-border,#f5c4cb)}
 .orders-workspace .order-filters a.order-alert-tab.has-issues .order-tab-count{color:inherit;background:var(--danger-soft,#fde8eb)}
 .fba-shipment-table .table-overview-picture:empty{display:none}
 .fba-shipment-table .table-overview-picture b{display:none}
 .fba-origin-state{display:inline-grid;place-items:center;min-width:42px;min-height:38px;padding:4px;border:1px solid var(--line);border-radius:9px;background:var(--sky);color:var(--ink);font-size:13px;font-weight:650}
 .fba-shipment-table td,.fba-shipment-table button[data-fba-shipment]{font-size:14px;line-height:1.5}
-.orders-workspace [data-column="available"]:has(.fba-stock){min-width:150px;padding-inline:12px;box-sizing:border-box}
-.orders-workspace [data-column="four-week-sales"]{min-width:150px;padding-inline:12px;box-sizing:border-box}
 [data-fba-shipment]{appearance:none;background:transparent;border:1px solid transparent;border-radius:8px;padding:8px 10px;margin-left:-10px;font:inherit;font-weight:650;color:var(--text,#192b43);cursor:pointer;text-align:left}
 [data-fba-shipment]:hover,[data-fba-shipment]:focus-visible{background:var(--primary-soft,#edf4ff);border-color:var(--primary,#2d67c8);color:var(--primary,#2d67c8);outline:none}
 #fba-shipment-dialog{width:min(1000px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0}

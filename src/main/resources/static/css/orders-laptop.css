@@ -32,53 +32,6 @@
  .orders-workspace .order-tab-count{font-size:9px;padding:2px 4px}
  .orders-workspace .order-tab-panel .order-filters a{padding:4px 5px;font-size:10px;gap:4px}
  .orders-workspace .order-tab-count>i,.orders-workspace .order-tab-count>span{display:none}
- .orders-workspace .order-list.table-widget{overflow:visible;min-width:0;width:100%}
- .orders-workspace .order-list.table-widget .order-item-grid-header{position:sticky;top:var(--orders-filter-height,80px);z-index:11;padding:7px 8px!important;min-width:0}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header){gap:7px;width:100%;box-sizing:border-box}
- .orders-workspace .order-list.table-widget .order-item{padding:9px 8px!important;min-height:96px}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column]{min-width:0!important;box-sizing:border-box;padding-inline:0}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=picture]{flex:0 0 64px}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=product]{flex:1 1 190px}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=order]{flex:0 0 142px}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=quantity]{flex:0 0 25px}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=sales]{flex:0 0 88px;text-align:right}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=profit]{flex:0 0 82px;text-align:right}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=available]{flex:0 0 48px}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=four-week-sales]{flex:0 0 112px}
- .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=action]{flex:0 0 58px!important}
- .orders-workspace .order-list .order-item>.order-picture-cell{flex-direction:column;gap:2px}
- .orders-workspace .order-picture-cell .order-product-stage{flex:0 0 48px!important;width:48px!important;height:48px!important;min-height:48px!important;min-width:0!important;margin:0!important;border-radius:9px}
- .orders-workspace .order-picture-cell .order-product-stage>img{height:46px!important;width:46px!important}
- .orders-workspace .order-picture-cell .order-engagement{flex-direction:row;gap:4px;flex-basis:auto}
- .orders-workspace .order-list .order-engagement>:is(.order-stage-chat,.order-picture-more){width:25px!important;height:25px!important;border-radius:7px!important}
- .orders-workspace .order-engagement>:is(.order-stage-chat,.order-picture-more)>.platform-icon{width:23px!important;height:23px!important;max-width:23px}
- .orders-workspace .item-product-copy>strong{font-size:12px!important;line-height:1.4}
- .orders-workspace .item-product-copy{gap:2px!important}
- .orders-workspace .order-identifier-line{min-height:18px!important;height:18px}
- .orders-workspace .order-identifier-line{width:100%;max-width:100%;gap:3px;line-height:1.3}
- .orders-workspace .order-identifier-line :is(.order-sku-copy,.order-copy-value){max-width:100%;font-size:10px}
- .orders-workspace .order-identifier-market,.orders-workspace .order-identifier-market img,.orders-workspace .order-inline-mapping-trigger{width:18px!important;height:18px!important}
- .orders-workspace .order-number{font-size:10px!important;white-space:nowrap}
- .orders-workspace .item-order-reference{gap:3px}
- .orders-workspace .item-order-reference>small{font-size:9px}
- .orders-workspace .item-order-reference .amazon-order-status{min-height:20px;padding:3px 6px;font-size:9px}
- .orders-workspace .item-sales{justify-items:end}
- .orders-workspace .item-sales .profit-price-link,.orders-workspace .item-profit .profit-open{font-size:14px;white-space:nowrap}
- .orders-workspace .item-profit .profit-open{justify-content:flex-end;gap:2px}
- .orders-workspace .profit-calculator-art{width:17px!important;height:17px!important}
- .orders-workspace .item-buy-box{justify-content:flex-end;gap:3px;white-space:nowrap}
- .orders-workspace .item-buy-box .profit-price-link{font-size:10px}
- .orders-workspace .item-buy-box small{font-size:8px}
- .orders-workspace .item-weekly-sales{width:112px;min-width:0}
- .orders-workspace .weekly-sales{width:104px!important;max-width:100%}
- .orders-workspace .weekly-sold-totals{font-size:10px!important;white-space:nowrap}
- .orders-workspace .weekly-sold-totals small{font-size:8px}
- .orders-workspace .item-weekly-sales .sku-refund-summary{font-size:9px;white-space:nowrap}
- .orders-workspace .order-list.table-widget .item-actions{gap:2px;min-width:0!important}
- .orders-workspace .item-actions .order-icon-action{width:27px!important;height:30px!important}
- .orders-workspace .item-actions .platform-icon{width:27px!important;height:27px!important}
- .orders-workspace .order-list.table-widget .table-grid-header>[data-column]{font-size:8px;letter-spacing:0;line-height:1.3;overflow-wrap:normal;white-space:normal}
- .orders-workspace .order-list.table-widget .table-grid-header>[data-column=available]{font-size:7px}
  .orders-workspace .order-pagination{position:sticky;bottom:0;z-index:13;background:var(--white);padding:7px 10px;box-shadow:0 -3px 10px #172b4410;border-top:1px solid var(--line);border-radius:0 0 10px 10px;gap:8px}
  .orders-workspace .order-pagination .table-page-context{gap:10px;font-size:10px}
  .orders-workspace .order-pagination nav{gap:4px}
@@ -90,3 +43,46 @@
 }
 .collaboration-row-button .collaboration-unread-dot{position:absolute;top:-3px;right:-3px;width:7px;height:7px;border:2px solid var(--white,#fff);border-radius:50%;background:var(--blue,#2c6bea);pointer-events:none}
 @media print{.orders-filter-anchor,.orders-workspace .order-pagination,.orders-workspace .table-grid-header{position:static!important}}
+
+/* Orders owns its width budget; density follows the card's measured content width. */
+@media(min-width:761px){
+ .orders-workspace .order-card{--order-record-width:132px;--order-picture-size:80px;--order-order-width:185px;--order-sales-width:130px;--order-profit-width:112px;--order-stock-width:80px;--order-fba-width:144px;--order-weeks-width:144px;--order-actions-width:80px;--order-cell-gap:10px;--order-row-pad:14px;--order-primary-number-size:20px;min-width:0}
+ .orders-workspace .order-card[data-orders-density=compact]{--order-record-width:100px;--order-picture-size:58px;--order-order-width:150px;--order-sales-width:108px;--order-profit-width:108px;--order-fba-width:124px;--order-weeks-width:128px;--order-actions-width:76px;--order-cell-gap:8px;--order-row-pad:10px}
+ .orders-workspace .order-card[data-orders-density=narrow]{--order-record-width:80px;--order-picture-size:46px;--order-order-width:138px;--order-sales-width:100px;--order-profit-width:100px;--order-stock-width:72px;--order-fba-width:112px;--order-weeks-width:108px;--order-actions-width:72px;--order-cell-gap:6px;--order-row-pad:8px}
+ .orders-workspace .order-list.table-widget{width:100%;min-width:0;max-width:100%}
+ .orders-workspace .order-list.table-widget>.order-row{min-width:0}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header){width:100%;min-width:0;box-sizing:border-box;gap:var(--order-cell-gap);padding-inline:var(--order-row-pad)!important}
+ .orders-workspace .order-list.table-widget .order-item-grid-header{position:sticky;top:var(--orders-filter-height,80px);z-index:11}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column]{min-width:0!important;box-sizing:border-box;padding-inline:0;width:auto}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=picture]{flex:0 0 var(--order-record-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=product]{flex:1 1 0}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=order]{flex:0 0 var(--order-order-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=quantity]{flex:0 0 28px}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=sales]{flex:0 0 var(--order-sales-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=profit]{flex:0 0 var(--order-profit-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=available]{flex:0 0 var(--order-stock-width)}
+ .orders-workspace .order-list.table-widget:has(.fba-stock) :is(.order-item,.order-item-grid-header)>[data-column=available]{flex-basis:var(--order-fba-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=four-week-sales]{flex:0 0 var(--order-weeks-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=action]{flex:0 0 var(--order-actions-width)!important}
+ .orders-workspace .order-list .order-item>.order-picture-cell{display:flex;flex-flow:row nowrap;gap:6px}
+ .orders-workspace .order-picture-cell .order-product-stage{width:var(--order-picture-size)!important;height:var(--order-picture-size)!important;flex:0 0 var(--order-picture-size)!important;min-width:0!important;min-height:0!important;margin:0!important}
+ .orders-workspace .order-picture-cell>.order-engagement{flex:0 0 28px;gap:6px}
+ .orders-workspace .order-list .order-engagement>:is(.order-stage-chat,.order-picture-more){width:28px!important;height:28px!important;min-width:28px;padding:0!important}
+ .orders-workspace .order-engagement>:is(.order-stage-chat,.order-picture-more)>.platform-icon{width:26px!important;height:26px!important;max-width:26px}
+ .orders-workspace .order-list.table-widget .item-product-copy>strong{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:break-word;font-size:.84rem!important;line-height:1.45}
+ .orders-workspace .item-order-reference>.order-number{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+ .orders-workspace .order-list.table-widget .table-grid-header>[data-column]{white-space:normal;overflow-wrap:normal;letter-spacing:.04em;line-height:1.4}
+ .orders-workspace .order-list.table-widget .item-weekly-sales{width:auto;max-width:none;min-width:0}
+ .orders-workspace .item-weekly-sales .weekly-sales{width:100%!important;min-width:0;max-width:100%}
+ .orders-workspace .weekly-sold-totals{display:flex;justify-content:center;flex-wrap:wrap;white-space:normal;gap:2px 4px}
+ .orders-workspace .item-weekly-sales .sku-refund-summary{white-space:normal}
+ .orders-workspace .fba-stock-totals{gap:3px 6px}
+ .orders-workspace .fba-stock-totals dt{white-space:normal}
+}
+/* Ledger links must retain the same primary numeric hierarchy as Profit. */
+.orders-workspace .order-list.table-widget :is(.item-profit .profit-open:not(.profit-missing)>span,[data-column=available]>strong,[data-column=available] .inventory-ledger-link>strong,[data-column=available] .fba-stock-totals>dd:first-of-type){font-size:var(--order-primary-number-size,20px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1.35}
+/* Bound both the control and its artwork, including old min-width declarations. */
+.orders-workspace .order-list.table-widget .item-actions{gap:4px;flex-wrap:wrap;align-content:center}
+.orders-workspace .item-actions :is(.order-action-tip,.platform-pickup-action){flex:0 0 34px;width:34px;min-width:34px;margin:0}
+.orders-workspace .item-actions .order-icon-action{flex:0 0 34px;width:34px!important;min-width:34px!important;max-width:34px!important;height:34px!important;box-sizing:border-box;padding:0!important}
+.orders-workspace .item-actions .order-icon-action>.platform-icon{display:block;position:static;width:32px!important;min-width:0;height:32px!important;max-width:100%;object-fit:contain;transform:none}
