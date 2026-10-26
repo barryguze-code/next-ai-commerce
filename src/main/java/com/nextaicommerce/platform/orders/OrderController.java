@@ -133,14 +133,39 @@ public class OrderController {
         if(slip==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"This order is not available in the selected store.");
         model.addAttribute("pickupEligible",orders.pickupEligibleOrders(tenant(session),connection).contains(orderId));
         model.addAttribute("pickupMarked",orders.pickupOverrides(tenant(session),connection).contains(orderId));
+        model.addAttribute("packageNames",packingSlips.packageNames(tenant(session)));
+        boolean mayEdit=mayEditPacking(tenant(session),connection,auth);
+        model.addAttribute("canEditPacking",mayEdit);
+        model.addAttribute("packingLocations",mayEdit?catalog.listLocations(tenant(session)):java.util.List.of());
         model.addAttribute("slip",slip);return "packing-slip";
     }
 
     @PostMapping("/app/orders/{orderId}/packing-slip/package") @ResponseBody Map<String,String> savePackingPackage(
-            @PathVariable String orderId,@RequestParam String packageName,HttpSession session){
+            @PathVariable String orderId,@RequestParam String packageName,HttpSession session,Authentication auth){
         Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
-        return Map.of("packageName",packingSlips.savePackaging(tenant(session),connection,orderId,packageName));
+        if(!mayEditPacking(tenant(session),connection,auth))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        try{return Map.of("packageName",packingSlips.savePackaging(tenant(session),connection,orderId,packageName));}
+        catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
+    private boolean mayEditPacking(UUID tenantId,UUID connection,Authentication auth){
+        if(auth==null||!workspace.canOperateAccount(tenantId,auth.getName()))return false;
+        boolean admin=auth.getAuthorities().stream().anyMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));
+        return workspace.listAccountOptions(auth.getName(),admin).stream().filter(a->a.id().equals(tenantId))
+            .flatMap(a->a.stores().stream()).anyMatch(store->store.id().equals(connection));
+    }
+
+    @PostMapping("/app/orders/{orderId}/packing-slip/products/{itemId}") @ResponseBody
+    ResponseEntity<?> savePackingProduct(@PathVariable String orderId,@PathVariable UUID itemId,
+            @RequestParam String description,@RequestParam(required=false) UUID locationId,HttpSession session,Authentication auth){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
+        if(!mayEditPacking(tenant(session),connection,auth))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        try{return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(
+            catalog.updatePackingProductDetails(tenant(session),connection,orderId,itemId,description,locationId));}
+        catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
+        catch(org.springframework.dao.DataIntegrityViolationException e){return ResponseEntity.status(409).body(Map.of("error","The product or location changed while saving. Refresh and try again; nothing was changed by this request."));}
     }
 
     @PostMapping("/app/orders/{orderId}/pickup-override") String pickupOverride(

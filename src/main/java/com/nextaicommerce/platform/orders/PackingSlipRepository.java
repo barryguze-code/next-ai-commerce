@@ -15,6 +15,11 @@ public class PackingSlipRepository {
 
     public record Slip(String orderId,String sellerCentralUrl,String brandName,String packageName,boolean packageMatched,List<Line> lines){
         /** Thermal labels stay readable: two pick lines per physical 2 × 1 inch page. */
+        public List<Line> editableLines(){
+            var unique=new java.util.LinkedHashMap<UUID,Line>();
+            if(lines!=null)for(var line:lines)if(line.accountItemId()!=null)unique.putIfAbsent(line.accountItemId(),line);
+            return List.copyOf(unique.values());
+        }
         public List<List<Line>> pages(){
             if(lines==null||lines.isEmpty())return List.of(List.of());
             java.util.ArrayList<List<Line>> pages=new java.util.ArrayList<>();
@@ -22,7 +27,22 @@ public class PackingSlipRepository {
             return List.copyOf(pages);
         }
     }
-    public record Line(String sku,String title,int quantity,LocalDate expirationDate,String location){}
+    public record Line(String sku,String title,int quantity,LocalDate expirationDate,String location,
+            String brand,UUID accountItemId,UUID defaultLocationId,boolean reservedLocation){
+        public Line(String sku,String title,int quantity,LocalDate expirationDate,String location){this(sku,title,quantity,expirationDate,location,null,null,null,false);}
+    }
+
+    @Transactional(readOnly=true)
+    public List<String> packageNames(UUID tenantId){
+        setTenant(tenantId);
+        return jdbc.queryForList("""
+            SELECT DISTINCT ON (lower(btrim(regexp_replace(packaging,'[[:space:]]+',' ','g'))))
+              btrim(regexp_replace(packaging,'[[:space:]]+',' ','g'))
+            FROM temporary_order_packaging_lookup
+            WHERE tenant_id=? AND nullif(btrim(regexp_replace(packaging,'[[:space:]]+',' ','g')),'') IS NOT NULL
+            ORDER BY lower(btrim(regexp_replace(packaging,'[[:space:]]+',' ','g'))),imported_at DESC,packaging
+            """,String.class,tenantId);
+    }
 
     @Transactional(readOnly=true)
     public Slip find(UUID tenantId,UUID connectionId,String orderId){
@@ -56,7 +76,10 @@ public class PackingSlipRepository {
                    coalesce(nullif(catalog.display_name,''),nullif(product.canonical_name,''),nullif(item.title,''),'Unnamed item') title,
                    sum(item.quantity_ordered*coalesce(component.quantity,1)) quantity,
                    reserved.expiration_date,
-                   coalesce(min(default_location.code),'—') location
+                   CASE WHEN reserved.reservation_count>0 THEN coalesce(reserved.location_codes,'—')
+                     ELSE coalesce('Default '||min(default_location.code),'—') END location,
+                   product.brand,catalog.id account_item_id,default_link.location_id default_location_id,
+                   coalesce(reserved.reservation_count,0)>0 reserved_location
             FROM amazon_order_items item
             LEFT JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=item.tenant_id
               AND mapping.marketplace_connection_id=item.marketplace_connection_id
@@ -73,16 +96,19 @@ public class PackingSlipRepository {
                 AND nullif(offer.vendor_item_code,'') IS NOT NULL
               ORDER BY (offer.effective_to IS NULL) DESC,offer.is_default DESC,offer.updated_at DESC LIMIT 1
             ) mapped_offer ON true
-            LEFT JOIN LATERAL (SELECT min(reservation.expiration_date) expiration_date
+            LEFT JOIN LATERAL (SELECT min(reservation.expiration_date) expiration_date,count(*) reservation_count,
+                string_agg(DISTINCT pick_location.code,', ' ORDER BY pick_location.code) location_codes
               FROM order_inventory_reservations reservation
-              WHERE reservation.tenant_id=item.tenant_id AND reservation.amazon_order_item_id=item.id
+              LEFT JOIN warehouse_locations pick_location ON pick_location.tenant_id=reservation.tenant_id AND pick_location.id=reservation.location_id
+              WHERE reservation.tenant_id=item.tenant_id AND reservation.marketplace_connection_id=item.marketplace_connection_id AND reservation.amazon_order_item_id=item.id
                 AND (component.account_catalog_item_id IS NULL OR reservation.account_catalog_item_id=component.account_catalog_item_id)
                 AND reservation.status='ACTIVE') reserved ON true
             WHERE item.tenant_id=? AND item.marketplace_connection_id=? AND item.amazon_order_id=? AND item.quantity_ordered>0
-            GROUP BY catalog.id,coalesce(nullif(mapped_offer.vendor_item_code,''),nullif(catalog.account_sku,''),nullif(item.seller_sku,''),'Unmapped SKU'),
+            GROUP BY catalog.id,product.brand,default_link.location_id,reserved.reservation_count,reserved.location_codes,
+                coalesce(nullif(mapped_offer.vendor_item_code,''),nullif(catalog.account_sku,''),nullif(item.seller_sku,''),'Unmapped SKU'),
                 coalesce(nullif(catalog.display_name,''),nullif(product.canonical_name,''),nullif(item.title,''),'Unnamed item'),reserved.expiration_date
             ORDER BY 1
-            """,(rs,row)->new Line(rs.getString(1),rs.getString(2),rs.getInt(3),rs.getObject(4,LocalDate.class),rs.getString(5)),tenantId,connectionId,orderId);
+            """,(rs,row)->new Line(rs.getString(1),rs.getString(2),rs.getInt(3),rs.getObject(4,LocalDate.class),rs.getString(5),rs.getString(6),rs.getObject(7,UUID.class),rs.getObject(8,UUID.class),rs.getBoolean(9)),tenantId,connectionId,orderId);
         String marketplace=(String)order.getFirst()[1];
         return new Slip(orderId,sellerCentralUrl((String)order.getFirst()[0],marketplace),brand,
             packageName==null||packageName.isBlank()?"Package to confirm":packageName,
@@ -91,7 +117,7 @@ public class PackingSlipRepository {
 
     @Transactional
     public String savePackaging(UUID tenantId,UUID connectionId,String orderId,String packageName){
-        setTenant(tenantId);String clean=packageName==null?"":packageName.trim();
+        setTenant(tenantId);String clean=packageName==null?"":packageName.trim().replaceAll("\\s+"," ");
         if(clean.isBlank()||clean.length()>120)throw new IllegalArgumentException("Choose a package name of up to 120 characters.");
         String orderSummary=signature(tenantId,connectionId,orderId,"asin");
         String skuSummary=signature(tenantId,connectionId,orderId,"seller_sku");

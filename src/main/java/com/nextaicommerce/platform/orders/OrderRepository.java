@@ -61,7 +61,7 @@ public class OrderRepository {
         var args=new ArrayList<Object>();args.add(tenant);args.add(connection);
         String q="%"+(search==null?"":search.trim().toLowerCase(java.util.Locale.ROOT))+"%";
         for(int i=0;i<6;i++)args.add(q);args.addAll(smart.args());
-        return jdbc.queryForList("SELECT DISTINCT orders.amazon_order_id "+OrderSmartFilters.FROM+" WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND ("+tabPredicate(status)+") AND "+SEARCH_SQL+" AND "+smart.sql()+" AND upper(coalesce(orders.order_status,'')) NOT IN ('CANCELLED','CANCELED')",String.class,args.toArray());
+        return jdbc.queryForList("SELECT DISTINCT orders.amazon_order_id "+OrderSmartFilters.FROM+" WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND ("+viewTabPredicate(status)+") AND "+SEARCH_SQL+" AND "+smart.sql()+" AND upper(coalesce(orders.order_status,'')) NOT IN ('CANCELLED','CANCELED')",String.class,args.toArray());
     }
     @Transactional(readOnly=true)
     public FilteredSummary filteredSummary(UUID tenant,UUID connection,String status,String search,Map<String,String> filters){
@@ -69,7 +69,7 @@ public class OrderRepository {
         var args=new ArrayList<Object>();args.add(tenant);args.add(connection);
         String q="%"+(search==null?"":search.trim().toLowerCase(java.util.Locale.ROOT))+"%";
         for(int i=0;i<6;i++)args.add(q);args.addAll(smart.args());
-        var rows=jdbc.query("WITH matched AS (SELECT DISTINCT item.id,orders.id order_id,item.quantity_ordered,coalesce(item.currency,orders.currency,'USD') currency,coalesce(item.item_price,0) sales,greatest(coalesce(item.shipping_price,0)-coalesce(item.shipping_discount,0),0) shipping "+OrderSmartFilters.FROM+" WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND ("+tabPredicate(status)+") AND "+SEARCH_SQL+" AND "+smart.sql()+") SELECT currency,sum(sales),sum(shipping),(SELECT count(DISTINCT order_id) FROM matched),(SELECT coalesce(sum(quantity_ordered),0) FROM matched) FROM matched GROUP BY currency ORDER BY currency",
+        var rows=jdbc.query("WITH matched AS (SELECT DISTINCT item.id,orders.id order_id,item.quantity_ordered,coalesce(item.currency,orders.currency,'USD') currency,coalesce(item.item_price,0) sales,greatest(coalesce(item.shipping_price,0)-coalesce(item.shipping_discount,0),0) shipping "+OrderSmartFilters.FROM+" WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND ("+viewTabPredicate(status)+") AND "+SEARCH_SQL+" AND "+smart.sql()+") SELECT currency,sum(sales),sum(shipping),(SELECT count(DISTINCT order_id) FROM matched),(SELECT coalesce(sum(quantity_ordered),0) FROM matched) FROM matched GROUP BY currency ORDER BY currency",
             (rs,n)->new Object[]{new FilteredMoney(rs.getString(1),rs.getBigDecimal(2),rs.getBigDecimal(3)),rs.getLong(4),rs.getLong(5)},args.toArray());
         return new FilteredSummary(rows.isEmpty()?0:(long)rows.getFirst()[1],rows.isEmpty()?0:(long)rows.getFirst()[2],rows.stream().map(row->(FilteredMoney)row[0]).toList());
     }
@@ -123,6 +123,11 @@ public class OrderRepository {
     public record OrderTab(String key,String label,boolean readiness,long orders,long units){}
     static final List<String> TAB_KEYS=List.of("ALL","UNSHIPPED","WAITING_FOR_PICKUP","SHIPPED","INVENTORY_SHORTAGE","NEEDS_MAPPING","BUY_BOX_LOST");
     private static final String PRICE_MISMATCH="listing.price IS NOT NULL AND listing.buy_box_price IS NOT NULL AND coalesce(listing.currency,'USD')=coalesce(listing.buy_box_currency,listing.currency,'USD') AND listing.price<>listing.buy_box_price";
+    /** Read views only: keep the existing operational/write predicates unchanged. */
+    static String viewTabPredicate(String key){
+        return "UNSHIPPED".equalsIgnoreCase(key)
+            ? "("+merchantFulfilledSql("orders")+") AND ("+tabPredicate(key)+")" : tabPredicate(key);
+    }
     static String tabPredicate(String key){
         String status="regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g')";
         String pickup="(orders.platform_waiting_for_pickup OR "+status+" IN ('WAITINGFORPICKUP','READYFORPICKUP','PICKUPREADY','AWAITINGPICKUP','AWAITINGCARRIERPICKUP','SHIPPEDWAITINGFORPICKUP'))";
@@ -562,7 +567,7 @@ public class OrderRepository {
                   AND reservation.amazon_order_id=orders.amazon_order_id AND reservation.status='ACTIVE') reserved ON true
             WHERE orders.tenant_id=? AND orders.marketplace_connection_id=?
               AND (
-            """+tabPredicate(state)+"""
+            """+viewTabPredicate(state)+"""
               )
               AND
             """+SEARCH_SQL+"""

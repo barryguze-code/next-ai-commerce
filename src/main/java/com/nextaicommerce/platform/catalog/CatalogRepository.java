@@ -1196,6 +1196,38 @@ public class CatalogRepository {
             UUID.class,tenantId,cleanCode,cleanName);
     }
 
+    public record PackingProductDetails(UUID itemId,String description,UUID defaultLocationId,String locationCode) {}
+
+    /** Account-only settings for an explicitly selected mapped packing component; never stock or global identity. */
+    @Transactional
+    public PackingProductDetails updatePackingProductDetails(UUID tenantId,UUID connectionId,String orderId,
+            UUID itemId,String description,UUID locationId){
+        setTenant(tenantId);CatalogIdentity.lock(jdbc);
+        String clean=description==null?"":description.trim();
+        if(clean.isBlank()||clean.length()>500)throw new IllegalArgumentException("Enter an account description of up to 500 characters.");
+        var owned=jdbc.query("""
+            SELECT item.id FROM account_catalog_items item WHERE item.tenant_id=? AND item.id=?
+              AND EXISTS(SELECT 1 FROM amazon_order_items source
+                JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=source.tenant_id
+                  AND mapping.marketplace_connection_id=source.marketplace_connection_id
+                  AND mapping.marketplace_sku=source.seller_sku AND mapping.status='ACTIVE'
+                JOIN marketplace_sku_mapping_components component ON component.tenant_id=mapping.tenant_id
+                  AND component.marketplace_sku_mapping_id=mapping.id AND component.account_catalog_item_id=item.id
+                WHERE source.tenant_id=item.tenant_id AND source.marketplace_connection_id=? AND source.amazon_order_id=?)
+            FOR UPDATE OF item
+            """,(rs,row)->rs.getObject(1,UUID.class),tenantId,itemId,connectionId,orderId);
+        if(owned.size()!=1)throw new IllegalArgumentException("This product is no longer mapped to this order in the selected account and store. Refresh before editing.");
+        UUID previous=jdbc.query("SELECT location_id FROM account_catalog_item_locations WHERE tenant_id=? AND account_catalog_item_id=? AND is_default",rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,itemId);
+        if(locationId!=null&&!locationId.equals(previous))setDefaultLocation(tenantId,itemId,locationId);
+        jdbc.update("UPDATE account_catalog_items SET display_name=?,updated_at=now() WHERE tenant_id=? AND id=?",clean,tenantId,itemId);
+        return jdbc.query("""
+            SELECT assignment.location_id,location.code FROM account_catalog_item_locations assignment
+            JOIN warehouse_locations location ON location.tenant_id=assignment.tenant_id AND location.id=assignment.location_id
+            WHERE assignment.tenant_id=? AND assignment.account_catalog_item_id=? AND assignment.is_default
+            """,rs->rs.next()?new PackingProductDetails(itemId,clean,rs.getObject(1,UUID.class),rs.getString(2))
+                :new PackingProductDetails(itemId,clean,null,null),tenantId,itemId);
+    }
+
     @Transactional
     public void setDefaultLocation(UUID tenantId,UUID itemId,UUID locationId){
         setTenant(tenantId);

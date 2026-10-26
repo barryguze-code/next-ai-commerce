@@ -4,7 +4,7 @@ html[data-theme=dark] body{background:#0e1a27;color:#e2ebf6}html[data-theme=dark
 @page { size: 2in 1in; margin: 0; }
 * { box-sizing: border-box; }
 body { min-height: 100vh; margin: 0; background: #eef3f9; color: #16253a; font-family: Inter, Arial, sans-serif; }
-.packing-workspace { display: grid; grid-template-columns: minmax(270px,360px) minmax(430px,1fr); gap: 48px; align-items: center; min-height: 100vh; max-width: 1040px; margin: 0 auto; padding: 48px; }
+.packing-workspace { display: grid; grid-template-columns: minmax(270px,360px) minmax(430px,1fr); gap: 48px; align-items: stretch; min-height: 100vh; max-width: 1040px; margin: 0 auto; padding: 48px; }
 .packing-controls { display: grid; gap: 16px; padding: 28px; border: 1px solid #d9e4f0; border-radius: 20px; background: #fff; box-shadow: 0 16px 40px #19355412; }
 .eyebrow { color: #2d6cdf; font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .packing-controls h1 { margin: 2px 0; font-size: 1.55rem; }.packing-controls p { margin: 0; color: #68788e; font-size: .86rem; line-height: 1.45; }
@@ -20,7 +20,20 @@ html[data-theme=dark] .packing-popup-help{background:#30291c;border-color:#86683
 .seller-central-shortcut { display: flex; align-items: center; gap: 9px; width: max-content; color: #2769c7; font-size: .82rem; font-weight: 800; text-decoration: none; }.seller-central-shortcut img { width: 25px; height: 25px; border-radius: 6px; }
 
 /* The preview has a dedicated column. The extra grid gap reserves the scale-up height. */
-.packing-labels { display: grid; align-content: center; gap: 1.1in; }
+.packing-preview{display:grid;align-content:start;gap:20px;min-width:0}
+.packing-labels { display: grid; align-content: start; gap: 1.1in; padding-block:.5in; }
+.packing-product-editor{align-self:start;gap:12px;padding:20px;min-width:0}
+.packing-product-editor h2{font-size:1rem;margin:0}
+.packing-product-form{display:grid;gap:10px;min-width:0}
+.packing-product-form+.packing-product-form{padding-top:14px;border-top:1px solid #d9e4f0}
+.packing-product-form>strong{font-size:.85rem;overflow-wrap:anywhere}
+.packing-product-form textarea{width:100%;resize:vertical;min-height:60px;border:1px solid #cbd9e9;border-radius:10px;background:#fff;color:#17283c;padding:10px;font:inherit;line-height:1.4}
+.packing-product-save{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+.packing-product-save label{flex:1 1 160px;min-width:0}
+.packing-product-save button{min-height:44px}
+.packing-product-status{font-size:.8rem;line-height:1.4}
+.packing-product-status:empty{display:none}
+html[data-theme=dark] .packing-product-form textarea{background:#112131;color:#e2ebf6;border-color:#405671}
 .packing-slip { justify-self: start; width: 2in; height: 1in; overflow: hidden; padding: .045in .06in; background: #fff; color: #000; font-family: Arial,sans-serif; line-height: 1.02; box-shadow: 0 16px 42px #152c4b2b; transform: scale(2); transform-origin: left center; }
 .packing-slip header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .02in .06in; min-height: .105in; border-bottom: 2px solid #000; padding-bottom: .025in; font-size: 6.5pt; font-weight: 800; }
 .packing-slip header strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -28,13 +41,13 @@ html[data-theme=dark] .packing-popup-help{background:#30291c;border-color:#86683
 .packing-slip header span { flex: 0 1 auto; max-width: 100%; margin-left: auto; text-align: right; overflow-wrap: anywhere; white-space: normal; }
 .lines { display: grid; gap: .018in; padding-top: .018in; }.lines article { display: grid; grid-template-columns: .24in 1fr .38in; gap: .028in; align-items: center; min-height: .295in; border-top: 1px solid #000; padding-top: .018in; }
 .lines article:first-child { border-top: 0; }.quantity { display: grid; place-items: center; min-height: .25in; border: 2px solid #000; font-size: 14pt; line-height: 1; }.lines div { min-width: 0; }
-.lines div strong,.lines div span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.lines div strong { font-size: 6.3pt; }.lines div span { margin-top: .01in; font-size: 5.4pt; }
+.lines div strong,.lines div span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.lines div strong { font-size: 6.3pt; white-space:normal; overflow-wrap:break-word; line-height:1.05; }.lines div span { margin-top: .01in; font-size: 5.4pt; }
 .lines small { display: grid; gap: .018in; font-size: 5.2pt; text-align: right; }.lines small b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.lines small span { border: 1px solid #000; padding: .01in; font-size: 4.9pt; }
 
 @media (max-width: 900px) { .packing-workspace { grid-template-columns: 1fr; gap: 44px; padding: 30px; }.packing-labels { justify-items: center; gap: .85in; }.packing-slip { justify-self: center; transform: scale(1.7); transform-origin: center; } }
 @media print {
   html,body { width: 2in !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
   .packing-workspace { display: block !important; width: 2in !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; }
-  .packing-controls { display: none !important; }.packing-labels { display: block !important; }.packing-slip { display: block !important; width: 2in !important; height: 1in !important; min-height: 0 !important; max-height: 1in !important; margin: 0 !important; padding: .045in .06in !important; overflow: hidden !important; box-shadow: none !important; transform: none !important; break-inside: avoid !important; page-break-inside: avoid !important; }
+  .packing-controls,.packing-product-editor { display: none !important; }.packing-preview{display:block!important;margin:0!important;padding:0!important}.packing-preview>:not(.packing-labels){display:none!important}.packing-labels { display: block !important; padding:0!important; }.packing-slip { display: block !important; width: 2in !important; height: 1in !important; min-height: 0 !important; max-height: 1in !important; margin: 0 !important; padding: .045in .06in !important; overflow: hidden !important; box-shadow: none !important; transform: none !important; break-inside: avoid !important; page-break-inside: avoid !important; }
   .packing-labels .packing-slip:not(:last-child) { break-after: page !important; page-break-after: always !important; }
 }

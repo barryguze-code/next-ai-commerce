@@ -12,7 +12,7 @@ final class OrderTabTotalsQuery {
     private static String build() {
         String columns = OrderRepository.TAB_KEYS.stream().map(key -> {
             String condition = key.equals("BUY_BOX_LOST") ? "lost.amazon_order_id IS NOT NULL"
-                : OrderRepository.tabPredicate(key).replace(
+                : OrderRepository.viewTabPredicate(key).replace(
                     "regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g')",
                     "orders.normalized_status");
             return "count(*) FILTER (WHERE " + condition + "),coalesce(sum(orders.units) FILTER (WHERE " + condition + "),0)";
@@ -23,7 +23,7 @@ final class OrderTabTotalsQuery {
             WITH scope AS MATERIALIZED (SELECT ?::uuid tenant_id, ?::uuid connection_id),
             normalized_orders AS MATERIALIZED (
               SELECT orders.id,orders.tenant_id,orders.marketplace_connection_id,orders.amazon_order_id,orders.marketplace_id,orders.fulfillment_state,
-                orders.platform_waiting_for_pickup,
+                orders.platform_waiting_for_pickup,orders.fulfillment_channel,
                 regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g') normalized_status,
                 sum(item.quantity_ordered) units
               FROM scope JOIN amazon_orders orders ON orders.tenant_id=scope.tenant_id

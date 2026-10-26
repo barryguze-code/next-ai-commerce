@@ -20,7 +20,7 @@
  .orders-workspace .order-toolbar h2{font-size:14px}
  .orders-workspace .order-sync-time{font-size:9px}
  .orders-workspace .order-card{overflow:visible;min-width:0}
- .orders-workspace .orders-filter-anchor{position:sticky;top:0;z-index:12;background:var(--white);border-radius:10px 10px 0 0}
+ .orders-workspace .orders-filter-anchor{position:static;background:var(--white);border-radius:10px 10px 0 0}
  .orders-workspace .table-standard-toolbar{padding:7px 10px;gap:6px;min-height:0;flex-wrap:wrap}
  .orders-workspace .table-standard-search input{width:200px;min-width:100px;font-size:11px}
  .orders-workspace .table-widget-tools{gap:5px}
@@ -52,7 +52,7 @@
  .orders-workspace .order-list.table-widget{width:100%;min-width:0;max-width:100%}
  .orders-workspace .order-list.table-widget>.order-row{min-width:0}
  .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header){width:100%;min-width:0;box-sizing:border-box;gap:var(--order-cell-gap);padding-inline:var(--order-row-pad)!important}
- .orders-workspace .order-list.table-widget .order-item-grid-header{position:sticky;top:var(--orders-filter-height,80px);z-index:11}
+ .orders-workspace .order-list.table-widget .order-item-grid-header{position:static;top:auto}
  .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column]{min-width:0!important;box-sizing:border-box;padding-inline:0;width:auto}
  .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=picture]{flex:0 0 var(--order-record-width)}
  .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=product]{flex:1 1 0}

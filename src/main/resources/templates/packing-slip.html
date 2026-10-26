@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title th:text="${'Packing slip · '+slip.orderId}">Packing slip</title>
-  <link rel="stylesheet" href="/css/packing-slip.css?v=20260914-2">
+  <link rel="stylesheet" href="/css/packing-slip.css?v=1.9.5">
 </head>
 <body>
 <main class="packing-workspace" th:attr="data-order-id=${slip.orderId}">
@@ -27,27 +27,42 @@
       </details>
     </aside>
     <div><span class="eyebrow">Internal fulfilment</span><h1>Packing slip</h1><p>Choose the package, save the decision for this ASIN and quantity combination, then print the 2 × 1 label.</p></div>
-    <label><span>Package</span><select id="packing-package"><option value="XSmall">XSmall</option><option value="Pak">Pak</option><option value="UPS OMBox">UPS OMBox</option><option value="Medium">Medium</option><option value="Large">Large</option><option value="XLarge">XLarge</option><option value="__custom">Write a package name…</option></select></label>
+    <label><span>Package</span><select id="packing-package"><option value="XSmall">XSmall</option><option value="Pak">Pak</option><option value="UPS OMBox">UPS OMBox</option><option value="Medium">Medium</option><option value="Large">Large</option><option value="XLarge">XLarge</option><option th:each="packageName:${packageNames}" th:value="${packageName}" th:text="${packageName}">Saved package</option><option value="__custom">Write a package name…</option></select></label>
     <label id="custom-package-field" hidden><span>Package name</span><input id="custom-package" maxlength="120" placeholder="e.g. Cold box · Large"></label>
-    <div class="packing-control-actions"><button type="button" class="secondary-button" id="save-package">Save package</button><button type="button" class="primary-button" id="print-slip">Print 2 × 1 slip</button></div>
+    <div class="packing-control-actions"><button type="button" class="secondary-button" id="save-package" th:disabled="${canEditPacking != true}">Save package</button><button type="button" class="primary-button" id="print-slip">Print 2 × 1 slip</button></div>
     <p class="packing-status" id="packing-status" role="status"></p>
     <button th:if="${canEditCatalog == true and pickupEligible == true}" id="packing-complete" class="packing-complete" th:disabled="${pickupMarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5v17h14V4h-4M9 2h6v5H9zM8 14l3 3 5-6"/></svg><span th:text="${pickupMarked ? 'Waiting for pickup' : 'Mark as shipped'}">Mark as shipped</span></button>
     <a class="seller-central-shortcut" th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" title="Open this order in Seller Central"><img src="/images/platform/table/seller-central.png?v=20260922-26" alt="">Open in Seller Central <span>↗</span></a>
     <a id="veeqo-shortcut" class="seller-central-shortcut" href="https://app.veeqo.com/" target="_blank" rel="noopener noreferrer" title="Open Veeqo for shipping" hidden><img src="https://static.veeqo.com/assets/pathfinder_favicon-130f9544f6fc9243713b38d5e21b736360dfac941b1a9585f0482b1577772fd4.ico" referrerpolicy="no-referrer" alt="" onerror="this.hidden=true">Open in Veeqo <span aria-hidden="true">↗</span></a>
   </section>
+  <section class="packing-preview" aria-label="Label preview and account details">
   <section class="packing-labels" aria-label="Internal packing slips">
     <section class="packing-slip" th:each="page:${slip.pages}" aria-label="Internal packing slip">
-      <header><strong th:text="${slip.brandName}">Brand</strong><span id="printed-package" th:text="${slip.packageName}">Package</span></header>
+      <header><span data-printed-package th:text="${slip.packageName}">Package</span></header>
       <section class="lines">
-        <article th:each="line:${page}">
+        <article th:each="line:${page}" th:attr="data-account-item-id=${line.accountItemId},data-reserved-location=${line.reservedLocation}">
           <b class="quantity" th:text="${line.quantity}">1</b>
-          <div><strong th:text="${line.sku}">SKU</strong><span th:text="${line.title}">Product name</span></div>
-          <small><b th:text="${line.expirationDate == null ? 'No expiry' : #temporals.format(line.expirationDate,'MM/dd/yy')}">09/15/26</b><span th:text="${line.location}">MAIN</span></small>
+          <div><strong th:text="${line.sku+(#strings.isEmpty(line.brand)?'':' · '+line.brand)}">SKU</strong><span class="packing-line-description" th:text="${line.title}">Product name</span></div>
+          <small><b th:text="${line.expirationDate == null ? 'No expiry' : #temporals.format(line.expirationDate,'MM/dd/yy')}">09/15/26</b><span class="packing-line-location" th:text="${line.location}">MAIN</span></small>
         </article>
       </section>
     </section>
   </section>
+  <section class="packing-controls packing-product-editor" th:if="${canEditPacking == true and !#lists.isEmpty(slip.editableLines())}" aria-label="Account product details">
+    <h2>Account product details</h2>
+    <p>Save a description and default location for each mapped product. Reserved stock keeps its actual location; this does not move inventory.</p>
+    <form th:each="line:${slip.editableLines()}" class="packing-product-form" method="post" th:action="@{/app/orders/{order}/packing-slip/products/{item}(order=${slip.orderId},item=${line.accountItemId})}" th:attr="data-account-item-id=${line.accountItemId}">
+      <strong th:text="${line.sku+(#strings.isEmpty(line.brand)?'':' · '+line.brand)}">Item code · Brand</strong>
+      <label><span>Account description</span><textarea name="description" maxlength="500" required rows="2" th:text="${line.title}"></textarea></label>
+      <div class="packing-product-save"><label><span>Default location</span><select name="locationId">
+        <option value="">Keep current default</option>
+        <option th:each="location:${packingLocations}" th:if="${location.status=='ACTIVE' or location.id==line.defaultLocationId}" th:value="${location.id}" th:selected="${location.id==line.defaultLocationId}" th:disabled="${location.status!='ACTIVE'}" th:text="${location.code+' · '+location.name+(location.status=='ACTIVE'?'':' (inactive)')}">Location</option>
+      </select></label><button type="submit" class="primary-button">Save product details</button></div>
+      <p class="packing-product-status" role="status"></p>
+    </form>
+  </section>
+  </section>
 </main>
 <input id="packing-slip-csrf" th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
-<script src="/js/packing-slip-workspace.js?v=20260914-5"></script>
+<script src="/js/packing-slip-workspace.js?v=1.9.5"></script>
 </body></html>
