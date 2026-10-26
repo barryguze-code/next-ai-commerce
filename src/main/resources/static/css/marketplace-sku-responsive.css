@@ -156,13 +156,13 @@ html[data-theme="dark"] .sku-workspace #marketplace-listings-table>tbody>.sku-fa
 body.app-page .sku-workspace #marketplace-listings-table .sku-approved-title{font-size:13px!important;font-weight:600!important;line-height:1.4!important}
 body.app-page:has(.sku-workspace) #profit-dialog #profit-title{font-size:18px!important;font-weight:600!important;line-height:1.35!important}
 
-/* Selected semantic status tabs retain their hue; inset cues do not change geometry. */
-body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active{color:#ba3544!important;background:#fde9ec!important;border-color:#c24352!important;box-shadow:inset 0 0 0 1px #c24352,inset 0 -3px 0 #c24352}
-body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active b{color:inherit!important;background:#fce1e5!important}
+/* Selected semantic status tabs retain their hue; red selection uses only a thin border. */
+body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active{color:#ba3544!important;background:#fff5f6!important;border-color:#dc4b54!important;box-shadow:none}
+body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active b{color:inherit!important;background:#fde4e7!important}
 body.app-page .sku-workspace .sku-filter-bar>a.sku-info-tab.active{color:#995a0b!important;background:#ffedcb!important;border-color:#a66d22!important;box-shadow:inset 0 0 0 1px #a66d22,inset 0 -3px 0 #a66d22}
 body.app-page .sku-workspace .sku-filter-bar>a.sku-info-tab.active b{color:inherit!important;background:#ffe6bc!important}
-html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active{color:#ffacb5!important;background:#482731!important;border-color:#d97c8c!important;box-shadow:inset 0 0 0 1px #d97c8c,inset 0 -3px 0 #d97c8c}
-html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active b{background:#633342!important}
+html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active{color:#ffacb5!important;background:#352129!important;border-color:#d97c8c!important;box-shadow:none}
+html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-alert-tab.active b{background:#542935!important}
 html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-info-tab.active{color:#ffd398!important;background:#4b351d!important;border-color:#c78b35!important;box-shadow:inset 0 0 0 1px #c78b35,inset 0 -3px 0 #c78b35}
 html[data-theme=dark] body.app-page .sku-workspace .sku-filter-bar>a.sku-info-tab.active b{background:#63451f!important}
 

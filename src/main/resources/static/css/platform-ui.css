@@ -26,6 +26,11 @@ body.app-page :is(.table-widget td small,.item-product-copy code){font-size:var(
 /* Filter tabs use one geometry; warning states remain red/amber, not blue. */
 body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.inventory-view-switch){gap:6px}
 html body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.inventory-view-switch)>:is(a,button){display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 11px!important;border:1px solid transparent;border-radius:9px!important;font-size:var(--ui-tab)!important;font-weight:650;line-height:20px!important;text-decoration:none;white-space:nowrap;box-sizing:border-box}
+/* Semantic exception selection retains its red hue and standard thin border. */
+body.app-page .order-filters>a.order-alert-tab.has-issues{--ui-action-text:var(--danger,#c73547);--ui-action-soft:var(--danger-soft,#fff1f2);--ui-action-line:#dc4b54}
+html[data-theme=dark] body.app-page .order-filters>a.order-alert-tab.has-issues{--ui-action-text:#ffb8bd;--ui-action-soft:#ef66751a;--ui-action-line:#ef8995}
+html body.app-page .order-filters>a.order-alert-tab.has-issues.active .order-tab-count{color:inherit;background:var(--danger-soft,#fde8eb)}
+html[data-theme=dark] body.app-page .order-filters>a.order-alert-tab.has-issues.active .order-tab-count{background:var(--danger-soft,#ef66751a)}
 html body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.inventory-view-switch)>:is(a,button).active{background:var(--ui-action-soft)!important;border-color:var(--ui-action-line)!important;color:var(--ui-action-text)!important;box-shadow:none}
 body.app-page :is(.order-tab-count,.sku-filter-bar b,.inventory-filter-bar b){font-size:11px!important;line-height:18px;border-radius:999px;min-width:22px;text-align:center;font-variant-numeric:tabular-nums}
 /* All command buttons share the same blue family. Secondary means blue outline,
