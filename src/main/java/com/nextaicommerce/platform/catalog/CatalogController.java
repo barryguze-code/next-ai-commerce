@@ -146,11 +146,13 @@ public class CatalogController {
     java.util.List<CatalogRepository.GlobalChoice> globalProductSearch(Authentication authentication,HttpSession session,
             @RequestParam(defaultValue="") String q){
         requireCatalogueEditor(authentication);
-        try{UUID tenant=requiredTenantId(session);return catalog.searchGlobalProducts(tenant,q).stream().map(choice->{
-            if(choice.imageUrl()!=null)return choice;
-            return new CatalogRepository.GlobalChoice(choice.id(),choice.name(),choice.brand(),choice.identifierType(),choice.identifier(),choice.size(),choice.unitOfMeasure(),choice.expirationRequired(),choice.revision(),choice.accountItemId(),"/app/catalog/global-products/"+choice.id()+"/image");
-        }).toList();}
+        try{UUID tenant=requiredTenantId(session);return catalog.searchGlobalProducts(tenant,q).stream().map(CatalogController::globalChoiceWithImage).toList();}
         catch(IllegalArgumentException e){throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
+    private static CatalogRepository.GlobalChoice globalChoiceWithImage(CatalogRepository.GlobalChoice choice){
+        if(choice.imageUrl()!=null)return choice;
+        return new CatalogRepository.GlobalChoice(choice.id(),choice.name(),choice.brand(),choice.identifierType(),choice.identifier(),choice.size(),choice.unitOfMeasure(),choice.expirationRequired(),choice.revision(),choice.accountItemId(),"/app/catalog/global-products/"+choice.id()+"/image");
     }
 
     @GetMapping("/app/catalog/global-products/{productId}/image") @ResponseBody
@@ -197,6 +199,14 @@ public class CatalogController {
             if(json)return ResponseEntity.ok(Map.of("id",added.itemId(),"identifier",added.identifier(),"created",added.created()));
             redirect.addFlashAttribute("catalogSuccess",added.created()?"Product added to this account’s catalogue.":"Already in your account. The existing item was kept unchanged.");
             return "redirect:/app/catalog?q="+java.net.URLEncoder.encode(added.identifier(),java.nio.charset.StandardCharsets.UTF_8)+"#catalog-item-"+added.itemId();
+        }catch(CatalogRepository.DuplicateGlobalProductException e){
+            if(json){
+                Map<String,Object> conflict=new java.util.LinkedHashMap<>();
+                conflict.put("code","GLOBAL_PRODUCT_EXISTS");conflict.put("error",e.getMessage());
+                if(e.product()!=null)conflict.put("product",globalChoiceWithImage(e.product()));
+                return ResponseEntity.status(409).cacheControl(org.springframework.http.CacheControl.noStore()).body(conflict);
+            }
+            redirect.addFlashAttribute("catalogError","A product with this UPC, EAN or GTIN already exists. Search by brand, product name or UPC and choose the existing product.");
         }catch(IllegalArgumentException e){if(json)return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));redirect.addFlashAttribute("catalogError",e.getMessage());}
         catch(org.springframework.dao.DataIntegrityViolationException e){if(json)return ResponseEntity.status(409).body(Map.of("error","The item or account SKU changed concurrently. Search again before adding."));redirect.addFlashAttribute("catalogError","The item or account SKU was added concurrently. Search again and open the existing item. Nothing was changed by this request.");}
         return "redirect:/app/catalog";

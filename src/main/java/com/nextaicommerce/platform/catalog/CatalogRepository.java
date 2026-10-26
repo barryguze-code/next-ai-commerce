@@ -35,6 +35,15 @@ public class CatalogRepository {
         public AccountProductDraft(UUID global,String revision,String name,String brand,String type,String identifier,String sku,UUID vendor,String vendorCode,BigDecimal cost,boolean expiry){this(global,revision,name,brand,type,identifier,sku,vendor,vendorCode,cost,expiry,null,"EA");}
     }
     public record AccountAddition(UUID itemId,boolean created,String identifier) {}
+    /** Exact normalized identity conflict; contains canonical fields and only this account's presence. */
+    public static final class DuplicateGlobalProductException extends IllegalArgumentException {
+        private final GlobalChoice product;
+        DuplicateGlobalProductException(GlobalChoice product){
+            super("A product with this UPC, EAN or GTIN already exists. Choose it below, or search by brand, product name or UPC.");
+            this.product=product;
+        }
+        public GlobalChoice product(){return product;}
+    }
 
     private static final String GLOBAL_CHOICE_SELECT="""
         SELECT p.id,p.canonical_name,p.brand,b.identifier_type,b.identifier_value,p.package_size,p.unit_of_measure,
@@ -97,7 +106,10 @@ public class CatalogRepository {
             UUID existing=jdbc.query("SELECT id FROM account_catalog_items WHERE tenant_id=? AND global_product_id=?",
                 rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,global);
             if(existing!=null)return new AccountAddition(existing,false,identifier);
-            if(selected==null)throw new IllegalArgumentException("This identifier already exists in Global Catalogue. Search for it and choose the product to review.");
+            if(selected==null){
+                var choices=jdbc.query(GLOBAL_CHOICE_SELECT+" AND p.id=?",CatalogRepository::globalChoice,tenantId,global);
+                throw new DuplicateGlobalProductException(choices.size()==1?choices.getFirst():null);
+            }
         }
         String code=blankToNull(draft.accountSku());
         if(code!=null){

@@ -42,3 +42,7 @@ html body.app-page .catalog-product-dialog .dialog-actions{flex:none;position:st
 .catalog-reference-grid dd{margin:0;font-size:13px;overflow-wrap:anywhere}
 .catalog-shared-reference>div{width:100%}
 @media(max-width:650px){.catalog-buying-grid{grid-template-columns:minmax(0,1fr)}.catalog-product-dialog .catalog-form .form-pair{grid-template-columns:minmax(0,1fr)}#product-dialog .catalog-global-selected{grid-template-columns:minmax(0,1fr);grid-template-areas:"copy" "change"}#product-dialog .catalog-global-selected:has(>.catalog-global-picture:not([hidden])){grid-template-columns:52px minmax(0,1fr);grid-template-areas:"picture copy" ". change"}#product-dialog .catalog-change-product{justify-self:end}#product-dialog .dialog-actions{flex-wrap:wrap}}
+
+/* Duplicate creation recovery reuses the compact selected-product summary. */
+#product-dialog #catalog-global-feedback.catalog-feedback-error{color:var(--danger,#c73547);border-left:3px solid currentColor;padding:6px 10px;background:var(--danger-soft,#fff1f2)}
+#product-dialog input[aria-invalid=true]{border-color:var(--danger,#c73547)}

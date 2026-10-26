@@ -4,30 +4,46 @@
  const feedback=dialog.querySelector('#catalog-global-feedback'),preview=dialog.querySelector('[data-global-selected]'),createFields=dialog.querySelector('[data-create-product]');
  const account=dialog.querySelector('[data-account-details]'),add=dialog.querySelector('[data-add-to-account]'),existing=dialog.querySelector('[data-global-existing]');
  const create=dialog.querySelector('[data-global-create]'),retry=dialog.querySelector('[data-global-retry]');
- const globalId=form.elements.globalProductId,revision=form.elements.globalRevision;
- let context=null,saving=false,defaultsSequence=0,entryHints={};
+ const globalId=form.elements.globalProductId,revision=form.elements.globalRevision,conflict=dialog.querySelector('[data-global-conflict]');
+ let duplicate=false;
+ let context=null,saving=false,defaultsSequence=0,entryHints={},dialogGeneration=0;
  let selected=null,creating=false,options=[],active=-1,sequence=0,timer=null,pending=null;
  const text=(tag,value)=>{const node=document.createElement(tag);node.textContent=value||'';return node;};
  function finish(item,created){const done=context;context=null;dialog.close();done?.onSelect(item,created);}
  function accountChoice(id,identifier,created){return {id,name:selected?.name||form.elements.name.value,brand:selected?.brand||form.elements.brand.value,identifier,accountSku:created?form.elements.accountSku.value:null,imageUrl:created?selected?.imageUrl||null:null};}
- function visibility(){dialog.querySelector('[data-global-search]').hidden=!!selected;createFields.hidden=!creating;createFields.disabled=!creating;account.hidden=(!selected&&!creating)||!!selected?.accountItemId;add.hidden=!!selected?.accountItemId;add.disabled=!selected&&!creating;existing.hidden=!selected?.accountItemId;}
+ function setFeedback(message,error=false){feedback.textContent=message;feedback.classList.toggle('catalog-feedback-error',error);feedback.setAttribute('role',error?'alert':'status');feedback.setAttribute('aria-live',error?'assertive':'polite');}
+ function clearConflict(){duplicate=false;conflict.replaceChildren();conflict.hidden=true;form.elements.identifier.removeAttribute('aria-invalid');setFeedback('');}
+ function visibility(){dialog.querySelector('[data-global-search]').hidden=!!selected;createFields.hidden=!creating;createFields.disabled=!creating;account.hidden=(!selected&&!creating)||!!selected?.accountItemId;add.hidden=!!selected?.accountItemId;add.disabled=saving||duplicate||(!selected&&!creating);existing.hidden=!selected?.accountItemId;}
  function closeResults(){list.hidden=true;query.setAttribute('aria-expanded','false');query.removeAttribute('aria-activedescendant');active=-1;}
- function clearSelection(){if(selected){form.elements.vendorItemCode.value='';form.elements.unitCost.value='';dialog.querySelector('[data-vendor-code-source]').textContent='';}selected=null;creating=true;form.elements.accountSku.value='';globalId.value='';revision.value='';globalId.disabled=revision.disabled=true;preview.replaceChildren();preview.hidden=true;existing.removeAttribute('href');visibility();}
+ function clearSelection(){clearConflict();if(selected){form.elements.vendorItemCode.value='';form.elements.unitCost.value='';form.elements.accountSku.value='';dialog.querySelector('[data-vendor-code-source]').textContent='';}selected=null;creating=true;globalId.value='';revision.value='';globalId.disabled=revision.disabled=true;preview.replaceChildren();preview.hidden=true;existing.removeAttribute('href');visibility();}
  function image(item){if(!item.imageUrl||!new RegExp('^/app/catalog/global-products/'+item.id+'/image$').test(item.imageUrl))return null;const img=document.createElement('img');img.className='catalog-global-picture';img.src=item.imageUrl;img.alt='';img.addEventListener('error',()=>img.remove());return img;}
- function select(item){
-  sequence++;pending?.abort();selected=item;creating=false;closeResults();create.hidden=retry.hidden=true;
-  globalId.value=item.id;revision.value=item.revision;globalId.disabled=revision.disabled=false;
-  preview.replaceChildren();const picture=image(item);if(picture)preview.append(picture);const details=document.createElement('div');
+ function summary(target,item,label,action){
+  target.replaceChildren();const picture=image(item);if(picture)target.append(picture);const details=document.createElement('div');
   details.className='catalog-product-copy';details.append(text('strong',item.name));
   const metadata=document.createElement('div');metadata.className='catalog-product-meta';
   if(item.brand)metadata.append(text('span',item.brand));const identifier=text('span',`${item.identifierType}: ${item.identifier}`);identifier.className='catalog-product-identifier';metadata.append(identifier,text('span',`${item.size||'Size not supplied'} ${item.unitOfMeasure||'EA'}`));details.append(metadata);
   if(item.expirationRequired)details.append(text('small','Expiration dates tracked'));
-  const change=text('button','Change product');change.type='button';change.className='secondary-button compact-button catalog-change-product';change.onclick=()=>{clearSelection();query.focus();search();};preview.append(details,change);preview.hidden=false;
-  feedback.textContent=item.accountItemId?'Already in your account. Open the existing item.':'';
+  const button=text('button',label);button.type='button';button.className='secondary-button compact-button catalog-change-product';button.onclick=action;target.append(details,button);target.hidden=false;return button;
+ }
+ function select(item,preserveDraft=false){
+  sequence++;defaultsSequence++;pending?.abort();clearConflict();selected=item;creating=false;closeResults();create.hidden=retry.hidden=true;
+  globalId.value=item.id;revision.value=item.revision;globalId.disabled=revision.disabled=false;
+  summary(preview,item,'Change product',()=>{clearSelection();query.focus();search();});
+  setFeedback(item.accountItemId?'Already in your account. Open the existing item.':'');
   if(item.accountItemId)existing.href='/app/catalog?q='+encodeURIComponent(item.identifier)+'#catalog-item-'+item.accountItemId;
   existing.textContent=context?'Use existing product':'Open existing item';
-  visibility();loadVendorDefaults(false);
+  visibility();if(!preserveDraft)loadVendorDefaults(false);
  }
+ function showDuplicate(result){
+  sequence++;defaultsSequence++;clearTimeout(timer);pending?.abort();closeResults();options=[];clearConflict();duplicate=true;setFeedback(result.error,true);form.elements.identifier.setAttribute('aria-invalid','true');
+  const item=result.product;
+  if(item?.id&&item.revision){
+   const label=item.accountItemId?(context?'Use existing product':'Open existing item'):'Use this product';
+   const choose=summary(conflict,item,label,()=>{select(item,true);(item.accountItemId?existing:add).focus();});choose.focus();
+  }else{setFeedback('A product with this UPC, EAN or GTIN already exists. Search by brand, product name or UPC to find an available product.',true);form.elements.identifier.focus();}
+  visibility();
+ }
+ for(const field of [form.elements.identifier,form.elements.identifierType])field.addEventListener('input',()=>{clearConflict();visibility();});
  function highlight(index){if(!options.length)return;active=(index+options.length)%options.length;[...list.children].forEach((el,i)=>el.setAttribute('aria-selected',String(i===active)));query.setAttribute('aria-activedescendant',list.children[active].id);list.children[active].scrollIntoView({block:'nearest'});}
  async function search(){
   const value=query.value.trim(),request=++sequence;pending?.abort();pending=new AbortController();closeResults();create.hidden=retry.hidden=true;
@@ -69,15 +85,29 @@
  form.addEventListener('submit',async event=>{
   if(!creating&&!selected){event.preventDefault();feedback.textContent='Choose a global product or create a new product first.';return;}
   if(selected?.accountItemId){event.preventDefault();existing.focus();return;}
-  if(!context)return;event.preventDefault();if(saving)return;saving=true;add.disabled=true;
-  const submission=context,choice=accountChoice(null,null,true);
+  event.preventDefault();if(saving||duplicate)return;saving=true;add.disabled=true;setFeedback('Adding product…');
+  const submission=context,generation=dialogGeneration,choice=accountChoice(null,null,true),submittedGlobalId=globalId.value,submittedRevision=revision.value;
   const data=new FormData(form),csrf=document.getElementById('buy-shipping-csrf'),headers={Accept:'application/json'};if(csrf)headers[csrf.dataset.header]=csrf.value;
-  try{const response=await fetch(form.action,{method:'POST',body:data,headers});if(!response.headers.get('content-type')?.includes('application/json'))throw Error('Your session may have expired. Sign in again; your mapping draft is unchanged.');const result=await response.json();if(!response.ok)throw Error(result.error||'The product could not be added.');if(!result.id)throw Error('No account product was returned.');if(context!==submission||!dialog.open)return;finish({...choice,id:result.id,identifier:result.identifier,accountSku:result.created?choice.accountSku:null},result.created);}
-  catch(error){if(context===submission&&dialog.open)feedback.textContent=error.message;}finally{saving=false;if(context===submission)add.disabled=false;}
+  try{
+   const response=await fetch(form.action,{method:'POST',body:data,headers});
+   if(!response.headers.get('content-type')?.includes('application/json'))throw Error('Your session may have expired. Sign in again; your entries are unchanged.');
+   const result=await response.json();if(dialogGeneration!==generation||context!==submission||!dialog.open)return;
+   if(!response.ok){
+    if(result.code==='GLOBAL_PRODUCT_EXISTS'){
+     if(globalId.value!==submittedGlobalId||revision.value!==submittedRevision||form.elements.identifier.value!==data.get('identifier')||form.elements.identifierType.value!==data.get('identifierType')){setFeedback('Your product details changed while saving. Review them and try again.',true);return;}
+     showDuplicate(result);return;
+    }
+    throw Error(result.error||'The product could not be added. Review your entries and try again.');
+   }
+   if(!result.id)throw Error('The product could not be confirmed. Your entries are unchanged; please try again.');
+   if(submission)finish({...choice,id:result.id,identifier:result.identifier,accountSku:result.created?choice.accountSku:null},result.created);
+   else location.assign('/app/catalog?q='+encodeURIComponent(result.identifier)+'#catalog-item-'+result.id);
+  }catch(error){if(dialogGeneration===generation&&context===submission&&dialog.open)setFeedback(error.name==='TypeError'?'We couldn’t reach the catalogue. Your entries are unchanged; please try again.':error.message,true);}
+  finally{if(dialogGeneration===generation){saving=false;if(context===submission&&dialog.open)visibility();}}
  });
  dialog.addEventListener('cancel',event=>{if(saving)event.preventDefault();});
- dialog.addEventListener('close',()=>{const previous=context;context=null;previous?.onClose?.();sequence++;defaultsSequence++;clearTimeout(timer);pending?.abort();closeResults();form.reset();clearSelection();options=[];create.hidden=retry.hidden=true;form.elements.vendorItemCode.disabled=form.elements.unitCost.disabled=true;form.elements.unitCost.required=false;feedback.textContent='Search by UPC, product name or brand.';});
+ dialog.addEventListener('close',()=>{dialogGeneration++;saving=false;const previous=context;context=null;previous?.onClose?.();sequence++;defaultsSequence++;clearTimeout(timer);pending?.abort();closeResults();form.reset();clearSelection();options=[];create.hidden=retry.hidden=true;form.elements.vendorItemCode.disabled=form.elements.unitCost.disabled=true;form.elements.unitCost.required=false;setFeedback('Search by UPC, product name or brand.');});
  dialog.querySelector('[data-global-search]').hidden=false;visibility();
- window.openCatalogAddProduct=(options=null)=>{entryHints={vendorItemCode:options?.vendorItemCode||'',lastQuery:options?.lastQuery??options?.query??''};context=options?.onSelect?options:null;if(!dialog.open){creating=true;visibility();dialog.showModal();}query.focus();if(options?.query||options?.mode==='create'){query.value=options.query||'';if(options.mode==='create')create.click();else search();}};
+ window.openCatalogAddProduct=(options=null)=>{entryHints={vendorItemCode:options?.vendorItemCode||'',lastQuery:options?.lastQuery??options?.query??''};context=options?.onSelect?options:null;if(!dialog.open){dialogGeneration++;creating=true;visibility();dialog.showModal();}query.focus();if(options?.query||options?.mode==='create'){query.value=options.query||'';if(options.mode==='create')create.click();else search();}};
  if(new URLSearchParams(location.search).get('addProduct')==='true')window.openCatalogAddProduct();
 })();

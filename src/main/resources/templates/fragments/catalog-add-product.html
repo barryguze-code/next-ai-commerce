@@ -18,6 +18,7 @@
 <button data-global-create class="secondary-button compact-button" type="button" hidden>Create new product</button>
 </section>
 <p id="catalog-global-feedback" class="cell-note" role="status" aria-live="polite">Search by UPC, product name or brand.</p>
+<section data-global-conflict class="catalog-global-selected" aria-label="Existing global product" hidden></section>
 <input type="hidden" name="globalProductId" disabled><input type="hidden" name="globalRevision" disabled>
 <section data-global-selected class="catalog-global-selected" aria-label="Selected global product" hidden></section>
 <fieldset data-create-product class="catalog-new-product">
@@ -38,7 +39,7 @@
 <option>GTIN</option>
 </select>
 </label>
-<label>Identifier<input name="identifier" required placeholder="Scan or enter UPC, EAN, or GTIN">
+<label>Identifier<input name="identifier" aria-describedby="catalog-global-feedback" required placeholder="Scan or enter UPC, EAN, or GTIN">
 </label>
 </div>
 <label class="check-line">
