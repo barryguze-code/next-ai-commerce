@@ -80,7 +80,7 @@
  .orders-workspace .fba-stock-totals dt{white-space:normal}
 }
 /* Ledger links must retain the same primary numeric hierarchy as Profit. */
-.orders-workspace .order-list.table-widget :is(.item-profit .profit-open:not(.profit-missing)>span,[data-column=available]>strong,[data-column=available] .inventory-ledger-link>strong,[data-column=available] .fba-stock-totals>dd:first-of-type){font-size:var(--order-primary-number-size,20px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1.35}
+.orders-workspace .order-list.table-widget :is(.item-profit .profit-open:not(.profit-missing)>span,[data-column=available]>strong,[data-column=available] .inventory-ledger-link>strong,[data-column=available] .fba-stock-totals>dd:first-of-type){font-size:var(--order-primary-number-size,20px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1.35;max-width:100%;white-space:normal;overflow-wrap:anywhere}
 /* Bound both the control and its artwork, including old min-width declarations. */
 .orders-workspace .order-list.table-widget .item-actions{gap:4px;flex-wrap:wrap;align-content:center}
 .orders-workspace .item-actions :is(.order-action-tip,.platform-pickup-action){flex:0 0 34px;width:34px;min-width:34px;margin:0}
