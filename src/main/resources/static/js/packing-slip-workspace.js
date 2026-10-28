@@ -8,9 +8,8 @@
  if(known)select.value=known.value;else{select.value='__custom';customWrap.hidden=false;custom.value=current;}
  const packageName=()=>select.value==='__custom'?normal(custom.value):select.value;
  const updatePrinted=name=>printed.forEach(node=>node.textContent=name);
- const updateVeeqo=()=>{const name=packageName().toLowerCase().replace(/\s+/g,''),link=document.querySelector('#veeqo-shortcut');if(link){link.hidden=!(name.includes('ups')||name==='medium'||name==='ombox');link.style.display=link.hidden?'none':'';}};
- const showPackage=()=>{updateVeeqo();customWrap.hidden=select.value!=='__custom';if(packageName())updatePrinted(packageName());};
- updateVeeqo();select.addEventListener('change',showPackage);custom.addEventListener('input',showPackage);
+ const showPackage=()=>{customWrap.hidden=select.value!=='__custom';if(packageName())updatePrinted(packageName());};
+ select.addEventListener('change',showPackage);custom.addEventListener('input',showPackage);
  document.querySelector('#print-slip').addEventListener('click',()=>window.print());
  document.querySelector('#save-package').addEventListener('click',async event=>{
   const value=packageName(),button=event.currentTarget;if(!value){status.textContent='Write a package name first.';custom.focus();return;}
