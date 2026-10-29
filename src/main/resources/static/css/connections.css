@@ -1,0 +1,17 @@
+/* Connections owns its compact headings; shared table controls remain unchanged. */
+.connections-workspace .workspace-header>div:first-child,.connections-card .card-toolbar>div:first-child{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;min-width:0}
+.connections-workspace .workspace-header h1,.connections-workspace .workspace-header .page-intro,.connections-card .card-toolbar h2,.connections-card .card-toolbar p{margin:0}
+.connections-workspace .workspace-header .page-intro,.connections-card .card-toolbar p{color:var(--muted);max-width:none}
+.connections-card .card-toolbar{gap:12px;flex-wrap:wrap}
+.connections-card .card-toolbar>div:first-child{flex:1 1 auto}
+@media(max-width:760px){.connections-workspace .workspace-header>div:first-child,.connections-card .card-toolbar>div:first-child{gap:4px 12px}}
+.connections-workspace .channel-choice-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+#add-connection-dialog .channel-choice-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.shopify-steps{margin:0;padding-left:22px;display:grid;gap:8px;line-height:1.5}
+.shopify-credentials{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}
+.shopify-credentials input{min-width:0;width:100%;box-sizing:border-box}
+.shopify-submit{display:flex;justify-content:flex-end;margin-top:12px}
+#shopify-verify-form{margin-top:12px}
+.shopify-channel{background:var(--white)}
+.shopify-channel img{object-fit:contain}
+@media(max-width:760px){.shopify-credentials{grid-template-columns:minmax(0,1fr)}}

@@ -58,7 +58,9 @@ public class ReplenishmentDataLoader {
                     SELECT c.account_catalog_item_id item_id,c.quantity,m.tenant_id,m.marketplace_connection_id,m.marketplace_sku
                     FROM marketplace_sku_mapping_components c JOIN marketplace_sku_mappings m
                       ON m.tenant_id=c.tenant_id AND m.id=c.marketplace_sku_mapping_id
-                    WHERE c.tenant_id=? AND m.status='ACTIVE' AND c.account_catalog_item_id IN (
+                    WHERE c.tenant_id=? AND m.status='ACTIVE'
+                      AND EXISTS(SELECT 1 FROM marketplace_connections source WHERE source.tenant_id=m.tenant_id AND source.id=m.marketplace_connection_id AND source.channel='AMAZON')
+                      AND c.account_catalog_item_id IN (
                 """+placeholders+"""
                     )
                 ), sales AS (

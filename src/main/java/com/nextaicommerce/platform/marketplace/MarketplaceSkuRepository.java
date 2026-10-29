@@ -20,9 +20,29 @@ import org.springframework.transaction.annotation.Transactional;
 public class MarketplaceSkuRepository {
     private static final DateTimeFormatter SYNC_TIME=DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a");
     /** Seller-fulfilled availability is derived locally: the least available mapped component limits a bundle. */
-    public static final String LOCAL_MAPPING_AVAILABILITY = """
+    public static final String LOCAL_MAPPING_AVAILABILITY = localMappingAvailability(false);
+    /** Binding alias must be tenant/connection scoped by the caller; source bins are explicit. */
+    public static String localMappingAvailability(boolean selectedBins){
+        String sources="SELECT source.location_id FROM shopify_inventory_binding_sources source WHERE source.tenant_id=binding.tenant_id AND source.marketplace_connection_id=binding.marketplace_connection_id AND source.binding_id=binding.id";
+        return """
               LEFT JOIN LATERAL (
-                SELECT floor(min(CASE WHEN EXISTS(SELECT 1 FROM order_unrecorded_shipments review
+                SELECT floor(min(CASE WHEN NOT EXISTS(SELECT 1 FROM account_catalog_items active_item
+                    WHERE active_item.tenant_id=mapping.tenant_id AND active_item.id=component.account_catalog_item_id AND active_item.status='ACTIVE')
+                  OR EXISTS(SELECT 1 FROM inventory_ledger_entries review
+                    WHERE review.tenant_id=mapping.tenant_id AND review.account_catalog_item_id=component.account_catalog_item_id
+                      AND review.source_type='SHOPIFY_ORDER' AND review.entry_type='SHIPMENT_UNRECORDED'
+                      AND NOT (
+                        EXISTS(SELECT 1 FROM inventory_ledger_entries counted WHERE counted.tenant_id=review.tenant_id
+                          AND counted.account_catalog_item_id=review.account_catalog_item_id AND counted.source_type='PHYSICAL_COUNT'
+                          AND counted.occurred_at>=review.created_at)
+                        AND NOT EXISTS(SELECT 1 FROM inventory_ledger_entries stock
+                          WHERE stock.tenant_id=review.tenant_id AND stock.account_catalog_item_id=review.account_catalog_item_id
+                          GROUP BY stock.location_id,stock.expiration_date HAVING sum(stock.quantity)>0
+                            AND NOT EXISTS(SELECT 1 FROM inventory_ledger_entries counted WHERE counted.tenant_id=review.tenant_id
+                              AND counted.account_catalog_item_id=review.account_catalog_item_id AND counted.source_type='PHYSICAL_COUNT'
+                              AND counted.location_id=stock.location_id AND counted.expiration_date IS NOT DISTINCT FROM stock.expiration_date
+                              AND counted.occurred_at>=review.created_at))))
+                  OR EXISTS(SELECT 1 FROM order_unrecorded_shipments review
                     WHERE review.tenant_id=mapping.tenant_id AND review.account_catalog_item_id=component.account_catalog_item_id
                       AND review.reviewed_at IS NULL) THEN 0 ELSE greatest(coalesce(sellable.quantity,0)-coalesce(reserved.quantity,0),0) END
                     / nullif(component.quantity,0))) available
@@ -41,8 +61,10 @@ public class MarketplaceSkuRepository {
                   FROM (
                     SELECT ledger.location_id,ledger.expiration_date,sum(ledger.quantity) quantity
                     FROM inventory_ledger_entries ledger
+                    JOIN warehouse_locations active_location ON active_location.tenant_id=ledger.tenant_id AND active_location.id=ledger.location_id AND active_location.status='ACTIVE'
                     WHERE ledger.tenant_id=mapping.tenant_id
                       AND ledger.account_catalog_item_id=component.account_catalog_item_id
+                      %s
                     GROUP BY ledger.location_id,ledger.expiration_date
                     HAVING sum(ledger.quantity)>0
                   ) position
@@ -62,16 +84,21 @@ public class MarketplaceSkuRepository {
                 ) sellable ON true
                 LEFT JOIN LATERAL (
                   SELECT sum(reservation.quantity) quantity FROM order_inventory_reservations reservation
-                  JOIN amazon_orders open_order ON open_order.tenant_id=reservation.tenant_id
+                  JOIN warehouse_locations active_location ON active_location.tenant_id=reservation.tenant_id AND active_location.id=reservation.location_id AND active_location.status='ACTIVE'
+                  LEFT JOIN amazon_orders open_order ON open_order.tenant_id=reservation.tenant_id
                     AND open_order.marketplace_connection_id=reservation.marketplace_connection_id
                     AND open_order.amazon_order_id=reservation.amazon_order_id
                   WHERE reservation.tenant_id=mapping.tenant_id
                     AND reservation.account_catalog_item_id=component.account_catalog_item_id
+                    %s
                     AND reservation.status='ACTIVE'
-                    AND regexp_replace(upper(coalesce(open_order.order_status,'')),'[^A-Z]','','g') IN ('PENDING','UNSHIPPED','PARTIALLYSHIPPED')
+                    AND (reservation.shopify_order_line_id IS NOT NULL OR regexp_replace(upper(coalesce(open_order.order_status,'')),'[^A-Z]','','g') IN ('PENDING','UNSHIPPED','PARTIALLYSHIPPED'))
                 ) reserved ON true
               ) local_inventory ON mapping.id IS NOT NULL
-            """;
+            """.formatted(selectedBins?"AND ledger.location_id IN ("+sources+")":"",
+                selectedBins?"AND reservation.location_id IN ("+sources+")":"");
+    }
+
     private final JdbcTemplate jdbc;
     @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceAvailable;
     private MarketplaceInventoryEligibility eligibility;

@@ -82,3 +82,6 @@
 .profit-cost-evidence{display:block;margin-top:4px;font-size:12px;font-weight:400;line-height:1.4;white-space:normal;overflow-wrap:anywhere;color:var(--muted)}
 .profit-cost-evidence:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:2px}
 .profit-fee-tooltip .profit-cost-evidence{color:inherit;opacity:.85}
+
+/* Native hidden semantics must win over shared button/grid display rules. */
+.profit-dialog [hidden]{display:none!important}

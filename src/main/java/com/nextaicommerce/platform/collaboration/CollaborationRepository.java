@@ -48,13 +48,21 @@ public class CollaborationRepository {
            AND NOT EXISTS (SELECT 1 FROM collaboration_read_receipts receipt JOIN app_users reader ON reader.id=receipt.user_id
              WHERE receipt.tenant_id=review.tenant_id AND receipt.message_id=unread_message.id AND lower(reader.email)=lower(%s)))
         """.formatted(VIEWER,VIEWER);
-    private static final String VISIBLE_THREAD="""
+    private static final String SHOPIFY_STORE_ACCESS="""
+        EXISTS(SELECT 1 FROM app_users viewer WHERE lower(viewer.email)=lower(%s) AND viewer.status='ACTIVE'
+          AND (EXISTS(SELECT 1 FROM platform_administrators admin WHERE admin.user_id=viewer.id AND admin.active)
+            OR EXISTS(SELECT 1 FROM tenant_memberships member WHERE member.tenant_id=sv.tenant_id AND member.user_id=viewer.id
+              AND (member.role='OWNER' OR (member.role='ADMIN' AND NOT member.stores_restricted)
+                OR EXISTS(SELECT 1 FROM membership_store_access grant_store WHERE grant_store.tenant_id=member.tenant_id AND grant_store.user_id=member.user_id AND grant_store.marketplace_connection_id=sv.marketplace_connection_id)))))
+        """.formatted(VIEWER);
+    private static final String SHOPIFY_THREAD_ACCESS="(review.subject_type<>'MARKETPLACE_SKU' OR review.subject_key NOT LIKE 'SHOPIFY:%' OR EXISTS(SELECT 1 FROM shopify_variants sv JOIN marketplace_connections sc ON sc.tenant_id=sv.tenant_id AND sc.id=sv.marketplace_connection_id AND sc.channel='SHOPIFY' AND sc.status<>'DISABLED' WHERE sv.tenant_id=review.tenant_id AND 'SHOPIFY:'||sv.id::text=review.subject_key AND "+SHOPIFY_STORE_ACCESS+")) AND (review.subject_type<>'ORDER' OR review.subject_key NOT LIKE 'SHOPIFY_ORDER:%' OR EXISTS(SELECT 1 FROM shopify_orders sv JOIN marketplace_connections sc ON sc.tenant_id=sv.tenant_id AND sc.id=sv.marketplace_connection_id AND sc.channel='SHOPIFY' AND sc.status<>'DISABLED' WHERE sv.tenant_id=review.tenant_id AND 'SHOPIFY_ORDER:'||sv.id::text=review.subject_key AND "+SHOPIFY_STORE_ACCESS+"))";
+    private static final String VISIBLE_THREAD="("+"""
         EXISTS (SELECT 1 FROM collaboration_messages visible_message
                 WHERE visible_message.review_id=review.id AND visible_message.message_type='TEAM_CHAT')
         OR EXISTS (SELECT 1 FROM collaboration_messages private_message
                    WHERE private_message.review_id=review.id AND private_message.message_type='PRIVATE_NOTE'
                      AND lower(private_message.author_email)=lower(%s))
-        """.formatted(VIEWER);
+        """.formatted(VIEWER)+") AND "+SHOPIFY_THREAD_ACCESS;
     private static final String REVIEW_COLUMNS="""
         review.id,review.subject_type,review.subject_key,review.subject_label,review.marketplace,
         review.action_kind,review.title,review.status,review.requested_by,
@@ -252,7 +260,7 @@ public class CollaborationRepository {
 
     @Transactional(readOnly=true)
     public List<Message> messages(UUID tenantId,UUID reviewId,String viewerEmail,String requestedType){
-        setContext(tenantId,viewerEmail);String type=normalizeMessageType(requestedType);
+        setContext(tenantId,viewerEmail);guardShopifyReview(tenantId,reviewId);String type=normalizeMessageType(requestedType);
         String privacy="PRIVATE_NOTE".equals(type)?" AND lower(message.author_email)=lower("+VIEWER+")":"";
         var base=jdbc.query("""
             SELECT message.id,message.sender_id,coalesce(sender.display_name,message.author_email),message.author_email,
@@ -273,13 +281,14 @@ public class CollaborationRepository {
     public PostedMessage create(UUID tenantId,String subjectType,String subjectKey,String subjectLabel,String marketplace,
             String actionKind,String title,String message,String messageType,String contextSnapshot,String parentUrl,
             String authorEmail,UUID assigneeId,Instant dueAt,List<AttachmentUpload> attachments){
-        setContext(tenantId,authorEmail);String type=normalizeMessageType(messageType);
+        setContext(tenantId,authorEmail);String type=normalizeMessageType(messageType);UUID shopifyStore=shopifySubjectStore(tenantId,subjectType,subjectKey);
+        if(shopifyStore!=null&&assigneeId!=null&&!permittedShopifyMember(tenantId,shopifyStore,assigneeId))throw new IllegalArgumentException("Choose a teammate with access to this Shopify store.");
         UUID reviewId=jdbc.queryForObject("""
             INSERT INTO collaboration_reviews(tenant_id,subject_type,subject_key,subject_label,marketplace,action_kind,title,
-              requested_by,created_by,assigned_to,due_at,context_snapshot,parent_url)
-            VALUES (?,?,?,?,?,?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?) LIMIT 1),?,?,CAST(? AS jsonb),?) RETURNING id
+              requested_by,created_by,assigned_to,due_at,context_snapshot,parent_url,marketplace_connection_id)
+            VALUES (?,?,?,?,?,?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?) LIMIT 1),?,?,CAST(? AS jsonb),?,?) RETURNING id
             """,UUID.class,tenantId,subjectType.toUpperCase(Locale.ROOT),subjectKey,subjectLabel,marketplace,actionKind,title,
-            authorEmail,authorEmail,assigneeId,dueAt==null?null:java.sql.Timestamp.from(dueAt),contextSnapshot,parentUrl);
+            authorEmail,authorEmail,assigneeId,dueAt==null?null:java.sql.Timestamp.from(dueAt),contextSnapshot,parentUrl,shopifyStore);
         UUID messageId=jdbc.queryForObject("""
             INSERT INTO collaboration_messages(tenant_id,review_id,author_email,sender_id,message_type,body)
             VALUES (?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?) LIMIT 1),?,?) RETURNING id
@@ -336,7 +345,7 @@ public class CollaborationRepository {
         jdbc.query("""
             SELECT r.id,coalesce(
               CASE WHEN uploaded.account_catalog_item_id IS NOT NULL THEN '/app/catalog/products/'||item.id||'/image' END,
-              artwork.image_url,nullif(r.context_snapshot->>'image',''))
+              shopify_artwork.image_url,artwork.image_url,nullif(r.context_snapshot->>'image',''))
             FROM collaboration_reviews r
             LEFT JOIN account_catalog_items item ON item.tenant_id=r.tenant_id
               AND item.id::text=CASE WHEN r.subject_type='INVENTORY' THEN split_part(r.subject_key,'|',1) WHEN r.subject_type='CATALOG' THEN r.subject_key END
@@ -350,6 +359,9 @@ public class CollaborationRepository {
                   OR (item.id IS NOT NULL AND EXISTS(SELECT 1 FROM marketplace_sku_mappings m JOIN marketplace_sku_mapping_components c ON c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id WHERE m.tenant_id=r.tenant_id AND m.marketplace_connection_id=listing.marketplace_connection_id AND m.marketplace_sku=listing.seller_sku AND m.status='ACTIVE' AND c.account_catalog_item_id=item.id AND (SELECT count(*) FROM marketplace_sku_mapping_components all_c WHERE all_c.tenant_id=m.tenant_id AND all_c.marketplace_sku_mapping_id=m.id)=1)))
               ORDER BY listing.last_seen_at DESC LIMIT 1
             ) artwork ON true
+            LEFT JOIN LATERAL(SELECT coalesce(sv.image_url,sp.image_url) image_url FROM shopify_variants sv JOIN shopify_products sp ON sp.tenant_id=sv.tenant_id AND sp.marketplace_connection_id=sv.marketplace_connection_id AND sp.id=sv.product_id
+              WHERE sv.tenant_id=r.tenant_id AND r.subject_type='MARKETPLACE_SKU' AND 'SHOPIFY:'||sv.id::text=r.subject_key AND """+SHOPIFY_STORE_ACCESS+"""
+              LIMIT 1) shopify_artwork ON true
             WHERE r.tenant_id=? AND r.id IN (
             """+slots+")",rs->{while(rs.next()){String url=rs.getString(2);if(url!=null&&(url.startsWith("/app/")||url.startsWith("https://")))result.put(rs.getObject(1,UUID.class),url);}return null;},join(tenantId,reviews.stream().map(Review::id).toList()));
         return result;
@@ -358,7 +370,7 @@ public class CollaborationRepository {
     @Transactional
     public PostedMessage saveHuddle(UUID tenantId,String subjectType,String subjectKey,String subjectLabel,String contextSnapshot,
             String parentUrl,Member creator,List<HuddleTranscriptMessage> transcript,boolean closeConversation){
-        setContext(tenantId,creator.email());
+        setContext(tenantId,creator.email());UUID shopifyStore=shopifySubjectStore(tenantId,subjectType,subjectKey);
         List<HuddleTranscriptMessage> messages=transcript==null?List.of():transcript;
         Instant createdAt=messages.isEmpty()?Instant.now():messages.getFirst().createdAt();
         Instant updatedAt=messages.isEmpty()?createdAt:messages.getLast().createdAt();
@@ -370,6 +382,7 @@ public class CollaborationRepository {
             """,UUID.class,tenantId,subjectType.toUpperCase(Locale.ROOT),subjectKey,subjectLabel,"QUICK_HUDDLE",
             "Quick huddle about "+subjectLabel,status,creator.email(),creator.id(),contextSnapshot,parentUrl,
             createdAt,updatedAt,closeConversation?updatedAt:null);
+        if(shopifyStore!=null)jdbc.update("UPDATE collaboration_reviews SET marketplace_connection_id=? WHERE tenant_id=? AND id=?",shopifyStore,tenantId,reviewId);
         UUID firstMessageId=null;
         if(messages.isEmpty()){
             firstMessageId=jdbc.queryForObject("""
@@ -389,7 +402,7 @@ public class CollaborationRepository {
 
     @Transactional
     public PostedMessage reply(UUID tenantId,UUID reviewId,String authorEmail,String body,String messageType,String status,List<AttachmentUpload> attachments){
-        setContext(tenantId,authorEmail);String type=normalizeMessageType(messageType);UUID messageId=null;
+        setContext(tenantId,authorEmail);guardShopifyReview(tenantId,reviewId);String type=normalizeMessageType(messageType);UUID messageId=null;
         if((body!=null&&!body.isBlank())||(attachments!=null&&!attachments.isEmpty())){
             String safeBody=body==null||body.isBlank()?"Shared an attachment.":body.trim();
             messageId=jdbc.query("""
@@ -417,7 +430,7 @@ public class CollaborationRepository {
 
     @Transactional
     public void reopen(UUID tenantId,UUID reviewId,String authorEmail){
-        setContext(tenantId,authorEmail);
+        setContext(tenantId,authorEmail);guardShopifyReview(tenantId,reviewId);
         int changed=jdbc.update("UPDATE collaboration_reviews SET status='ACTIVE',closed_at=NULL,updated_at=now() WHERE id=? AND tenant_id=? AND status='CLOSED'",reviewId,tenantId);
         if(changed==0)throw new IllegalArgumentException("This conversation is already active or no longer available.");
         jdbc.update("""
@@ -434,9 +447,10 @@ public class CollaborationRepository {
             SELECT attachment.file_name,attachment.content_type,attachment.content
             FROM collaboration_attachments attachment
             JOIN collaboration_messages message ON message.id=attachment.message_id AND message.tenant_id=attachment.tenant_id
-            WHERE attachment.tenant_id=? AND attachment.id=? AND
+            JOIN collaboration_reviews review ON review.tenant_id=attachment.tenant_id AND review.id=attachment.review_id
+            WHERE (%s) AND attachment.tenant_id=? AND attachment.id=? AND
               (message.message_type='TEAM_CHAT' OR lower(message.author_email)=lower(?))
-            """,(rs,row)->new AttachmentData(rs.getString(1),rs.getString(2),rs.getBytes(3)),tenantId,attachmentId,viewerEmail);
+            """.formatted(SHOPIFY_THREAD_ACCESS),(rs,row)->new AttachmentData(rs.getString(1),rs.getString(2),rs.getBytes(3)),tenantId,attachmentId,viewerEmail);
         return rows.isEmpty()?null:rows.getFirst();
     }
 
@@ -446,7 +460,7 @@ public class CollaborationRepository {
         if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM app_users u WHERE lower(u.email)=lower(?) AND u.status='ACTIVE' AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active) OR EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.user_id=u.id AND m.tenant_id=? AND m.role IN ('OWNER','ADMIN','OPERATOR'))))",Boolean.class,actor,tenantId)))throw new org.springframework.security.access.AccessDeniedException("Your role cannot assign tasks.");
         var review=review(tenantId,reviewId,actor);if(review==null||review.messageCount()==review.privateNoteCount())throw new IllegalArgumentException("Choose a team conversation.");
         jdbc.queryForObject("SELECT id FROM collaboration_reviews WHERE tenant_id=? AND id=? FOR UPDATE",UUID.class,tenantId,reviewId);
-        var team=members(tenantId);var valid=team.stream().map(Member::id).collect(java.util.stream.Collectors.toSet());
+        var team=members(tenantId);if(review.subjectKey().startsWith("SHOPIFY:")||review.subjectKey().startsWith("SHOPIFY_ORDER:"))team=team.stream().filter(member->permittedShopifyMember(tenantId,review.storeId(),member.id())).toList();var valid=team.stream().map(Member::id).collect(java.util.stream.Collectors.toSet());
         if(!valid.containsAll(requested))throw new IllegalArgumentException("Choose active teammates from this account.");
         var before=new LinkedHashSet<>(jdbc.queryForList("SELECT user_id FROM collaboration_assignments WHERE tenant_id=? AND review_id=?",UUID.class,tenantId,reviewId));
         UUID legacy=jdbc.queryForObject("SELECT assigned_to FROM collaboration_reviews WHERE tenant_id=? AND id=?",UUID.class,tenantId,reviewId);if(legacy!=null)before.add(legacy);
@@ -468,8 +482,9 @@ public class CollaborationRepository {
         INSERT INTO collaboration_mentions(tenant_id,review_id,message_id,mentioned_user_id,notification_kind)
         SELECT ?,?,?,member.id,? FROM app_users member
         WHERE (EXISTS(SELECT 1 FROM tenant_memberships membership WHERE membership.tenant_id=? AND membership.user_id=member.id) OR EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=member.id AND p.active)) AND member.id=? AND member.status='ACTIVE'
+        AND EXISTS(SELECT 1 FROM collaboration_reviews review WHERE review.tenant_id=? AND review.id=? AND (%s))
         ON CONFLICT (message_id,mentioned_user_id,notification_kind) DO NOTHING
-        """,tenantId,reviewId,messageId,kind,tenantId,memberId);return queued;}
+        """.formatted(SHOPIFY_THREAD_ACCESS.replace(VIEWER,"member.email")),tenantId,reviewId,messageId,kind,tenantId,memberId,tenantId,reviewId);return queued;}
 
     @Transactional(readOnly=true)
     public Set<UUID> participantMemberIds(UUID tenantId,UUID reviewId,String excludingEmail){setContext(tenantId,excludingEmail);return new LinkedHashSet<>(jdbc.query("""
@@ -490,6 +505,7 @@ public class CollaborationRepository {
         SELECT claimed.id,claimed.review_id,recipient.display_name,recipient.email,tenant.display_name,review.subject_label,message.author_email,message.body,claimed.notification_kind
         FROM claimed JOIN app_users recipient ON recipient.id=claimed.mentioned_user_id JOIN tenants tenant ON tenant.id=claimed.tenant_id
         JOIN collaboration_reviews review ON review.id=claimed.review_id JOIN collaboration_messages message ON message.id=claimed.message_id
+        WHERE """+SHOPIFY_THREAD_ACCESS.replace(VIEWER,"recipient.email")+"""
         """,(rs,row)->new PendingMention(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7),rs.getString(8),rs.getString(9)),tenantId,limit);}
     @Transactional public void mentionSent(UUID tenantId,UUID mentionId){setContext(tenantId,null);jdbc.update("UPDATE collaboration_mentions SET status='SENT',sent_at=now(),last_error=NULL,updated_at=now() WHERE tenant_id=? AND id=?",tenantId,mentionId);}
     @Transactional public void mentionFailed(UUID tenantId,UUID mentionId,String error,boolean retry){setContext(tenantId,null);jdbc.update("UPDATE collaboration_mentions SET status=?,last_error=?,next_attempt_at=now()+(interval '1 minute'*greatest(1,attempt_count*attempt_count)),updated_at=now() WHERE tenant_id=? AND id=?",retry?"FAILED":"SKIPPED",cleanError(error),tenantId,mentionId);}
@@ -505,6 +521,20 @@ public class CollaborationRepository {
     private static Object[] append(List<?> values,Object last){var result=new ArrayList<Object>(values);result.add(last);return result.toArray();}
     private static String baseHandle(Member member){String source=member.name()==null||member.name().isBlank()?member.email().split("@",2)[0]:member.name();String handle=source.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+",".").replaceAll("(^\\.|\\.$)","");return handle.isBlank()?"teammate":handle;}
     private static String cleanError(String value){if(value==null)return "Email delivery failed.";String clean=value.replaceAll("[\\r\\n]+"," ");return clean.substring(0,Math.min(500,clean.length()));}
+    private void guardShopifyReview(UUID tenant,UUID review){
+        for(var row:jdbc.queryForList("SELECT subject_type,subject_key FROM collaboration_reviews WHERE tenant_id=? AND id=? AND ((subject_type='MARKETPLACE_SKU' AND subject_key LIKE 'SHOPIFY:%') OR (subject_type='ORDER' AND subject_key LIKE 'SHOPIFY_ORDER:%'))",tenant,review))shopifySubjectStore(tenant,row.get("subject_type").toString(),row.get("subject_key").toString());
+    }
+    private boolean permittedShopifyMember(UUID tenant,UUID store,UUID member){
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM (SELECT tenant_id,id marketplace_connection_id FROM marketplace_connections WHERE channel='SHOPIFY' AND status<>'DISABLED') sv WHERE sv.tenant_id=? AND sv.marketplace_connection_id=? AND "+SHOPIFY_STORE_ACCESS.replace(VIEWER,"(SELECT email FROM app_users WHERE id=?)")+")",Boolean.class,tenant,store,member));
+    }
+    private UUID shopifySubjectStore(UUID tenant,String type,String key){
+        boolean variant="MARKETPLACE_SKU".equalsIgnoreCase(type)&&key.startsWith("SHOPIFY:");
+        boolean order="ORDER".equalsIgnoreCase(type)&&key.startsWith("SHOPIFY_ORDER:");
+        if(!variant&&!order)return null;
+        String table=variant?"shopify_variants":"shopify_orders",prefix=variant?"SHOPIFY:":"SHOPIFY_ORDER:";
+        var stores=jdbc.queryForList("SELECT sv.marketplace_connection_id FROM "+table+" sv JOIN marketplace_connections sc ON sc.tenant_id=sv.tenant_id AND sc.id=sv.marketplace_connection_id AND sc.channel='SHOPIFY' AND sc.status<>'DISABLED' WHERE sv.tenant_id=? AND '"+prefix+"'||sv.id::text=? AND "+SHOPIFY_STORE_ACCESS,UUID.class,tenant,key);
+        if(stores.size()!=1)throw new IllegalArgumentException("This Shopify record is unavailable in your authorized stores.");return stores.getFirst();
+    }
     private void setContext(UUID tenantId,String viewerEmail){jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)",String.class,tenantId.toString());jdbc.queryForObject("SELECT set_config('app.user_email', ?, true)",String.class,viewerEmail==null?"":viewerEmail);}
     private static Instant instant(java.sql.ResultSet rs,int column)throws java.sql.SQLException{var value=rs.getTimestamp(column);return value==null?null:value.toInstant();}
 }

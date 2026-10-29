@@ -10,7 +10,7 @@
   // Keep existing fallback markup, but expose one consistent actions launcher.
   stage.querySelectorAll('.order-stage-actions').forEach(el=>el.hidden=true);
   for(const [action,label,icon] of [['edit','Edit SKU picture','edit'],['more','Actions','spark']]){
-   if(action==='edit'&&stage.dataset.canEdit!=='true')continue;
+   if(action==='edit'&&(stage.dataset.canEdit!=='true'||stage.dataset.canEditPicture==='false'))continue;
    const button=document.createElement('button');button.type='button';button.className='order-picture-'+action;button.dataset.pictureMenu=action;button.setAttribute('aria-label',label);button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded','false');button.title=label;
    if(action==='more'){
     const alert=stage.dataset.actionRequired==='true';
@@ -46,12 +46,21 @@
    actions.push(entry('SKU mapping',stage.dataset.mapping==='MAPPED'?'Review catalogue products and quantities':'Choose catalogue products',stage.dataset.mapping==='MAPPED'?'mapping':'unmapped',()=>{close(false);window.openOrderMapping(stage);}));
    if(stage.dataset.mapping==='MAPPED')actions.push(entry('Adjust inventory','Review mapped stock for this order','inventory',()=>{close(false);window.openOrderInventoryAdjustment(stage);}));
    const sellerLink=stage.closest('.order-item').querySelector('.order-marketplace-links a')?.href;
-   if(sellerLink){actions.push(entry('Change SKU price','Preview and confirm a new listing price','price',()=>{close(false);window.openSkuPricing?.(stage,false);}));actions.push(entry('Set sale price','Choose a discount and sale dates','sale',()=>{close(false);window.openSkuPricing?.(stage,true);}));}
+   if(stage.dataset.provider==='SHOPIFY'&&stage.dataset.adminUrl){for(const [label,art] of [['Change SKU price','price'],['Set sale price','sale']])actions.push(entry(label,'Open Shopify Admin · platform price updates are disabled',art,()=>{close(false);window.open(stage.dataset.adminUrl,'_blank','noopener,noreferrer');}));}
+   else if(sellerLink){actions.push(entry('Change SKU price','Preview and confirm a new listing price','price',()=>{close(false);window.openSkuPricing?.(stage,false);}));actions.push(entry('Set sale price','Choose a discount and sale dates','sale',()=>{close(false);window.openSkuPricing?.(stage,true);}));}
   }
   function place(){const r=trigger.getBoundingClientRect();menu.style.left=Math.max(12,Math.min(r.left,innerWidth-menu.offsetWidth-12))+'px';menu.style.top=Math.max(12,Math.min(r.bottom+10,innerHeight-menu.offsetHeight-12))+'px';}
   menu.append(status);document.body.append(menu);window.prepareActionSuggestionMenu?.(menu);place();menu.querySelector('button').focus();
  }
- document.addEventListener('click',e=>{const trigger=e.target.closest('[data-picture-menu]');if(trigger){open(trigger);return;}if(menu&&!menu.contains(e.target))close(false);});
+ // Printer choices share the existing anchored action surface and dismissal/focus owner.
+ window.openOrderChoiceMenu=(trigger,title,choices)=>{
+  if(owner===trigger){close();return;}close(false);owner=trigger;trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-expanded','true');
+  menu=document.createElement('section');menu.className='order-picture-menu order-shipping-choice';menu.setAttribute('role','dialog');menu.setAttribute('aria-label',title);
+  const heading=document.createElement('header'),name=document.createElement('strong'),dismiss=document.createElement('button');name.textContent=title;dismiss.type='button';dismiss.textContent='×';dismiss.setAttribute('aria-label','Close menu');dismiss.onclick=()=>close();heading.append(name,dismiss);menu.append(heading);
+  for(const choice of choices){const b=document.createElement('button');b.type='button';b.className='order-picture-entry';b.disabled=!!choice.disabled;const mark=document.createElement('span');mark.className='order-picture-symbol';const img=document.createElement('img');img.src=choice.image;img.alt='';mark.append(img);const copy=document.createElement('span'),label=document.createElement('strong');label.textContent=choice.label;copy.append(label);if(choice.description){const help=document.createElement('small');help.textContent=choice.description;copy.append(help);}b.append(mark,copy);b.onclick=()=>{if(b.disabled)return;close(false);choice.onSelect();};menu.append(b);}
+  document.body.append(menu);const box=trigger.getBoundingClientRect();menu.style.left=Math.max(12,Math.min(box.left,innerWidth-menu.offsetWidth-12))+'px';menu.style.top=Math.max(12,Math.min(box.bottom+10,innerHeight-menu.offsetHeight-12))+'px';menu.querySelector('button:not(:disabled)')?.focus();
+ };
+ document.addEventListener('click',e=>{const trigger=e.target.closest('[data-picture-menu]');if(trigger){open(trigger);return;}if(menu&&!menu.contains(e.target)&&!owner?.contains(e.target))close(false);});
  document.addEventListener('keydown',e=>{if(!menu)return;if(e.key==='Escape'){e.preventDefault();close();}if(e.key==='Tab'){const buttons=[...menu.querySelectorAll('button:not(:disabled):not([hidden])')],first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
  window.addEventListener('resize',()=>close(false));window.addEventListener('scroll',e=>{if(menu&&!menu.contains(e.target))close(false);},true);
  new MutationObserver(records=>{if(owner&&!owner.isConnected)close(false);const roots=new Set();for(const record of records)for(const node of record.addedNodes)if(node.nodeType===1&&(node.matches('[data-picture-actions]')||node.querySelector('[data-picture-actions]')))roots.add(node);for(const node of roots)if(node.isConnected)init(node);}).observe(document.querySelector('[data-order-stream]')?.parentElement||document.body,{childList:true,subtree:true});init();

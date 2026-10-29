@@ -802,12 +802,20 @@ public class ReceivingRepository {
     private MatchedItem matchOrCreateItem(UUID tenantId, UUID vendorId, String actorEmail, String description,
             String brand,String vendorCode,String identifier,BigDecimal cost,String currency,String sourceType,String sourceReference) {
         UUID itemId = null;
-        if (!vendorCode.isBlank()) itemId=jdbc.query("""
-            SELECT account_catalog_item_id FROM vendor_catalog_offers
-            WHERE tenant_id=? AND vendor_id=?
-              AND upper(regexp_replace(vendor_item_code,'[^A-Za-z0-9]','','g'))=?
-              AND effective_to IS NULL LIMIT 1
-            """,rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,vendorId,cleanCode(vendorCode));
+        if (!vendorCode.isBlank()) {
+            // Multiple active offers for one item are not multiple product identities.
+            // Legacy conflicts must be reviewed instead of choosing an arbitrary row.
+            var matches=jdbc.queryForList("""
+                SELECT DISTINCT account_catalog_item_id FROM vendor_catalog_offers
+                WHERE tenant_id=? AND vendor_id=? AND effective_to IS NULL
+                  AND CASE WHEN upper(regexp_replace(vendor_item_code,'[^A-Za-z0-9]','','g')) ~ '^[0-9]+$'
+                    THEN regexp_replace(upper(regexp_replace(vendor_item_code,'[^A-Za-z0-9]','','g')),'^0+(?!$)','')
+                    ELSE upper(regexp_replace(vendor_item_code,'[^A-Za-z0-9]','','g')) END=?
+                LIMIT 2
+                """,UUID.class,tenantId,vendorId,com.nextaicommerce.platform.catalog.CatalogIdentity.vendorCode(vendorCode));
+            if(matches.size()>1)throw new IllegalArgumentException("Vendor item code "+vendorCode+" is linked to multiple products in this account/vendor. Review the catalogue conflict before receiving; no product or stock was reassigned.");
+            if(!matches.isEmpty())itemId=matches.getFirst();
+        }
         // Receiving an invoice is not a catalogue identity edit. The account's existing
         // vendor mapping is authoritative; retain the source barcode on the document
         // line without reparenting products or demanding a catalogue merge.

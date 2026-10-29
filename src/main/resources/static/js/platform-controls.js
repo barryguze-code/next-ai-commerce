@@ -4,6 +4,16 @@
   function shortcuts(root = document) {
     root.querySelectorAll('[data-marketplace-shortcuts]:not([data-shortcuts-ready])').forEach(host => {
       host.dataset.shortcutsReady = 'true';
+      if(host.dataset.channel?.toUpperCase()==='SHOPIFY'){
+        host.classList.add('marketplace-links','standard-marketplace-shortcuts');
+        const add=(value,label)=>{try{const url=new URL(value);if(url.protocol!=='https:'||url.username||url.password||url.port)return;
+          if(label==='Open in Shopify Admin'&&!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(url.hostname))return;
+          const link=document.createElement('a');link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';link.title=label;link.setAttribute('aria-label',label);
+          if(label==='Open in Shopify Admin'){const img=document.createElement('img');img.src='/images/channels/shopify-bag.png';img.alt='';link.append(img);}else link.textContent='↗';host.append(link);
+        }catch(e){/* No untrusted imported link. */}};
+        if(host.dataset.shopifyAdmin)add(host.dataset.shopifyAdmin,'Open in Shopify Admin');
+        if(host.dataset.shopifyStorefront)add(host.dataset.shopifyStorefront,'Open Shopify storefront');return;
+      }
       if (host.dataset.channel && host.dataset.channel.toUpperCase() !== 'AMAZON') return;
       host.classList.add('marketplace-links', 'standard-marketplace-shortcuts');
       const sku = host.dataset.sku || '', asin = host.dataset.asin || '';

@@ -1,0 +1,6 @@
+package com.nextaicommerce.platform.catalog;
+import org.junit.jupiter.api.Test;import java.math.BigDecimal;import java.util.*;import static org.assertj.core.api.Assertions.*;
+class CatalogWarehouseAvailabilityTest {
+ @Test void completeBundleUsesWholeSkuFloorAndLimitingComponent(){var a=UUID.randomUUID();var b=UUID.randomUUID();assertThat(CatalogRepository.mappedWarehouseUnits(Map.of(a,new BigDecimal("3"),b,new BigDecimal("2")),Map.of(a,new BigDecimal("39"),b,new BigDecimal("9")))).isEqualByComparingTo("4");assertThat(CatalogRepository.mappedWarehouseUnits(Map.of(a,BigDecimal.ONE,b,BigDecimal.ONE),Map.of(a,new BigDecimal("39")))).isEqualByComparingTo("0");}
+ @Test void repeatedItemRequirementsAreSummedAndInvalidPartNotDropped(){var item=UUID.randomUUID();Map<UUID,BigDecimal> parts=new LinkedHashMap<>();CatalogRepository.addWarehousePart(parts,item,new BigDecimal("3"));CatalogRepository.addWarehousePart(parts,item,new BigDecimal("9"));assertThat(CatalogRepository.mappedWarehouseUnits(parts,Map.of(item,new BigDecimal("39")))).isEqualByComparingTo("3");CatalogRepository.addWarehousePart(parts,item,BigDecimal.ZERO);assertThat(CatalogRepository.mappedWarehouseUnits(parts,Map.of(item,new BigDecimal("39")))).isNull();assertThat(CatalogRepository.mappedWarehouseUnits(Map.of(),Map.of())).isNull();}
+}

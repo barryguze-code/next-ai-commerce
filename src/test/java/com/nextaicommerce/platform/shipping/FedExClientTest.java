@@ -42,4 +42,16 @@ class FedExClientTest {
         assertThat(keys.toString()).doesNotContain("test-key","test-secret");
     }
     @Test void disabledClientNeverTouchesNetwork(){var client=new FedExClient(json,false,r->{throw new AssertionError("network");});assertThatThrownBy(()->client.health(UUID.randomUUID(),UUID.randomUUID(),1,FedExClient.Environment.SANDBOX,keys)).isInstanceOf(IllegalStateException.class);}
+    @Test void shipmentServerErrorsRemainUncertainAndNeverEncourageAnotherPurchase(){
+        for(int status:List.of(500,503)){int[] ships={0};var client=new FedExClient(json,true,r->{if(r.uri().getPath().equals("/oauth/token"))return new FedExClient.Reply(200,"{\"access_token\":\"test\",\"expires_in\":3600}");ships[0]++;return new FedExClient.Reply(status,"private carrier response");});
+            assertThatThrownBy(()->client.ship(UUID.randomUUID(),UUID.randomUUID(),1,FedExClient.Environment.SANDBOX,keys,json.createObjectNode()))
+                .isInstanceOfSatisfying(FedExClient.CarrierException.class,e->{assertThat(e.uncertain()).isTrue();assertThat(e.getMessage()).contains("Review shipment status before retrying").doesNotContain("credentials","private carrier response","Retry shortly");});assertThat(ships[0]).isEqualTo(1);
+        }
+    }
+    @Test void accessGuidanceIsReservedForAuthorizationStatuses(){
+        for(int status:List.of(400,401,403)){var client=new FedExClient(json,true,r->new FedExClient.Reply(status,"private carrier response"));
+            assertThatThrownBy(()->client.health(UUID.randomUUID(),UUID.randomUUID(),1,FedExClient.Environment.SANDBOX,keys))
+                .isInstanceOfSatisfying(FedExClient.CarrierException.class,e->{assertThat(e.uncertain()).isFalse();assertThat(e.getMessage()).doesNotContain("private carrier response");if(status==400)assertThat(e.getMessage()).doesNotContain("credentials","permissions");else assertThat(e.getMessage()).contains("credentials","permissions");});
+        }
+    }
 }

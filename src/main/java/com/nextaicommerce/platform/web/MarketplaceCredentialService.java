@@ -150,7 +150,7 @@ public class MarketplaceCredentialService {
             .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials")).build();
     }
 
-    private EncryptedCredentials encrypt(Map<String, String> credentials) {
+    EncryptedCredentials encrypt(Map<String, String> credentials) {
         if (encryptionKey == null)
             throw new IllegalStateException("Credential encryption is not configured. Set APP_CREDENTIAL_ENCRYPTION_KEY.");
         try {
@@ -182,7 +182,7 @@ public class MarketplaceCredentialService {
         return value.trim();
     }
 
-    private static String form(Map<String, String> values) {
+    static String form(Map<String, String> values) {
         return values.entrySet().stream().map(e -> URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8)
             + "=" + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8)).reduce((a, b) -> a + "&" + b).orElse("");
     }

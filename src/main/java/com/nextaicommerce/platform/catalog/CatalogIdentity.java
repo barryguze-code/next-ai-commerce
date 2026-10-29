@@ -5,7 +5,7 @@ import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Shared identity rules for bulk import, manual catalogue and receiving. */
-final class CatalogIdentity {
+public final class CatalogIdentity {
     private CatalogIdentity() {}
     static String distributionCenter(String value){
         String dc=value==null?"":value.trim().toUpperCase(Locale.ROOT).replaceFirst("^DC[\\s:#-]*","").trim();
@@ -14,7 +14,7 @@ final class CatalogIdentity {
         return dc.matches("\\d+")?dc.replaceFirst("^0+(?!$)",""):dc;
     }
     static String scope(UUID tenant,String dc){return dc==null||dc.isBlank()?"ACCOUNT:"+tenant:"DC:"+dc;}
-    static String vendorCode(String value){
+    public static String vendorCode(String value){
         String code=value==null?"":value.replaceAll("[^A-Za-z0-9]","").toUpperCase(Locale.ROOT);
         return code.matches("\\d+")?code.replaceFirst("^0+(?!$)",""):code;
     }
@@ -53,7 +53,7 @@ final class CatalogIdentity {
         if(binding!=null&&binding.items().stream().anyMatch(id->!id.equals(item)))
             throw new IllegalArgumentException("Vendor item code "+code+" is already linked to a different product in this account/vendor. Review the existing conflict; no products or stock were reassigned.");
     }
-    static void lock(JdbcTemplate jdbc){
+    public static void lock(JdbcTemplate jdbc){
         // Catalogue writes only. Orders, stock reservations and publishing do not acquire this lock.
         jdbc.execute("SELECT pg_advisory_xact_lock(193641,1)");
     }

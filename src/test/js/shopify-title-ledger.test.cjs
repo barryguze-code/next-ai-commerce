@@ -1,0 +1,10 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');const {chromium}=require('playwright');
+test('Shopify title reuses shared click/keyboard ledger action and unmapped details fallback',async()=>{
+ const browser=await chromium.launch({headless:true,channel:'chrome'});const page=await browser.newPage();try{
+ const link=(id,qty)=>`<a data-order-ledger-item="${id}" data-order-ledger-code="000${id}" data-order-ledger-quantity="${qty}" href="/app/inventory/ledger?itemId=${id}">000${id} × ${qty}</a>`;
+ await page.route('**/*',r=>r.fulfill({contentType:'text/html',body:`<main><div class="order-item"><div class="item-product-copy"><strong>Single</strong></div>${link('A',3)}</div><div class="order-item"><div class="item-product-copy"><strong>Bundle</strong></div>${link('A',2)}${link('B',4)}</div><div class="order-item"><div class="item-product-copy"><strong>Unmapped</strong></div></div></main>`}));await page.goto('http://local.test/app/orders');await page.evaluate(()=>{window.ledgerCalls=[];window.openMappedInventoryLedger=(a,choose,title,items)=>window.ledgerCalls.push({href:a.href,choose,title:title.textContent,items});});await page.addScriptTag({path:'src/main/resources/static/js/platform-ui.js'});
+ await page.getByRole('button',{name:'Inventory Ledger: Single',exact:true}).click();await page.getByRole('button',{name:'Inventory Ledger: Bundle',exact:true}).press('Enter');
+ const calls=await page.evaluate(()=>window.ledgerCalls);assert.equal(calls.length,2);assert.equal(calls[0].choose,true);assert.deepEqual(calls[0].items,[{itemId:'A',accountSku:'000A',quantity:'3'}]);assert.deepEqual(calls[1].items,[{itemId:'A',accountSku:'000A',quantity:'2'},{itemId:'B',accountSku:'000B',quantity:'4'}]);
+ await page.getByRole('button',{name:'View product details: Unmapped',exact:true}).click();assert.equal(await page.locator('#ui-product-dialog').isVisible(),true);assert.equal(await page.evaluate(()=>window.ledgerCalls.length),2);
+ }finally{await browser.close();}
+});

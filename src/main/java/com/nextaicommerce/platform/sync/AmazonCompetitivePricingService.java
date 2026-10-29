@@ -41,7 +41,7 @@ public class AmazonCompetitivePricingService {
         // Claim before reading or calling Amazon, including on imports and after restarts.
         Boolean claimed=transactions.execute(status->{setTenant(tenantId);return jdbc.update("""
             UPDATE marketplace_connections SET buy_box_refresh_after=now()+interval '3 hours'
-            WHERE tenant_id=? AND id=?
+            WHERE tenant_id=? AND id=? AND channel='AMAZON'
               AND (buy_box_refresh_after IS NULL OR buy_box_refresh_after<=now())
             """,tenantId,connectionId)==1;});
         if(!Boolean.TRUE.equals(claimed))return 0;

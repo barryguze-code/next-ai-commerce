@@ -34,7 +34,7 @@ public class CatalogPictureController {
   var source=pictures.selected(tenant(session),auth.getName(),id,global,candidate);
   try(var client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NEVER).build()){
    var response=client.send(java.net.http.HttpRequest.newBuilder(URI.create(source.url())).timeout(Duration.ofSeconds(20)).GET().build(),HttpResponse.BodyHandlers.ofInputStream());
-   try(var input=response.body()){if(response.statusCode()!=200)throw new IllegalArgumentException("The saved Amazon image is unavailable. Your picture was kept.");byte[] bytes=input.readNBytes(5_000_001);String type=OrderPictureController.imageType(bytes);pictures.save(tenant(session),auth.getName(),id,global,source,type,bytes);}
+   try(var input=response.body()){if(response.statusCode()!=200)throw new IllegalArgumentException("The saved marketplace image is unavailable. Your picture was kept.");byte[] bytes=input.readNBytes(5_000_001);String type=OrderPictureController.imageType(bytes);pictures.save(tenant(session),auth.getName(),id,global,source,type,bytes);}
    return ResponseEntity.ok(Map.of("imageUrl",path(id,global)));
   }catch(ResponseStatusException e){throw e;}catch(Exception e){if(e instanceof InterruptedException)Thread.currentThread().interrupt();return ResponseEntity.status(502).body(Map.of("error","The picture could not be copied. Your existing picture was kept."));}
  }

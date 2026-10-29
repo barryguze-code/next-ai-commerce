@@ -382,6 +382,30 @@ class TemplateRenderingTest {
             .doesNotContain("Whitelabel Error Page");
     }
 
+    @Test void shopifyVariantsReuseSharedTableWithBlankSkuAndNoInventedStock(){
+        var context=webContext();var id=new UUID(0,3);
+        var row=new com.nextaicommerce.platform.marketplace.ShopifySkuRepository.Row(id,"gid://shopify/ProductVariant/2","gid://shopify/Product/1","gid://shopify/InventoryItem/3",null,"Long Shopify product","Blue","[{\"name\":\"Color\",\"value\":\"Blue\"}]","[]","ACTIVE",new BigDecimal("19.99"),"USD",null,null,"unit.myshopify.com","hash",java.time.Instant.EPOCH,false,false);
+        context.setVariable("shopifySetup",new com.nextaicommerce.platform.web.ShopifyConnectionService.SetupState(true,true));context.setVariable("shopifyCatalogEnabled",true);context.setVariable("shopifyStatuses",List.of("ALL","ACTIVE","DRAFT","ARCHIVED","UNLISTED","UNMAPPED"));context.setVariable("canSyncShopify",true);
+        context.setVariable("shopifyPage",new com.nextaicommerce.platform.marketplace.ShopifySkuRepository.Page(List.of(row),1,0,25));context.setVariable("shopifyComponents",Map.of());context.setVariable("shopifyThreads",Map.of());context.setVariable("shopifyCounts",Map.of("ALL",1L,"ACTIVE",1L,"MAPPED",0L,"UNMAPPED",1L));context.setVariable("selectedStatus","ALL");context.setVariable("selectedSort","listing");context.setVariable("sortDirection","asc");context.setVariable("query","");
+        String html=templateEngine().process("marketplace-skus",context);
+        assertThat(html).contains("data-table-widget=\"shopify-marketplace-skus\"","id=\"marketplace-listings-table\"","Color: Blue","No SKU","Not imported","SHOPIFY:"+id,"data-context-menu","data-page-max=\"1\"")
+          .doesNotContain("Buy Box price match","Fulfillment","Never sold","gid://shopify/InventoryItem/3",">Draft<",">Start SKU sync</button>","/js/order-smart-filters.js","Shopify identifiers","shopify-identifiers");
+        assertThat(html).contains("table-footer table-pagination sku-footer","sku-mapping-icon","sku-not-mapped.png","sku-alert-tab shopify-exception-tab");
+        context.setVariable("shopifyJob",new com.nextaicommerce.platform.shopify.ShopifyCatalogJobs.Status(id,"COMPLETED","SKU sync complete",1,java.time.Instant.EPOCH,java.time.Instant.parse("2026-10-27T05:00:00Z")));
+        String completed=templateEngine().process("marketplace-skus",context);
+        assertThat(completed).contains("Last Shopify SKU check · 10/27/26 · 05:00 UTC","Sync now","aria-current=\"step\"").doesNotContain("Sync again","shopify-setup-next","Products &amp; variants");
+        assertThat(completed).containsPattern("(?s)<article class=\"completed\"[^>]*>(?:(?!</article>).)*2\\. SKU sync").containsPattern("(?s)<article aria-current=\"step\" class=\"current\">(?:(?!</article>).)*3\\. Mapping");
+        assertThat(templateEngine().process("marketplace-skus",webContext())).contains("/js/order-smart-filters.js");
+    }
+
+    @Test void shopifyWorkspaceRendersInitializationWithoutAmazonEmptyCopy(){
+        var context=webContext();context.setVariable("shopifySetup",new com.nextaicommerce.platform.web.ShopifyConnectionService.SetupState(true,false));
+        context.setVariable("selectedStoreName","Unit Shopify");context.setVariable("selectedAccountName","Unit account");
+        String html=templateEngine().process("marketplace-skus",context);
+        assertThat(html).contains("Shopify setup · design preview","Unit Shopify","Awaiting product permission","Start SKU sync","Not enabled · coming next")
+            .doesNotContain("Switch to an Amazon store","Your Walmart assortment","Buy Box price match");
+    }
+
     @Test
     void firstReceivingExplainsTheCurrentStepAndAdvancesAfterVendorSetup() {
         var noVendor=webContext();

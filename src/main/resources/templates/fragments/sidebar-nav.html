@@ -26,17 +26,17 @@
     <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="M6 8h12l1 12H5L6 8Zm3 0V6a3 3 0 0 1 6 0v2"/></svg>Sales</span><span class="nav-chevron">⌄</span></summary>
     <div>
       <a th:if="${canViewOperations}" th:classappend="${active == 'orders' ? 'active' : ''}" href="/app/orders">Orders</a>
+      <a th:if="${canViewOperations}" th:classappend="${active == 'marketplace-skus' ? 'active' : ''}" href="/app/marketplace-skus">Marketplace SKUs</a>
       <a th:if="${canEditCatalog}" th:classappend="${active == 'shipping' ? 'active' : ''}" href="/app/shipping">Buy Shipping</a>
       <a th:if="${canEditCatalog}" th:classappend="${active == 'shipping-preferences' ? 'active' : ''}" href="/app/shipping/preferences">Buy Shipping Preferences</a>
     </div>
   </details>
 
-  <details th:attr="open=${active == 'global-catalog' or active == 'account-catalog' or active == 'marketplace-skus' or active == 'vendors' ? 'open' : null}">
+  <details th:attr="open=${active == 'global-catalog' or active == 'account-catalog' or active == 'vendors' ? 'open' : null}">
     <summary><span class="nav-group-label"><svg viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Zm0 0v10l8 4 8-4V7M12 11v10"/></svg>Catalog &amp; Purchasing</span><span class="nav-chevron">⌄</span></summary>
     <div>
       <a th:if="${isSuperAdmin}" th:classappend="${active == 'global-catalog' ? 'active' : ''}" href="/app/platform/catalog">Global Catalogue</a>
       <a th:classappend="${active == 'account-catalog' ? 'active' : ''}" href="/app/catalog">Account Catalogue</a>
-      <a th:if="${canViewOperations}" th:classappend="${active == 'marketplace-skus' ? 'active' : ''}" href="/app/marketplace-skus">Marketplace SKUs</a>
       <a th:classappend="${active == 'vendors' ? 'active' : ''}" href="/app/vendors">Vendors &amp; Pricing</a>
     </div>
   </details>
@@ -48,7 +48,6 @@
       <a th:if="${canViewOperations}" th:classappend="${active == 'inventory-ledger' ? 'active' : ''}" href="/app/inventory/ledger">Inventory Ledger</a>
       <a th:if="${canViewOperations}" th:classappend="${active == 'fba-shipments' ? 'active' : ''}" href="/app/inventory/fba-shipments">FBA Shipments</a>
       <a th:classappend="${active == 'receiving' ? 'active' : ''}" href="/app/receiving">Receiving</a>
-      <span class="nav-coming">Lots &amp; Expiration <small>Planned</small></span>
       <a th:if="${canViewOperations}" th:classappend="${active == 'replenishment' ? 'active' : ''}" href="/app/inventory/replenishment">Replenishment</a>
     </div>
   </details>

@@ -98,6 +98,11 @@ class SecurityConfigTest {
     }
     @TestConfiguration
     static class StubConfig {
+        static final UUID MAPPING_STORE=UUID.fromString("00000000-0000-0000-0000-000000000123");
+        @Bean com.nextaicommerce.platform.marketplace.MarketplaceMappingDraft marketplaceMappingDraft(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.marketplace.MarketplaceMappingDraft.class);}
+        @Bean com.nextaicommerce.platform.catalog.CatalogPictureService catalogPictureService(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.catalog.CatalogPictureService.class);}
+        @Bean com.nextaicommerce.platform.web.ShopifyConnectionService shopifyConnectionService(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.web.ShopifyConnectionService.class);}
+        @Bean com.nextaicommerce.platform.web.ShopifyConnectionAccess shopifyConnectionAccess(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.web.ShopifyConnectionAccess.class);}
         @Bean com.nextaicommerce.platform.fba.FbaReadRepository fbaReadRepository(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.fba.FbaReadRepository.class);}
         @Bean com.nextaicommerce.platform.orders.SkuRefundHistory skuRefundHistory(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.SkuRefundHistory.class);}
         @Bean com.nextaicommerce.platform.orders.OrderProfitSummary orderProfitSummary(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.OrderProfitSummary.class);}
@@ -114,6 +119,11 @@ class SecurityConfigTest {
                 @Override public List<AccountView> listAllAccounts() { return List.of(); }
                 @Override public List<AccountView> listAvailableAccounts(String email, boolean superAdmin) { return List.of(); }
                 @Override public List<ConnectionView> listConnections(UUID tenantId, String tenantName) { return List.of(); }
+                @Override public List<AccountOption> listAccountOptions(String email,boolean admin){
+                    var request=(org.springframework.web.context.request.ServletRequestAttributes)org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+                    boolean mappingRequest=request!=null&&"/app/marketplace-skus/mappings".equals(request.getRequest().getRequestURI());
+                    return mappingRequest&&"operator@example.com".equals(email)?List.of(new AccountOption(TENANT_ID,"Ibcore","IB",null,List.of(new ConnectionView(StubConfig.MAPPING_STORE,TENANT_ID,"Ibcore","Ibcore","AMAZON","seller","ATVPDKIKX0DER","Amazon US","US","ACTIVE",null,false)))):List.of();
+                }
                 @Override public List<MemberView> listMembers(UUID tenantId) { return List.of(); }
                 @Override public List<InvitationView> listInvitations(UUID tenantId) { return List.of(); }
                 @Override public int pendingInvitationCount(UUID tenantId) { return 0; }
@@ -122,6 +132,7 @@ class SecurityConfigTest {
                 @Override public boolean historicalSyncInProgress(UUID tenantId) { return false; }
                 @Override public boolean canAccessAccount(UUID tenantId, String email, boolean superAdmin) { return true; }
                 @Override public boolean canAdministerAccount(UUID tenantId, String email, boolean superAdmin) { return true; }
+                @Override public boolean canOperateAccount(UUID tenantId,String email){return true;}
                 @Override public void saveAccountLogo(UUID tenantId,String contentType,byte[] bytes) {}
                 @Override public LogoData accountLogo(UUID tenantId) { return new LogoData(new byte[] {1, 2, 3}, "image/png"); }
                 @Override public ConnectionIdentity findConnection(UUID tenantId, UUID connectionId) {
@@ -139,6 +150,8 @@ class SecurityConfigTest {
                 @Override public List<LocationView> listLocations(UUID tenantId){return List.of();}
                 @Override public List<MarketplaceSkuRef> listMarketplaceSkus(UUID tenantId,List<UUID> ids){return List.of();}
                 @Override public List<GlobalProductView> listGlobalProducts() { return List.of(); }
+                @Override public GlobalProductPage pageGlobalProducts(String search,int page,int size,String sort,String direction){return new GlobalProductPage(List.of(),0,0,size);}
+                @Override public Map<UUID,ProductReference> accountProductReferences(UUID tenant,List<UUID> items){return Map.of();}
                 @Override public List<UUID> globalProductImageIds() { return List.of(); }
                 @Override public List<AccountItemView> listAccountItems(UUID tenantId) { return List.of(); }
                 @Override public AccountItemPage pageAccountItems(UUID tenantId,String search,int page,int size) { return new AccountItemPage(List.of(),0,0,size); }
@@ -345,7 +358,7 @@ class SecurityConfigTest {
     }
 
     @Test void viewerCannotEditMarketplaceMappingsButOperatorCan() throws Exception {
-        UUID storeId=UUID.randomUUID();
+        UUID storeId=StubConfig.MAPPING_STORE;
         var request=post("/app/marketplace-skus/mappings").with(csrf())
             .sessionAttr("selectedTenantId",TENANT_ID).sessionAttr("selectedTenantName","Ibcore")
             .sessionAttr("selectedStoreId",storeId).sessionAttr("selectedStoreName","Ibcore")

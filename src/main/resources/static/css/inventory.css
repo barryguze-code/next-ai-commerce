@@ -611,3 +611,7 @@ html[data-theme="dark"] .reservation-sku{color:#d9e5f3}
 #history-image-upload[hidden] { display: none; }
 #history-image-upload small { color: var(--muted, #718096); font-size: .75rem; }
 .history-image-upload-form { margin: 0; }
+
+.ledger-source-label{display:inline-flex;align-items:center;gap:6px}.ledger-source-label>img{display:inline-block;flex:0 0 18px;width:18px;height:18px;object-fit:contain}
+
+.inventory-ledger-card [data-column="source"]{min-width:240px;width:240px;word-break:normal;overflow-wrap:normal}.ledger-source{min-width:220px}.ledger-source-label>span{white-space:nowrap}.ledger-source a{overflow-wrap:anywhere}.ledger-source small{line-height:1.4;word-break:normal;overflow-wrap:normal}

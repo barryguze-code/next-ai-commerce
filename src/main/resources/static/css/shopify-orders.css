@@ -1,0 +1,8 @@
+/* Shopify data inside the shared Orders geometry and controls. */
+.shopify-order-info{color:var(--muted);background:var(--pale);border-color:var(--line)}
+.orders-workspace .order-number>img{flex:0 0 18px;width:18px;height:18px;object-fit:contain}
+
+.orders-workspace [data-provider="SHOPIFY"] .item-actions{min-width:96px;display:flex;gap:8px;align-items:center;justify-content:flex-end;padding-inline-end:12px}.orders-workspace [data-provider="SHOPIFY"] .item-actions .order-icon-action{flex:0 0 36px}
+
+.orders-workspace [data-provider="SHOPIFY"] .item-actions{flex-wrap:wrap}.orders-workspace .fedex-order-action img{width:26px;height:auto;object-fit:contain}
+

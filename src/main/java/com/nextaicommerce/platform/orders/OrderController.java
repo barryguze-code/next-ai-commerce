@@ -29,11 +29,15 @@ public class OrderController {
     public OrderController(OrderRepository orders,WorkspaceAccessRepository workspace,AmazonManualOrderSync manualSync,PackingSlipRepository packingSlips){this.orders=orders;this.workspace=workspace;this.manualSync=manualSync;this.packingSlips=packingSlips;}
     @Autowired(required=false) void configureCollaboration(CollaborationRepository repository){this.collaboration=repository;}
     @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceUi;
+    @org.springframework.beans.factory.annotation.Value("${app.fedex.sandbox-label-test-enabled:false}") private boolean fedexSandboxLabelTest;
     @Autowired(required=false) private com.nextaicommerce.platform.fees.AmazonFeeVarianceRepository feeVariances;
     @Autowired private OrderProfitSummary profitSummary;
     @Autowired private com.nextaicommerce.platform.catalog.CatalogRepository catalog;
     @Autowired private SkuRefundHistory refundHistory;
     @Autowired private com.nextaicommerce.platform.fba.FbaReadRepository fba;
+    @Autowired(required=false) private com.nextaicommerce.platform.shopify.ShopifyOrderPage shopifyOrders;
+    @org.springframework.beans.factory.annotation.Value("${app.fedex.amazon-sandbox-enabled:false}") private boolean fedexAmazonSandbox;
+    @org.springframework.beans.factory.annotation.Value("${app.fedex.sandbox-rate-only.enabled:false}") private boolean fedexSandboxRateOnly;
     @GetMapping("/app/orders/refund-history") @ResponseBody
     SkuRefundHistory.RefundPage refundOrders(@RequestParam(defaultValue="") String sku,
             @RequestParam(defaultValue="28") int days,@RequestParam(defaultValue="-1") int week,
@@ -58,9 +62,12 @@ public class OrderController {
             Authentication auth,HttpSession session,Model model,@RequestParam Map<String,String> smartParameters){
         if(!PageController.addTenantModel(session,model))return "redirect:/app/select-account";
         PageController.addAccessModel(auth,model);model.addAttribute("selectedStatus",status.toUpperCase());model.addAttribute("query",q);
-        UUID tenant=tenant(session);model.addAttribute("vendors",Boolean.TRUE.equals(model.asMap().get("canEditCatalog"))&&catalog!=null?catalog.listVendorChoices(tenant):java.util.List.of());Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        UUID tenant=tenant(session);model.addAttribute("fedexAmazonSandbox",fedexAmazonSandbox&&workspace.canOperateAccount(tenant,auth.getName()));model.addAttribute("fedexSandboxLabelTest",fedexSandboxLabelTest&&workspace.canOperateAccount(tenant,auth.getName()));model.addAttribute("fedexSandboxRateOnly",fedexSandboxRateOnly&&workspace.canOperateAccount(tenant,auth.getName()));Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection)){model.addAttribute("storeSelectionRequired",true);model.addAttribute("chooseStore",true);return "orders";}
         var identity=workspace.findConnection(tenant,connection);
+        if("SHOPIFY".equalsIgnoreCase(identity.channel())&&shopifyOrders!=null)
+            return shopifyOrders.show(tenant,connection,auth,status,q,goToPage==null?page:Math.max(0,goToPage-1),com.nextaicommerce.platform.web.TablePaging.size(size),model);
+        model.addAttribute("vendors",Boolean.TRUE.equals(model.asMap().get("canEditCatalog"))&&catalog!=null?catalog.listVendorChoices(tenant):java.util.List.of());
         if(!"AMAZON".equalsIgnoreCase(identity.channel())){model.addAttribute("unsupportedChannel",true);return "orders";}
         // Workspace advice has restored the authenticated account/store before this handler.
         if(feeVariances!=null&&feeVariances.visible())model.addAttribute("feeVarianceOrders",feeVariances.count(tenant,connection,false));
@@ -110,18 +117,27 @@ public class OrderController {
     @PostMapping("/app/orders/sync") String syncOrders(Authentication auth,HttpSession session,RedirectAttributes redirect){
         UUID tenant=tenant(session);Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection)){redirect.addFlashAttribute("orderError","Choose an Amazon store first.");return "redirect:/app/orders";}
-        try{return "redirect:/app/orders?orderSyncJob="+manualSync.enqueue(tenant,connection);}
-        catch(IllegalStateException cooldown){redirect.addFlashAttribute("orderError",cooldown.getMessage());return "redirect:/app/orders";}
+        try{
+            if("SHOPIFY".equalsIgnoreCase(workspace.findConnection(tenant,connection).channel())&&shopifyOrders!=null){shopifyOrders.sync(tenant,connection,auth.getName());return "redirect:/app/orders";}
+            return "redirect:/app/orders?orderSyncJob="+manualSync.enqueue(tenant,connection);
+        }catch(IllegalStateException|IllegalArgumentException cooldown){redirect.addFlashAttribute("orderError",cooldown.getMessage());return "redirect:/app/orders";}
     }
 
     @GetMapping("/app/orders/sync/{runId}/progress") @ResponseBody ResponseEntity<AmazonManualOrderSync.Progress> syncProgress(@PathVariable UUID runId,HttpSession session){
         Object selected=session.getAttribute(AccountSelectionController.STORE_ID);if(!(selected instanceof UUID connection))return ResponseEntity.status(409).build();
         var progress=manualSync.progress(tenant(session),connection,runId);return progress==null?ResponseEntity.notFound().build():ResponseEntity.ok(progress);
     }
+    @PostMapping("/app/orders/shopify/cancel") String cancelShopifyOrders(Authentication auth,HttpSession session){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection)||shopifyOrders==null||!"SHOPIFY".equalsIgnoreCase(workspace.findConnection(tenant(session),connection).channel()))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a Shopify store.");
+        shopifyOrders.cancel(tenant(session),connection,auth.getName());return "redirect:/app/orders";
+    }
 
-    @GetMapping("/app/orders/stream-version") @ResponseBody ResponseEntity<String> streamVersion(HttpSession session){
+    @GetMapping("/app/orders/stream-version") @ResponseBody ResponseEntity<String> streamVersion(HttpSession session,Authentication auth){
         Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection))return ResponseEntity.status(409).build();
+        if("SHOPIFY".equalsIgnoreCase(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null)
+            return ResponseEntity.ok(shopifyOrders.version(tenant(session),connection,auth));
         return ResponseEntity.ok(orders.streamVersion(tenant(session),connection));
     }
 
@@ -129,6 +145,7 @@ public class OrderController {
         PageController.addAccessModel(auth,model);
         Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
+        if("SHOPIFY".equals(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null)return shopifyOrders.packing(tenant(session),connection,UUID.fromString(orderId),auth,model);
         var slip=packingSlips.find(tenant(session),connection,orderId);
         if(slip==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"This order is not available in the selected store.");
         model.addAttribute("pickupEligible",orders.pickupEligibleOrders(tenant(session),connection).contains(orderId));
@@ -145,7 +162,8 @@ public class OrderController {
         Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
         if(!mayEditPacking(tenant(session),connection,auth))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        try{return Map.of("packageName",packingSlips.savePackaging(tenant(session),connection,orderId,packageName));}
+        try{if("SHOPIFY".equals(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null)return Map.of("packageName",shopifyOrders.savePackage(tenant(session),connection,UUID.fromString(orderId),packageName,auth));
+            return Map.of("packageName",packingSlips.savePackaging(tenant(session),connection,orderId,packageName));}
         catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
     }
 
@@ -162,6 +180,7 @@ public class OrderController {
         Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
         if(!mayEditPacking(tenant(session),connection,auth))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        if("SHOPIFY".equals(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null)shopifyOrders.requireOperate(tenant(session),connection,auth);
         try{return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(
             catalog.updatePackingProductDetails(tenant(session),connection,orderId,itemId,description,locationId));}
         catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
@@ -173,6 +192,11 @@ public class OrderController {
             @RequestParam(defaultValue="ALL") String status,Authentication auth,HttpSession session,RedirectAttributes redirect){
         Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
         if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a store first.");
+        if("SHOPIFY".equals(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null){
+            try{shopifyOrders.pickup(tenant(session),connection,UUID.fromString(orderId),waiting,auth);redirect.addFlashAttribute("orderSuccess",waiting?"Marked shipped — awaiting pickup locally. Shopify is unchanged.":"Local packing undone. Shopify is unchanged.");}
+            catch(IllegalArgumentException ex){throw new ResponseStatusException(HttpStatus.CONFLICT,ex.getMessage());}
+            return "redirect:/app/orders?status="+(com.nextaicommerce.platform.shopify.ShopifyOrderReadRepository.TABS.contains(status)?status:"ALL");
+        }
         if(!orders.setPickupOverride(tenant(session),connection,orderId,waiting,auth.getName()))
             throw new ResponseStatusException(HttpStatus.CONFLICT,"This order is no longer eligible. Refresh the page.");
         redirect.addFlashAttribute("orderSuccess",waiting?"Marked shipped — awaiting pickup in this platform only. Amazon is unchanged.":"Platform mark removed. Amazon status is unchanged.");

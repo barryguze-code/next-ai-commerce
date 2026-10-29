@@ -82,3 +82,31 @@ function editManagedLocation(button,remove){
   };
   panel.append(feedback,save,cancel);article.append(panel);panel.scrollIntoView({block:'nearest'});(remove?cancel:code).focus();
 }
+
+// The history context and these directories share the selected account's location list.
+function setManagedLocationLoadState(state,retry){
+ document.querySelectorAll('.location-directory').forEach(directory=>{
+  directory.dataset.locationState=state;
+  const count=directory.querySelector('.location-directory-count');
+  if(count)count.textContent=state==='loading'?'Loading locations…':state==='error'?'Locations unavailable':count.textContent;
+  directory.querySelector('[data-location-load-feedback]')?.remove();
+  if(state==='error'){
+   const feedback=document.createElement('p');feedback.dataset.locationLoadFeedback='';feedback.className='notice error';feedback.setAttribute('role','status');feedback.append('Locations could not be loaded. ');
+   if(retry){const button=document.createElement('button');button.type='button';button.className='secondary-button compact-button';button.textContent='Try again';button.onclick=retry;feedback.append(button);}directory.append(feedback);
+  }
+ });
+}
+function hydrateManagedLocations(locations){
+ if(!Array.isArray(locations))throw Error('Account locations are unavailable.');
+ document.querySelectorAll('.location-directory').forEach(directory=>{
+  const list=directory.querySelector('.location-directory-list');if(!list)return;
+  const fragment=document.createDocumentFragment();
+  for(const location of locations){
+   const article=document.createElement('article');article.dataset.locationId=location.id;article.classList.toggle('inactive',location.status!=='ACTIVE');
+   const code=document.createElement('span');code.className='location-code';code.textContent=location.code;
+   const details=document.createElement('div'),name=document.createElement('strong'),help=document.createElement('small'),status=document.createElement('b');name.textContent=location.name;help.textContent='Available for receipts, physical counts, and product defaults';status.className='location-status';status.textContent=String(location.status||'').toLowerCase();details.append(name,help);article.append(code,details,status);addLocationActions(article);fragment.append(article);
+  }
+  if(!locations.length){const empty=document.createElement('p');empty.className='location-directory-empty';empty.textContent='No storage locations have been created for this account.';fragment.append(empty);}
+  list.replaceChildren(fragment);directory.querySelector('.location-directory-count').textContent=locations.length+' in this account';directory.dataset.locationState='ready';directory.querySelector('[data-location-load-feedback]')?.remove();
+ });
+}

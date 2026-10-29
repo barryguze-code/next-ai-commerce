@@ -74,10 +74,16 @@ public class AmazonSyncWorker {
             }
             return;
         }
-        try{process(job);}
-        catch(PermanentSyncException ex){store.fail(job,ex);}
-        catch(AmazonApiException ex){store.retryOrFail(job,ex,ex.status()==429?ex.retryAfter():null);}
-        catch(Exception ex){store.retryOrFail(job,ex,null);}
+        try{
+            try{process(job);}
+            catch(AmazonSyncStore.LostOrderLease ex){throw ex;}
+            catch(PermanentSyncException ex){store.fail(job,ex);}
+            catch(AmazonApiException ex){store.retryOrFail(job,ex,ex.status()==429?ex.retryAfter():null);}
+            catch(Exception ex){store.retryOrFail(job,ex,null);}
+        }catch(AmazonSyncStore.LostOrderLease ex){
+            // Ownership can also expire while recording an API failure or retry.
+            log.info("Amazon order worker stopped after losing its lease; no stale result published.");
+        }
     }
 
     private void process(AmazonSyncStore.Job job){
@@ -175,51 +181,40 @@ public class AmazonSyncWorker {
     }
 
     private void importOrderChanges(AmazonSyncStore.Job job){
-        String nextToken=null;long total=0;int orderPages=0;Set<String> orderIds=new HashSet<>();
-        for(int page=1;page<=100;page++){
-            String path;
-            if(nextToken==null){
-                path="/orders/v0/orders?MarketplaceIds="+encode(job.marketplaceId())+
-                    "&LastUpdatedAfter="+encode(job.windowStart().toString())+
-                    "&LastUpdatedBefore="+encode(job.windowEnd().toString())+
-                    "&MaxResultsPerPage=100";
-            }else path="/orders/v0/orders?NextToken="+encode(nextToken);
+        var progress=store.orderDeltaProgress(job);
+        while(!progress.ordersComplete()){
+            String path=progress.nextOrderToken()==null?
+                "/orders/v0/orders?MarketplaceIds="+encode(job.marketplaceId())+
+                "&LastUpdatedAfter="+encode(job.windowStart().toString())+
+                "&LastUpdatedBefore="+encode(job.windowEnd().toString())+"&MaxResultsPerPage=100":
+                "/orders/v0/orders?NextToken="+encode(progress.nextOrderToken());
+            store.renewOrderLease(job);
             var response=amazon.get(job.tenantId(),job.connectionId(),path);
-            orderPages=page;
-            total+=store.saveJsonPage(job,"orders-delta-"+job.windowEnd()+"-page-"+page,
-                response.body(),response.requestId(),source->normalizer.normalizeOrderPage(job,response.json(),source));
-            response.json().path("payload").path("Orders").forEach(order->{
-                String id=order.path("AmazonOrderId").asText();if(!id.isBlank())orderIds.add(id);
-            });
-            nextToken=response.json().path("payload").path("NextToken").asText();
-            if(nextToken==null||nextToken.isBlank())break;
+            var ids=new java.util.ArrayList<String>();
+            response.json().path("payload").path("Orders").forEach(order->{String id=order.path("AmazonOrderId").asText();if(!id.isBlank())ids.add(id);});
+            var prior=progress;String next=response.json().path("payload").path("NextToken").asText();
+            progress=store.saveOrderDeltaPage(job,"orders-delta-"+job.windowEnd()+"-page-"+(prior.orderPages()+1),
+                response.body(),response.requestId(),source->normalizer.normalizeOrderPage(job,response.json(),source),count->prior.orders(ids,next,count));
         }
-        if(nextToken!=null&&!nextToken.isBlank())throw new IllegalStateException("Amazon order changes exceeded the safe 100-page limit; the update will retry instead of silently completing with missing orders.");
-        log.info("{} found {} new or changed order(s) across {} page(s). Item details are next.",
-            runLabel(job),orderIds.size(),orderPages);
-        int itemPage=0;
-        for(String orderId:orderIds){
-            String itemToken=null;int orderItemPage=0;
-            do{
-                String path=itemToken==null?"/orders/v0/orders/"+encode(orderId)+"/orderItems":
-                    "/orders/v0/orders/"+encode(orderId)+"/orderItems?NextToken="+encode(itemToken);
-                var response=amazon.get(job.tenantId(),job.connectionId(),path);int currentPage=++itemPage;orderItemPage++;
-                total+=store.saveJsonPage(job,"order-items-delta-"+orderId+"-page-"+currentPage,
-                    response.body(),response.requestId(),source->normalizer.normalizeOrderItems(job,orderId,response.json(),source));
-                itemToken=response.json().path("payload").path("NextToken").asText();
-                pauseOrderItems();
-            }while(itemToken!=null&&!itemToken.isBlank()&&orderItemPage<100);
-            if(itemToken!=null&&!itemToken.isBlank())throw new IllegalStateException("Amazon order items exceeded the safe page limit for order "+orderId+"; the update will retry.");
+        log.info("{} resuming item details at order {} of {}.",runLabel(job),progress.itemIndex(),progress.orderIds().size());
+        while(progress.itemIndex()<progress.orderIds().size()){
+            if(progress.nextItemAt()!=null){
+                long pause=Duration.between(Instant.now(),progress.nextItemAt()).toMillis();
+                if(pause>0)try{Thread.sleep(pause);}catch(InterruptedException ex){Thread.currentThread().interrupt();throw new IllegalStateException("Order update interrupted.",ex);}
+            }
+            store.renewOrderLease(job);
+            String orderId=progress.orderIds().get(progress.itemIndex());
+            String path="/orders/v0/orders/"+encode(orderId)+"/orderItems"+
+                (progress.nextItemToken()==null?"":"?NextToken="+encode(progress.nextItemToken()));
+            var response=amazon.get(job.tenantId(),job.connectionId(),path);var prior=progress;
+            String next=response.json().path("payload").path("NextToken").asText();
+            progress=store.saveOrderDeltaPage(job,"order-items-delta-"+orderId+"-page-"+(prior.itemPages()+1),
+                response.body(),response.requestId(),source->normalizer.normalizeOrderItems(job,orderId,response.json(),source),
+                count->prior.items(next,count,Instant.now().plusMillis(2100)));
         }
-        log.info("{} Amazon import complete — {} changed order(s), {} item page(s), {} row(s). "
-                +"Inventory reconciliation is next.",runLabel(job),orderIds.size(),itemPage,total);
-        if(recipients!=null)recipients.enqueue(job.tenantId(),job.connectionId(),orderIds);
-        store.complete(job,total);
-    }
-
-    private static void pauseOrderItems(){
-        try{Thread.sleep(2100);}catch(InterruptedException ex){Thread.currentThread().interrupt();
-            throw new IllegalStateException("Order update interrupted.",ex);}
+        store.renewOrderLease(job);
+        if(recipients!=null)recipients.enqueue(job.tenantId(),job.connectionId(),new HashSet<>(progress.orderIds()));
+        store.complete(job,progress.records());
     }
 
     private static String encode(String value){return URLEncoder.encode(value,StandardCharsets.UTF_8);}

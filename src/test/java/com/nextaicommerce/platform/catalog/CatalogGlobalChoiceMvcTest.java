@@ -21,6 +21,15 @@ class CatalogGlobalChoiceMvcTest {
   mvc.perform(get("/app/catalog/product-search").param("scope","global").param("q","Cheese").session(session(tenant)).principal(auth("VIEWER"))).andExpect(status().isForbidden());verifyNoInteractions(repo);
   mvc.perform(get("/app/catalog/product-search").param("scope","global").param("q","Cheese").param("tenantId",UUID.randomUUID().toString()).session(session(tenant)).principal(auth("OPERATOR"))).andExpect(status().isOk()).andExpect(content().json("[]"));verify(repo).searchGlobalProducts(tenant,"Cheese");
  }
+ @Test void selectedAccountMustBeAuthorizedBeforePrivateGlobalCodeLookup()throws Exception{
+  UUID tenant=UUID.randomUUID();var repo=mock(CatalogRepository.class);var c=controller(repo);
+  var access=(com.nextaicommerce.platform.web.WorkspaceAccessRepository)org.springframework.test.util.ReflectionTestUtils.getField(c,"workspaceAccess");
+  when(access.canOperateAccount(tenant,"test@example.test")).thenReturn(false);
+  var mvc=MockMvcBuilders.standaloneSetup(c).build();
+  mvc.perform(get("/app/platform/catalog").session(session(tenant)).principal(auth("PLATFORM_ADMIN"))).andExpect(status().isForbidden());
+  mvc.perform(get("/app/catalog/product-search").param("scope","global").param("q","342934").session(session(tenant)).principal(auth("OWNER"))).andExpect(status().isForbidden());
+  verifyNoInteractions(repo);
+ }
  @Test void canonicalImageAliasNeverCallsPrivatePictureLookupAndRejectsViewer()throws Exception{
   UUID id=UUID.randomUUID(),tenant=UUID.randomUUID();var repo=mock(CatalogRepository.class);when(repo.sharedGlobalImage(id)).thenReturn(new CatalogRepository.ProductImage(new byte[]{1,2},"image/png"));
   var mvc=MockMvcBuilders.standaloneSetup(controller(repo)).build();
@@ -48,10 +57,10 @@ class CatalogGlobalChoiceMvcTest {
  }
 
  @Test void globalCatalogueSearchIsForwardedToTheServer()throws Exception{
-  var repo=mock(CatalogRepository.class);when(repo.pageGlobalProducts("339807",0,25,"product","asc")).thenReturn(new CatalogRepository.GlobalProductPage(List.of(),0,0,25));var mvc=MockMvcBuilders.standaloneSetup(controller(repo)).build();
-  mvc.perform(get("/app/platform/catalog").param("q","339807").session(session(UUID.randomUUID())).principal(auth("PLATFORM_ADMIN")))
+  var repo=mock(CatalogRepository.class);UUID tenant=UUID.randomUUID();when(repo.pageGlobalProducts(tenant,"339807",0,25,"product","asc")).thenReturn(new CatalogRepository.GlobalProductPage(List.of(),0,0,25));var mvc=MockMvcBuilders.standaloneSetup(controller(repo)).build();
+  mvc.perform(get("/app/platform/catalog").param("q","339807").session(session(tenant)).principal(auth("PLATFORM_ADMIN")))
    .andExpect(status().isOk()).andExpect(model().attribute("query","339807"));
-  verify(repo).pageGlobalProducts("339807",0,25,"product","asc");verify(repo,never()).listGlobalProducts();
+  verify(repo).pageGlobalProducts(tenant,"339807",0,25,"product","asc");verify(repo,never()).listGlobalProducts();
   mvc.perform(get("/app/platform/catalog").session(session(UUID.randomUUID())).principal(auth("OWNER"))).andExpect(status().isForbidden());
  }
 

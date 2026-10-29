@@ -35,6 +35,11 @@ public class MarketplaceSkuController {
     @Autowired(required=false) private MarketplaceSkuFamilies families;
     private CollaborationRepository collaboration;
     private com.nextaicommerce.platform.sync.AmazonManualListingSync listingSync;
+    @Autowired(required=false) private com.nextaicommerce.platform.web.ShopifyConnectionService shopify;
+    @Autowired(required=false) private com.nextaicommerce.platform.shopify.ShopifyCatalogJobs shopifyJobs;
+    @Autowired(required=false) private ShopifySkuRepository shopifySkus;
+    @Autowired(required=false) private com.nextaicommerce.platform.shopify.ShopifyOrderJobs shopifyOrders;
+    @Autowired(required=false) private com.nextaicommerce.platform.shopify.ShopifyOrderReadRepository shopifyOrderReads;
 
     MarketplaceSkuController(MarketplaceSkuRepository skus, WorkspaceAccessRepository workspace,
             CatalogRepository catalog) {
@@ -74,6 +79,35 @@ public class MarketplaceSkuController {
         }
 
         var connection = workspace.findConnection(tenantId, connectionId);
+        if ("SHOPIFY".equalsIgnoreCase(connection.channel())) {
+            boolean administrator=authentication!=null&&authentication.getAuthorities().stream()
+                .anyMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()))
+                &&workspace.isCurrentPlatformAdmin(authentication.getName());
+            boolean allowed=authentication!=null&&workspace.listAccountOptions(authentication.getName(),administrator).stream()
+                .filter(a->a.id().equals(tenantId)).flatMap(a->a.stores().stream())
+                .anyMatch(s->s.id().equals(connectionId)&&"SHOPIFY".equals(s.channel()));
+            if(!allowed)throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,"Store access unavailable.");
+            model.addAttribute("shopifySetup",shopify==null
+                ?new com.nextaicommerce.platform.web.ShopifyConnectionService.SetupState(false,false)
+                :shopify.setupState(tenantId,connectionId));
+            if(shopifyJobs!=null&&shopifyJobs.enabled()){
+                if(filters.entrySet().stream().anyMatch(e->e.getKey().startsWith("f_")&&!e.getValue().isBlank()))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"Clear Amazon-only filters before viewing Shopify variants.");
+                String nativeStatus=status==null?"ALL":status.toUpperCase(java.util.Locale.ROOT),nativeSort=SetHolder.SHOPIFY_SORTS.contains(sort)?sort:"listing";
+                if(!java.util.Set.of("ALL","ACTIVE","DRAFT","ARCHIVED","UNLISTED","UNMAPPED").contains(nativeStatus))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"Unsupported Shopify product status.");
+                model.addAttribute("shopifyStatuses",java.util.List.of("ALL","ACTIVE","DRAFT","ARCHIVED","UNLISTED","UNMAPPED"));model.addAttribute("shopifyCatalogEnabled",true);model.addAttribute("shopifyJob",shopifyJobs.status(tenantId,connectionId));
+                model.addAttribute("selectedStatus",nativeStatus);model.addAttribute("selectedSort",nativeSort);
+                var shopifyPage=shopifySkus.list(tenantId,connectionId,q,nativeStatus,nativeSort,direction,goToPage==null?page:Math.max(0,goToPage-1),com.nextaicommerce.platform.web.TablePaging.size(size));
+                model.addAttribute("shopifyPage",shopifyPage);model.addAttribute("shopifyComponents",shopifySkus.componentBatch(tenantId,connectionId,shopifyPage.rows().stream().map(ShopifySkuRepository.Row::id).toList()));
+                boolean orderReads=shopifyOrders!=null&&shopifyOrders.enabled();
+                model.addAttribute("shopifyOrdersEnabled",orderReads);model.addAttribute("shopifyInitializationComplete",orderReads&&shopifyOrders.initialized(tenantId,connectionId));
+                model.addAttribute("shopifyOrderJob",orderReads?shopifyOrders.status(tenantId,connectionId):null);
+                model.addAttribute("shopifyWeekly",orderReads&&shopifyOrderReads!=null?shopifyOrderReads.weekly(tenantId,connectionId,shopifyPage.rows().stream().map(ShopifySkuRepository.Row::id).toList()):java.util.Map.of());
+                model.addAttribute("shopifyThreads",collaboration==null?java.util.Map.of():collaboration.openSubjectSummaries(tenantId,"MARKETPLACE_SKU",shopifyPage.rows().stream().map(ShopifySkuRepository.Row::subjectKey).toList(),authentication.getName()));
+                model.addAttribute("shopifyCounts",shopifySkus.counts(tenantId,connectionId));
+                model.addAttribute("canSyncShopify",maySync(tenantId,connectionId,authentication));
+            }
+            return "marketplace-skus";
+        }
         if (!"AMAZON".equalsIgnoreCase(connection.channel())) {
             model.addAttribute("unsupportedChannel", true);
             model.addAttribute("chooseStore", true);
@@ -125,6 +159,7 @@ public class MarketplaceSkuController {
             ?catalog.listVendorChoices(tenantId):List.of());
         return "marketplace-skus";
     }
+    private static class SetHolder {static final java.util.Set<String> SHOPIFY_SORTS=java.util.Set.of("listing","sku","status","price","date","mapping");}
 
     @PostMapping("/app/marketplace-skus/sync")
     String syncListings(Authentication authentication,HttpSession session,RedirectAttributes redirect) {

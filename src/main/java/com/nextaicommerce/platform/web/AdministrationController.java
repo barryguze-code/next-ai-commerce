@@ -21,10 +21,13 @@ import java.util.stream.Collectors;
 public class AdministrationController {
     private final WorkspaceAccessRepository repository;
     private final MarketplaceCredentialService credentialService;
+    private final ShopifyConnectionService shopify;
+    private final ShopifyConnectionAccess shopifyAccess;
 
-    AdministrationController(WorkspaceAccessRepository repository, MarketplaceCredentialService credentialService) {
+    AdministrationController(WorkspaceAccessRepository repository, MarketplaceCredentialService credentialService, ShopifyConnectionService shopify, ShopifyConnectionAccess shopifyAccess) {
         this.repository = repository;
         this.credentialService = credentialService;
+        this.shopify=shopify;this.shopifyAccess=shopifyAccess;
     }
 
     @GetMapping("/app/connections")
@@ -35,15 +38,25 @@ public class AdministrationController {
         String tenantName = (String) session.getAttribute(AccountSelectionController.TENANT_NAME);
         var connections = repository.listConnections(tenantId, tenantName);
         var connectionErrors = new java.util.LinkedHashMap<UUID,String>();
+        var shopifyVerified = new java.util.LinkedHashMap<UUID,String>();
         for (var connection : connections) {
             if (connection.credentialsStored()) {
-                try { credentialService.credentials(tenantId, connection.id()); }
+                try {
+                    var saved=credentialService.credentials(tenantId, connection.id());
+                    if("SHOPIFY".equals(connection.channel())){
+                        boolean fresh;
+                        try{fresh=java.time.Instant.parse(saved.getOrDefault("expiresAt","")).isAfter(java.time.Instant.now());}catch(java.time.DateTimeException ex){fresh=false;}
+                        shopifyVerified.put(connection.id(),fresh&&"ACTIVE".equals(connection.status())?(shopify.ordersEnabled()?(shopify.setupState(tenantId,connection.id()).ordersPermitted()?"Connected · Orders ready":"Connected · Order access needed"):"Connected · Orders not enabled"):"Verify saved authorization");
+                    }
+                }
                 catch (IllegalStateException ex) {
                     connectionErrors.put(connection.id(), "Stored credentials cannot be opened. Re-enter all credentials and verify the connection. Imported data is retained.");
                 }
             }
         }
         model.addAttribute("connectionErrors", connectionErrors);
+        model.addAttribute("shopifyEnabled",shopify.enabled());
+        model.addAttribute("shopifyVerified",shopifyVerified);
         model.addAttribute("connections", connections);
         model.addAttribute("connectionCount", connections.size());
         model.addAttribute("activeConnectionCount", connections.stream()
@@ -60,11 +73,13 @@ public class AdministrationController {
     }
 
     @PostMapping("/app/connections/{connectionId}/disconnect")
-    String disconnectConnection(@PathVariable UUID connectionId, HttpSession session, RedirectAttributes redirect) {
+    String disconnectConnection(@PathVariable UUID connectionId, HttpSession session, Authentication authentication, RedirectAttributes redirect) {
         UUID tenantId=(UUID)session.getAttribute(AccountSelectionController.TENANT_ID);
         if(tenantId==null)return "redirect:/app/select-account";
         try {
-            repository.disconnectConnection(tenantId,connectionId);
+            boolean isShopify="SHOPIFY".equals(repository.findConnection(tenantId,connectionId).channel());
+            if(isShopify){shopifyAccess.require(tenantId,connectionId,authentication);repository.disconnectShopifyConnection(tenantId,connectionId);}
+            else repository.disconnectConnection(tenantId,connectionId);
             if(connectionId.equals(session.getAttribute(AccountSelectionController.STORE_ID))){
                 session.removeAttribute(AccountSelectionController.STORE_ID);
                 session.removeAttribute(AccountSelectionController.STORE_NAME);

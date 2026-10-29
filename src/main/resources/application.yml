@@ -61,7 +61,9 @@ app:
     enabled: ${APP_READ_CACHE_ENABLED:true}
     ttl: ${APP_READ_CACHE_TTL:10s}
     maximum-entries: ${APP_READ_CACHE_MAXIMUM_ENTRIES:256}
-  build-version: ${APP_BUILD_VERSION:1.9.7}
+  build-version: ${APP_BUILD_VERSION:1.10.0}
+  inventory:
+    publication-simulation-enabled: ${INVENTORY_PUBLICATION_SIMULATION_ENABLED:false}
   public-url: ${APP_PUBLIC_URL:http://localhost:8080}
   mail:
     enabled: ${MAIL_ENABLED:false}
@@ -75,9 +77,31 @@ app:
       tenant-id: ${MICROSOFT_TENANT_ID:}
       client-id: ${MICROSOFT_CLIENT_ID:}
       client-secret: ${MICROSOFT_CLIENT_SECRET:}
+  shopify:
+    shipping-sandbox-enabled: ${SHOPIFY_SHIPPING_SANDBOX_ENABLED:false}
+    inventory:
+      write-enabled: false
+    prices:
+      write-enabled: false
+    sale-prices:
+      write-enabled: false
+    connections:
+      enabled: ${SHOPIFY_CONNECTIONS_ENABLED:false}
+    catalog:
+      enabled: ${SHOPIFY_CATALOG_ENABLED:false}
+      mapping-enabled: ${SHOPIFY_CATALOG_MAPPING_ENABLED:false}
+    orders:
+      enabled: ${SHOPIFY_ORDERS_ENABLED:false}
+      inventory-enabled: ${SHOPIFY_ORDER_INVENTORY_ENABLED:false}
+      polling-enabled: ${SHOPIFY_ORDER_POLLING_ENABLED:false}
+      only-scheduling: ${SHOPIFY_ORDER_ONLY_SCHEDULING:false}
   credentials:
     encryption-key: ${APP_CREDENTIAL_ENCRYPTION_KEY:}
   fedex:
+    simulation-enabled: ${FEDEX_SIMULATION_ENABLED:false}
+    registered-customer-enabled: ${FEDEX_REGISTERED_CUSTOMER_ENABLED:false}
+    sandbox-rate-api: ${FEDEX_SANDBOX_RATE_API:STANDARD}
+    sandbox-label-test-enabled: ${FEDEX_SANDBOX_LABEL_TEST_ENABLED:false}
     confirmation-enabled: ${APP_FEDEX_CONFIRMATION_ENABLED:false}
   amazon:
     product-fees-enabled: ${AMAZON_PRODUCT_FEES_ENABLED:false}

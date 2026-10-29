@@ -44,7 +44,7 @@
 
 <section class="data-card catalog-card">
 <div class="card-toolbar">
-<form class="toolbar-tools" method="get" action="/app/platform/catalog"><input type="hidden" name="size" th:value="${globalPage.size}"><input type="hidden" name="sort" th:value="${globalSort}"><input type="hidden" name="direction" th:value="${globalDirection}"><label class="search-field"><span>⌕</span><input name="q" type="search" maxlength="160" th:value="${query}" placeholder="Search product, brand, UPC / EAN" aria-label="Search products"></label><button class="secondary-button compact-button" type="submit">Search</button></form>
+<form class="toolbar-tools" method="get" action="/app/platform/catalog"><input type="hidden" name="size" th:value="${globalPage.size}"><input type="hidden" name="sort" th:value="${globalSort}"><input type="hidden" name="direction" th:value="${globalDirection}"><label class="search-field"><span>⌕</span><input name="q" type="search" maxlength="160" th:value="${query}" placeholder="Search product, brand, UPC / EAN or account item code" aria-label="Search products"></label><button class="secondary-button compact-button" type="submit">Search</button></form>
 </div>
 <div class="table-wrap">
 <table data-table-widget="global-catalogue" data-table-live-search="true" data-server-sort data-table-min-width="1000">
@@ -52,6 +52,7 @@
 <tr>
 <th data-column-required="true"><a class="table-sort-link" th:href="@{/app/platform/catalog(q=${query},size=${globalPage.size},sort='product',direction=${globalSort=='product' and globalDirection=='asc'?'desc':'asc'})}">Product</a></th>
 <th><a class="table-sort-link" th:href="@{/app/platform/catalog(q=${query},size=${globalPage.size},sort='identifier',direction=${globalSort=='identifier' and globalDirection=='asc'?'desc':'asc'})}">UPC / EAN</a></th>
+<th>Account item code</th>
 <th><a class="table-sort-link" th:href="@{/app/platform/catalog(q=${query},size=${globalPage.size},sort='unit',direction=${globalSort=='unit' and globalDirection=='asc'?'desc':'asc'})}">Unit</a></th>
 <th><a class="table-sort-link" th:href="@{/app/platform/catalog(q=${query},size=${globalPage.size},sort='handling',direction=${globalSort=='handling' and globalDirection=='asc'?'desc':'asc'})}">Handling</a></th>
 <th><a class="table-sort-link" th:href="@{/app/platform/catalog(q=${query},size=${globalPage.size},sort='status',direction=${globalSort=='status' and globalDirection=='asc'?'desc':'asc'})}">Status</a></th>
@@ -73,6 +74,7 @@
 <strong th:text="${product.identifier ?: 'Not assigned'}">UPC</strong>
 <small class="cell-note" th:text="${product.identifierType ?: 'UPC'}">UPC</small>
 </td>
+<td th:text="${product.vendorItemCode ?: '—'}"></td>
 <td th:text="${product.unitOfMeasure}">EA</td>
 <td>
 <span class="catalog-pill" th:text="${product.expirationRequired ? 'Expiration tracked' : 'Standard'}">Standard</span>
@@ -87,7 +89,7 @@
 <td><div data-context-menu data-title="Global product actions"><button class="secondary-button compact-button" type="button" th:attr="data-target=|global-edit-${product.id}|" onclick="document.getElementById(this.dataset.target).showModal()">Edit</button></div></td>
 </tr>
 <tr th:if="${#lists.isEmpty(products)}">
-<td colspan="6">
+<td colspan="7">
 <div class="table-empty">
 <strong>No global products match this search</strong>
 <span>Try a product name, brand, UPC, EAN or GTIN.</span>

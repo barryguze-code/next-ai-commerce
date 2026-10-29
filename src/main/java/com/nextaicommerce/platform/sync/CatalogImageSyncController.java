@@ -44,7 +44,7 @@ public class CatalogImageSyncController {
                 JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=component.tenant_id AND mapping.id=component.marketplace_sku_mapping_id
                 JOIN amazon_listings listing ON listing.tenant_id=mapping.tenant_id AND listing.marketplace_connection_id=mapping.marketplace_connection_id AND listing.seller_sku=mapping.marketplace_sku
                 JOIN marketplace_connections connection ON connection.tenant_id=listing.tenant_id AND connection.id=listing.marketplace_connection_id
-                WHERE item.tenant_id=? AND item.id=? AND mapping.status='ACTIVE' AND connection.status='ACTIVE'
+                WHERE item.tenant_id=? AND item.id=? AND mapping.status='ACTIVE' AND connection.channel='AMAZON' AND connection.status='ACTIVE'
                   AND listing.asin IS NOT NULL AND listing.asin<>'' AND listing.platform_status='VISIBLE'
                   AND NOT EXISTS(SELECT 1 FROM marketplace_sku_mapping_components other WHERE other.tenant_id=mapping.tenant_id AND other.marketplace_sku_mapping_id=mapping.id AND other.account_catalog_item_id<>item.id)
                 ORDER BY listing.updated_at DESC,listing.asin LIMIT 1

@@ -31,3 +31,16 @@ test('bundle title waits for explicit choice and loads only the selected item',a
 test('cancel opens no inventory ledger',async()=>{const s=setup(items);const pending=s.window.openMappedInventoryLedger(s.link,true);await tick();s.dialogs[0].close();await pending;assert.equal(s.requests.length,1);assert.equal(s.opened.length,0);});
 test('specific code bypasses chooser',async()=>{const s=setup(items);await s.window.openMappedInventoryLedger(s.link);assert.equal(s.dialogs.length,0);assert.equal(s.requests[1],'/app/inventory/A/history-panel');});
 test('single mapped item bypasses chooser even for title clicks',async()=>{const s=setup(items.slice(0,1));await s.window.openMappedInventoryLedger(s.link,true);assert.equal(s.dialogs.length,0);assert.equal(s.opened.length,1);});
+test('Shopify title uses rendered own-account components without Amazon SKU lookup',async()=>{
+ const s=setup([]);s.link.href='http://localhost/app/inventory/ledger?itemId=A';s.link.textContent='Shopify bundle';
+ const pending=s.window.openMappedInventoryLedger(s.link,true,s.link,items);await tick();assert.equal(s.dialogs.length,1);assert.equal(s.requests.length,0);
+ s.dialogs[0].querySelector('.bundle-ledger-options').children[1].onclick();await pending;assert.deepEqual(s.requests,['/app/inventory/B/history-panel']);
+});
+test('Shopify single item opens directly; canceling its bundle makes no request',async()=>{
+ const s=setup([]);s.link.href='http://localhost/app/inventory/ledger?itemId=A';s.link.textContent='Own item';await s.window.openMappedInventoryLedger(s.link,true,s.link,items.slice(0,1));assert.deepEqual(s.requests,['/app/inventory/A/history-panel']);
+ const b=setup([]);b.link.href=s.link.href;b.link.textContent='Bundle';const pending=b.window.openMappedInventoryLedger(b.link,true,b.link,items);await tick();b.dialogs[0].close();await pending;assert.deepEqual(b.requests,[]);
+});
+
+test('approved shared ledger activates without preview flags on local and production hosts',async()=>{
+ for(const [href,expected] of [['http://localhost/app/orders?ledgerPreview=1','true'],['http://localhost/app/orders','true'],['https://app.nextaicommerce.com/app/orders','true']]){const s=setup([]);s.window.location={href};s.link.href='http://localhost/app/inventory/ledger?itemId=A';await s.window.openMappedInventoryLedger(s.link,true,s.link,items.slice(0,1));assert.equal(s.opened[0].ledgerDesignPreview,expected);}
+});

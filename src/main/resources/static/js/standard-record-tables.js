@@ -1,11 +1,11 @@
 /* Presentation adapters only: existing domain handlers retain ownership of actions. */
 (()=>{
  'use strict';
- if(!document.body?.classList.contains('platform-standard-tables')&&!['/app/inventory','/app/inventory/ledger','/app/catalog','/app/vendors','/app/receiving'].includes(location.pathname))return;
+ if(!document.body?.classList.contains('platform-standard-tables')&&!['/app/inventory','/app/inventory/ledger','/app/catalog','/app/vendors','/app/receiving','/app/marketplace-skus'].includes(location.pathname))return;
  const node=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls||'';if(text)el.textContent=text;return el};
  const artwork=label=>/price|cost/i.test(label)?'price':/sale/i.test(label)?'sale':/adjust|stock|hold|remov/i.test(label)?'inventory':/sku|mapping/i.test(label)?'mapping':/close/i.test(label)?'shipped':/receiv|document|invoice/i.test(label)?'warehouse':'edit';
  function imageMenu(trigger,holder,url,product){
-  const shared=url.startsWith("/app/platform/catalog/products/"),catalogue=product&&Boolean(holder.closest("tr[data-picture-item],tr[data-picture-global]"));
+  const shared=url.startsWith("/app/platform/catalog/products/"),catalogue=product&&(Boolean(holder.closest("tr[data-picture-item],tr[data-picture-global]"))||location.pathname==='/app/marketplace-skus');
   const menu=node('dialog','order-picture-menu standard-picture-menu');menu.setAttribute('aria-label','Edit picture');
   const head=node('header');head.append(node('strong','',shared?'Shared Global Catalogue picture':product?'Edit product picture':'Edit picture'));const exit=node('button','','×');exit.type='button';exit.setAttribute('aria-label','Close');head.append(exit);menu.append(head);
   const close=()=>{window.removeEventListener('resize',place);menu.close();menu.remove();trigger.focus()};exit.onclick=close;menu.oncancel=e=>{e.preventDefault();close()};
@@ -34,8 +34,10 @@
    const use=entry('<span class="order-picture-symbol">✓</span>','Use picture','Choose a saved matched-SKU image',()=>save(null,false,selected));use.disabled=true;
    const sync=entry('<span class="order-picture-symbol order-picture-amazon">a</span>','Sync from Amazon','Checking availability…',()=>save(null,true));sync.disabled=true;
    fetch(url+'/candidates',{headers:{Accept:'application/json'}}).then(async r=>{if(!r.ok)throw Error('Matched pictures could not be loaded.');return r.json()}).then(result=>{
-    for(const candidate of result.candidates){const option=node('button','catalog-picture-choice');option.type='button';option.setAttribute('aria-pressed','false');const image=node('img');image.src=candidate.imageUrl;image.alt='';image.loading='lazy';const copy=node('span');copy.append(node('strong','',candidate.sku),node('small','',candidate.asin+(candidate.mixedBundle?' · Mixed-product bundle — review before choosing':'')));option.append(image,copy);option.onclick=()=>{selected=candidate.id;choices.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===option)));use.disabled=false;};choices.append(option);}
-    if(!result.candidates.length)choices.append(node('p','order-picture-status','No saved public Amazon pictures are linked to this product. Upload a picture or check its SKU mapping.'));
+    const channels=[...new Set(result.candidates.map(c=>c.channel||'AMAZON'))];
+    let provider='ALL';if(channels.length>1){const label=node('label','','Marketplace '),select=node('select');select.setAttribute('aria-label','Picture marketplace');for(const value of ['ALL',...channels]){const o=node('option','',value==='ALL'?'All marketplaces':value==='SHOPIFY'?'Shopify':'Amazon');o.value=value;select.append(o);}select.onchange=()=>{provider=select.value;choices.querySelectorAll('[data-picture-channel]').forEach(b=>b.hidden=provider!=='ALL'&&b.dataset.pictureChannel!==provider);selected=null;use.disabled=true;choices.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed','false'));place();};label.append(select);menu.insertBefore(label,choices);}
+    for(const candidate of result.candidates){const option=node('button','catalog-picture-choice');option.type='button';option.dataset.pictureChannel=candidate.channel||'AMAZON';option.setAttribute('aria-pressed','false');const image=node('img');image.src=candidate.imageUrl;image.alt='';image.loading='lazy';const copy=node('span');copy.append(node('strong','',candidate.sku),node('small','',(candidate.channel==='SHOPIFY'?'Shopify · '+candidate.reference:candidate.asin)+(candidate.mixedBundle?' · Mixed-product bundle — review before choosing':'')));option.append(image,copy);option.onclick=()=>{selected=candidate.id;choices.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===option)));use.disabled=false;};choices.append(option);}
+    if(!result.candidates.length)choices.append(node('p','order-picture-status','No saved marketplace pictures are linked to this product. Upload a picture or check its SKU mapping.'));
     sync.disabled=!result.canSync;sync.querySelector('small').textContent=result.canSync?'Fetch the latest main image for a mapped SKU':result.syncUnavailable;place();
    }).catch(e=>status.textContent=e.message);
   }

@@ -149,6 +149,7 @@ public class InventoryRepository {
             case "RESERVATION_RELEASED" -> "Reservation released";
             case "ORDER_STATUS_REVIEW" -> "Order status review";
             case "RETURN" -> "Customer return";
+            case "PACKING_REVERSAL" -> "Packing undone";
             case "ADJUSTMENT" -> "Adjustment";
             case "TRANSFER" -> "Transfer";
             case "REMOVAL" -> "Removed";
@@ -160,12 +161,20 @@ public class InventoryRepository {
             case "RECEIVING" -> "Invoice receiving";
             case "AMAZON_ORDER" -> "Amazon order";
             case "WALMART_ORDER" -> "Walmart order";
+            case "SHOPIFY_ORDER" -> "Shopify order";
             case "MANUAL" -> "Manual update";
             case "ADJUSTMENT" -> "Inventory adjustment";
             case "PHYSICAL_COUNT" -> "Physical count";
             case "LOCATION_TRANSFER" -> "Location transfer";
             case "RECEIVING_CORRECTION" -> "Receiving correction";
             default -> title(sourceType);
+        };}
+        /** Source type is authoritative; never infer a marketplace from notes or a matching SKU. */
+        public String sourceLogo(){return switch(sourceType==null?"":sourceType){
+            case "AMAZON_ORDER" -> "/images/platform/table/amazon.com-logo.png";
+            case "SHOPIFY_ORDER" -> "/images/channels/shopify-bag.png";
+            case "WALMART_ORDER" -> "/images/channels/walmart.svg";
+            default -> null;
         };}
         public String description(){
             if(java.util.Set.of("SHARED_STOCK_SALES","RESERVATION_RELEASED","ORDER_STATUS_REVIEW").contains(entryType))return notes;
@@ -174,6 +183,7 @@ public class InventoryRepository {
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())
                 return quantity.signum()<0?"Physical count reduced the recorded stock.":"Physical count confirmed stock on hand.";
             if("AMAZON_ORDER".equals(sourceType))return "Stock left the warehouse for this Amazon order.";
+            if("SHOPIFY_ORDER".equals(sourceType)){if("PACKING_REVERSAL".equals(entryType))return "Local packing undone; stock returned to the previous location.";if(notes!=null&&notes.startsWith("Local packing handoff"))return "Packed locally — awaiting pickup. Shopify fulfillment is unchanged.";return "Stock left the warehouse for this Shopify order.";}
             if("WALMART_ORDER".equals(sourceType))return "Stock left the warehouse for this Walmart order.";
             if("LOCATION_TRANSFER".equals(sourceType))
                 return quantity.signum()<0?"Moved out to another storage location.":"Moved in from another storage location.";
@@ -190,6 +200,7 @@ public class InventoryRepository {
         public String sourceUrl(){
             if(sourceReference==null||sourceReference.isBlank())return null;
             if("AMAZON_ORDER".equals(sourceType))return "/app/orders?q="+sourceReference;
+            if("SHOPIFY_ORDER".equals(sourceType))return "/app/orders?q="+java.net.URLEncoder.encode(sourceReference,java.nio.charset.StandardCharsets.UTF_8);
             if("PHYSICAL_COUNT".equals(sourceType))return "/app/inventory/physical-counts/history?importId="+sourceReference;
             return null;
         }
@@ -237,6 +248,32 @@ public class InventoryRepository {
     @Transactional(readOnly=true)
     public List<InventoryView> inventory(UUID tenantId){return inventory(tenantId,null);}
 
+    public record ReceiptPosition(UUID locationId,LocalDate expirationDate) {}
+    static final String LAST_SUCCESSFUL_RECEIPT_SQL="""
+        SELECT ledger.location_id,ledger.expiration_date,max(receipt.received_at) last_received
+        FROM inventory_ledger_entries ledger
+        JOIN receiving_line_receipts receipt ON receipt.tenant_id=ledger.tenant_id AND receipt.id=ledger.source_id
+          AND receipt.location_id=ledger.location_id AND receipt.expiration_date IS NOT DISTINCT FROM ledger.expiration_date
+        JOIN purchase_order_items item ON item.tenant_id=receipt.tenant_id AND item.id=receipt.purchase_order_item_id
+          AND item.account_catalog_item_id=ledger.account_catalog_item_id
+        WHERE ledger.tenant_id=? AND ledger.account_catalog_item_id=?
+          AND ledger.entry_type='RECEIPT' AND ledger.quantity>0 AND ledger.source_type='RECEIVING'
+          AND receipt.voided_at IS NULL AND receipt.total_each_quantity>0
+          AND receipt.disposition IN ('SELLABLE','SOON_EXPIRED','EXPIRED','OVER_SHIPPED')
+        GROUP BY ledger.location_id,ledger.expiration_date
+        """;
+    /** Last actual, non-void physical receipt for the exact account item/location/expiry position. */
+    @Transactional(readOnly=true)
+    public Map<ReceiptPosition,Instant> lastSuccessfulReceiptDates(UUID tenantId,UUID itemId){
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        return jdbc.query(LAST_SUCCESSFUL_RECEIPT_SQL,rs->{
+            var dates=new LinkedHashMap<ReceiptPosition,Instant>();
+            while(rs.next())dates.put(new ReceiptPosition(rs.getObject("location_id",UUID.class),rs.getObject("expiration_date",LocalDate.class)),rs.getTimestamp("last_received").toInstant());
+            return dates;
+        },tenantId,itemId);
+    }
+    static String receiptDateDisplay(Instant date){return date==null?"Not recorded":LEDGER_TIME.format(date.atZone(ZoneId.systemDefault()));}
+
     @Transactional(readOnly=true)
     public List<InventoryView> inventory(UUID tenantId,List<UUID> itemIds){
         String filter=itemIds==null?null:"{"+String.join(",",itemIds.stream().map(UUID::toString).toList())+"}";
@@ -260,11 +297,11 @@ public class InventoryRepository {
                 SELECT reservation.tenant_id,reservation.account_catalog_item_id,reservation.location_id,reservation.expiration_date,
                        sum(reservation.quantity) quantity
                 FROM order_inventory_reservations reservation
-                JOIN amazon_orders orders ON orders.tenant_id=reservation.tenant_id
+                LEFT JOIN amazon_orders orders ON orders.tenant_id=reservation.tenant_id
                   AND orders.marketplace_connection_id=reservation.marketplace_connection_id
                   AND orders.amazon_order_id=reservation.amazon_order_id
                 WHERE reservation.tenant_id=? AND (?::uuid[] IS NULL OR reservation.account_catalog_item_id=ANY(?::uuid[])) AND reservation.status='ACTIVE'
-                  AND %s
+                  AND (reservation.shopify_order_line_id IS NOT NULL OR (%s))
                 GROUP BY reservation.tenant_id,reservation.account_catalog_item_id,reservation.location_id,reservation.expiration_date
             ), uncovered_order_demand AS MATERIALIZED (
                 SELECT orders.tenant_id,component.account_catalog_item_id,location.id location_id,
@@ -668,13 +705,13 @@ public class InventoryRepository {
             """,BigDecimal.class,tenantId,itemId,resolvedLocation,expirationDate);
         BigDecimal reserved=jdbc.queryForObject("""
             SELECT coalesce(sum(reservation.quantity),0) FROM order_inventory_reservations reservation
-            JOIN amazon_orders orders ON orders.tenant_id=reservation.tenant_id
+            LEFT JOIN amazon_orders orders ON orders.tenant_id=reservation.tenant_id
               AND orders.marketplace_connection_id=reservation.marketplace_connection_id
               AND orders.amazon_order_id=reservation.amazon_order_id
             WHERE reservation.tenant_id=? AND reservation.account_catalog_item_id=? AND reservation.location_id=?
               AND reservation.expiration_date IS NOT DISTINCT FROM ? AND reservation.status='ACTIVE'
               AND %s
-            """.formatted(RESERVABLE_ORDER_STATUS_SQL),BigDecimal.class,tenantId,itemId,resolvedLocation,expirationDate);
+            """.formatted("(reservation.shopify_order_line_id IS NOT NULL OR ("+RESERVABLE_ORDER_STATUS_SQL+"))"),BigDecimal.class,tenantId,itemId,resolvedLocation,expirationDate);
         if(quantityChange.signum()<0&&onHand.add(quantityChange).compareTo(reserved)<0)
             throw new IllegalArgumentException("This would reduce on-hand below reserved orders. Release or ship those orders first.");
         UUID sourceId=UUID.randomUUID();
@@ -722,13 +759,13 @@ public class InventoryRepository {
         if(onHand==null||onHand.signum()<=0)throw new IllegalArgumentException("This inventory position is no longer available.");
         BigDecimal reserved=jdbc.queryForObject("""
             SELECT coalesce(sum(reservation.quantity),0) FROM order_inventory_reservations reservation
-            JOIN amazon_orders orders ON orders.tenant_id=reservation.tenant_id
+            LEFT JOIN amazon_orders orders ON orders.tenant_id=reservation.tenant_id
               AND orders.marketplace_connection_id=reservation.marketplace_connection_id
               AND orders.amazon_order_id=reservation.amazon_order_id
             WHERE reservation.tenant_id=? AND reservation.account_catalog_item_id=? AND reservation.location_id=?
               AND reservation.expiration_date IS NOT DISTINCT FROM ? AND reservation.status='ACTIVE'
               AND %s
-            """.formatted(RESERVABLE_ORDER_STATUS_SQL),BigDecimal.class,tenantId,itemId,sourceLocationId,expirationDate);
+            """.formatted("(reservation.shopify_order_line_id IS NOT NULL OR ("+RESERVABLE_ORDER_STATUS_SQL+"))"),BigDecimal.class,tenantId,itemId,sourceLocationId,expirationDate);
         BigDecimal available=onHand.subtract(reserved==null?BigDecimal.ZERO:reserved).max(BigDecimal.ZERO);
         if(quantity.compareTo(available)>0)
             throw new IllegalArgumentException("Only "+available.setScale(0,java.math.RoundingMode.DOWN).toPlainString()+" unreserved each can move. The remaining stock is committed to open orders.");
@@ -1073,6 +1110,9 @@ public class InventoryRepository {
                 AND document.id=po.receiving_document_id
             LEFT JOIN amazon_orders amazon_order ON ledger.source_type='AMAZON_ORDER'
                 AND amazon_order.tenant_id=ledger.tenant_id AND amazon_order.id=ledger.source_id
+            LEFT JOIN shopify_orders shopify_order ON ledger.source_type='SHOPIFY_ORDER'
+                AND shopify_order.tenant_id=ledger.tenant_id AND shopify_order.marketplace_connection_id=ledger.marketplace_connection_id
+                AND shopify_order.id=ledger.source_id
             LEFT JOIN physical_count_imports physical_count ON ledger.source_type='PHYSICAL_COUNT'
                 AND physical_count.tenant_id=ledger.tenant_id AND physical_count.id=ledger.source_id
             LEFT JOIN app_users actor ON actor.id=ledger.created_by
@@ -1081,7 +1121,7 @@ public class InventoryRepository {
                 coalesce(item.account_sku,'') ILIKE ? OR
                 coalesce(identifier.identifier_value,'') ILIKE ? OR coalesce(ledger.entry_type,'') ILIKE ? OR
                 coalesce(ledger.source_type,'') ILIKE ? OR coalesce(po.po_number,'') ILIKE ? OR
-                coalesce(document.document_number,'') ILIKE ? OR coalesce(amazon_order.amazon_order_id,'') ILIKE ? OR
+                coalesce(document.document_number,'') ILIKE ? OR coalesce(amazon_order.amazon_order_id,shopify_order.order_name,'') ILIKE ? OR
                 coalesce(physical_count.original_filename,'') ILIKE ? OR
                 coalesce(ledger.notes,'') ILIKE ? OR coalesce(actor.email,'') ILIKE ? OR
                 EXISTS (SELECT 1 FROM marketplace_sku_mappings mapping WHERE mapping.tenant_id=item.tenant_id
@@ -1098,7 +1138,7 @@ public class InventoryRepository {
             SELECT ledger.id,item.id,ledger.occurred_at,coalesce(item.display_name,product.canonical_name),
                    item.account_sku,identifier.identifier_value,ledger.entry_type,ledger.quantity,
                    ledger.expiration_date,ledger.unit_cost,ledger.currency,ledger.source_type,
-                   coalesce(po.po_number,document.document_number,amazon_order.amazon_order_id,physical_count.id::text),
+                   coalesce(po.po_number,document.document_number,amazon_order.amazon_order_id,shopify_order.order_name,physical_count.id::text),
                    ledger.notes,actor.email,ledger.cost_status
             """+joins+" ORDER BY ledger.occurred_at DESC,ledger.created_at DESC,ledger.id DESC LIMIT ? OFFSET ?",
             (rs,row)->new LedgerView(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getTimestamp(3).toInstant(),rs.getString(4),
@@ -1131,7 +1171,7 @@ public class InventoryRepository {
             SELECT ledger.id,item.id,ledger.occurred_at,coalesce(item.display_name,product.canonical_name),
                    item.account_sku,identifier.identifier_value,ledger.entry_type,ledger.quantity,
                    ledger.expiration_date,ledger.unit_cost,ledger.currency,ledger.source_type,
-                   coalesce(po.po_number,document.document_number,amazon_order.amazon_order_id,physical_count.id::text),
+                   coalesce(po.po_number,document.document_number,amazon_order.amazon_order_id,shopify_order.order_name,physical_count.id::text),
                    ledger.notes,actor.email,ledger.cost_status
             FROM movements ledger
             JOIN account_catalog_items item ON item.tenant_id=ledger.tenant_id AND item.id=ledger.account_catalog_item_id
@@ -1147,6 +1187,9 @@ public class InventoryRepository {
                 AND document.id=po.receiving_document_id
             LEFT JOIN amazon_orders amazon_order ON ledger.source_type='AMAZON_ORDER'
                 AND amazon_order.tenant_id=ledger.tenant_id AND amazon_order.id=ledger.source_id
+            LEFT JOIN shopify_orders shopify_order ON ledger.source_type='SHOPIFY_ORDER'
+                AND shopify_order.tenant_id=ledger.tenant_id AND shopify_order.marketplace_connection_id=ledger.marketplace_connection_id
+                AND shopify_order.id=ledger.source_id
             LEFT JOIN physical_count_imports physical_count ON ledger.source_type='PHYSICAL_COUNT'
                 AND physical_count.tenant_id=ledger.tenant_id AND physical_count.id=ledger.source_id
             LEFT JOIN app_users actor ON actor.id=ledger.created_by
@@ -1162,7 +1205,7 @@ public class InventoryRepository {
     @Transactional(readOnly=true)
     public List<ReservationView> reservations(UUID tenantId,UUID itemId,LocalDate expirationDate,UUID locationId){
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
-        return jdbc.query("""
+        var result=new java.util.ArrayList<>(jdbc.query("""
             SELECT reservation.amazon_order_id,orders.order_status,item.seller_sku,item.quantity_ordered,
                    coalesce(component.quantity,CASE WHEN item.quantity_ordered>0
                      THEN totals.quantity/item.quantity_ordered ELSE totals.quantity END),
@@ -1203,7 +1246,30 @@ public class InventoryRepository {
             """.formatted(LOCAL_ORDER_DEMAND_SQL),(rs,row)->new ReservationView(rs.getString(1),rs.getString(2),rs.getString(3),rs.getInt(4),
                 rs.getBigDecimal(5),rs.getBigDecimal(6),rs.getBigDecimal(7),rs.getBigDecimal(8),
                 rs.getObject(9,LocalDate.class),rs.getString(10),rs.getString(11),rs.getTimestamp(12).toInstant()),
-            tenantId,itemId,expirationDate,expirationDate,locationId,locationId);
+            tenantId,itemId,expirationDate,expirationDate,locationId,locationId));
+        result.addAll(jdbc.query("""
+            SELECT o.order_name,'Shopify · '||o.fulfillment_status,l.seller_sku,l.ordered_quantity,c.quantity,
+                sum(r.quantity),c.quantity*l.reserve_units,greatest(c.quantity*l.reserve_units-totals.quantity,0),
+                r.expiration_date,location.code,location.name,min(r.created_at)
+            FROM order_inventory_reservations r
+            JOIN shopify_order_lines l ON l.tenant_id=r.tenant_id AND l.marketplace_connection_id=r.marketplace_connection_id AND l.id=r.shopify_order_line_id
+            JOIN shopify_orders o ON o.tenant_id=l.tenant_id AND o.marketplace_connection_id=l.marketplace_connection_id AND o.id=l.order_id
+            JOIN shopify_order_components c ON c.tenant_id=r.tenant_id AND c.marketplace_connection_id=r.marketplace_connection_id
+                AND c.order_line_id=r.shopify_order_line_id AND c.account_catalog_item_id=r.account_catalog_item_id
+            JOIN warehouse_locations location ON location.tenant_id=r.tenant_id AND location.id=r.location_id
+            JOIN LATERAL(SELECT sum(quantity) quantity FROM order_inventory_reservations allr WHERE allr.tenant_id=r.tenant_id
+                AND allr.marketplace_connection_id=r.marketplace_connection_id AND allr.shopify_order_line_id=r.shopify_order_line_id
+                AND allr.account_catalog_item_id=r.account_catalog_item_id AND allr.status='ACTIVE') totals ON true
+            WHERE r.tenant_id=? AND r.account_catalog_item_id=? AND r.status='ACTIVE'
+                AND (?::date IS NULL OR r.expiration_date IS NOT DISTINCT FROM ?::date)
+                AND (?::uuid IS NULL OR r.location_id=?::uuid)
+            GROUP BY o.order_name,o.fulfillment_status,l.seller_sku,l.ordered_quantity,c.quantity,l.reserve_units,
+                totals.quantity,r.expiration_date,location.code,location.name
+            """,(rs,row)->new ReservationView(rs.getString(1),rs.getString(2),rs.getString(3),rs.getInt(4),rs.getBigDecimal(5),
+                rs.getBigDecimal(6),rs.getBigDecimal(7),rs.getBigDecimal(8),rs.getObject(9,LocalDate.class),rs.getString(10),rs.getString(11),rs.getTimestamp(12).toInstant()),
+            tenantId,itemId,expirationDate,expirationDate,locationId,locationId));
+        result.sort(java.util.Comparator.comparing(ReservationView::reservedAt).thenComparing(ReservationView::orderId));
+        return result;
     }
     private static String clean(String value){return value==null||value.isBlank()?null:value.trim();}
     private record ProductReceiptTarget(boolean expirationRequired,String currency,BigDecimal unitCost){}

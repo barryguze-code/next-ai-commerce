@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class ProfitController {
     private final ProfitRepository profit;private final ProfitCostRepository costs;
     private final ProfitPricePublisher prices;
+    @org.springframework.beans.factory.annotation.Autowired private ShopifyOrderProfitRepository shopify;
     public ProfitController(ProfitRepository profit,ProfitCostRepository costs,ProfitPricePublisher prices){this.profit=profit;this.costs=costs;this.prices=prices;}
     @GetMapping("/price-support") @ResponseBody
     Map<String,Boolean> priceSupport(HttpSession session,@RequestParam(required=false) UUID connection){tenant(session);return Map.of("enabled",prices.available(store(session,connection)));}
@@ -45,6 +46,8 @@ public class ProfitController {
         UUID tenant=tenant(session),store=store(session,connection);
         if("SKU".equals(kind))return profit.skus(tenant,store,key);
         if("ORDER".equals(kind))return profit.orders(tenant,store,key);
+        if("SHOPIFY_ORDER".equals(kind))return shopify.orders(tenant,store,key);
+        if("SHOPIFY_SKU".equals(kind))return shopify.skus(tenant,store,key);
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Unknown profit view");
     }
     @GetMapping("/rates") @ResponseBody
@@ -67,6 +70,13 @@ public class ProfitController {
         edit(auth,model);if(change.packages()==null)profit.saveSku(tenant(session),store(session,change.connection()),change.key(),change.packageType(),change.otherCost());
         else profit.saveSku(tenant(session),store(session,change.connection()),change.key(),change.packageType(),change.otherCost(),change.packages());
         return Map.of("message","Cost defaults saved. Amazon price is unchanged.");
+    }
+    public record ShopifyOtherCostChange(UUID connection,List<ShopifyOrderProfitRepository.OtherCostChange> changes,String currency){}
+    @PostMapping("/shopify-other-cost") @ResponseBody
+    Map<String,String> shopifyOtherCost(HttpSession session,Authentication auth,Model model,@RequestBody ShopifyOtherCostChange change){
+        edit(auth,model);
+        shopify.saveOtherCosts(tenant(session),store(session,change.connection()),change.changes(),change.currency(),auth.getName());
+        return Map.of("message","Planning cost saved. Shopify prices and inventory are unchanged.");
     }
     @GetMapping("/defaults") @ResponseBody
     List<ProfitRepository.Defaults> defaults(HttpSession session,@RequestParam List<String> sku,@RequestParam(required=false) UUID connection){

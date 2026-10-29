@@ -24,3 +24,5 @@
 @media(hover:none){.order-picture-edit{opacity:1}}
 @media(max-width:760px){.order-list.table-widget .order-product-stage{width:80px;height:88px;flex-basis:80px;margin-left:0}}
 @media(prefers-reduced-motion:reduce){.order-picture-edit{transition:none}}
+
+.order-shipping-choice .order-picture-symbol{width:48px}.order-shipping-choice .order-picture-symbol img{width:48px;height:26px;object-fit:contain;border-radius:3px;background:#fff}.order-shipping-choice img[src*="fedex-official"]{box-sizing:border-box;background:#4d148c!important;padding:3px}

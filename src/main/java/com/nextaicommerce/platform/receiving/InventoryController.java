@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
@@ -65,6 +66,7 @@ public class InventoryController {
         var products=inventory.adjustmentItems(tenantId,List.of(itemId));
         if(products.isEmpty())return ResponseEntity.notFound().build();
         var product=products.getFirst();
+        var lastReceipts=inventory.lastSuccessfulReceiptDates(tenantId,itemId);
         var rows=inventory.inventory(tenantId,List.of(itemId));var positions=new java.util.ArrayList<Map<String,String>>();
         for(var row:rows){
             var data=new LinkedHashMap<String,String>();
@@ -73,14 +75,14 @@ public class InventoryController {
             data.put("image","/app/catalog/products/"+itemId+"/image");data.put("location",row.locationId().toString());
             data.put("locationCode",row.locationCode());data.put("expiration",row.expirationDate()==null?"":row.expirationDate().toString());
             data.put("onHand",row.quantityUnits());data.put("reserved",row.reservedUnits());data.put("available",row.availableUnits());
-            data.put("received",row.initiallyReceivedUnits());data.put("firstReceived",row.firstReceivedDisplay());data.put("lastMovement",row.lastMovementDisplay());
+            data.put("received",row.initiallyReceivedUnits());data.put("lastReceived",InventoryRepository.receiptDateDisplay(lastReceipts.get(new InventoryRepository.ReceiptPosition(row.locationId(),row.expirationDate()))));data.put("firstReceived",row.firstReceivedDisplay());data.put("lastMovement",row.lastMovementDisplay());
             data.put("totalAvailable",row.totalAvailableUnits());positions.add(data);
         }
         if(positions.isEmpty()){
             var data=new LinkedHashMap<String,String>();data.put("item",itemId.toString());data.put("product",product.name());data.put("sku",product.itemCode()==null?"":product.itemCode());
             data.put("image","/app/catalog/products/"+itemId+"/image");data.put("location","");data.put("locationCode","");data.put("expiration","");
             for(String key:List.of("onHand","reserved","available","received","totalAvailable"))data.put(key,"0");
-            data.put("firstReceived","Not recorded");data.put("lastMovement","See movements below");positions.add(data);
+            data.put("lastReceived","Not recorded");data.put("firstReceived","Not recorded");data.put("lastMovement","See movements below");positions.add(data);
         }
         return ResponseEntity.ok(new HistoryPanelContext(positions,catalog.getObject().listLocations(tenantId)));
     }
@@ -248,9 +250,12 @@ public class InventoryController {
     @PostMapping("/app/inventory/locations") String moveLocation(Authentication auth,HttpSession session,
             @RequestParam UUID itemId,@RequestParam UUID sourceLocationId,@RequestParam UUID destinationLocationId,
             @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate expirationDate,
-            @RequestParam BigDecimal quantity,@RequestParam(defaultValue="false") boolean makeDefault,RedirectAttributes redirect){
+            @RequestParam BigDecimal quantity,@RequestParam(defaultValue="false") boolean makeDefault,
+            @RequestHeader(value="X-Inventory-Transfer-Request",required=false) UUID transferRequest,RedirectAttributes redirect){
+        if(transferRequest!=null)redirect.addFlashAttribute("inventoryTransferRequest",transferRequest.toString());
         try{
             inventory.moveInventoryPosition(tenant(session),auth.getName(),itemId,sourceLocationId,destinationLocationId,expirationDate,quantity,makeDefault);
+            if(transferRequest!=null)redirect.addFlashAttribute("inventoryTransferConfirmed",true);
             redirect.addFlashAttribute("inventorySuccess",makeDefault
                 ?quantity.stripTrailingZeros().toPlainString()+" each moved and the product default location was updated."
                 :quantity.stripTrailingZeros().toPlainString()+" each moved. Its ledger history was preserved.");

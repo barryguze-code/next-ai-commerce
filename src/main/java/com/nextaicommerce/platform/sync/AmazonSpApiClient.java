@@ -35,6 +35,8 @@ public class AmazonSpApiClient {
     private boolean externalEnabled=true;
     @org.springframework.beans.factory.annotation.Value("${app.amazon.write-enabled:true}")
     private boolean writeEnabled=true;
+    @org.springframework.beans.factory.annotation.Value("${app.fedex.amazon-sandbox-enabled:false}")
+    private boolean localShippingRecipientEnabled;
 
     public AmazonSpApiClient(MarketplaceCredentialService credentialService, ObjectMapper json) {
         this.credentialService = credentialService;
@@ -48,6 +50,16 @@ public class AmazonSpApiClient {
     /** Dedicated PII transport: no raw archive, response-bearing exception cause, or body logging. */
     public com.nextaicommerce.platform.shipping.OrderRecipient recipient(UUID tenant,UUID store,String endpoint,String order) {
         if(!externalEnabled)throw new AmazonApiException(503,null,"Recipient retrieval is disabled.");
+        return retrieveRecipient(tenant,store,endpoint,order);
+    }
+    /** Explicit local shipping read only; never enables the general API transport or collectors. */
+    public com.nextaicommerce.platform.shipping.OrderRecipient localShippingRecipient(UUID tenant,UUID store,String endpoint,String order){
+        if(!localShippingRecipientEnabled||writeEnabled)throw new IllegalStateException("Local Amazon shipping recipient reads are disabled.");
+        // Fail locally and clearly before OAuth when this specific connection has no credentials.
+        credentialService.credentials(tenant,store);
+        return retrieveRecipient(tenant,store,endpoint,order);
+    }
+    private com.nextaicommerce.platform.shipping.OrderRecipient retrieveRecipient(UUID tenant,UUID store,String endpoint,String order){
         if(!java.util.Set.of(NA_ENDPOINT,"https://sellingpartnerapi-eu.amazon.com","https://sellingpartnerapi-fe.amazon.com").contains(endpoint)
             ||!order.matches("[0-9]{3}-[0-9]{7}-[0-9]{7}"))throw new IllegalArgumentException("Invalid recipient request.");
         try {

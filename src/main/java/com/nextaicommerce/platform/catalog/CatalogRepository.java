@@ -74,10 +74,13 @@ public class CatalogRepository {
         return jdbc.query(GLOBAL_CHOICE_SELECT+"""
             AND (p.canonical_name ILIKE ? OR p.brand ILIKE ? OR EXISTS(
               SELECT 1 FROM global_product_identifiers i WHERE i.global_product_id=p.id
-                AND (i.identifier_value ILIKE ? OR i.identity_key=catalog_identifier_key('GTIN',?))))
+                AND (i.identifier_value ILIKE ? OR i.identity_key=catalog_identifier_key('GTIN',?)))
+              OR EXISTS(SELECT 1 FROM account_catalog_items own WHERE own.tenant_id=? AND own.global_product_id=p.id
+                AND (own.account_sku ILIKE ? OR EXISTS(SELECT 1 FROM vendor_catalog_offers offer WHERE offer.tenant_id=own.tenant_id
+                  AND offer.account_catalog_item_id=own.id AND offer.effective_to IS NULL AND offer.vendor_item_code ILIKE ?))))
             ORDER BY CASE WHEN EXISTS(SELECT 1 FROM global_product_identifiers i WHERE i.global_product_id=p.id
               AND i.identity_key=catalog_identifier_key('GTIN',?)) THEN 0 ELSE 1 END,lower(p.canonical_name),p.id LIMIT 20
-            """,CatalogRepository::globalChoice,tenantId,pattern,pattern,pattern,text,text);
+            """,CatalogRepository::globalChoice,tenantId,pattern,pattern,pattern,text,tenantId,pattern,pattern,text);
     }
     @Transactional(readOnly=true)
     public ProductImage sharedGlobalImage(UUID productId){
@@ -169,7 +172,11 @@ public class CatalogRepository {
     public record LocationView(UUID id,String code,String name,String status) {}
     public record MarketplaceSkuRef(UUID itemId,String sku,BigDecimal quantity,String status,
             String channel,Integer marketplaceQuantity,String fulfillment,String asin,
-            BigDecimal price,String currency,String amazonDomain,UUID connectionId,BigDecimal buyBoxPrice,String itemCode) {
+            BigDecimal price,String currency,String amazonDomain,UUID connectionId,BigDecimal buyBoxPrice,String itemCode,String shopifyAdmin,String shopifyStorefront,BigDecimal warehouseAvailable,UUID shopifyVariantId) {
+        public MarketplaceSkuRef(UUID itemId,String sku,BigDecimal quantity,String status,String channel,Integer marketplaceQuantity,String fulfillment,String asin,BigDecimal price,String currency,String amazonDomain,UUID connectionId,BigDecimal buyBoxPrice,String itemCode,String shopifyAdmin,String shopifyStorefront){this(itemId,sku,quantity,status,channel,marketplaceQuantity,fulfillment,asin,price,currency,amazonDomain,connectionId,buyBoxPrice,itemCode,shopifyAdmin,shopifyStorefront,null,null);}
+        public MarketplaceSkuRef(UUID itemId,String sku,BigDecimal quantity,String status,String channel,Integer marketplaceQuantity,String fulfillment,String asin,BigDecimal price,String currency,String amazonDomain,UUID connectionId,BigDecimal buyBoxPrice,String itemCode){
+            this(itemId,sku,quantity,status,channel,marketplaceQuantity,fulfillment,asin,price,currency,amazonDomain,connectionId,buyBoxPrice,itemCode,null,null);
+        }
         public MarketplaceSkuRef(UUID itemId,String sku,BigDecimal quantity,String status,String channel,Integer marketplaceQuantity,String fulfillment,String asin,BigDecimal price,String currency,String amazonDomain){
             this(itemId,sku,quantity,status,channel,marketplaceQuantity,fulfillment,asin,price,currency,amazonDomain,null,null,null);
         }
@@ -178,13 +185,54 @@ public class CatalogRepository {
         }
     }
     public record ProductImage(byte[] bytes,String contentType) {}
+    private com.nextaicommerce.platform.shopify.ShopifyOrderInventory warehouseInventory;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    void configureWarehouseInventory(com.nextaicommerce.platform.shopify.ShopifyOrderInventory inventory){this.warehouseInventory=inventory;}
+    private record RelatedMapping(UUID mappingId,MarketplaceSkuRef row) {}
+    private List<MarketplaceSkuRef> relatedWarehouseAvailability(UUID tenant,List<RelatedMapping> related){
+        var ids=related.stream().filter(r->"SHOPIFY".equals(r.row().channel())).map(RelatedMapping::mappingId).distinct().toList();
+        if(ids.isEmpty()||warehouseInventory==null)return related.stream().map(RelatedMapping::row).toList();
+        var args=new java.util.ArrayList<Object>();args.add(tenant);args.addAll(ids);
+        var components=new java.util.LinkedHashMap<UUID,Map<UUID,BigDecimal>>();
+        jdbc.query("""
+            SELECT m.id,p.account_catalog_item_id,p.quantity FROM marketplace_sku_mappings m
+            JOIN shopify_variants v ON v.tenant_id=m.tenant_id AND v.marketplace_connection_id=m.marketplace_connection_id
+              AND v.id=m.shopify_variant_id AND v.mapping_hash=m.shopify_mapping_hash
+            JOIN LATERAL (
+              SELECT account_catalog_item_id,quantity FROM marketplace_sku_mapping_components c
+              WHERE c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id
+              UNION ALL SELECT m.account_catalog_item_id,greatest(m.quantity_per_marketplace_unit,1)
+              WHERE m.account_catalog_item_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM marketplace_sku_mapping_components c WHERE c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id)
+            ) p ON true
+            WHERE m.tenant_id=? AND m.status='ACTIVE' AND m.id IN (
+            """+String.join(",",java.util.Collections.nCopies(ids.size(),"?"))+")",rs->{
+                var parts=components.computeIfAbsent(rs.getObject(1,UUID.class),k->new java.util.LinkedHashMap<>());
+                UUID item=rs.getObject(2,UUID.class);BigDecimal quantity=rs.getBigDecimal(3);
+                addWarehousePart(parts,item,quantity);
+            },args.toArray());
+        var available=warehouseInventory.availability(tenant,components.values().stream().flatMap(m->m.keySet().stream()).filter(java.util.Objects::nonNull).distinct().toList());
+        return related.stream().map(ref->{var r=ref.row();BigDecimal units=null;
+            if("SHOPIFY".equals(r.channel()))units=mappedWarehouseUnits(components.get(ref.mappingId()),available);
+            return new MarketplaceSkuRef(r.itemId(),r.sku(),r.quantity(),r.status(),r.channel(),r.marketplaceQuantity(),r.fulfillment(),r.asin(),r.price(),r.currency(),r.amazonDomain(),r.connectionId(),r.buyBoxPrice(),r.itemCode(),r.shopifyAdmin(),r.shopifyStorefront(),units,r.shopifyVariantId());
+        }).toList();
+    }
+    static void addWarehousePart(Map<UUID,BigDecimal> parts,UUID item,BigDecimal quantity){parts.merge(item,quantity==null?BigDecimal.ZERO:quantity,(left,right)->left.signum()<=0||right.signum()<=0?BigDecimal.ZERO:left.add(right));}
+    static BigDecimal mappedWarehouseUnits(Map<UUID,BigDecimal> parts,Map<UUID,BigDecimal> available){
+        if(parts==null||parts.isEmpty())return null;BigDecimal units=null;
+        for(var p:parts.entrySet()){if(p.getKey()==null||p.getValue()==null||p.getValue().signum()<=0)return null;
+            BigDecimal count=available.getOrDefault(p.getKey(),BigDecimal.ZERO).divideToIntegralValue(p.getValue());
+            units=units==null?count:units.min(count);
+        }return units;
+    }
+
 
     @Transactional(readOnly=true)
     public List<MarketplaceSkuRef> listMarketplaceSkus(UUID tenantId,List<UUID> itemIds){
         setTenant(tenantId);if(itemIds==null||itemIds.isEmpty())return List.of();
         String placeholders=String.join(",",java.util.Collections.nCopies(itemIds.size(),"?"));
         List<Object> parameters=new java.util.ArrayList<>();parameters.add(tenantId);parameters.addAll(itemIds);
-        return jdbc.query("""
+        var related=jdbc.query("""
             WITH effective_component AS (
               SELECT component.tenant_id,component.marketplace_sku_mapping_id,
                      component.account_catalog_item_id,component.quantity
@@ -200,30 +248,35 @@ public class CatalogRepository {
                   WHERE existing.tenant_id=mapping.tenant_id
                     AND existing.marketplace_sku_mapping_id=mapping.id)
             )
-            SELECT component.account_catalog_item_id,mapping.marketplace_sku,component.quantity,
-              coalesce(listing.platform_status,listing.listing_status,mapping.status),connection.channel,
+            SELECT component.account_catalog_item_id,CASE WHEN connection.channel='SHOPIFY' THEN coalesce(nullif(trim(variant.seller_sku),''),'No SKU') ELSE mapping.marketplace_sku END,component.quantity,
+              coalesce(product.product_status,listing.platform_status,listing.listing_status,mapping.status),connection.channel,
               listing.quantity,listing.fulfillment_channel,coalesce(listing.asin,mapping.asin),
-              listing.price,listing.currency,connection.marketplace_identifier,mapping.marketplace_connection_id,
-              CASE WHEN listing.buy_box_currency=listing.currency THEN listing.buy_box_price END,
+              coalesce(variant.price,listing.price),coalesce(nullif(trim(variant.currency),''),nullif(trim(listing.currency),''),md.currency_code),connection.marketplace_identifier,mapping.marketplace_connection_id,
+              CASE WHEN listing.buy_box_currency=coalesce(nullif(trim(listing.currency),''),md.currency_code) THEN listing.buy_box_price END,
               (SELECT coalesce(o.vendor_item_code,a.account_sku) FROM account_catalog_items a
                LEFT JOIN LATERAL (SELECT vendor_item_code FROM vendor_catalog_offers v WHERE v.tenant_id=a.tenant_id
                  AND v.account_catalog_item_id=a.id AND v.effective_from<=current_date AND (v.effective_to IS NULL OR v.effective_to>=current_date)
                  ORDER BY v.is_default DESC,v.effective_from DESC LIMIT 1) o ON true
-               WHERE a.tenant_id=component.tenant_id AND a.id=component.account_catalog_item_id)
+               WHERE a.tenant_id=component.tenant_id AND a.id=component.account_catalog_item_id),product.product_gid,variant.variant_gid,product.storefront_url,mapping.id,variant.id
             FROM effective_component component
             JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=component.tenant_id
               AND mapping.id=component.marketplace_sku_mapping_id
             JOIN marketplace_connections connection ON connection.tenant_id=mapping.tenant_id
               AND connection.id=mapping.marketplace_connection_id
+            LEFT JOIN marketplace_definitions md ON md.channel=connection.channel AND md.marketplace_identifier=connection.marketplace_identifier
             LEFT JOIN amazon_listings listing ON listing.tenant_id=mapping.tenant_id
               AND listing.marketplace_connection_id=mapping.marketplace_connection_id
-              AND upper(listing.seller_sku)=upper(mapping.marketplace_sku)
+              AND upper(listing.seller_sku)=upper(mapping.marketplace_sku) AND connection.channel='AMAZON'
+            LEFT JOIN shopify_variants variant ON variant.tenant_id=mapping.tenant_id AND variant.marketplace_connection_id=mapping.marketplace_connection_id AND variant.id=mapping.shopify_variant_id AND connection.channel='SHOPIFY'
+            LEFT JOIN shopify_products product ON product.tenant_id=variant.tenant_id AND product.marketplace_connection_id=variant.marketplace_connection_id AND product.id=variant.product_id
             WHERE component.tenant_id=? AND mapping.status='ACTIVE'
+              AND (connection.channel<>'SHOPIFY' OR (variant.id IS NOT NULL AND product.id IS NOT NULL AND mapping.shopify_mapping_hash=variant.mapping_hash))
               AND component.account_catalog_item_id IN ("""+placeholders+") ORDER BY upper(mapping.marketplace_sku)",
-            (rs,row)->new MarketplaceSkuRef(rs.getObject(1,UUID.class),rs.getString(2),rs.getBigDecimal(3),
+            (rs,row)->new RelatedMapping(rs.getObject(18,UUID.class),new MarketplaceSkuRef(rs.getObject(1,UUID.class),rs.getString(2),rs.getBigDecimal(3),
                 rs.getString(4),rs.getString(5),(Integer)rs.getObject(6),rs.getString(7),rs.getString(8),
-                rs.getBigDecimal(9),rs.getString(10),com.nextaicommerce.platform.marketplace.MarketplaceLinks.amazonDomain(rs.getString(11)),rs.getObject(12,UUID.class),rs.getBigDecimal(13),rs.getString(14)),
+                rs.getBigDecimal(9),rs.getString(10),com.nextaicommerce.platform.marketplace.MarketplaceLinks.amazonDomain(rs.getString(11)),rs.getObject(12,UUID.class),rs.getBigDecimal(13),rs.getString(14),com.nextaicommerce.platform.marketplace.ShopifySkuRepository.admin(rs.getString(11),rs.getString(15),rs.getString(16)),com.nextaicommerce.platform.shopify.ShopifyCatalogClient.safePublicUrl(rs.getString(17)),null,rs.getObject(19,UUID.class))),
                 java.util.stream.Stream.concat(java.util.stream.Stream.of(tenantId,tenantId),parameters.stream()).toArray());
+        return relatedWarehouseAvailability(tenantId,related);
     }
 
     @Transactional
@@ -262,23 +315,36 @@ public class CatalogRepository {
     public static String globalSort(String sort){return GLOBAL_SORTS.containsKey(sort==null?"":sort)?sort:"product";}
     private static final String GLOBAL_MATCHES="""
         FROM global_catalog_products product WHERE (?='' OR lower(product.canonical_name) LIKE ? OR lower(coalesce(product.brand,'')) LIKE ?
-          OR EXISTS(SELECT 1 FROM global_product_identifiers matched WHERE matched.global_product_id=product.id AND lower(matched.identifier_value) LIKE ?))
+          OR EXISTS(SELECT 1 FROM global_product_identifiers matched WHERE matched.global_product_id=product.id AND lower(matched.identifier_value) LIKE ?)
+          OR EXISTS(SELECT 1 FROM account_catalog_items own WHERE own.tenant_id=CAST(? AS uuid) AND own.global_product_id=product.id
+            AND (lower(coalesce(own.account_sku,'')) LIKE ? OR EXISTS(SELECT 1 FROM vendor_catalog_offers offer
+              WHERE offer.tenant_id=own.tenant_id AND offer.account_catalog_item_id=own.id AND offer.effective_to IS NULL
+                AND lower(offer.vendor_item_code) LIKE ?))))
         """;
     @Transactional(readOnly=true)
     public GlobalProductPage pageGlobalProducts(String search,int page,int size,String sort,String direction){
+        return pageGlobalProducts(null,search,page,size,sort,direction);
+    }
+    @Transactional(readOnly=true)
+    public GlobalProductPage pageGlobalProducts(UUID tenant,String search,int page,int size,String sort,String direction){
+        if(tenant!=null)setTenant(tenant);
         String q=search==null?"":search.trim();if(q.length()>160)q=q.substring(0,160);
         size=com.nextaicommerce.platform.web.TablePaging.size(size);String pattern="%"+q.toLowerCase(java.util.Locale.ROOT)+"%";
-        var parameters=new java.util.ArrayList<Object>(List.of(q,pattern,pattern,pattern));
+        var parameters=new java.util.ArrayList<Object>(java.util.Arrays.asList(q,pattern,pattern,pattern,tenant,pattern,pattern));
         long total=jdbc.queryForObject("SELECT count(*) "+GLOBAL_MATCHES,Long.class,parameters.toArray());
-        page=Math.max(0,Math.min(page,Math.max(1,(int)Math.ceil(total/(double)size))-1));parameters.add(size);parameters.add((long)page*size);
+        page=Math.max(0,Math.min(page,Math.max(1,(int)Math.ceil(total/(double)size))-1));parameters.add(size);parameters.add((long)page*size);parameters.add(tenant);
         String order=GLOBAL_SORTS.get(globalSort(sort))+" "+catalogDirection(direction)+" NULLS LAST,product.id";
         var rows=jdbc.query("WITH selected AS MATERIALIZED (SELECT product.* "+GLOBAL_MATCHES+" ORDER BY "+order+" LIMIT ? OFFSET ?) "+"""
             SELECT product.id,product.canonical_name,product.brand,identifier.identifier_type,identifier.identifier_value,
-                   product.unit_of_measure,product.requires_expiration_date,product.status
+                   product.unit_of_measure,product.requires_expiration_date,product.status,
+                   (SELECT string_agg(DISTINCT code, ' · ' ORDER BY code) FROM account_catalog_items own
+                    LEFT JOIN vendor_catalog_offers offer ON offer.tenant_id=own.tenant_id AND offer.account_catalog_item_id=own.id AND offer.effective_to IS NULL
+                    CROSS JOIN LATERAL (VALUES (own.account_sku),(offer.vendor_item_code)) codes(code)
+                    WHERE own.tenant_id=CAST(? AS uuid) AND own.global_product_id=product.id AND code IS NOT NULL AND code<>'') own_item_codes
             FROM selected product LEFT JOIN LATERAL (SELECT identifier_type,identifier_value FROM global_product_identifiers
               WHERE global_product_id=product.id ORDER BY is_primary DESC,created_at,id LIMIT 1) identifier ON true
             """+" ORDER BY "+order,(rs,row)->new GlobalProductView(rs.getObject("id",UUID.class),rs.getString("canonical_name"),rs.getString("brand"),
-                null,null,rs.getString("identifier_type"),rs.getString("identifier_value"),rs.getString("unit_of_measure"),rs.getBoolean("requires_expiration_date"),rs.getString("status")),parameters.toArray());
+                null,rs.getString("own_item_codes"),rs.getString("identifier_type"),rs.getString("identifier_value"),rs.getString("unit_of_measure"),rs.getBoolean("requires_expiration_date"),rs.getString("status")),parameters.toArray());
         return new GlobalProductPage(rows,total,page,size);
     }
     @Transactional(readOnly=true)
@@ -375,9 +441,9 @@ public class CatalogRepository {
 
     /** Match related identifiers once, not once per catalogue row. Count/page share this query. */
     private record AccountQuery(String prefix,String from,List<Object> parameters) {}
-    private static AccountQuery accountQuery(UUID tenantId,String query){
+    private static AccountQuery accountQuery(UUID tenantId,String query,String status){
         String from=" FROM account_catalog_items item JOIN global_catalog_products product ON product.id=item.global_product_id";
-        if(query.isEmpty())return new AccountQuery("",from+" WHERE item.tenant_id=?",List.of(tenantId));
+        if(query.isEmpty())return new AccountQuery("",from+" WHERE item.tenant_id=?"+("ALL".equals(status)?"":" AND item.status=?"),"ALL".equals(status)?List.of(tenantId):List.of(tenantId,status));
         String pattern="%"+query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";
         String prefix="""
             WITH search_input AS MATERIALIZED (SELECT ?::uuid tenant_id,?::text pattern),
@@ -408,7 +474,7 @@ public class CatalogRepository {
             )
             """;
         return new AccountQuery(prefix,from+" WHERE item.tenant_id=(SELECT tenant_id FROM search_input)"
-            +" AND item.id IN(SELECT id FROM matched_items)",List.of(tenantId,pattern));
+            +" AND item.id IN(SELECT id FROM matched_items)"+("ALL".equals(status)?"":" AND item.status=?"),"ALL".equals(status)?List.of(tenantId,pattern):List.of(tenantId,pattern,status));
     }
     // Fixed SQL expressions only. User input is never an SQL identifier or fragment.
     private static final Map<String,String> CATALOG_SORTS=Map.of(
@@ -429,8 +495,13 @@ public class CatalogRepository {
     }
     @Transactional(readOnly=true)
     public AccountItemPage pageAccountItems(UUID tenantId,String search,int page,int size,String sort,String direction){
+        return pageAccountItems(tenantId,search,page,size,sort,direction,"ALL");
+    }
+    public static String catalogStatus(String status){return Set.of("ACTIVE","INACTIVE","DISCONTINUED","ALL").contains(status==null?"":status)?status:"ACTIVE";}
+    @Transactional(readOnly=true)
+    public AccountItemPage pageAccountItems(UUID tenantId,String search,int page,int size,String sort,String direction,String status){
         setTenant(tenantId);String query=search==null?"":search.trim();size=Math.max(10,Math.min(100,size));page=Math.max(0,page);
-        var searchQuery=accountQuery(tenantId,query);
+        var searchQuery=accountQuery(tenantId,query,catalogStatus(status));
         String matches=searchQuery.from();
         var parameters=new java.util.ArrayList<Object>(searchQuery.parameters());
         long total=jdbc.queryForObject(searchQuery.prefix()+" SELECT count(*)"+matches,Long.class,parameters.toArray());
@@ -1207,15 +1278,22 @@ public class CatalogRepository {
         if(clean.isBlank()||clean.length()>500)throw new IllegalArgumentException("Enter an account description of up to 500 characters.");
         var owned=jdbc.query("""
             SELECT item.id FROM account_catalog_items item WHERE item.tenant_id=? AND item.id=?
-              AND EXISTS(SELECT 1 FROM amazon_order_items source
+              AND (EXISTS(SELECT 1 FROM amazon_order_items source
                 JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=source.tenant_id
                   AND mapping.marketplace_connection_id=source.marketplace_connection_id
                   AND mapping.marketplace_sku=source.seller_sku AND mapping.status='ACTIVE'
                 JOIN marketplace_sku_mapping_components component ON component.tenant_id=mapping.tenant_id
                   AND component.marketplace_sku_mapping_id=mapping.id AND component.account_catalog_item_id=item.id
                 WHERE source.tenant_id=item.tenant_id AND source.marketplace_connection_id=? AND source.amazon_order_id=?)
+              OR EXISTS(SELECT 1 FROM shopify_order_lines line JOIN shopify_order_components part ON part.tenant_id=line.tenant_id AND part.marketplace_connection_id=line.marketplace_connection_id AND part.order_line_id=line.id
+                WHERE line.tenant_id=item.tenant_id AND line.marketplace_connection_id=? AND line.order_id::text=? AND part.account_catalog_item_id=item.id)
+              OR EXISTS(SELECT 1 FROM shopify_order_lines line JOIN shopify_variants v ON v.tenant_id=line.tenant_id AND v.marketplace_connection_id=line.marketplace_connection_id AND v.id=line.variant_id
+                JOIN marketplace_sku_mappings m ON m.tenant_id=v.tenant_id AND m.marketplace_connection_id=v.marketplace_connection_id AND m.shopify_variant_id=v.id AND m.shopify_mapping_hash=v.mapping_hash AND m.status='ACTIVE'
+                JOIN marketplace_sku_mapping_components c ON c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id AND c.account_catalog_item_id=item.id
+                WHERE line.tenant_id=item.tenant_id AND line.marketplace_connection_id=? AND line.order_id::text=?
+                  AND NOT EXISTS(SELECT 1 FROM shopify_order_components f WHERE f.tenant_id=line.tenant_id AND f.marketplace_connection_id=line.marketplace_connection_id AND f.order_line_id=line.id)))
             FOR UPDATE OF item
-            """,(rs,row)->rs.getObject(1,UUID.class),tenantId,itemId,connectionId,orderId);
+            """,(rs,row)->rs.getObject(1,UUID.class),tenantId,itemId,connectionId,orderId,connectionId,orderId,connectionId,orderId);
         if(owned.size()!=1)throw new IllegalArgumentException("This product is no longer mapped to this order in the selected account and store. Refresh before editing.");
         UUID previous=jdbc.query("SELECT location_id FROM account_catalog_item_locations WHERE tenant_id=? AND account_catalog_item_id=? AND is_default",rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,itemId);
         if(locationId!=null&&!locationId.equals(previous))setDefaultLocation(tenantId,itemId,locationId);

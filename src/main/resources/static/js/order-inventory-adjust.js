@@ -80,7 +80,9 @@ function orderAdjustmentPayload(position,values){
     document.querySelector('[data-inline-adjust-order]').textContent=order.querySelector('.order-number span')?.textContent?.trim()||'Current order';
     feedback().hidden=true;list().hidden=true;document.querySelector('[data-inline-adjust-loading]').hidden=false;modal.showModal();
     try{
-      const componentGroups=await Promise.all(skus.map(sku=>fetch('/app/marketplace-skus/mappings/components?sku='+encodeURIComponent(sku),{headers:{Accept:'application/json'}}).then(response=>response.ok?response.json():Promise.reject(new Error()))));
+      const shopify=[...order.querySelectorAll('.mapping-summary-button.is-mapped[data-provider=SHOPIFY]')];
+      const urls=shopify.length?shopify.map(b=>'/app/marketplace-skus/shopify/components?variantId='+encodeURIComponent(b.dataset.variantId)+(b.dataset.orderLineId?'&orderLineId='+encodeURIComponent(b.dataset.orderLineId):'')):skus.map(sku=>'/app/marketplace-skus/mappings/components?sku='+encodeURIComponent(sku));
+      const componentGroups=await Promise.all(urls.map(url=>fetch(url,{headers:{Accept:'application/json'}}).then(response=>response.ok?response.json():Promise.reject(new Error()))));
       const components=[...new Map(componentGroups.flat().map(component=>[component.itemId,component])).values()];
       if(!components.length)throw new Error('No mapped catalogue items were found for this order.');
       const params=new URLSearchParams();components.forEach(component=>params.append('itemId',component.itemId));

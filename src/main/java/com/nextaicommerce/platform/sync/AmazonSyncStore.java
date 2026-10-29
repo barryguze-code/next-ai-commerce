@@ -76,7 +76,7 @@ public class AmazonSyncStore {
                     ORDER BY requested.created_at DESC LIMIT 1)
             FROM marketplace_sync_jobs j JOIN marketplace_sync_runs r ON r.id=j.sync_run_id
             JOIN marketplace_connections c ON c.id=j.marketplace_connection_id AND c.tenant_id=j.tenant_id
-            WHERE j.tenant_id=? AND j.job_type<>'VARIATION_RELATIONSHIPS' AND (j.job_type<>'FEES_SNAPSHOT' OR (r.status NOT IN ('FAILED','CANCELLED') AND c.status='ACTIVE')) AND (
+            WHERE j.tenant_id=? AND c.channel='AMAZON' AND j.job_type<>'VARIATION_RELATIONSHIPS' AND (j.job_type<>'FEES_SNAPSHOT' OR (r.status NOT IN ('FAILED','CANCELLED') AND c.status='ACTIVE')) AND (
                 (j.status IN ('QUEUED','WAITING') AND j.available_at<=now()
                     AND (j.lease_expires_at IS NULL OR j.lease_expires_at<now()))
                 OR (j.status='RUNNING' AND j.lease_expires_at<now())
@@ -119,10 +119,11 @@ public class AmazonSyncStore {
                 jdbc.update("UPDATE marketplace_sync_jobs SET status='SKIPPED',error_code='FEE_DUPLICATE_ACTIVE',completed_at=clock_timestamp() WHERE tenant_id=? AND id=?",tenant,job.id());return null;
             }
         }
+        String claimOwner="ORDERS_API_DELTA".equals(job.type())?worker+"-"+UUID.randomUUID():worker;
         jdbc.update("""
-            UPDATE marketplace_sync_jobs SET status='RUNNING',lease_owner=?,lease_expires_at=now()+interval '3 minutes',
+            UPDATE marketplace_sync_jobs SET status='RUNNING',lease_owner=?,lease_expires_at=clock_timestamp()+interval '3 minutes',
             attempt_count=attempt_count+1,started_at=coalesce(started_at,now()) WHERE tenant_id=? AND id=?
-            """, worker,tenant,job.id());
+            """, claimOwner,tenant,job.id());
         jdbc.update("""
             UPDATE marketplace_sync_runs SET
             status=CASE WHEN status IN ('COMPLETED','COMPLETED_WITH_WARNINGS') THEN status ELSE 'RUNNING' END,
@@ -131,7 +132,49 @@ public class AmazonSyncStore {
             user_message=CASE WHEN status IN ('COMPLETED','COMPLETED_WITH_WARNINGS') THEN user_message ELSE ? END
             WHERE tenant_id=? AND id=?
             """,job.type(),message(job.type()),tenant,job.runId());
-        return job.leasedBy(worker);
+        return job.leasedBy(claimOwner);
+    }
+
+    /** Each order claim has a unique token. An expired claim can never renew or publish. */
+    public static class LostOrderLease extends IllegalStateException {
+        LostOrderLease(){super("Amazon order lease expired or changed; this worker cannot publish.");}
+    }
+    private void guardOrderLease(Job job){
+        if(!"ORDERS_API_DELTA".equals(job.type()))return;
+        if(job.leaseOwner()==null)throw new LostOrderLease();
+        var current=jdbc.queryForList("""
+            SELECT j.id FROM marketplace_sync_jobs j
+            JOIN marketplace_sync_runs r ON r.id=j.sync_run_id AND r.tenant_id=j.tenant_id
+            JOIN marketplace_connections c ON c.id=j.marketplace_connection_id AND c.tenant_id=j.tenant_id
+            WHERE j.tenant_id=? AND j.marketplace_connection_id=? AND j.sync_run_id=? AND j.id=?
+              AND j.job_type='ORDERS_API_DELTA' AND j.status='RUNNING' AND j.lease_owner=?
+              AND j.lease_expires_at>clock_timestamp() AND r.status='RUNNING' AND c.channel='AMAZON'
+            FOR UPDATE OF j
+            """,UUID.class,job.tenantId(),job.connectionId(),job.runId(),job.id(),job.leaseOwner());
+        if(current.isEmpty())throw new LostOrderLease();
+    }
+    public void renewOrderLease(Job job){
+        transactions.executeWithoutResult(status->{setTenant(job.tenantId());guardOrderLease(job);
+            jdbc.update("UPDATE marketplace_sync_jobs SET lease_expires_at=clock_timestamp()+interval '3 minutes' WHERE tenant_id=? AND marketplace_connection_id=? AND id=? AND lease_owner=?",
+                job.tenantId(),job.connectionId(),job.id(),job.leaseOwner());
+        });
+    }
+
+    public AmazonOrderDeltaProgress orderDeltaProgress(Job job){
+        return transactions.execute(status->{setTenant(job.tenantId());guardOrderLease(job);
+            String saved=jdbc.queryForObject("SELECT cursor->>'orderDelta' FROM marketplace_sync_jobs WHERE tenant_id=? AND marketplace_connection_id=? AND id=?",String.class,job.tenantId(),job.connectionId(),job.id());
+            return saved==null?AmazonOrderDeltaProgress.empty():new tools.jackson.databind.ObjectMapper().readValue(saved,AmazonOrderDeltaProgress.class);
+        });
+    }
+    public AmazonOrderDeltaProgress saveOrderDeltaPage(Job job,String sourceKey,String body,String requestId,
+            ToLongFunction<UUID> importer,java.util.function.LongFunction<AmazonOrderDeltaProgress> advance){
+        return transactions.execute(status->{setTenant(job.tenantId());guardOrderLease(job);
+            long records=saveJsonPage(job,sourceKey,body,requestId,importer);
+            var progress=advance.apply(records);guardOrderLease(job);
+            jdbc.update("UPDATE marketplace_sync_jobs SET cursor=jsonb_set(cursor,'{orderDelta}',?::jsonb),records_processed=? WHERE tenant_id=? AND marketplace_connection_id=? AND id=? AND lease_owner=?",
+                new tools.jackson.databind.ObjectMapper().writeValueAsString(progress),progress.records(),job.tenantId(),job.connectionId(),job.id(),job.leaseOwner());
+            return progress;
+        });
     }
 
     public void reportRequested(Job job, String reportType, String reportId) {
@@ -235,7 +278,7 @@ public class AmazonSyncStore {
 
     public long saveJsonPage(Job job,String sourceKey,String body,String requestId,
             ToLongFunction<UUID> importer){
-        Long result=transactions.execute(status->{setTenant(job.tenantId());
+        Long result=transactions.execute(status->{setTenant(job.tenantId());guardOrderLease(job);
             UUID sourceDocument=jdbc.queryForObject("""
                 INSERT INTO amazon_source_documents(tenant_id,marketplace_connection_id,sync_job_id,
                 source_type,amazon_request_id,source_key,content_type,sha256,payload,record_count)
@@ -251,6 +294,7 @@ public class AmazonSyncStore {
                 UPDATE amazon_source_documents SET record_count=?,normalized_at=now(),
                 normalization_error=NULL WHERE tenant_id=? AND id=?
                 """,records,job.tenantId(),sourceDocument);
+            guardOrderLease(job);
             return records;
         });
         return result==null?0:result;
@@ -275,6 +319,7 @@ public class AmazonSyncStore {
         transactions.executeWithoutResult(status->{setTenant(job.tenantId());completeInside(job,records);});
     }
     private void completeInside(Job job,long records) {
+        guardOrderLease(job);
         jdbc.update("""
             UPDATE marketplace_sync_jobs SET status='COMPLETED',records_processed=?,completed_at=now(),
             lease_owner=NULL,lease_expires_at=NULL,error_code=NULL,error_message=NULL
@@ -342,8 +387,8 @@ public class AmazonSyncStore {
     }
 
     public void retryOrFail(Job job, Throwable error, Duration retryAfter) {
-        transactions.executeWithoutResult(status->{setTenant(job.tenantId());
-            boolean transientFailure=retryAfter!=null || job.failures()+1<8;
+        transactions.executeWithoutResult(status->{setTenant(job.tenantId());guardOrderLease(job);
+            boolean transientFailure=(retryAfter!=null && !"ORDERS_API_DELTA".equals(job.type())) || job.failures()+1<8;
             Duration delay=retryAfter!=null?retryAfter:Duration.ofSeconds(Math.min(900,30L*(1L<<Math.min(5,job.failures()))));
             if(transientFailure)log.warn("{} [{}] will retry {} in {} second(s) — attempt {} failed: {}.",
                 readableProfile(job.profile()),shortRun(job),readableStage(job.type()),delay.toSeconds(),
@@ -374,7 +419,7 @@ public class AmazonSyncStore {
         });
     }
     public void fail(Job job, Throwable error) {
-        transactions.executeWithoutResult(status->{setTenant(job.tenantId());
+        transactions.executeWithoutResult(status->{setTenant(job.tenantId());guardOrderLease(job);
             log.error("{} [{}] stopped during {} — {}.",readableProfile(job.profile()),shortRun(job),
                 readableStage(job.type()),truncate(error.getMessage()),error);
             jdbc.update("""

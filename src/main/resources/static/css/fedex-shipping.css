@@ -1,11 +1,38 @@
-#fedex-shipping{width:min(760px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--line,#dce4ee);border-radius:20px;color:var(--ink);background:var(--white,#fff)}
-#fedex-shipping::backdrop{background:#14283f66}#fedex-shipping .dialog-shell{display:flex;flex-direction:column;max-height:calc(100dvh - 34px)}
-#fedex-shipping .dialog-header,#fedex-shipping .dialog-actions{padding:16px 20px;flex-shrink:0;border-bottom:1px solid var(--line,#dce4ee)}
-#fedex-shipping .dialog-header{display:flex;justify-content:space-between;align-items:center}#fedex-shipping .dialog-body{overflow:auto;padding:18px 20px}#fedex-shipping .dialog-actions{display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--line,#dce4ee)}
-#fedex-shipping label{display:grid;gap:5px;font-size:14px;color:var(--ink)}#fedex-shipping input,#fedex-shipping select{min-width:0;max-width:100%;padding:9px;border:1px solid var(--line,#dce4ee);border-radius:8px;font:inherit}
-#fedex-shipping label:has(input[type=checkbox]){display:flex;align-items:center;margin:12px 0}#fedex-shipping fieldset{border:1px solid var(--line,#dce4ee);border-radius:10px;margin:16px 0;padding:12px}#fedex-shipping legend{font-weight:650;font-size:14px}
-.fedex-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.fedex-measurements{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.fedex-rate,.fedex-history-row{display:flex;gap:12px;align-items:center;justify-content:space-between;border-top:1px solid var(--line,#dce4ee);padding:12px 0;font-size:14px}
-.fedex-history-row{flex-wrap:wrap}.fedex-order-action img{width:26px;max-height:18px;object-fit:contain;background:#4d148c;border-radius:3px;padding:3px}
-.fedex-recipient-warning{padding:12px 14px;border:1px solid var(--line,#dce4ee);border-left:4px solid var(--warning,#b7791f);border-radius:8px;background:var(--surface,#f8fafc);color:var(--ink,#172b42);font-size:14px;line-height:1.5}
-@media(max-width:550px){.fedex-fields,.fedex-measurements{grid-template-columns:1fr 1fr}.fedex-rate{flex-wrap:wrap}}
+#fedex-shipping{width:min(650px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:0;border:1px solid var(--line,#dce4ee);border-radius:18px;color:var(--ink,#172b42);background:var(--white,#fff)}
+#fedex-shipping::backdrop{background:#14283f66}#fedex-shipping .dialog-shell{display:flex;flex-direction:column;max-height:calc(100dvh - 26px);margin:0}
+#fedex-shipping .dialog-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line,#dce4ee);flex-shrink:0}
+#fedex-shipping h2{font-size:22px;margin:0}#fedex-shipping h3{font-size:14px;margin:0}#fedex-shipping .dialog-header p{font-size:13px;margin:4px 0 0;color:var(--muted,#66758a)}
+#fedex-shipping .dialog-body{overflow:auto;padding:16px 20px;display:grid;gap:16px}#fedex-shipping [hidden]{display:none!important}
+#fedex-shipping label{display:grid;gap:5px;font-size:13px;color:var(--ink,#172b42);min-width:0}#fedex-shipping input,#fedex-shipping select{box-sizing:border-box;min-width:0;width:100%;max-width:100%;padding:9px;border:1px solid var(--line,#dce4ee);border-radius:8px;font:inherit;color:inherit;background:var(--white,#fff)}
+#fedex-shipping button,#fedex-shipping a{font:inherit}#fedex-shipping button:focus-visible,#fedex-shipping a:focus-visible{outline:2px solid var(--blue,#2869d8);outline-offset:3px}
+#fedex-shipping .fedex-recipient{border-bottom:1px solid var(--line,#dce4ee);padding-bottom:10px}#fedex-shipping .fedex-recipient-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px}
+#fedex-shipping [data-recipient-summary]{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:12px;font-size:14px;line-height:1.35;overflow-wrap:anywhere}#fedex-shipping [data-recipient-summary] p{margin:0}#fedex-shipping [data-recipient-summary] small{display:block;margin-top:2px;color:var(--muted,#66758a)}
+#fedex-shipping .fedex-text-button{display:flex;align-items:center;gap:5px;border:0;background:transparent;color:var(--blue,#2869d8);padding:5px;cursor:pointer;font-size:13px}#fedex-shipping .fedex-text-button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8}
+#fedex-shipping .fedex-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}#fedex-shipping .fedex-wide{grid-column:1/-1}#fedex-shipping .fedex-routing:has([data-carrier-connection][hidden]){grid-template-columns:1fr}
+#fedex-shipping .fedex-check{display:flex;align-items:center;gap:8px;margin:10px 0}#fedex-shipping .fedex-check input{width:auto;margin:0}#fedex-shipping .fedex-inline-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+#fedex-shipping .fedex-carriers{display:flex;gap:8px}#fedex-shipping .fedex-carriers button{display:flex;align-items:center;justify-content:center;min-width:66px;min-height:40px;padding:7px 12px;border:1px solid var(--line,#dce4ee);border-radius:8px;background:var(--white,#fff);color:var(--ink,#172b42);cursor:pointer}
+#fedex-shipping .fedex-carriers button[aria-pressed=true]{border-color:var(--blue,#2869d8);box-shadow:inset 0 0 0 1px var(--blue,#2869d8);background:var(--blue-soft,#edf4ff)}#fedex-shipping .fedex-carriers img{width:48px;height:23px;object-fit:contain;background:#fff;border-radius:2px}
+#fedex-shipping .fedex-parcel-row{display:grid;grid-template-columns:minmax(0,1fr) 125px;gap:12px}#fedex-shipping .fedex-measurements{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+#fedex-shipping .fedex-rate{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:13px;border:1px solid var(--line,#dce4ee);border-radius:10px;background:var(--white,#fff);color:var(--ink,#172b42);cursor:pointer}#fedex-shipping .fedex-rate:hover{border-color:var(--blue,#2869d8)}#fedex-shipping .fedex-rate img{width:48px;max-height:24px;object-fit:contain;background:#fff;border-radius:2px}#fedex-shipping .fedex-rate span{flex:1}#fedex-shipping .fedex-rate small{display:block;font-size:12px;color:var(--blue,#2869d8);margin-top:3px}#fedex-shipping .fedex-rate strong{font-size:18px;white-space:nowrap}#fedex-shipping [data-fedex-rates]{display:grid;gap:8px}#fedex-shipping [data-fedex-rates]:empty,#fedex-shipping [data-fedex-history]:empty{display:none}
+#fedex-shipping .fedex-history-row{display:flex;gap:12px;align-items:center;justify-content:space-between;font-size:14px;flex-wrap:wrap}#fedex-shipping [data-fedex-message]{margin:0;font-size:13px;overflow-wrap:anywhere}
+.fedex-order-action img{width:26px;max-height:18px;object-fit:contain;background:#4d148c;border-radius:3px;padding:3px}
+@media(max-width:550px){#fedex-shipping .dialog-header,#fedex-shipping .dialog-body{padding:14px}#fedex-shipping .fedex-parcel-row{grid-template-columns:minmax(0,1fr) 100px}#fedex-shipping .fedex-carriers{gap:6px}#fedex-shipping .fedex-carriers button{min-width:0;flex:1;padding:7px}#fedex-shipping .fedex-fields{grid-template-columns:1fr}#fedex-shipping .fedex-wide{grid-column:auto}}
+@media(max-width:420px){#fedex-shipping [data-recipient-summary]{grid-template-columns:minmax(0,1fr);gap:5px}}
+
+/* The supplied FedEx wordmark has white lettering, matching its existing platform backing. */
+#fedex-shipping .fedex-carriers img[src*="fedex-official"],#fedex-shipping .fedex-rate img[src*="fedex-official"]{box-sizing:border-box;background:#4d148c;padding:3px}
+
+#fedex-sender{width:min(650px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:0;border:1px solid var(--line);border-radius:18px;background:var(--white);color:var(--ink)}
+#fedex-sender .dialog-header,#fedex-sender .dialog-body,#fedex-sender .dialog-actions{padding:18px 22px}
+#fedex-sender .dialog-body{overflow:auto;min-height:0}#fedex-sender .dialog-shell{max-height:calc(100dvh - 26px);display:flex;flex-direction:column}
+#fedex-sender input:not([type=checkbox]){width:100%;min-height:42px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--white);color:var(--ink)}
+#fedex-sender .shipping-check{display:flex;gap:8px;margin-top:12px}#fedex-sender .shipping-check small{display:block}
+#fedex-shipping div.fedex-rate{cursor:default}
+
+#fedex-shipping [data-fedex-rates]{position:relative}
+#fedex-shipping .fedex-rate-loading{min-height:64px;box-sizing:border-box;cursor:default;pointer-events:none;color:var(--muted,#66758a)}
+#fedex-shipping .fedex-rate-spinner{width:16px;height:16px;border:2px solid var(--line,#dce4ee);border-top-color:var(--blue,#2869d8);border-radius:50%;flex-shrink:0;animation:fedex-rate-wait .9s linear infinite}
+@keyframes fedex-rate-wait{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#fedex-shipping .fedex-rate-spinner{animation:none}}
+
+#fedex-shipping .fedex-planning-estimate:hover{border-color:var(--line,#dce4ee)}#fedex-shipping .fedex-planning-estimate small{color:var(--muted,#66758a)}

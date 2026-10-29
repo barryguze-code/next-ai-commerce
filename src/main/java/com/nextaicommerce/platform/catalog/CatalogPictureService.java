@@ -9,13 +9,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Saved public Amazon artwork only. Private account uploads are never global candidates. */
+/** Saved public marketplace artwork. Private account uploads are never global candidates. */
 @Service
 public class CatalogPictureService {
  private final JdbcTemplate jdbc;private final TransactionTemplate tx;private final CatalogRepository catalog;private final WorkspaceAccessRepository access;
  public CatalogPictureService(JdbcTemplate jdbc,TransactionTemplate tx,CatalogRepository catalog,WorkspaceAccessRepository access){this.jdbc=jdbc;this.tx=tx;this.catalog=catalog;this.access=access;}
- public record Candidate(UUID id,String sku,String asin,String imageUrl,boolean mixedBundle){}
- record Source(UUID tenant,UUID connection,UUID listing,UUID item,UUID global,String sku,String asin,String url,boolean mixed) {Candidate candidate(){return new Candidate(listing,sku,asin,url,mixed);}}
+ public record Candidate(UUID id,String sku,String asin,String imageUrl,boolean mixedBundle,String channel,String reference){
+  public Candidate(UUID id,String sku,String asin,String imageUrl,boolean mixedBundle){this(id,sku,asin,imageUrl,mixedBundle,"AMAZON",asin);}
+ }
+ record Source(UUID tenant,UUID connection,UUID listing,UUID item,UUID global,String sku,String asin,String url,boolean mixed,String channel,String reference) {
+  Source(UUID tenant,UUID connection,UUID listing,UUID item,UUID global,String sku,String asin,String url,boolean mixed){this(tenant,connection,listing,item,global,sku,asin,url,mixed,"AMAZON",asin);}
+  Candidate candidate(){return new Candidate(listing,sku,asin,url,mixed,channel,reference);}
+ }
  public static boolean publicAmazonImage(String value){
   try{URI uri=URI.create(value);String host=uri.getHost();return "https".equalsIgnoreCase(uri.getScheme())&&uri.getUserInfo()==null&&(uri.getPort()==-1||uri.getPort()==443)&&host!=null&&(host.equals("m.media-amazon.com")||host.endsWith(".media-amazon.com")||host.endsWith(".ssl-images-amazon.com"));}catch(RuntimeException e){return false;}
  }
@@ -44,8 +49,23 @@ public class CatalogPictureService {
    ORDER BY mixed,l.seller_sku,l.id
    """,(r,n)->new Source(tenant,r.getObject("marketplace_connection_id",UUID.class),r.getObject("id",UUID.class),r.getObject("item_id",UUID.class),r.getObject("global_product_id",UUID.class),r.getString("seller_sku"),r.getString("asin"),r.getString("image_url"),r.getBoolean("mixed")),tenant,tenant,tenant,id).stream().filter(s->!savedImage||publicAmazonImage(s.url())).toList();
  }
+ private List<Source> shopifySources(UUID tenant,UUID item){
+  return jdbc.query("""
+   SELECT DISTINCT v.id,m.marketplace_connection_id,i.global_product_id,v.seller_sku,v.variant_gid,coalesce(v.image_url,p.image_url) image_url,
+    EXISTS(SELECT 1 FROM marketplace_sku_mapping_components other JOIN account_catalog_items oi ON oi.tenant_id=other.tenant_id AND oi.id=other.account_catalog_item_id WHERE other.tenant_id=m.tenant_id AND other.marketplace_sku_mapping_id=m.id AND oi.global_product_id<>i.global_product_id) mixed
+   FROM marketplace_sku_mappings m JOIN marketplace_sku_mapping_components part ON part.tenant_id=m.tenant_id AND part.marketplace_sku_mapping_id=m.id
+   JOIN account_catalog_items i ON i.tenant_id=part.tenant_id AND i.id=part.account_catalog_item_id
+   JOIN marketplace_connections cn ON cn.tenant_id=m.tenant_id AND cn.id=m.marketplace_connection_id AND cn.channel='SHOPIFY' AND cn.status='ACTIVE'
+   JOIN shopify_variants v ON v.tenant_id=m.tenant_id AND v.marketplace_connection_id=m.marketplace_connection_id AND v.id=m.shopify_variant_id
+   JOIN shopify_products p ON p.tenant_id=v.tenant_id AND p.marketplace_connection_id=v.marketplace_connection_id AND p.id=v.product_id
+   WHERE m.tenant_id=? AND i.id=? AND m.status='ACTIVE'
+   ORDER BY v.variant_gid
+   """,(r,n)->new Source(tenant,r.getObject("marketplace_connection_id",UUID.class),r.getObject("id",UUID.class),item,r.getObject("global_product_id",UUID.class),Objects.requireNonNullElse(r.getString("seller_sku"),"No SKU"),null,r.getString("image_url"),r.getBoolean("mixed"),"SHOPIFY",r.getString("variant_gid")),tenant,item).stream().filter(v->com.nextaicommerce.platform.shopify.ShopifyCatalogClient.image(v.url())!=null).toList();
+ }
  private List<Source> resolve(UUID tenant,String actor,UUID id,boolean global){
-  if(!global){account(tenant,actor);if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM account_catalog_items WHERE tenant_id=? AND id=?)",Boolean.class,tenant,id)))throw new ResponseStatusException(HttpStatus.NOT_FOUND);return sources(tenant,id,false);}
+  if(!global){account(tenant,actor);if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM account_catalog_items WHERE tenant_id=? AND id=?)",Boolean.class,tenant,id)))throw new ResponseStatusException(HttpStatus.NOT_FOUND);var result=new ArrayList<>(sources(tenant,id,false));
+   var stores=access.listAccountOptions(actor,access.isCurrentPlatformAdmin(actor)).stream().filter(a->a.id().equals(tenant)).flatMap(a->a.stores().stream()).filter(c->"SHOPIFY".equals(c.channel())).map(c->c.id()).collect(java.util.stream.Collectors.toSet());scope(tenant);
+   result.addAll(shopifySources(tenant,id).stream().filter(v->stores.contains(v.connection())).toList());return result;}
   admin(actor);return sharedSources(id);
  }
  private List<Source> sharedSources(UUID id){
@@ -69,7 +89,7 @@ public class CatalogPictureService {
  void save(UUID tenant,String actor,UUID id,boolean global,Source expected,String type,byte[] bytes){tx.executeWithoutResult(s->{
   if(global)admin(actor);else account(tenant,actor);
   if(expected!=null&&!resolve(tenant,actor,id,global).contains(expected))throw new ResponseStatusException(HttpStatus.CONFLICT,"The SKU mapping or picture changed. No picture was saved.");
-  if(!global){catalog.saveProductImage(tenant,actor,id,type,expected==null?"uploaded-picture":"amazon-"+expected.asin(),bytes);return;}
+  if(!global){catalog.saveProductImage(tenant,actor,id,type,expected==null?"uploaded-picture":expected.channel().toLowerCase(Locale.ROOT)+"-"+expected.reference(),bytes);return;}
   UUID provenance=expected==null?tenant:expected.tenant();if(provenance==null)throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an account for the upload provenance.");
   jdbc.update("""
    INSERT INTO global_catalog_product_images(global_product_id,image_bytes,image_content_type,source_asin,source_tenant_id) VALUES (?,?,?,?,?)

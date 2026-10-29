@@ -8,8 +8,10 @@ import static com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.L
 /** Call inside a tenant transaction. Stock changes and invalidations share their original transaction. */
 @Repository
 public class InventoryPublicationRepository {
- private final JdbcTemplate jdbc;
- public InventoryPublicationRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
+ private final JdbcTemplate jdbc;private final boolean sharedSimulation;
+ public InventoryPublicationRepository(JdbcTemplate jdbc){this(jdbc,false);}
+ @org.springframework.beans.factory.annotation.Autowired
+ public InventoryPublicationRepository(JdbcTemplate jdbc,@org.springframework.beans.factory.annotation.Value("${app.inventory.publication-simulation-enabled:false}") boolean sharedSimulation){this.jdbc=jdbc;this.sharedSimulation=sharedSimulation;}
  public void scope(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
  public List<UUID> tenants(){return jdbc.query("SELECT id FROM tenants WHERE status='ACTIVE'",(r,n)->r.getObject(1,UUID.class));}
  public int plan(UUID tenant){
@@ -21,6 +23,7 @@ public class InventoryPublicationRepository {
   var dirty=jdbc.query("DELETE FROM inventory_publication_dirty WHERE tenant_id=? RETURNING item_id",(r,n)->r.getObject(1,UUID.class).toString(),tenant);
   if(dirty.isEmpty())return 0;
   String dirtyIds="{"+String.join(",",dirty)+"}";
+  if(sharedSimulation)planShopify(tenant,dirtyIds);
   // Item-only events expand through the reverse mapping; full sweeps include never-mapped FBM listings.
   int count=jdbc.update("""
    WITH dirty_items AS (SELECT unnest(?::uuid[]) item_id)
@@ -50,6 +53,31 @@ public class InventoryPublicationRepository {
    """,tenant);
   return count;
  }
+ private void planShopify(UUID tenant,String dirtyIds){
+  jdbc.update("""
+   INSERT INTO shopify_inventory_simulations(tenant_id,marketplace_connection_id,variant_id,desired_quantity,state,detail)
+   SELECT v.tenant_id,v.marketplace_connection_id,v.id,
+     CASE WHEN mapping.id IS NULL OR mapping.shopify_mapping_hash IS DISTINCT FROM v.mapping_hash OR p.product_status<>'ACTIVE' THEN 0
+       ELSE least(2147483647,greatest(0,coalesce(local_inventory.available,0)))::integer END,
+     CASE WHEN mapping.id IS NULL OR mapping.shopify_mapping_hash IS DISTINCT FROM v.mapping_hash THEN 'ATTENTION'
+       WHEN p.product_status<>'ACTIVE' THEN 'DISABLED' ELSE 'DRY_RUN' END,
+     CASE WHEN mapping.id IS NULL THEN 'Mapping is unresolved. No external inventory request.'
+       WHEN mapping.shopify_mapping_hash IS DISTINCT FROM v.mapping_hash THEN 'Mapping evidence changed; review required. No external inventory request.'
+       WHEN p.product_status<>'ACTIVE' THEN 'Product is not active. No external inventory request.'
+       ELSE 'Simulation only. Merchant inventory location is not selected; no Shopify inventory request.' END
+   FROM shopify_variants v JOIN shopify_products p ON p.tenant_id=v.tenant_id AND p.marketplace_connection_id=v.marketplace_connection_id AND p.id=v.product_id
+   JOIN marketplace_connections connection ON connection.tenant_id=v.tenant_id AND connection.id=v.marketplace_connection_id AND connection.channel='SHOPIFY' AND connection.status='ACTIVE'
+   LEFT JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=v.tenant_id AND mapping.marketplace_connection_id=v.marketplace_connection_id AND mapping.shopify_variant_id=v.id AND mapping.status='ACTIVE'
+   """+LOCAL_MAPPING_AVAILABILITY+"""
+   WHERE v.tenant_id=? AND ('00000000-0000-0000-0000-000000000000'=ANY(?::uuid[]) OR EXISTS(
+     SELECT 1 FROM marketplace_sku_mapping_components part WHERE part.tenant_id=mapping.tenant_id AND part.marketplace_sku_mapping_id=mapping.id AND part.account_catalog_item_id=ANY(?::uuid[])))
+   ON CONFLICT(tenant_id,marketplace_connection_id,variant_id) DO UPDATE SET desired_quantity=excluded.desired_quantity,state=excluded.state,
+     detail=excluded.detail,revision=shopify_inventory_simulations.revision+1,updated_at=now()
+   WHERE (shopify_inventory_simulations.desired_quantity,shopify_inventory_simulations.state,shopify_inventory_simulations.detail)
+     IS DISTINCT FROM (excluded.desired_quantity,excluded.state,excluded.detail)
+   """,tenant,dirtyIds,dirtyIds);
+  jdbc.update("UPDATE shopify_inventory_simulations s SET state='DISABLED',detail='Connection is inactive. No external inventory request.' WHERE s.tenant_id=? AND NOT EXISTS(SELECT 1 FROM marketplace_connections c WHERE c.tenant_id=s.tenant_id AND c.id=s.marketplace_connection_id AND c.channel='SHOPIFY' AND c.status='ACTIVE')",tenant);
+ }
  public record Pending(UUID tenant,UUID connection,String marketplace,String sku,int quantity,long revision,String status,int attempts,String seller){}
  public Optional<Pending> next(UUID tenant){
   return next(tenant,null);
@@ -64,7 +92,7 @@ public class InventoryPublicationRepository {
   scope(tenant);
   return jdbc.query("""
    SELECT p.*,c.seller_identifier FROM inventory_publications p JOIN marketplace_connections c ON c.tenant_id=p.tenant_id AND c.id=p.connection_id
-   WHERE p.tenant_id=? AND c.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM inventory_publication_dirty d WHERE d.tenant_id=p.tenant_id) AND p.status NOT IN ('DISABLED','DRY_RUN') AND p.next_attempt_at<=now()
+   WHERE p.tenant_id=? AND c.channel='AMAZON' AND c.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM inventory_publication_dirty d WHERE d.tenant_id=p.tenant_id) AND p.status NOT IN ('DISABLED','DRY_RUN') AND p.next_attempt_at<=now()
      AND (?::uuid[] IS NULL OR p.connection_id=ANY(?::uuid[]))
      AND (?='' OR p.seller_sku=ANY(string_to_array(?,',')))
      AND (?::timestamptz IS NULL OR (

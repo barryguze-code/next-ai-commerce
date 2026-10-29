@@ -44,9 +44,11 @@ function columnCell(root,row,col){
 }
 function values(root,row,cols){return cols.map(col=>textOf(columnCell(root,row,col)));}
 // Export logical fields, not the concatenated text of visual compound cells.
+const shopifyOrderExportFields={product:['Product','SKU','Mapped items'],order:['Order ID','Order date','Payment status','Fulfillment status','Cancelled','Readiness'],quantity:['Ordered marketplace units','Unfulfilled marketplace units'],sales:['Item sales','Currency'],available:['Warehouse available marketplace units'],profit:['Estimated profit','Calculation state'],'four-week-sales':['Week 1 current units','Week 2 current units','Week 3 current units','Week 4 current units']};
+const orderExportSchema=root=>root.dataset.provider==='SHOPIFY'?shopifyOrderExportFields:orderExportFields;
 const orderExportFields={product:['Product','SKU','ASIN','Mapped items'],order:['Order ID','Order date','Amazon status','Fulfillment','Readiness'],sales:['Item sales','Currency','Customer shipping','Buy Box','Buy Box currency'],profit:['Estimated item profit','Product cost','Referral fee','Other cost','Shipping cost'],'four-week-sales':['4-week orders','4-week units','Week 1 units','Week 2 units','Week 3 units','Week 4 units','Refund totals by currency','Refunded orders']};
 async function prepareExport(root,cols){
- if(root.dataset.tableWidget!=='orders'||!cols.some(col=>col.id==='profit'))return;
+ if(root.dataset.provider==='SHOPIFY'||root.dataset.tableWidget!=='orders'||!cols.some(col=>col.id==='profit'))return;
  const items=rows(root),keys=[...new Set(items.map(row=>row.dataset.exportOrder).filter(Boolean))];
  for(let start=0;start<keys.length;start+=100){
   const params=new URLSearchParams({kind:'ORDER'});keys.slice(start,start+100).forEach(key=>params.append('key',key));
@@ -55,10 +57,14 @@ async function prepareExport(root,cols){
   for(const row of items){const view=views[row.dataset.exportOrder];if(!view||!view.totals||/cancel/i.test(row.dataset.exportStatus||''))continue;const sku=row.dataset.exportSku,fees=orderSkuFees(view,sku);row.dataset.exportProfit=orderSkuProfit(view,sku)??'Pending';for(const [key,value]of Object.entries(fees))row.dataset['exportFee'+key]=value??'Pending';}
  }
 }
-function exportColumns(root,cols){return cols.filter(col=>!['Record','Actions','Select'].includes(normalize(col.title))).flatMap(col=>(root.dataset.tableWidget==='orders'&&orderExportFields[col.id]||[col.title]).map((title,field)=>({...col,title,field})));}
+function exportColumns(root,cols){return cols.filter(col=>!['Record','Actions','Select'].includes(normalize(col.title))).flatMap(col=>(root.dataset.tableWidget==='orders'&&orderExportSchema(root)[col.id]||[col.title]).map((title,field)=>({...col,title,field})));}
 function exportValues(root,row,cols){
  const data=row.dataset;
  const weekly=String(row.querySelector('.item-weekly-sales')?.dataset.exportWeeks||row.querySelector('.weekly-sales')?.textContent||'').split('|').map(normalize);
+ if(root.dataset.provider==='SHOPIFY'){
+  const fields={product:[data.exportProduct,data.exportSku,data.exportMapping],order:[data.exportOrder,data.exportDate,data.exportPayment,data.exportStatus,data.exportCancelled,data.exportReadiness],quantity:[data.exportQuantity,data.exportOpen],sales:[data.exportSales,data.exportCurrency],available:[data.exportAvailable],profit:['','Fees unavailable'],'four-week-sales':Array.from({length:4},(_,i)=>weekly[i]||'')};
+  return cols.map(col=>shopifyOrderExportFields[col.id]?(fields[col.id][col.field]??''):textOf(columnCell(root,row,col)));
+ }
  const totals=String(row.querySelector('.weekly-sold-totals>span')?.textContent||'').split('/').map(normalize);
  let refunds=[];try{refunds=JSON.parse(row.querySelector('[data-sku-refunds]')?.dataset.skuRefunds||'[]')}catch{}
  const currencies=[...new Set(refunds.map(entry=>entry.currency).filter(Boolean))];
@@ -119,8 +125,8 @@ function filterMatch(value,filter){
  return Number.isFinite(number)&&(!filter.min||number>=parse(filter.min))&&(!filter.max||number<=parse(filter.max));
 }
 // Marketplace-only typed snapshot contract. Other table exporters retain their adapters.
-async function marketplaceCsv(columns,filters){
- const url=new URL('/app/marketplace-skus/export.csv',location.origin);
+async function marketplaceCsv(columns,filters,shopify=false){
+ const url=new URL(shopify?'/app/marketplace-skus/shopify/export.csv':'/app/marketplace-skus/export.csv',location.origin);
  const current=new URL(location.href);
  for(const [key,value]of current.searchParams)if(['q','status','sort','direction'].includes(key)||key.startsWith('f_'))url.searchParams.set(key,value);
  url.searchParams.set('columns',columns.map(c=>c.id).join(','));
@@ -130,7 +136,7 @@ async function marketplaceCsv(columns,filters){
   const response=await fetch(url,{credentials:'same-origin',cache:'no-store',signal:controller.signal,headers:{Accept:'text/csv'}});
   if(!response.ok){let message='CSV preparation failed. No complete download was produced. Please retry.';try{const problem=await response.json();if(typeof problem.detail==='string'&&problem.detail.length<300)message=problem.detail;}catch{}throw new Error(message);}
   const count=response.headers.get('X-CSV-Rows'),size=Number(response.headers.get('Content-Length'));
-  if(!response.headers.get('Content-Type')?.toLowerCase().startsWith('text/csv')||response.headers.get('X-CSV-Schema')!=='marketplace-skus-v1'||!/^\d+$/.test(count||'')||Number(count)>10000||!Number.isSafeInteger(size)||size<3||size>50*1024*1024)throw new Error('Invalid CSV response. No download was started.');
+  if(!response.headers.get('Content-Type')?.toLowerCase().startsWith('text/csv')||response.headers.get('X-CSV-Schema')!==(shopify?'shopify-skus-v1':'marketplace-skus-v1')||!/^\d+$/.test(count||'')||Number(count)>10000||!Number.isSafeInteger(size)||size<3||size>50*1024*1024)throw new Error('Invalid CSV response. No download was started.');
   const blob=await response.blob();if(blob.size!==size)throw new Error('Incomplete CSV response. No download was started.');
   const filename=response.headers.get('Content-Disposition')?.match(/filename="(marketplace-skus-\d{8}T\d{6}Z\.csv)"/)?.[1];
   if(!filename)throw new Error('Invalid CSV filename. No download was started.');
@@ -302,8 +308,8 @@ function init(root){
     const progress=window.NextAiBackgroundJobs?.start('Download '+root.dataset.tableWidget,'Preparing CSV. Keep this page open until the download starts.');
     try{
       const selected=headers(root).filter(col=>!col.el.hidden&&!['select','action','actions','record-context'].includes(col.id));
-      if(root.dataset.tableWidget==='marketplace-skus'){
-        const result=await marketplaceCsv(selected,saved.filters);
+      if(root.dataset.tableWidget==='marketplace-skus'||root.dataset.tableWidget==='shopify-marketplace-skus'){
+        const result=await marketplaceCsv(selected,saved.filters,root.dataset.tableWidget==='shopify-marketplace-skus');
         status.textContent='CSV prepared: '+result.rows+' rows. Download started.';
         progress?.complete(status.textContent);return;
       }

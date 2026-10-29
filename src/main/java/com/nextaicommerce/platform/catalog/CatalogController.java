@@ -54,7 +54,10 @@ public class CatalogController {
         if(authentication==null||authentication.getAuthorities().stream().noneMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority())))
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
         PageController.addTenantModel(session,model);PageController.addAccessModel(authentication,model);
-        var result=catalog.pageGlobalProducts(q,goToPage==null?page:Math.max(0,goToPage-1),size,sort,direction);
+        UUID selectedAccount=tenantId(session);
+        if(selectedAccount!=null&&!workspaceAccess.canOperateAccount(selectedAccount,authentication.getName()))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+        var result=selectedAccount==null?catalog.pageGlobalProducts(q,goToPage==null?page:Math.max(0,goToPage-1),size,sort,direction):catalog.pageGlobalProducts(selectedAccount,q,goToPage==null?page:Math.max(0,goToPage-1),size,sort,direction);
         model.addAttribute("products",result.rows());model.addAttribute("globalPage",result);model.addAttribute("query",q);
         model.addAttribute("globalSort",CatalogRepository.globalSort(sort));model.addAttribute("globalDirection",CatalogRepository.catalogDirection(direction));
         model.addAttribute("globalProductImageIds",catalog.globalProductImageIds(result.rows().stream().map(CatalogRepository.GlobalProductView::id).toList()));
@@ -66,13 +69,15 @@ public class CatalogController {
             @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue=com.nextaicommerce.platform.web.TablePaging.DEFAULT_PARAMETER) int size,@RequestParam(required=false) Integer goToPage,
             @RequestParam(required=false) String open,
-            @RequestParam(defaultValue="product") String sort,@RequestParam(defaultValue="asc") String direction) {
+            @RequestParam(defaultValue="product") String sort,@RequestParam(defaultValue="asc") String direction,@RequestParam(defaultValue="ACTIVE") String status) {
         UUID tenantId = tenantId(session);
         if (tenantId == null) return "redirect:/app/select-account";
         PageController.addTenantModel(session, model);
         PageController.addAccessModel(authentication, model);
         int requestedPage=goToPage==null?page:Math.max(0,goToPage-1);
-        var snapshot=reads.page(tenantId,q,requestedPage,size,sort,direction);
+        String selectedStatus=CatalogRepository.catalogStatus(status);
+        var snapshot=reads.page(tenantId,q,requestedPage,size,sort,direction,selectedStatus);
+        model.addAttribute("catalogStatus",selectedStatus);
         model.addAttribute("catalogSort",CatalogRepository.catalogSort(sort));
         model.addAttribute("catalogDirection",CatalogRepository.catalogDirection(direction));
         var catalogPage=snapshot.page();
@@ -146,7 +151,7 @@ public class CatalogController {
     java.util.List<CatalogRepository.GlobalChoice> globalProductSearch(Authentication authentication,HttpSession session,
             @RequestParam(defaultValue="") String q){
         requireCatalogueEditor(authentication);
-        try{UUID tenant=requiredTenantId(session);return catalog.searchGlobalProducts(tenant,q).stream().map(CatalogController::globalChoiceWithImage).toList();}
+        try{UUID tenant=requiredTenantId(session);if(!workspaceAccess.canOperateAccount(tenant,authentication.getName()))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);return catalog.searchGlobalProducts(tenant,q).stream().map(CatalogController::globalChoiceWithImage).toList();}
         catch(IllegalArgumentException e){throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,e.getMessage());}
     }
 
@@ -323,7 +328,7 @@ public class CatalogController {
 
     @PostMapping("/app/catalog/products/{itemId}/default-location")
     String setDefaultLocation(@PathVariable UUID itemId,HttpSession session,@RequestParam UUID locationId,
-            @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="0") int page,RedirectAttributes redirect){
+            @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="ACTIVE") String status,RedirectAttributes redirect){
         try{
             catalog.setDefaultLocation(requiredTenantId(session),itemId,locationId);
             redirect.addFlashAttribute("catalogSuccess","Default inventory location updated. Existing batches kept their current locations.");
@@ -331,6 +336,7 @@ public class CatalogController {
         catch(Exception e){log.error("Default location update failed itemId={}",itemId,e);redirect.addFlashAttribute("catalogError","The default location could not be changed.");}
         if(q!=null&&!q.isBlank())redirect.addAttribute("q",q);
         if(page>0)redirect.addAttribute("page",page);
+        redirect.addAttribute("status",CatalogRepository.catalogStatus(status));
         return "redirect:/app/catalog";
     }
 

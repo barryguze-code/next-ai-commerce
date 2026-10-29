@@ -28,23 +28,29 @@ public class WorkspaceAccessRepository {
     public record SyncStatusView(UUID connectionId, String storeName, String status, int progress,
         String stage, String message, Instant startedAt, boolean feeOnly) {
         public SyncStatusView(UUID connectionId,String storeName,String status,int progress,String stage,String message,Instant startedAt){this(connectionId,storeName,status,progress,stage,message,startedAt,false);}
+        public boolean shopify(){return "SHOPIFY_CATALOG_VARIANTS".equals(stage)||"SHOPIFY_ORDERS".equals(stage);}
+        public boolean terminal(){return feeTerminal()||(shopify()&&!Set.of("QUEUED","RUNNING").contains(status));}
         public boolean feeTerminal(){return feeOnly&&Set.of("COMPLETED","COMPLETED_WITH_WARNINGS","FAILED","CANCELLED").contains(status);}
         public String feeStateLabel(){return switch(status){case "COMPLETED"->"Completed";case "COMPLETED_WITH_WARNINGS"->"Completed with warnings";case "FAILED"->"Failed";case "CANCELLED"->"Cancelled";case "QUEUED"->"Queued";case "RUNNING"->"Checking fee quotes";default->"Fee check needs review";};}
         public int displayProgress() {
+            if("SHOPIFY_ORDERS".equals(stage))return "COMPLETED".equals(status)?100:Math.max(0,Math.min(99,progress));
             if(feeOnly)return Math.max(0,Math.min(100,progress));
             return AmazonSyncProgress.displayPercent(progress, stage, status);
         }
         public String stagePosition() {
+            if("SHOPIFY_ORDERS".equals(stage))return "Shopify orders";
+            if(shopify())return "Products and variants";
             if(feeOnly)return "Fee quote results";
             return "Step " + AmazonSyncProgress.stageNumber(stage) + " of " + AmazonSyncProgress.stageCount();
         }
         public String estimatedTimeRemaining() {
+            if(shopify())return terminal()?"Review sync results":"Continues in the background";
             if(feeOnly)return feeStateLabel();
             if ("COMPLETED".equals(status)) return "Complete";
             return AmazonSyncProgress.stageTiming(stage);
         }
         public boolean starting() {
-            return progress == 0 && !"COMPLETED".equals(status) && !feeTerminal();
+            return progress == 0 && !"COMPLETED".equals(status) && !terminal();
         }
     }
     public record SyncJobView(UUID connectionId, int sequence, String jobType, String label,
@@ -282,7 +288,8 @@ public class WorkspaceAccessRepository {
         setTenant(tenantId);
         return jdbc.query("""
             SELECT r.marketplace_connection_id, c.display_name,
-                   CASE WHEN fee_scope.fee_only THEN r.status
+                   CASE WHEN c.channel='SHOPIFY' THEN CASE WHEN r.status='RUNNING' AND EXISTS(SELECT 1 FROM marketplace_sync_jobs stale_job WHERE stale_job.tenant_id=r.tenant_id AND stale_job.sync_run_id=r.id AND stale_job.status='RUNNING' AND stale_job.lease_expires_at<clock_timestamp()) THEN 'PAUSED' ELSE r.status END
+                        WHEN fee_scope.fee_only THEN r.status
                         WHEN final_job.id IS NOT NULL THEN 'COMPLETED'
                         WHEN NOT EXISTS (SELECT 1 FROM marketplace_sync_jobs required_job
                             WHERE required_job.tenant_id=r.tenant_id AND required_job.sync_run_id=r.id
@@ -419,6 +426,48 @@ public class WorkspaceAccessRepository {
         if (inserted != 1) throw new IllegalArgumentException("Choose a supported marketplace.");
     }
 
+    @Transactional(readOnly=true)
+    public boolean isCurrentPlatformAdmin(String email){
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM app_users u JOIN platform_administrators p ON p.user_id=u.id AND p.active WHERE lower(u.email)=lower(?) AND u.status='ACTIVE')",Boolean.class,email));
+    }
+    public record ShopifyConnection(String shop,String status,Instant updatedAt) {}
+    @Transactional(readOnly=true)
+    public ShopifyConnection shopifyConnection(UUID tenantId,UUID id){
+        setTenant(tenantId);
+        return jdbc.query("SELECT marketplace_identifier,status,updated_at FROM marketplace_connections WHERE tenant_id=? AND id=? AND channel='SHOPIFY'",
+            (r,n)->new ShopifyConnection(r.getString(1),r.getString(2),r.getTimestamp(3).toInstant()),tenantId,id).stream().findFirst()
+            .orElseThrow(()->new IllegalArgumentException("Shopify store was not found in this account."));
+    }
+    @Transactional
+    public void markShopifyVerificationRequired(UUID tenantId,UUID id,Instant expected){
+        setTenant(tenantId);
+        jdbc.update("UPDATE marketplace_connections SET status='ERROR' WHERE tenant_id=? AND id=? AND channel='SHOPIFY' AND status<>'DISABLED' AND updated_at=?",tenantId,id,java.sql.Timestamp.from(expected));
+    }
+    @Transactional
+    public void disconnectShopifyConnection(UUID tenantId,UUID id){
+        setTenant(tenantId);
+        if(jdbc.queryForList("SELECT id FROM marketplace_connections WHERE tenant_id=? AND id=? AND channel='SHOPIFY' FOR UPDATE",UUID.class,tenantId,id).isEmpty())throw new IllegalArgumentException("Shopify store was not found in this account.");
+        disconnectConnection(tenantId,id);
+    }
+    @Transactional
+    public void addShopifyConnection(UUID tenantId,String name,String domain){
+        setTenant(tenantId);String shop=ShopifyConnectionService.shopDomain(domain);
+        if(name==null||name.isBlank()||name.trim().length()>160)throw new IllegalArgumentException("Enter a store name up to160 characters.");
+        int restored=jdbc.update("UPDATE marketplace_connections SET status='PENDING',display_name=?,credential_secret_ref='pending://marketplace-connection',last_synced_at=NULL WHERE tenant_id=? AND channel='SHOPIFY' AND seller_identifier=? AND marketplace_identifier=? AND status='DISABLED'",name.trim(),tenantId,shop,shop);
+        if(restored==1)return;
+        int inserted=jdbc.update("INSERT INTO marketplace_connections(tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES(?,'SHOPIFY',?,?,'pending://marketplace-connection','PENDING',?,'UTC',now()) ON CONFLICT(tenant_id,channel,seller_identifier,marketplace_identifier) DO NOTHING",tenantId,shop,shop,name.trim());
+        if(inserted!=1)throw new IllegalArgumentException("This Shopify store is already connected to this account. Use its existing row.");
+    }
+    @Transactional
+    public void publishShopifyCredentials(UUID tenantId,UUID id,Instant expected,byte[] payload,byte[] nonce,String zone,Runnable authorize){
+        setTenant(tenantId);
+        var revisions=jdbc.query("SELECT updated_at FROM marketplace_connections WHERE tenant_id=? AND id=? AND channel='SHOPIFY' AND status<>'DISABLED' FOR UPDATE",(r,n)->r.getTimestamp(1).toInstant(),tenantId,id);
+        if(revisions.size()!=1||!revisions.getFirst().equals(expected))throw new IllegalArgumentException("This store changed during verification. No authorization was saved; refresh and try again.");
+        authorize.run(); // Recheck current authority in the same transaction as publication.
+        saveCredentials(tenantId,id,payload,nonce,false);
+        jdbc.update("UPDATE marketplace_connections SET reporting_timezone=? WHERE tenant_id=? AND id=? AND channel='SHOPIFY'",zone,tenantId,id);
+    }
+
     @Transactional(readOnly = true)
     public List<MemberView> listMembers(UUID tenantId) {
         setTenant(tenantId);
@@ -478,6 +527,7 @@ public class WorkspaceAccessRepository {
     }
 
     private static String marketplaceLabel(String id) {
+        if(id.endsWith(".myshopify.com"))return "Shopify";
         return switch (id) {
             case "ATVPDKIKX0DER" -> "Amazon US";
             case "A1F83G8C2ARO7P" -> "Amazon UK";
@@ -488,6 +538,7 @@ public class WorkspaceAccessRepository {
     }
 
     private static String countryFlag(String id) {
+        if(id.endsWith(".myshopify.com"))return "";
         return switch (id) {
             case "A1F83G8C2ARO7P" -> "🇬🇧";
             case "A2EUQ1WTGCTBG2" -> "🇨🇦";
@@ -497,6 +548,7 @@ public class WorkspaceAccessRepository {
 
     private static String syncLabel(String type) {
         return switch(type) {
+            case "SHOPIFY_CATALOG_VARIANTS" -> "Products and variants";
             case "VERIFY_SELLER" -> "Verify Amazon store";
             case "LISTINGS_SNAPSHOT" -> "Products and SKUs";
             case "ORDERS_30_DAY", "ORDER_ITEMS_30_DAY" -> type.startsWith("ORDER_ITEMS") ? "Order items" : "Last 30 days of orders";

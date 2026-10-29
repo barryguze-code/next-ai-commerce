@@ -23,3 +23,8 @@ test('item profit prorates package shipping by SKU units and preserves pennies',
 test('Buy Box preview changes only the selected SKU, not historical data',()=>{assert.deepEqual([...preview(order,{profitPreview:'15',profitSku:'B'})],[20,15]);assert.equal(order.lines[1].unitPrice,30);});
 test('SKU price preview accepts its selected unit price',()=>{assert.deepEqual([...preview({...order,kind:'SKU',lines:[order.lines[0]]},{profitPreview:'12.08'})],[12.08]);});
 test('missing, invalid, or mismatched-currency prices are not substituted',()=>{for(const data of [{},{profitPreview:'bad'},{profitPreview:'-1'},{profitPreview:'15',profitCurrency:'CAD'}])assert.equal(preview(order,data),null);});
+
+test('Shopify estimate allocates shipping once without Amazon referral fees',()=>{
+ const view={kind:'SHOPIFY_ORDER',totals:{profit:41,shippingCost:10},lines:[{sku:'A',quantity:1,unitPrice:20,productCost:2,otherCost:1},{sku:'B',quantity:2,unitPrice:20,productCost:2,otherCost:1}]};
+ assert.equal(allocation(view,'A'),13.67);assert.equal(allocation(view,'B'),27.33);assert.equal(allocation(view,'A')+allocation(view,'B'),41);
+});

@@ -11,6 +11,8 @@ async function loadRelatedSkus(itemId) {
     const rows = await response.json();
     if(target.dataset.item!==requestedItem)return;
     count.textContent = `${rows.length} ${rows.length === 1 ? "mapping" : "mappings"}`;
+    if(window.NextAiLedgerDesignPreview?.renderRelated(target,rows))return;
+    target.classList.remove('ledger-preview-related');target.removeAttribute('role');target.removeAttribute('aria-label');
     target.innerHTML = rows.length ? rows.map(row => {
       const rawStatus=(row.status || "").toUpperCase();
       const statusLabel=rawStatus === "VISIBLE" ? "Active on Amazon" : rawStatus === "OUT_OF_STOCK" ? "Out of stock" : rawStatus === "AMAZON_PROBLEM" ? "Amazon attention" : rawStatus ? rawStatus.replaceAll("_", " ").toLowerCase() : "Mapped";
@@ -109,7 +111,7 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
         const batch=m.expirationDate?' · Batch '+escapeHistory(formatCalendarDate(m.expirationDate)):' · FIFO batch';
         const reference=m.sourceReference&&m.sourceType!=="PHYSICAL_COUNT"?' · '+escapeHistory(m.sourceReference):'';
         article.innerHTML='<span>'+escapeHistory(m.movementLabel)+'</span><div><strong>'+escapeHistory(m.description||m.sourceLabel)+'</strong><small>'+formatHistoryDate(m.occurredAt)+batch+reference+'</small></div><b>'+(Number(m.quantity)>0?'+':'')+Math.round(Number(m.quantity))+' each</b><em>'+(m.currency&&m.unitCost!=null?escapeHistory(m.currency)+' '+Number(m.unitCost).toFixed(2):'Not valued')+'</em>';
-        target.append(article);
+        window.NextAiLedgerDesignPreview?.decorateMovement(article,m);target.append(article);
       }
       if(!target.children.length){feedback.textContent=mode==="received"?"No receipts recorded for this item.":"No movements recorded for "+(mode==="item"?"this item.":"this batch.");target.append(feedback);}
       if(rows.length===100){const more=document.createElement("button");more.type="button";more.className="secondary-button history-load-more";more.dataset.historyMore="";more.textContent="Load more movements";more.onclick=()=>window.loadInventoryMovements(row,mode,page+1);target.append(more);}

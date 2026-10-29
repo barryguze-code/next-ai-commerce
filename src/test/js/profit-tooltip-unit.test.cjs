@@ -45,3 +45,7 @@ test('FBA breakdown separates transportation and placement without an extra comb
  assert.equal(entries[entries.findIndex(n=>n.textContent==='Placement fee')+1].textContent,'$0.00');
  assert.match(entries[entries.findIndex(n=>n.textContent==='FBA fulfillment fee')+1].children[0].textContent,/8 days since import/);
 });
+
+test('Shopify cost tooltip reports mapped costs without inventing payment or Amazon fees',()=>{
+ const f=fixture();f.views.set(f.button,{kind:'SHOPIFY_ORDER',currency:'USD',totals:{revenue:40,productCost:12,shippingCost:14.20}});vm.runInContext('showFees(button)',f.context);const values=f.tip.children[1].children.map(n=>n.textContent);assert.ok(values.includes('$12.00'));assert.ok(values.includes('$14.20'));assert.ok(!values.includes('Referral fee'));assert.match(f.tip.children[2].textContent,/net profit unresolved/);
+});

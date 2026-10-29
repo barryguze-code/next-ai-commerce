@@ -19,53 +19,9 @@
       if(shortcuts.childElementCount)copy.append(shortcuts);
     });
   }
-  const packingClicksKey='nextai.packing-slip-clicked.v1';
-  let packingClicks=[];
-  try{const saved=JSON.parse(localStorage.getItem(packingClicksKey)||'[]');if(Array.isArray(saved))packingClicks=saved.filter(id=>typeof id==='string').slice(-1000);}catch(_){}
-  function showPackingClicked(button){
-    button.dataset.packingClicked='true';
-    if(window.NextAiIcons)button.replaceChildren(window.NextAiIcons.create('printClicked'));
-    button.title='Packing slip opened — click to reprint';
-    button.setAttribute('aria-label',button.title);
-    button.closest('.order-action-tip')?.setAttribute('data-tooltip',button.title);
-  }
-  function addPackingSlipActions(){
-    document.querySelectorAll('[data-packing-slip-order]').forEach(shipping=>{
-      if(shipping.closest('[data-tooltip]'))shipping.removeAttribute('title');
-      if(shipping.parentElement?.querySelector('.order-icon-action.packing-slip'))return;
-      const orderId=shipping.dataset.packingSlipOrder,orderRow=shipping.closest('.order-row');
-      if(!orderId||!orderRow)return;
-      const tip=document.createElement('span');tip.className='order-action-tip';tip.dataset.tooltip='Open packing slip';
-      const button=document.createElement('button');button.type='button';button.className='order-icon-action shipping packing-slip';
-      button.setAttribute('aria-label','Open packing slip and Seller Central order');
-      button.innerHTML='<span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 4H5v17h10M15 4h3v7M9 2h5v4H9zM8 10l1.5 1.5L12 9M8 15h3"/><path d="m15 14 3-1.5 3 1.5v5l-3 1.5-3-1.5zM15 14l3 1.5 3-1.5M18 15.5v5"/></svg></span>';
-      if(packingClicks.includes(orderId))showPackingClicked(button);
-      button.addEventListener('click',()=>{
-        packingClicks=[...packingClicks.filter(id=>id!==orderId),orderId].slice(-1000);
-        try{localStorage.setItem(packingClicksKey,JSON.stringify(packingClicks));}catch(_){}
-        showPackingClicked(button);
-        const labelUrl='/app/orders/'+encodeURIComponent(orderId)+'/packing-slip';
-        const sellerUrl=orderRow.querySelector('.order-number')?.href;
-        const label=window.open('about:blank','_blank');
-        if(label)label.opener=null;
-        const seller=sellerUrl?window.open('about:blank','_blank'):null;
-        if(seller){seller.opener=null;seller.location.href=sellerUrl;seller.focus();}
-        if(label)label.location.href=labelUrl+(!seller&&sellerUrl?'?sellerCentralBlocked=true':'');
-        if(!label||!seller){
-          let notice=document.querySelector('[data-packing-tabs-notice]');
-          if(!notice){notice=document.createElement('div');notice.className='stream-toast show';notice.dataset.packingTabsNotice='';notice.setAttribute('role','status');document.body.append(notice);}
-          notice.replaceChildren(document.createTextNode('Your browser blocked a tab. '));
-          const addLink=(url,text)=>{const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=text;link.style.cssText='color:inherit;text-decoration:underline;margin-left:10px';notice.append(link);};
-          if(!label)addLink(labelUrl,'Open packing slip');if(!seller&&sellerUrl)addLink(sellerUrl,'Open Seller Central');
-          const close=document.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label','Dismiss');close.onclick=()=>notice.remove();notice.append(close);
-        }
-      });
-      tip.append(button);shipping.parentElement.append(tip);
-    });
-  }
-  addPackingSlipActions();addOrderSearchShortcuts();
+  addOrderSearchShortcuts();
   // Rebuild shortcuts only for incoming order rows, not every tooltip/text update.
-  new MutationObserver(records=>{if(records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1&&(node.matches('.order-item,.order-row,[data-order-stream]')||node.querySelector('.order-item'))))){addPackingSlipActions();addOrderSearchShortcuts();}}).observe(document.body,{childList:true,subtree:true});
+  new MutationObserver(records=>{if(records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1&&(node.matches('.order-item,.order-row,[data-order-stream]')||node.querySelector('.order-item'))))){addOrderSearchShortcuts();}}).observe(document.body,{childList:true,subtree:true});
   const dialog=document.getElementById('buy-shipping-drawer');
   if(!dialog)return;
   const template=document.getElementById('shipping-package-template');

@@ -21,7 +21,9 @@ public class ProfitRepository {
         this.jdbc=jdbc;this.named=new NamedParameterJdbcTemplate(jdbc);this.costs=costs;
     }
     public record Line(String sku,String title,int quantity,BigDecimal unitPrice,BigDecimal productCost,
-                       BigDecimal otherCost,BigDecimal customerShipping) {}
+                       BigDecimal otherCost,BigDecimal customerShipping,UUID variantId) {
+        public Line(String sku,String title,int quantity,BigDecimal unitPrice,BigDecimal productCost,BigDecimal otherCost,BigDecimal customerShipping){this(sku,title,quantity,unitPrice,productCost,otherCost,customerShipping,null);}
+    }
     public record PackageCost(String description,BigDecimal amount) {
         public PackageCost {
             if(description==null||description.isBlank()||description.length()>120||amount==null||amount.signum()<0||amount.scale()>2||amount.compareTo(new BigDecimal("100000"))>0)

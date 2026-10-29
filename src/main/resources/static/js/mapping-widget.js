@@ -16,11 +16,12 @@ function picture(line,product){
  attachEditor(holder,id);
 }
 function attachEditor(holder,productId,sku){
+ if(dialog?.dataset.provider==='SHOPIFY'&&!productId)return;
  if(!sku&&dialog?.dataset.canEdit!=='true')return;
  if(holder.querySelector('.mw-picture-edit'))return;
  const edit=node('button','mw-picture-edit');edit.type='button';edit.title='Edit SKU picture';edit.setAttribute('aria-label',edit.title);
  edit.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 16-1 4 4-1L20 7l-3-3Z M14 7l3 3"/></svg>';
- holder.append(edit);edit.onclick=()=>pictureMenu(edit,holder,productId,sku);
+ holder.append(edit);edit.onclick=()=>dialog?.dataset.provider==='SHOPIFY'&&productId?window.NextAiStandardTables?.editPicture(edit,holder,endpoint(productId)):pictureMenu(edit,holder,productId,sku);
 }
 function pictureMenu(trigger,holder,productId,sku){
  const menu=node('dialog','order-picture-menu mw-picture-menu');
@@ -93,8 +94,11 @@ async function open(trigger){
  const record=trigger.dataset.target?document.getElementById(trigger.dataset.target):trigger;
  const stage=trigger.closest('.order-item')?.querySelector('[data-picture-actions]');
  const data=record?.dataset||{};
+ const shopify=data.provider==='SHOPIFY';d.dataset.provider=shopify?'SHOPIFY':'AMAZON';
+ d.querySelector('form').action=shopify?'/app/marketplace-skus/shopify/mappings':'/app/marketplace-skus/mappings';
+ d.querySelector('.mw-clear').formAction=shopify?'/app/marketplace-skus/shopify/mappings/clear':'/app/marketplace-skus/mappings/clear';
  d.dataset.canEdit=String((data.canEdit||stage?.dataset.canEdit||'true')==='true');
- d.querySelector('h2').textContent=data.sellerSku||stage?.dataset.sellerSku||'';
+ d.querySelector('h2').textContent=data.sellerSku||stage?.dataset.sellerSku||(shopify?'No SKU':'');
  d.querySelector('[data-title]').textContent=data.productTitle||stage?.dataset.productTitle||'';
  const photo=d.querySelector('.mw-product-image');photo.replaceChildren();const image=data.image||stage?.querySelector('img')?.src;
  photo.hidden=!image;if(image){const img=node('img');img.src=image;img.alt='';img.onerror=()=>photo.hidden=true;photo.append(imageFrame(img))}
@@ -102,15 +106,16 @@ async function open(trigger){
  d.querySelectorAll('form > input[type=hidden]').forEach(e=>e.remove());
  const hidden=(name,value)=>{const e=node('input');e.type='hidden';e.name=name;e.value=value;d.querySelector('form').append(e)};
  hidden('sellerSku',d.querySelector('h2').textContent);hidden('returnTo',location.pathname+location.search);
+ if(shopify){hidden('variantId',data.variantId);hidden('variantRevision',data.variantRevision);}
  const csrf=document.getElementById('buy-shipping-csrf');if(csrf)hidden('_csrf',csrf.value);
  d.querySelector('.mw-lines').replaceChildren();d.querySelector('.mw-feedback').textContent='Loading mapping…';
  d.querySelectorAll('.mw-save,.mw-add,.mw-clear').forEach(b=>b.disabled=true);
  d.querySelector('.mw-clear').hidden=d.dataset.canEdit!=='true';
  d.showModal();
  try{
-  const sku=d.querySelector('h2').textContent,r=await fetch('/app/marketplace-skus/mappings/components?sku='+encodeURIComponent(sku));if(!r.ok)throw Error();const products=await r.json();if(version!==requestNumber||!d.open)return;
+  const sku=d.querySelector('h2').textContent,r=await fetch(shopify?'/app/marketplace-skus/shopify/components?variantId='+encodeURIComponent(data.variantId):'/app/marketplace-skus/mappings/components?sku='+encodeURIComponent(sku));if(!r.ok)throw Error();const products=await r.json();if(version!==requestNumber||!d.open)return;
   if(products.length){products.forEach(p=>line(p));d.querySelector('.mw-feedback').textContent='';}
-  else{let suggestion=null;try{const response=await fetch('/app/marketplace-skus/mappings/draft?sku='+encodeURIComponent(sku));if(response.ok)suggestion=await response.json();}catch{}if(version!==requestNumber||!d.open)return;
+  else{let suggestion=null;try{const response=await fetch(shopify?'/app/marketplace-skus/shopify/draft?variantId='+encodeURIComponent(data.variantId):'/app/marketplace-skus/mappings/draft?sku='+encodeURIComponent(sku));if(response.ok)suggestion=await response.json();}catch{}if(version!==requestNumber||!d.open)return;
    line(suggestion?.product||null,draftQuantity(suggestion),suggestion?.itemCode);d.querySelector('.mw-feedback').textContent=suggestion?.product?'Product suggested from an exact account code. Review and Save mapping.':suggestion?.quantity>1?'Quantity detected from the SKU. Choose a product, then Save mapping.':'';
   }
   d.querySelector('.mw-clear').disabled=!products.length;update();

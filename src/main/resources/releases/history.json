@@ -1,5 +1,32 @@
 [
 {
+  "version": "1.10.0",
+  "title": "Shopify orders and shared warehouse operations",
+  "sections": [
+    {
+      "title": "Shopify workspace",
+      "items": [
+        "Connect your Shopify store, synchronize products and orders, and map variants to account catalogue products.",
+        "Review Shopify orders using the shared order, packing and inventory workflows."
+      ]
+    },
+    {
+      "title": "Warehouse operations",
+      "items": [
+        "Review stock, reservations and marketplace movements in the shared inventory ledger.",
+        "Configure inventory publication from explicitly selected account warehouse locations to the verified Shopify location; uncertain stock changes require reconciliation."
+      ]
+    },
+    {
+      "title": "Cost estimates",
+      "items": [
+        "Review mapped product costs and planning shipping costs, with an editable Other cost per sold SKU unit.",
+        "Missing cost evidence remains visible; estimates exclude payment fees, taxes and refunds."
+      ]
+    }
+  ]
+},
+{
   "version": "1.9.0",
   "title": "Clear catalogue identity and safer supplier imports",
   "sections": [

@@ -8,6 +8,14 @@ const cell=context.window.NextAiTableDataTools.csvCell;
 test('CSV escapes commas and quotes',()=>assert.equal(cell('Salt, "fine"'),'"Salt, ""fine"""'));
 test('CSV guards spreadsheet formulas',()=>{for(const prefix of ['=','+','-','@'])assert.equal(cell(prefix+'A1'),'"\''+prefix+'A1"')});
 test('CSV handles missing values and whitespace',()=>{assert.equal(cell(null),'""');assert.equal(cell('  hello\nworld  '),'"hello world"');assert.equal(cell('USD 12.50'),'"USD 12.50"')});
+test('Shopify Orders use atomic native fields without Amazon identifiers or guessed fees',()=>{
+ const tools=context.window.NextAiTableDataTools,root={dataset:{tableWidget:'orders',provider:'SHOPIFY'}};
+ const columns=tools.exportColumns(root,[{id:'product',title:'Product'},{id:'order',title:'Order'},{id:'quantity',title:'Qty'},{id:'sales',title:'Sales'},{id:'profit',title:'Profit'},{id:'four-week-sales',title:'Sales history'}]);
+ const row={dataset:{exportProduct:'Pizza',exportSku:'000001-EAx3',exportMapping:'000001 × 3',exportOrder:'#1001',exportDate:'2026-10-27T12:00:00Z',exportPayment:'PENDING',exportStatus:'UNFULFILLED',exportCancelled:'false',exportReadiness:'Reserved',exportQuantity:'3',exportOpen:'3',exportSales:'30.00',exportCurrency:'USD'},querySelector(selector){return selector==='.item-weekly-sales'?{dataset:{exportWeeks:'1 | 2 | 3 | 4'}}:null}};
+ const names=Array.from(columns,c=>c.title),values=Array.from(tools.exportValues(root,row,columns));
+ assert.equal(names.includes('ASIN'),false);assert.equal(names.includes('Amazon status'),false);assert.equal(names.includes('Buy Box'),false);assert.equal(names.includes('Referral fee'),false);
+ assert.equal(values[names.indexOf('SKU')],'000001-EAx3');assert.equal(values[names.indexOf('Payment status')],'PENDING');assert.equal(values[names.indexOf('Estimated profit')],'');assert.equal(values[names.indexOf('Calculation state')],'Fees unavailable');assert.equal(values[names.indexOf('Week 4 current units')],'4');
+});
 test('CSV excludes record controls and action menus',()=>{
  const cols=context.window.NextAiTableDataTools.exportColumns({dataset:{tableWidget:'orders'}},[{id:'column-0',title:'Record'},{id:'quantity',title:'Quantity'},{id:'action',title:'Actions'}]);
  assert.deepEqual(Array.from(cols,c=>c.title),['Quantity']);

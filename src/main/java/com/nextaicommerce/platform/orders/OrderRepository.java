@@ -25,6 +25,8 @@ public class OrderRepository {
     }
     static final String MARKETPLACE_IDENTIFIER_SQL="SELECT marketplace_identifier FROM marketplace_connections WHERE tenant_id=? AND id=?";
     private final JdbcTemplate jdbc;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.nextaicommerce.platform.shopify.ShopifyOrderInventory shopifyInventory;
     @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceAvailable;
     public record SoldTotals(long orders,long units){}
     @Transactional(readOnly=true)
@@ -275,8 +277,9 @@ public class OrderRepository {
             WHERE tenant_id=? AND channel='AMAZON' AND status='ACTIVE' ORDER BY id
             """,(rs,row)->rs.getObject(1,UUID.class),tenantId);
         for(UUID connectionId:connections)reconcileConnectionInventory(tenantId,connectionId);
+        int shopifyShortages=shopifyInventory==null?0:shopifyInventory.reconcileTenant(tenantId);
         Integer shortages=jdbc.queryForObject("SELECT count(*) FROM amazon_orders WHERE tenant_id=? AND operational_scope='LIVE' AND fulfillment_state='INVENTORY_SHORTAGE'",Integer.class,tenantId);
-        return shortages==null?0:shortages;
+        return (shortages==null?0:shortages)+shopifyShortages;
     }
 
     private void allocateOrder(UUID tenantId,UUID connectionId,String orderId){

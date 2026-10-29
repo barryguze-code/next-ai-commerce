@@ -2,45 +2,45 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <body>
 <th:block th:fragment="onboarding(syncStatuses,syncJobsByConnection)">
-  <section class="amazon-onboarding" th:each="sync : ${syncStatuses}" th:if="${sync.status != 'COMPLETED' and sync.status != 'ENRICHING'}" th:classappend="${sync.feeOnly ? ' fee-only' + (sync.feeTerminal() ? ' fee-terminal' : '') : ''}">
+  <section class="amazon-onboarding" th:each="sync : ${syncStatuses}" th:if="${sync.status != 'COMPLETED' and sync.status != 'ENRICHING'}" th:classappend="${sync.feeOnly ? ' fee-only' + (sync.terminal() ? ' fee-terminal' : '') : ''}">
     <header class="onboarding-head">
       <div class="onboarding-title">
-        <span th:if="${!sync.feeTerminal()}" class="sync-loader" aria-hidden="true"></span>
-        <span th:if="${sync.feeTerminal()}" aria-hidden="true">!</span>
+        <span th:if="${!sync.terminal()}" class="sync-loader" aria-hidden="true"></span>
+        <span th:if="${sync.terminal()}" aria-hidden="true">!</span>
         <div>
-          <small th:text="${sync.feeOnly ? 'Amazon fee check' : 'Amazon initialization'}">Amazon initialization</small>
+          <small th:text="${sync.shopify() ? 'Shopify catalogue setup' : sync.feeOnly ? 'Amazon fee check' : 'Amazon initialization'}">Amazon initialization</small>
           <h2 th:text="${sync.storeName}">Amazon store</h2>
           <p th:text="${sync.message}">Preparing your Amazon data</p>
         </div>
       </div>
       <div class="onboarding-progress-copy">
-        <strong th:text="${sync.feeOnly ? sync.feeStateLabel() : sync.displayProgress() + '%'}">25%</strong>
+        <strong th:text="${sync.shopify() ? (sync.terminal() ? 'Needs attention' : 'Syncing in background') : sync.feeOnly ? sync.feeStateLabel() : sync.displayProgress() + '%'}">25%</strong>
         <small th:if="${!sync.feeOnly}" th:text="${sync.estimatedTimeRemaining()}">Amazon is preparing this step</small>
       </div>
     </header>
-    <div th:if="${!sync.feeTerminal()}" class="sync-progress large" th:classappend="${sync.starting() ? ' indeterminate' : ''}"
-         role="progressbar" th:attr="aria-valuenow=${sync.displayProgress()}" aria-valuemin="0" aria-valuemax="100">
+    <div th:if="${!sync.terminal()}" class="sync-progress large" th:classappend="${sync.starting() or sync.shopify() ? ' indeterminate' : ''}"
+         role="progressbar" th:attr="aria-valuenow=${sync.shopify() ? null : sync.displayProgress()}" aria-valuemin="0" aria-valuemax="100">
       <span th:style="${'width:' + sync.displayProgress() + '%'}"></span>
     </div>
     <div class="onboarding-stage-copy">
       <strong th:text="${sync.stagePosition()}">Step 1 of 12</strong>
-      <span th:if="${!sync.feeOnly}">Initial 30-day import</span>
+      <span th:if="${!sync.feeOnly and !sync.shopify()}">Initial 30-day import</span>
     </div>
     <div class="sync-checklist">
       <article th:each="job : ${syncJobsByConnection[sync.connectionId]}"
                th:classappend="${' ' + #strings.toLowerCase(job.status)}">
         <span class="job-state">
           <b th:if="${job.status == 'COMPLETED'}" aria-label="Complete">✓</b>
-          <i th:if="${(job.status == 'RUNNING' || job.status == 'WAITING') and !sync.feeTerminal()}" class="job-spinner" aria-label="In progress"></i>
-          <b th:if="${sync.feeTerminal() and (job.status == 'RUNNING' || job.status == 'WAITING')}" aria-label="No longer running">–</b>
+          <i th:if="${(job.status == 'RUNNING' || job.status == 'WAITING') and !sync.terminal()}" class="job-spinner" aria-label="In progress"></i>
+          <b th:if="${sync.terminal() and (job.status == 'RUNNING' || job.status == 'WAITING')}" aria-label="No longer running">–</b>
           <b th:if="${job.status == 'QUEUED'}" th:text="${job.sequence}">1</b>
           <b th:if="${job.status == 'SKIPPED'}">–</b>
           <b th:if="${job.status == 'FAILED'}">!</b>
         </span>
         <div>
           <strong th:text="${job.label}">Products and SKUs</strong>
-          <small th:if="${job.status == 'RUNNING' and !sync.feeTerminal()}">Working now</small>
-          <small th:if="${job.status == 'WAITING' and !sync.feeTerminal()}"
+          <small th:if="${job.status == 'RUNNING' and !sync.terminal()}">Working now</small>
+          <small th:if="${job.status == 'WAITING' and !sync.terminal()}"
                  th:text="${job.detail != null ? job.detail : 'Waiting for Amazon'}">Waiting for Amazon</small>
           <small th:if="${job.status == 'QUEUED'}">Queued</small>
           <small th:if="${job.status == 'COMPLETED'}"
@@ -50,7 +50,7 @@
         </div>
       </article>
     </div>
-    <footer><span>Safe to leave this page</span><p th:text="${sync.feeOnly ? (sync.feeTerminal() ? 'This fee check has ended. Review unsupported or unresolved results before another check.' : 'This bounded fee check runs in the background.') : 'Synchronization continues in the background. Amazon controls report preparation time.'}">Synchronization continues in the background. Amazon controls report preparation time.</p></footer>
+    <footer><span>Safe to leave this page</span><p th:text="${sync.shopify() ? (sync.terminal() ? 'Imported observations are kept. Review Marketplace SKUs to resume or retry.' : 'Products and variants sync automatically in the background. Orders are not enabled.') : sync.feeOnly ? (sync.terminal() ? 'This fee check has ended. Review unsupported or unresolved results before another check.' : 'This bounded fee check runs in the background.') : 'Synchronization continues in the background. Amazon controls report preparation time.'}">Synchronization continues in the background. Amazon controls report preparation time.</p></footer>
   </section>
 </th:block>
 </body>

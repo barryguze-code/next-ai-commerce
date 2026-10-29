@@ -12,8 +12,8 @@
   if(row.classList.contains('inventory-row')&&window.openInventoryHistory){window.openInventoryHistory(row);return;}
   // Mapped order products use the same ledger as their item-code links, not a
   // second modal repeating the order table's sales/status blocks.
-  const ledger=row.matches('.order-item')&&row.querySelector('a[href*="/mappings/ledger"]');
-  if(ledger&&window.openMappedInventoryLedger){window.openMappedInventoryLedger(ledger,true,title);return;}
+  const ledger=row.matches('.order-item')&&row.querySelector('a[href*="/mappings/ledger"],a[data-order-ledger-item]');
+  if(ledger&&window.openMappedInventoryLedger){const items=[...row.querySelectorAll('a[data-order-ledger-item]')].map(a=>({itemId:a.dataset.orderLedgerItem,accountSku:a.dataset.orderLedgerCode,quantity:a.dataset.orderLedgerQuantity}));window.openMappedInventoryLedger(ledger,true,title,items.length?items:undefined);return;}
   if(!dialog){
    dialog=make('dialog','invite-dialog');dialog.id='ui-product-dialog';dialog.setAttribute('aria-labelledby','ui-product-title');
    dialog.innerHTML='<div class="dialog-shell"><header class="dialog-header"><img class="ui-product-picture" alt=""><div><span class="eyebrow dark">Product details</span><h2 id="ui-product-title"></h2></div><button type="button" class="dialog-close" aria-label="Close product details">×</button></header><div class="dialog-body"><dl class="ui-record-facts"></dl><nav class="ui-record-links" aria-label="Related inventory"></nav></div><footer class="dialog-actions"><button type="button" class="secondary-button">Close</button></footer></div>';
@@ -52,7 +52,7 @@
    if(title.dataset.uiTitleReady||title.dataset.uiProduct!==undefined||!title.closest('tbody tr,.order-item'))return;
    title.dataset.uiTitleReady='true';
    const name=recordName(title).toLowerCase();
-   const action=title.closest('.inventory-row')||title.closest('.order-item')?.querySelector('.mapping-summary-button.is-mapped')?'Inventory Ledger':'View '+name+' details';
+   const action=title.closest('.inventory-row')||title.closest('.order-item')?.querySelector('.mapping-summary-button.is-mapped,a[data-order-ledger-item]')?'Inventory Ledger':'View '+name+' details';
    if(!title.matches('.sku-approved-title')){title.dataset.uiProduct='';title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label',action+': '+title.textContent.trim());title.title=action;}
    delete title.dataset.orderCopy;
    const heading=make('span','ui-product-heading');title.before(heading);heading.append(title);

@@ -23,7 +23,7 @@ for(const theme of ['light','dark'])for(const width of [320,390,760,1440])test(`
  try{
   const notice=page.getByRole('region',{name:'An update is being prepared.'}),ack=page.getByRole('button',{name:'Got it',exact:true});
   assert.equal(await notice.isVisible(),true);
-  assert.equal(await page.getByText('We’re preparing improvements to NextAI Commerce. We’ll confirm the timing before the update begins.',{exact:true}).isVisible(),true);
+  assert.equal(await page.getByText('We’re preparing updates to Shopify Orders and warehouse inventory synchronization. We’ll confirm the schedule before deployment begins.',{exact:true}).isVisible(),true);
   assert.equal(await page.getByText('To be confirmed.',{exact:true}).isVisible(),true);
   assert.ok((await ack.boundingBox()).height>=44);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));

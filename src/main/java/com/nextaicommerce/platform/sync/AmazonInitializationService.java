@@ -33,6 +33,8 @@ public class AmazonInitializationService {
     @Transactional
     public UUID enqueue(UUID tenantId, UUID connectionId) {
         setTenant(tenantId);
+        String channel=jdbc.queryForObject("SELECT channel FROM marketplace_connections WHERE tenant_id=? AND id=? FOR UPDATE",String.class,tenantId,connectionId);
+        if(!"AMAZON".equals(channel))throw new IllegalArgumentException("Amazon initialization requires an Amazon connection.");
         List<UUID> existing = jdbc.query("""
             SELECT id FROM marketplace_sync_runs
             WHERE tenant_id=? AND marketplace_connection_id=? AND run_type='INITIAL_30_DAY'

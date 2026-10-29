@@ -80,6 +80,36 @@ public class OrderRecipientRepository {
             WHERE r.tenant_id=? AND r.marketplace_connection_id=? AND r.amazon_order_id=? AND
             """+ELIGIBLE,rs->rs.next()?new Stored(rs.getString(1),rs.getBytes(2),rs.getBytes(3)):null,tenant,store,order);
     }
+    /** Exact user-selected order only. No collector enqueue, scan or background retry. */
+    public Command claimLocalShippingRead(UUID tenant,UUID store,String order){
+        scope(tenant);UUID lease=UUID.randomUUID();
+        return jdbc.query("""
+            INSERT INTO order_shipping_recipients(tenant_id,marketplace_connection_id,amazon_order_id,source_updated_at,status,lease_id,attempts,next_attempt_at)
+            SELECT o.tenant_id,o.marketplace_connection_id,o.amazon_order_id,o.last_update_date,'FETCHING',?,1,now()+interval '5 minutes'
+            FROM amazon_orders o JOIN marketplace_connections c ON c.tenant_id=o.tenant_id AND c.id=o.marketplace_connection_id
+            WHERE o.tenant_id=? AND o.marketplace_connection_id=? AND o.amazon_order_id=? AND c.channel='AMAZON' AND c.status='ACTIVE'
+              AND upper(o.fulfillment_channel) IN ('MFN','MERCHANT','FBM') AND NOT o.platform_waiting_for_pickup
+              AND regexp_replace(upper(o.order_status),'[^A-Z]','','g') IN ('UNSHIPPED','PARTIALLYSHIPPED')
+            ON CONFLICT(tenant_id,marketplace_connection_id,amazon_order_id) DO UPDATE SET
+              status='FETCHING',lease_id=excluded.lease_id,attempts=order_shipping_recipients.attempts+1,
+              source_updated_at=excluded.source_updated_at,next_attempt_at=excluded.next_attempt_at,encrypted_payload=NULL,encryption_nonce=NULL
+            WHERE order_shipping_recipients.next_attempt_at<=now()
+              OR order_shipping_recipients.source_updated_at IS DISTINCT FROM excluded.source_updated_at
+            RETURNING amazon_order_id,(SELECT marketplace_identifier FROM marketplace_connections c WHERE c.tenant_id=order_shipping_recipients.tenant_id AND c.id=order_shipping_recipients.marketplace_connection_id)
+            """,rs->rs.next()?new Command(tenant,store,rs.getString(1),rs.getString(2),lease):null,lease,tenant,store,order);
+    }
+    public Stored readCurrentLocalShipping(UUID tenant,UUID store,String order){
+        scope(tenant);
+        boolean current=Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM order_shipping_recipients r JOIN amazon_orders o
+              ON o.tenant_id=r.tenant_id AND o.marketplace_connection_id=r.marketplace_connection_id AND o.amazon_order_id=r.amazon_order_id
+              WHERE r.tenant_id=? AND r.marketplace_connection_id=? AND r.amazon_order_id=?
+                AND r.source_updated_at IS NOT DISTINCT FROM o.last_update_date AND NOT o.platform_waiting_for_pickup
+                AND upper(o.fulfillment_channel) IN ('MFN','MERCHANT','FBM')
+                AND regexp_replace(upper(o.order_status),'[^A-Z]','','g') IN ('UNSHIPPED','PARTIALLYSHIPPED'))
+            """,Boolean.class,tenant,store,order));
+        return current?read(tenant,store,order):null;
+    }
     public void purge(UUID tenant){scope(tenant);
         jdbc.update("UPDATE order_shipping_recipients SET encrypted_payload=NULL,encryption_nonce=NULL,status='EXPIRED',lease_id=NULL WHERE tenant_id=? AND encrypted_payload IS NOT NULL AND expires_at<=now()",tenant);
         jdbc.update("""

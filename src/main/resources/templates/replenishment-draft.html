@@ -47,8 +47,8 @@
 <dialog id="rp-basket" class="invite-dialog rp-dialog"><div class="dialog-shell"><header class="dialog-header"><div><span class="eyebrow dark">Purchasing plan</span><h2>Replenishment basket</h2><p>Kept in this browser tab for this account. Nothing is ordered or sent to a vendor.</p></div><button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button></header><div class="dialog-body" data-basket-body></div><footer class="dialog-actions"><a class="secondary-button" th:href="@{/app/inventory/replenishment/download(status=${status},q=${q})}">Download replenishment</a><button class="secondary-button" type="button" data-close-dialog>Keep reviewing</button><button class="primary-button" type="button" data-po-preview>Review by vendor</button></footer></div></dialog>
 <th:block th:replace="~{fragments/inventory-history-panel :: panel}"></th:block>
 <script src="/js/inventory-history-panel.js?v=20261002-2"></script>
-<script src="/js/location-manager.js"></script>
+<script src="/js/location-manager.js?v=account-context-2"></script>
 <script src="/js/inventory-related-skus.js"></script>
 <script src="/js/replenishment-inventory-history.js?v=1.6.6"></script>
 <th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block>
-<div th:replace="~{fragments/profit :: runtime}"></div></body></html>
+<div th:replace="~{fragments/profit :: runtime}"></div><link rel="stylesheet" href="/css/inventory-ledger-preview.css?v=9"><script src="/js/inventory-ledger-preview.js?v=shared-ledger-1"></script></body></html>
