@@ -415,6 +415,7 @@ public class ReceivingRepository {
     public ReceiveProgress receive(UUID tenantId, UUID sessionId, UUID itemId, String actorEmail,
             BigDecimal cases, BigDecimal eaches, BigDecimal unitsPerCase, LocalDate expiration,
             String disposition, String notes,BigDecimal depositFee,BigDecimal otherFee,UUID locationId,boolean updateDefaultCost) {
+        ExpirationDates.requireSupported(expiration);
         setTenant(tenantId);
         lockInventory(tenantId);
         target(tenantId,sessionId,itemId);

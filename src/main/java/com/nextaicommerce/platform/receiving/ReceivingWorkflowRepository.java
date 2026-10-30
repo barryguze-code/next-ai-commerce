@@ -50,6 +50,7 @@ public class ReceivingWorkflowRepository {
     public void receiveBatches(UUID tenant,String actor,UUID line,List<ReceiptBatch> batches,
             BigDecimal damaged,BigDecimal missing,BigDecimal mispick,UUID location,Boolean dateRequired,
             BigDecimal confirmedOverage){
+        if(batches!=null)for(var batch:batches)if(batch!=null)ExpirationDates.requireSupported(batch.expiration());
         lock(tenant);
         if(batches==null||batches.isEmpty()||batches.size()>100)throw new IllegalArgumentException("Enter between 1 and 100 expiration batches.");
         BigDecimal total=BigDecimal.ZERO;
@@ -93,6 +94,7 @@ public class ReceivingWorkflowRepository {
     }
     @Transactional(readOnly=true)
     public ShelfStatus expirationStatus(UUID tenant,LocalDate expiration){
+        ExpirationDates.requireSupported(expiration);
         var policy=shelfLifePolicy(tenant);
         if(expiration==null)return new ShelfStatus("SELLABLE","neutral","No expiration date entered");
         long days=java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(),expiration);
@@ -106,6 +108,7 @@ public class ReceivingWorkflowRepository {
     @Transactional
     public void receiveDelivery(UUID tenant,String actor,UUID line,BigDecimal delivered,BigDecimal damaged,
             BigDecimal missing,BigDecimal wrong,LocalDate expiration,UUID location,BigDecimal pack,Boolean dateRequired){
+        ExpirationDates.requireSupported(expiration);
         lock(tenant);
         for(var q:List.of(delivered==null?BigDecimal.valueOf(-1):delivered,
                 damaged==null?BigDecimal.ZERO:damaged,missing==null?BigDecimal.ZERO:missing,wrong==null?BigDecimal.ZERO:wrong))
@@ -487,6 +490,7 @@ public class ReceivingWorkflowRepository {
     }
     @Transactional
     public void receive(UUID tenant,String actor,UUID line,BigDecimal quantity,LocalDate expiration,String disposition,UUID location,String notes){
+        ExpirationDates.requireSupported(expiration);
         if(quantity==null||quantity.signum()<=0||quantity.stripTrailingZeros().scale()>0)
             throw new IllegalArgumentException("Enter a positive whole-number quantity.");
         if(disposition==null||!List.of("SELLABLE","SOON_EXPIRED","EXPIRED","OVER_SHIPPED","DAMAGED","MISPICKED","SHORT_SHIPPED").contains(disposition))

@@ -232,11 +232,11 @@ public class PhysicalCountImportService {
                 DateTimeFormatter.ofPattern("M/d/uuuu"),DateTimeFormatter.ofPattern("M-d-uuuu"),
                 new java.time.format.DateTimeFormatterBuilder().appendPattern("M/d/")
                     .appendValueReduced(java.time.temporal.ChronoField.YEAR,2,2,2000).toFormatter(Locale.US))){
-            try{return LocalDate.parse(clean,format.withResolverStyle(java.time.format.ResolverStyle.STRICT));}catch(DateTimeParseException ignored){}
+            try{LocalDate parsed=LocalDate.parse(clean,format.withResolverStyle(java.time.format.ResolverStyle.STRICT));if(ExpirationDates.supported(parsed))return parsed;}catch(DateTimeParseException ignored){}
         }
         if(clean.matches("\\d+(\\.0+)?")){
             long serial=(long)Double.parseDouble(clean);
-            if(serial>0&&serial<100000)return LocalDate.of(1899,12,30).plusDays(serial);
+            if(serial>0&&serial<100000){LocalDate parsed=LocalDate.of(1899,12,30).plusDays(serial);if(ExpirationDates.supported(parsed))return parsed;}
         }
         throw new DateTimeParseException("Unsupported date",clean,0);
     }

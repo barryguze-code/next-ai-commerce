@@ -25,7 +25,11 @@ function unshippedInformation(documentId){
 }
 const unshippedHost=document.getElementById('rw-unshipped-information');if(unshippedHost)unshippedHost.innerHTML=unshippedInformation();
 const conditionNames={SELLABLE:'Received',SOON_EXPIRED:'Short shelf life',EXPIRED:'Expired',SHORT_SHIPPED:'Short shipped',DAMAGED:'Damaged',MISPICKED:'Mispick',OVER_SHIPPED:'Overage'};
-const date=value=>value?value.split('-').slice(1).concat(value.slice(2,4)).join('/'):'No expiration';
+const date=value=>{
+  if(!value)return 'No expiration';
+  const [year,month,day]=value.split('-');
+  return [month,day,Number(year)>=2000&&Number(year)<=2099?year.slice(2):year].join('/');
+};
 const shelf=value=>{if(!value||!state.policy)return 'neutral';const days=Math.round((new Date(value+'T00:00:00')-new Date(new Date().toDateString()))/86400000);return days<=Number(state.policy.minimumSellableDays)?'danger':days<=Number(state.policy.warningDays)?'warning':'success'};
 function receiptQuantities(l,d){
   let batches=[];try{batches=JSON.parse(d.batches||'[]')}catch(_){}

@@ -89,6 +89,7 @@ public class InventoryRepository {
         };}
         public String expirationMessage(LocalDate today){
             if(expirationDate==null)return "FIFO inventory";
+            if(!ExpirationDates.supported(expirationDate))return "Check expiration year";
             long days=daysRemaining(today);
             if(days<0)return Math.abs(days)+" day"+(Math.abs(days)==1?"":"s")+" expired";
             if(days==0)return "Expires today";
@@ -626,6 +627,7 @@ public class InventoryRepository {
     @Transactional
     public void receiveUninvoicedItem(UUID tenantId,String actorEmail,UUID itemId,BigDecimal quantity,
             LocalDate expirationDate,UUID locationId,String notes){
+        ExpirationDates.requireSupported(expirationDate);
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
         lockStockCorrection(tenantId);
         if(itemId==null)throw new IllegalArgumentException("Choose a product from the account catalogue.");
@@ -681,6 +683,7 @@ public class InventoryRepository {
     @Transactional
     public void adjustInventory(UUID tenantId,String actorEmail,UUID itemId,LocalDate expirationDate,
             UUID locationId,BigDecimal quantityChange,String reason,String notes){
+        if(quantityChange!=null&&quantityChange.signum()>0)ExpirationDates.requireSupported(expirationDate);
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
         lockStockCorrection(tenantId);
         if(itemId==null||quantityChange==null||quantityChange.signum()==0||quantityChange.stripTrailingZeros().scale()>0)
@@ -796,6 +799,7 @@ public class InventoryRepository {
     @Transactional
     public void changeExpiration(UUID tenantId,String actorEmail,UUID itemId,UUID locationId,LocalDate oldDate,
             LocalDate newDate,BigDecimal expectedQuantity,com.nextaicommerce.platform.orders.OrderRepository orders){
+        ExpirationDates.requireSupported(newDate);
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());lockStockCorrection(tenantId);
         if(newDate==null||java.util.Objects.equals(oldDate,newDate))throw new IllegalArgumentException("Choose a different expiration date.");
         if(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=? AND id=?",Long.class,tenantId,itemId)!=1)
@@ -880,6 +884,7 @@ public class InventoryRepository {
 
     @Transactional
     public int reconcilePhysicalCountSnapshot(UUID tenantId,String actorEmail,UUID importId,UUID vendorId,List<PhysicalCountRow> rows,boolean replaceMissing){
+        if(rows!=null)for(var row:rows)if(row!=null&&row.quantity()!=null&&row.quantity().signum()>0)ExpirationDates.requireSupported(row.expiration());
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
         Boolean lockAcquired=jdbc.queryForObject("SELECT pg_try_advisory_xact_lock(hashtextextended(?::text,0))",Boolean.class,tenantId);
         if(!Boolean.TRUE.equals(lockAcquired))throw new PhysicalCountBusyException();

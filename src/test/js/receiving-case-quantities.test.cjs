@@ -83,3 +83,11 @@ test('Received excludes exceptions while Remaining keeps resolved balance and ex
   assert.match(ctx.explanations({...saved.totals,DAMAGED:(saved.totals.DAMAGED||0)+1},saved.shortage),/damaged received/);
  }
 });
+
+test('receiving date labels expose anomalous centuries without changing valid dates',()=>{
+ const ctx=vm.createContext({});
+ vm.runInContext(source.slice(source.indexOf('const date='),source.indexOf('const shelf='))+'\nglobalThis.receiptDate=date;',ctx);
+ assert.equal(ctx.receiptDate('0027-07-14'),'07/14/0027');
+ assert.equal(ctx.receiptDate('2027-07-14'),'07/14/27');
+ assert.equal(ctx.receiptDate(null),'No expiration');
+});

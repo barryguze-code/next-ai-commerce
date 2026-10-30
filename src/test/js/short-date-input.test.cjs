@@ -20,3 +20,28 @@ test('date and time controls retain their ISO time',()=>{
   assert.equal(display('2026-10-02T14:05'),'10/02/26 14:05');
   assert.equal(parse('10/02/26 24:00',true),null);assert.equal(parse('10/02/26',true),null);
 });
+
+test('stored anomalous centuries remain visible and cannot pass date entry',()=>{
+ assert.equal(display('0027-07-14'),'07/14/0027');
+ assert.equal(display('0027-08-10'),'08/10/0027');
+ assert.equal(parse(display('0027-07-14')),null);
+ assert.equal(display('2027-07-14'),'07/14/27');
+});
+test('loaded, programmatic and native dates retain the full year and block invalid submission',()=>{
+ const vm=require('node:vm'),fs=require('node:fs');
+ class Input {
+  constructor(){this.dataset={};this.events={};this.type='date';this.classList={add(){}};this.attrs={};this._value='';}
+  get value(){return this._value;} set value(v){this._value=v;}
+  getAttribute(k){return this.attrs[k]||null;} setAttribute(k,v){this.attrs[k]=v;}
+  closest(){return null;} before(w){this.wrap=w;} append(...children){this.children=children;}
+  addEventListener(k,fn){this.events[k]=fn;} setCustomValidity(v){this.error=v;}
+ }
+ const native=new Input();native.value='0027-07-14';
+ const document={readyState:'complete',documentElement:{},querySelectorAll(){return [native]},createElement(){return new Input()}};
+ vm.runInNewContext(fs.readFileSync('src/main/resources/static/js/short-date-input.js','utf8'),{document,window:{},HTMLInputElement:Input,MutationObserver:class{observe(){}},Date,Event:class{}});
+ const text=native.wrap.children[0];
+ assert.equal(text.value,'07/14/0027');assert.match(text.error,/full year/);
+ native.value='2027-07-14';assert.equal(text.value,'07/14/27');assert.equal(text.error,'');
+ Object.getOwnPropertyDescriptor(Input.prototype,'value').set.call(native,'0027-08-10');
+ native.events.change();assert.equal(text.value,'08/10/0027');assert.match(text.error,/full year/);
+});

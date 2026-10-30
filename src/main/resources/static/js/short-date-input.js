@@ -1,6 +1,6 @@
 /* Human dates use MM/DD/YY; submitted dates remain ISO and timezone-free. */
 (()=>{
-  function display(value){return String(value||'').replace(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}:\d{2}))?.*$/,(_,y,m,d,time)=>`${m}/${d}/${y.slice(-2)}${time?' '+time:''}`);}
+  function display(value){return String(value||'').replace(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}:\d{2}))?.*$/,(_,y,m,d,time)=>`${m}/${d}/${Number(y)>=2000&&Number(y)<=2099?y.slice(-2):y}${time?' '+time:''}`);}
   function mask(value,withTime=false){
     const normalized=String(value||'').replace(/^(\d{1,2}\/\d{1,2}\/)20(\d{2})/,'$1$2');
     let digits=normalized.replace(/\D/g,'');
@@ -29,7 +29,7 @@
     text.setAttribute('aria-label',(input.getAttribute('aria-label')||input.closest('label')?.childNodes[0]?.textContent?.trim()||'Date')+' (MM/DD/YY'+(withTime?' HH:mm':'')+')');
     text.title='Two-digit years mean 2000–2099';picker.type='button';picker.className='short-date-picker';picker.setAttribute('aria-label','Choose date from calendar');picker.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 11h16"/></svg>';
     input.before(wrap);wrap.append(text,input,picker);input.classList.add('short-date-native');input.tabIndex=-1;input.setAttribute('aria-hidden','true');
-    const sync=()=>{text.value=display(input.value);text.required=input.required;text.disabled=input.disabled;text.readOnly=input.readOnly;picker.disabled=input.disabled||input.readOnly;text.setCustomValidity('');};
+    const sync=()=>{text.value=display(input.value);text.required=input.required;text.disabled=input.disabled;text.readOnly=input.readOnly;picker.disabled=input.disabled||input.readOnly;text.setCustomValidity(input.value&&parse(text.value,withTime)===null?'Check the full year. Enter a date between 2000 and 2099.':'');};
     // Existing dialogs set .value before opening; keep their displayed date in sync.
     const descriptor=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
     Object.defineProperty(input,'value',{configurable:true,get(){return descriptor.get.call(this)},set(value){descriptor.set.call(this,value);sync();}});

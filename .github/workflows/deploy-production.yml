@@ -22,7 +22,7 @@ jobs:
       - name: Verify user-facing release notes
         run: |
           node scripts/check-release-history.cjs
-          release_version=1.10.0
+          release_version=1.10.1
           echo "RELEASE_VERSION=$release_version" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:

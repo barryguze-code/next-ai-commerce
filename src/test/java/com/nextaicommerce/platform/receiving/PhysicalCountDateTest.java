@@ -18,7 +18,7 @@ class PhysicalCountDateTest {
         assertThat(PhysicalCountImportService.parseDate("45000.0")).isEqualTo(LocalDate.of(1899,12,30).plusDays(45000));
     }
     @Test void rejectsImpossibleDatesInsteadOfSilentlyCorrectingThem(){
-        for(String date:new String[]{"2/29/27","4/31/26","13/2/26","2/30/2027","2027-02-29","5/16/2"})
+        for(String date:new String[]{"2/29/27","4/31/26","13/2/26","2/30/2027","2027-02-29","5/16/2","0027-07-14","07/14/0027","0026-08-10","2100-01-01"})
             assertThatThrownBy(()->PhysicalCountImportService.parseDate(date)).isInstanceOf(java.time.format.DateTimeParseException.class);
     }
 }
