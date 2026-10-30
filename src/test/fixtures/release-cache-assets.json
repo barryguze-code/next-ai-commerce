@@ -21,13 +21,14 @@
     "/js/table-widget.js",
     "/js/mapping-widget.js"
   ],
-  "reference_count": 37,
+  "reference_count": 39,
   "templates": [
     "carrier-connections.html",
     "collaboration.html",
     "fragments/profit.html",
     "fragments/sidebar-nav.html",
     "fragments/sidebar-user.html",
+    "global-catalog.html",
     "inventory.html",
     "marketplace-skus.html",
     "orders.html",
@@ -38,23 +39,23 @@
   "versions": {
     "/css/background-jobs.css": "1.7.1",
     "/css/inventory-record-fixes.css": "1.7.1",
-    "/css/mapping-widget.css": "1.9.0",
+    "/css/mapping-widget.css": "1.9.2",
     "/css/marketplace-sku-design.css": "1.9.0",
     "/css/marketplace-sku-orders.css": "1.7.1",
     "/css/marketplace-skus.css": "1.7.1",
     "/css/platform-controls.css": "1.7.1",
-    "/css/profit.css": "1.7.1",
+    "/css/profit.css": "shared-uat-2",
     "/css/table-widget.css": "1.9.0",
     "/js/background-jobs.js": "1.7.1",
-    "/js/buy-shipping.js": "1.7.1",
+    "/js/buy-shipping.js": "shopify-parity-1",
     "/js/marketplace-sku-design.js": "1.7.1",
-    "/js/order-design.js": "1.7.1",
+    "/js/order-design.js": "pickup-truck-1",
     "/js/order-smart-filters.js": "1.7.1",
     "/js/platform-controls.js": "1.7.1",
-    "/js/profit.js": "1.7.1",
+    "/js/profit.js": "1.9.7-shared-profit-uat",
     "/js/receiving-work.js": "1.7.1",
-    "/js/table-data-tools.js": "1.9.0",
-    "/js/table-widget.js": "1.9.0",
-    "/js/mapping-widget.js": "1.9.0"
+    "/js/table-data-tools.js": "shopify-orders-1",
+    "/js/table-widget.js": "1.9.1",
+    "/js/mapping-widget.js": "1.9.1"
   }
 }

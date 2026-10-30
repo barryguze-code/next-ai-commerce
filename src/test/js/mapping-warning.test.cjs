@@ -18,9 +18,9 @@ test('Marketplace inline warning uses its existing per-row mapping target',()=>{
  const html=fs.readFileSync('src/main/resources/templates/marketplace-skus.html','utf8');
  assert.ok(html.includes("mappingKey=${'main-'+rowStat.index}"));
  assert.ok(html.includes("${'family-'+mappingKey+'-'+childStat.index}"));
- assert.match(html, /class="mapping-warning-trigger"[^>]+data-target=\|mapping-dialog-\$\{mappingKey\}\|[^>]+onclick="NextAiMappingWidget.open\(this\)">Needs mapping <span class="mapping-unmapped-badge">Unmapped<\/span><\/button>/);
+ assert.match(html, /class="mapping-warning-trigger"[^>]+data-target=\|mapping-dialog-\$\{mappingKey\}\|[^>]+onclick="NextAiMappingWidget.open\(this\)"><span class="mapping-unmapped-badge">Unmapped<\/span><\/button>/);
 });
 test('Buy Box Lost and Unmapped share positive-count alert styling',()=>{
- const html=fs.readFileSync('src/main/resources/templates/orders.html','utf8');
+ const html=fs.readFileSync('src/main/resources/templates/fragments/order-tabs.html','utf8');
  assert.ok(html.includes("tab.key=='NEEDS_MAPPING' or tab.key=='BUY_BOX_LOST') and tab.orders>0?'has-issues '"));
 });

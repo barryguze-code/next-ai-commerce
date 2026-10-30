@@ -39,11 +39,15 @@ import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 class TemplateRenderingTest {
-    @Test void globalCatalogueRendersBoundedServerControls(){
+    @Test void globalCatalogueRendersBoundedServerControls() throws Exception{
         var context=webContext();context.setVariable("products",List.of());context.setVariable("globalPage",new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductPage(List.of(),32412,0,25));
         context.setVariable("query","339807");context.setVariable("globalSort","product");context.setVariable("globalDirection","asc");
         String html=templateEngine().process("global-catalog",context);
         assertThat(html).contains("/css/global-catalog.css?v=1.9.1","data-table-live-search=\"true\"","data-server-sort","name=\"q\"","339807","table-pagination","data-page-max=\"1297\"","/js/table-widget.js").doesNotContain("class=\"callout\"");
+        var rows=java.util.stream.IntStream.range(0,25).mapToObj(i->new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductView(new UUID(0,i+1),"Synthetic product "+i,"Test brand",null,"CODE-"+i,"UPC","000000000000","EA",false,"ACTIVE")).toList();
+        context.setVariable("products",rows);context.setVariable("globalPage",new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductPage(rows,50,0,25));
+        context.setVariable("query","");context.setVariable("globalDirection","desc");
+        var fixture=java.nio.file.Path.of(".local/browser-fixtures/global-catalogue.html");java.nio.file.Files.createDirectories(fixture.getParent());java.nio.file.Files.writeString(fixture,templateEngine().process("global-catalog",context));
     }
     @Test void catalogueAddDialogRendersWithoutAnOptionalVendorModel(){
         var context=webContext();context.setVariable("selectedAccountName","Test account");

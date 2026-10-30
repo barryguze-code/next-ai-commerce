@@ -1,8 +1,8 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
 test('mapping Add product returns to its exact draft row without saving mappings; cancel and existing selection preserve quantities',async()=>{
- const browser=await chromium.launch({headless:true,channel:process.env.TEST_BROWSER_CHANNEL||'chrome'}),page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(5000);
- const root=path.resolve('src/main/resources'),out='/Users/barryguze/Projects/next-ai-commerce/.local/catalog-mapping-add-20261026';fs.mkdirSync(out,{recursive:true});
+ const browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})}),page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(5000);
+ const root=path.resolve('src/main/resources'),out=path.resolve('.local/catalog-mapping-add-review');fs.mkdirSync(out,{recursive:true});
  const fragment=fs.readFileSync(path.join(root,'templates/fragments/catalog-add-product.html'),'utf8').replace(/<option th:each="vendor:[^"]*"[^>]*>Vendor<\/option>/,'').replace(/ th:[\w-]+="[^"]*"/g,'').replace('<form method="post"','<form action="/app/catalog/products" method="post"');
  const a='00000000-0000-4000-8000-000000000001',b='00000000-0000-4000-8000-000000000002',added='00000000-0000-4000-8000-000000000003';let posts=0,mappingPosts=0,existing=false,failure=false;
  const product={id:'10000000-0000-4000-8000-000000000001',name:'Synthetic Cheddar',brand:'Test',identifierType:'UPC',identifier:'079834140503',revision:'r1',accountItemId:null};

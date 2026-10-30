@@ -43,7 +43,7 @@ test('Marketplace titles keep native Ledger links and leave other detail dialogs
 test('Marketplace semantic order and source Ledger scope remain explicit',()=>{
  const html=fs.readFileSync('src/main/resources/templates/marketplace-skus.html','utf8');const nav=html.slice(html.indexOf('<nav class="sku-filter-bar"'),html.indexOf('</nav>',html.indexOf('<nav class="sku-filter-bar"')));
  assert.ok(nav.indexOf('>All <')<nav.indexOf('sku-alert-tab'));assert.ok(nav.indexOf('summary.deleted')<nav.indexOf('sku-alert-tab'));assert.ok(nav.indexOf('data-fee-variance-tab')>nav.indexOf('summary.inactive'));assert.ok(nav.indexOf('data-fee-variance-tab')<nav.indexOf('summary.neverSold'));
- assert.match(nav,/class="sku-alert-tab fee-variance-tab"/);assert.match(html,/\/app\/inventory\/ledger\(itemId=\$\{components\[0\]\.itemId\}/);assert.match(html,/Inventory Ledgers:/);assert.match(html,/Needs mapping/);
+ assert.match(nav,/class="sku-alert-tab fee-variance-tab"/);assert.match(html,/\/app\/inventory\/ledger\(itemId=\$\{components\[0\]\.itemId\}/);assert.match(html,/Inventory Ledgers:/);assert.match(html,/mapping-unmapped-badge">Unmapped/);
 });
 test('UI hotfix backup waiver skips only the new dump; default backup behavior remains',()=>{
  const os=require('node:os'),path=require('node:path'),{spawnSync}=require('node:child_process');
