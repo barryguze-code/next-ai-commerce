@@ -59,7 +59,7 @@ class ShopifyPublicationDatabaseTest {
    jdbc.update("UPDATE inventory_publication_rate_slot SET ready_at=now()-interval '1 second' WHERE id=1");
   });
  }
- void stock(UUID location,int units){UUID id=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,unit_cost,currency,source_type,source_id,idempotency_key) VALUES(?,?,?,?,'RECEIPT',?,current_date+80,2,'USD','MANUAL',?,?)",id,tenant,item,location,units,id,id.toString());}
+ void stock(UUID location,int units){UUID id=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,unit_cost,currency,source_type,source_id,idempotency_key,occurred_at) VALUES(?,?,?,?,'RECEIPT',?,current_date+80,2,'USD','MANUAL',?,?,now())",id,tenant,item,location,units,id,id.toString());}
  @Test void sourceSubsetDuplicatePreventionAndNoInventoryMutation(){
   String before=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant);
   assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
@@ -201,7 +201,7 @@ class ShopifyPublicationDatabaseTest {
   tx.executeWithoutResult(s->{scope();jdbc.update("UPDATE account_catalog_items SET status='INACTIVE' WHERE id=?",item);});
   repository.plan(tenant,connection,startup);assertThat(repository.next(tenant,connection).orElseThrow().desired()).isZero();
   tx.executeWithoutResult(s->{scope();jdbc.update("UPDATE shopify_inventory_publications SET state='CANCELLED' WHERE tenant_id=?",tenant);jdbc.update("UPDATE account_catalog_items SET status='ACTIVE' WHERE id=?",item);
-   UUID id=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,location_id,entry_type,quantity,source_type,source_id,idempotency_key) VALUES(?,?,?,?,'SHIPMENT_UNRECORDED',0,'SHOPIFY_ORDER',?,?)",id,tenant,item,main,id,id.toString());
+   UUID id=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,location_id,entry_type,quantity,source_type,source_id,idempotency_key,occurred_at) VALUES(?,?,?,?,'SHIPMENT_UNRECORDED',0,'SHOPIFY_ORDER',?,?,now())",id,tenant,item,main,id,id.toString());
   });
   repository.plan(tenant,connection,startup);assertThat(repository.next(tenant,connection).orElseThrow().desired()).isZero();
  }
