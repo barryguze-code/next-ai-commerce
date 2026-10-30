@@ -19,6 +19,7 @@ class GlobalCatalogDatabaseTest {
             url="jdbc:postgresql://127.0.0.1:55432/next_ai_commerce_test";
             password=Files.readString(Path.of(".local/database-password")).trim();
         }else{
+            schema="public"; // This branch owns a disposable cluster; match production function lookup.
             postgres=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();
             url=postgres.getJdbcUrl("postgres","postgres");
         }

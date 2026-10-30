@@ -43,7 +43,7 @@ class TemplateRenderingTest {
         var context=webContext();context.setVariable("products",List.of());context.setVariable("globalPage",new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductPage(List.of(),32412,0,25));
         context.setVariable("query","339807");context.setVariable("globalSort","product");context.setVariable("globalDirection","asc");
         String html=templateEngine().process("global-catalog",context);
-        assertThat(html).contains("/css/global-catalog.css?v=picture-feedback-2","data-table-live-search=\"true\"","data-server-sort","name=\"q\"","339807","table-pagination","data-page-max=\"1297\"","/js/table-widget.js").doesNotContain("class=\"callout\"");
+        assertThat(html).contains("/css/global-catalog.css?v=1.9.1","data-table-live-search=\"true\"","data-server-sort","name=\"q\"","339807","table-pagination","data-page-max=\"1297\"","/js/table-widget.js").doesNotContain("class=\"callout\"");
     }
     @Test void catalogueAddDialogRendersWithoutAnOptionalVendorModel(){
         var context=webContext();context.setVariable("selectedAccountName","Test account");
@@ -147,12 +147,14 @@ class TemplateRenderingTest {
             "Item Sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
             "Showing 1–1 of 1","data-order-stream","Sync now","Last Amazon order check",
             "New Amazon orders just arrived","Open this order in Seller Central","Open the Amazon product page",
-            "/images/channels/amazon-seller.png","amazon.com/dp/B012345678","Orders/Units","Unmapped","Waiting for pickup",
+            "/images/channels/amazon-seller.png","amazon.com/dp/B012345678","Orders/Units","Unmapped",
             "data-copy-sku=","has-issues","aria-current=\"page\"","12 orders / 15 units","status=UNSHIPPED").doesNotContain("order-day",">Historical<","Reporting only","status=PENDING","Stock readiness","data-fedex-shipping","openFedExShipping(this)","Buy shipping label");
+        assertThat(templateEngine().process("orders",context)).doesNotContain("status=WAITING_FOR_PICKUP");
+        context.setVariable("orderTabs",List.of(new com.nextaicommerce.platform.orders.OrderRepository.OrderTab("WAITING_FOR_PICKUP","Waiting for pickup",false,1,1)));
         context.setVariable("selectedStatus","WAITING_FOR_PICKUP");
         context.setVariable("pickupOverrides",java.util.Set.of(order.amazonOrderId()));
         context.setVariable("pickupEligibleOrders",java.util.Set.of(order.amazonOrderId()));
-        assertThat(templateEngine().process("orders",context)).contains("Platform only","Undo platform pickup mark","/pickup-override");
+        assertThat(templateEngine().process("orders",context)).contains("Waiting for pickup","Platform only","Undo platform pickup mark","/pickup-override");
         assertThat(templateEngine().process("orders",context)).contains("aria-current=\"page\"").doesNotContain("order-pickup-note");
         context.setVariable("orders",List.of());
         context.setVariable("orderPage",new OrderPage(List.of(),0,0,25));
@@ -162,7 +164,7 @@ class TemplateRenderingTest {
         context.setVariable("feeVarianceOrders",0);
         context.setVariable("feeVarianceFiltered",true);
         assertThat(templateEngine().process("orders",context))
-            .contains("All: 6 orders, 12 units","Fee variance: 0 affected orders","No comparable fee differences",
+            .contains("All: 6 orders, 12 units","Clear Fee Variance filter","No comparable fee differences",
                 "Orders appear here when comparable fee evidence shows a difference. Missing evidence remains unavailable.","View all orders")
             .doesNotContain("Your orders will appear here","New orders will show up here automatically.");
         context.setVariable("feeVarianceFiltered",false);
@@ -366,7 +368,7 @@ class TemplateRenderingTest {
         context.setVariable("feeVarianceSkus",0);
         context.setVariable("feeVarianceFiltered",true);
         assertThat(templateEngine().process("marketplace-skus",context))
-            .contains("Fee variance: 0 affected SKUs","No comparable fee differences",
+            .contains("Clear Fee Variance filter","No comparable fee differences",
                 "Listings appear here when comparable fee evidence shows a difference. Missing evidence remains unavailable.")
             .doesNotContain("Amazon has not supplied listings for this filter yet.");
         context.setVariable("feeVarianceFiltered",false);

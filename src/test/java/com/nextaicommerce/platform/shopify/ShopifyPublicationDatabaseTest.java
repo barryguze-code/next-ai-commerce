@@ -23,7 +23,7 @@ class ShopifyPublicationDatabaseTest {
  ShopifyInventoryPublications repository;
  @BeforeAll static void database()throws Exception{
   postgres=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();
-  schema="shopify_publication_"+UUID.randomUUID().toString().replace("-","");
+  schema="public"; // This fixture owns and closes its disposable cluster.
   String url=postgres.getJdbcUrl("postgres","postgres");
   var ds=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",null);
   org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();

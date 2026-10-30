@@ -21,7 +21,8 @@ class AmazonProductFeeJobsDatabaseTest {
     @BeforeAll static void database()throws Exception{
         schema="fee_jobs_"+UUID.randomUUID().toString().replace("-","");String url,password=null;
         if(Boolean.getBoolean("localTestDatabase")){url="jdbc:postgresql://127.0.0.1:55432/next_ai_commerce_test";password=Files.readString(Path.of(".local/database-password")).trim();}
-        else{embedded=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();url=embedded.getJdbcUrl("postgres","postgres");}
+        else{schema="public"; // This branch owns a disposable cluster; match production function lookup.
+        embedded=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();url=embedded.getJdbcUrl("postgres","postgres");}
         var ds=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);
         org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
         jdbc=new JdbcTemplate(ds);tx=new TransactionTemplate(new DataSourceTransactionManager(ds));

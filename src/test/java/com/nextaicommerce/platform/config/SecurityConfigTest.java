@@ -147,6 +147,8 @@ class SecurityConfigTest {
         }
         @Bean CatalogRepository catalogRepository() {
             return new CatalogRepository(null) {
+                @Override public GlobalProductPage pageGlobalProducts(UUID tenant,String search,int page,int size,String sort,String direction){return new GlobalProductPage(List.of(),0,0,size);}
+                @Override public AccountItemPage pageAccountItems(UUID tenant,String search,int page,int size,String sort,String direction,String status){return new AccountItemPage(List.of(),0,0,size);}
                 @Override public List<LocationView> listLocations(UUID tenantId){return List.of();}
                 @Override public List<MarketplaceSkuRef> listMarketplaceSkus(UUID tenantId,List<UUID> ids){return List.of();}
                 @Override public List<GlobalProductView> listGlobalProducts() { return List.of(); }

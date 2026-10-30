@@ -10,11 +10,12 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class AmazonFeeMigrationDatabaseTest {
  @Test void v112UpgradePreservesHistoryAndGrantsOwnerRuntimeIdentityAccess()throws Exception {
   try(var pg=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start()){
-   String suffix=UUID.randomUUID().toString().replace("-",""),schema="fee_upgrade_"+suffix,role="fee_owner_"+suffix;
+   String suffix=UUID.randomUUID().toString().replace("-",""),schema="public",role="fee_owner_"+suffix;
    var admin=new JdbcTemplate(pg.getPostgresDatabase());
-   admin.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto");
+   admin.execute("CREATE SCHEMA test_extensions");
+   admin.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA test_extensions");
    admin.execute("CREATE ROLE "+role+" LOGIN PASSWORD 'synthetic-test-only' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE");
-   admin.execute("CREATE SCHEMA "+schema+" AUTHORIZATION "+role);
+   admin.execute("ALTER SCHEMA "+schema+" OWNER TO "+role);
    String baseUrl=pg.getJdbcUrl("postgres","postgres").split("\\?",2)[0],url=baseUrl+"?currentSchema="+schema;
    var ds=new DriverManagerDataSource(url,role,"synthetic-test-only");var jdbc=new JdbcTemplate(ds);
    org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).createSchemas(false).target("112").locations("classpath:db/migration").load().migrate();
@@ -29,7 +30,7 @@ class AmazonFeeMigrationDatabaseTest {
    var protectedBefore=new LinkedHashMap<String,String>();
    for(String table:List.of("amazon_source_documents","amazon_orders","amazon_order_items","amazon_inventory_snapshots","marketplace_sku_mappings"))protectedBefore.put(table,digest(scopedAdmin,table));
    org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).createSchemas(false).locations("classpath:db/migration").load().migrate();
-   assertThat(jdbc.queryForObject("SELECT max(version::integer) FROM flyway_schema_history WHERE success",Integer.class)).isEqualTo(114);
+   assertThat(jdbc.queryForObject("SELECT max(version::integer) FROM flyway_schema_history WHERE success",Integer.class)).isEqualTo(124);
    assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_roles WHERE rolname=current_user AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcreatedb AND NOT rolcreaterole",Integer.class)).isEqualTo(1);
    assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_class WHERE relnamespace=?::regnamespace AND relname IN ('amazon_fee_observations','amazon_order_fee_charge_observations','amazon_fee_comparisons','amazon_fee_approvals') AND relrowsecurity AND relforcerowsecurity",Integer.class,schema)).isEqualTo(4);
    var tx=new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(ds));

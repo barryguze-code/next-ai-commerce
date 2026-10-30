@@ -20,7 +20,7 @@ class ReleaseNoticeTemplateTest {
     @Test void enabledNoticeRendersOnlyExplicitDisplayMetadata() {
         assertThat(render(new ReleaseNoticeAdvice.Notice("release-1.7.0-r1","2026-10-23T23:00:00Z")))
             .contains("data-notice-version=\"release-1.7.0-r1\"","data-valid-until=\"2026-10-23T23:00:00Z\"",
-                "To be confirmed.","Estimated release work:","30–60 minutes.","Service interruption has not yet been confirmed.","Got it","We’re preparing improvements")
-            .doesNotContain("<form","fetch(","Maintenance in progress");
+                "To be confirmed.","Service interruption has not yet been confirmed.","Got it","We’re preparing updates to Shopify Orders and warehouse inventory synchronization.")
+            .doesNotContain("<form","fetch(","Maintenance in progress","30–60 minutes.");
     }
 }

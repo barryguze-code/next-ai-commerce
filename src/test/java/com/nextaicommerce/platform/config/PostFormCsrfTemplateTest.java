@@ -30,6 +30,7 @@ class PostFormCsrfTemplateTest {
     @Test
     void ordersDoNotExposeManualShipmentConfirmation() throws Exception {
         String orders=Files.readString(Path.of("src/main/resources/templates/orders.html"));
-        assertThat(orders).doesNotContain("Confirm shipment","/ship");
+        assertThat(orders).doesNotContain("Confirm shipment");
+        assertThat(orders).doesNotContainPattern("(?:th:action|action|href)=[\"'][^\"']*/ship(?:[/?}\"'])");
     }
 }
