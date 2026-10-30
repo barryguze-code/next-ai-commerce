@@ -84,8 +84,8 @@ jobs:
         if: github.ref == 'refs/heads/codex/shopify-inventory-activation'
         uses: actions/upload-artifact@v4
         with:
-          name: shopify-inventory-1-10-2-package
+          name: shopify-inventory-1-10-3-package
           path: |
-            target/next-ai-commerce-1.10.2.jar
+            target/next-ai-commerce-1.10.3.jar
             target/surefire-reports/
           if-no-files-found: error

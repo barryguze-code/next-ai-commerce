@@ -215,7 +215,9 @@ public class InventoryRepository {
     public record LedgerSummary(long movements,long receipts,long adjustments){}
     public record ReservationView(String orderId,String orderStatus,String sellerSku,int orderedSkus,
             BigDecimal eachesPerSku,BigDecimal reservedEaches,BigDecimal requiredEaches,BigDecimal shortageEaches,
-            LocalDate expirationDate,String locationCode,String locationName,Instant reservedAt){}
+            LocalDate expirationDate,String locationCode,String locationName,Instant reservedAt){
+        public String getProvider(){return orderStatus!=null&&orderStatus.startsWith("Shopify · ")?"Shopify":"Amazon";}
+    }
     public record LedgerPage(List<LedgerView> rows,long total,int page,int pageSize){
         public int totalPages(){return Math.max(1,(int)Math.ceil((double)total/pageSize));}
         public boolean hasPrevious(){return page>0;}
