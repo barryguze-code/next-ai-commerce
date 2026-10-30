@@ -91,7 +91,8 @@ public class ShopifyInventoryPublications {
   return jdbc.query("""
    SELECT p.* FROM shopify_inventory_publications p JOIN shopify_inventory_bindings b ON b.tenant_id=p.tenant_id AND b.marketplace_connection_id=p.marketplace_connection_id AND b.id=p.binding_id
    WHERE p.tenant_id=? AND p.marketplace_connection_id=? AND p.state IN ('PREPARING','READY','VERIFYING') AND p.available_at<=clock_timestamp()
-   AND (p.state='VERIFYING' OR """+variantPredicate("p.tenant_id","p.marketplace_connection_id","p.variant_id")+"""
+   AND (p.state='VERIFYING' OR \s
+   """+variantPredicate("p.tenant_id","p.marketplace_connection_id","p.variant_id")+"""
    ) ORDER BY p.created_at,p.id LIMIT 1
    """,(r,n)->new Operation(r.getObject("id",UUID.class),tenant,connection,r.getObject("binding_id",UUID.class),r.getLong("binding_revision"),r.getObject("variant_id",UUID.class),r.getString("mapping_hash"),
      new ShopifyInventoryClient.Target(tenant,connection,r.getString("shop_gid"),r.getString("inventory_item_gid"),r.getString("location_gid")),r.getInt("desired_quantity"),(Integer)r.getObject("expected_quantity"),r.getString("state"),r.getInt("attempts")),tenant,connection).stream().findFirst();

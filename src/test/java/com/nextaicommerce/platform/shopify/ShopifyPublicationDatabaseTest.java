@@ -147,7 +147,7 @@ class ShopifyPublicationDatabaseTest {
    String hash=jdbc.queryForObject("SELECT observation_hash FROM shopify_variants WHERE tenant_id=? AND id=?",String.class,tenant,unmapped);
    var mappings=new ShopifySkuRepository(jdbc,true);mappings.save(tenant,connection,unmapped,hash,List.of(item.toString()),List.of("2"),()->{});mappings.clear(tenant,connection,unmapped,()->{});
    UUID amazon=UUID.randomUUID();
-   jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone) VALUES(?,?,'AMAZON','fixture-seller','ATVPDKIKX0DER','ACTIVE','Fixture','fixture://none','UTC')",amazon,tenant);
+   jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone,inventory_activated_at) VALUES(?,?,'AMAZON','fixture-seller','ATVPDKIKX0DER','ACTIVE','Fixture','fixture://none','UTC',now())",amazon,tenant);
    UUID mapping=jdbc.queryForObject("INSERT INTO marketplace_sku_mappings(tenant_id,marketplace_connection_id,marketplace_sku,account_catalog_item_id,quantity_per_marketplace_unit,status) VALUES(?,?,'AMAZON-PACK',?,8,'ACTIVE') RETURNING id",UUID.class,tenant,amazon,item);
    jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity,sort_order) VALUES(?,?,?,8,0)",tenant,mapping,item);
    assertThat(jdbc.queryForObject("SELECT "+ShopifyPublicationSafety.allowsPositive("?::uuid","?::uuid"),Boolean.class,tenant,mapping)).isFalse();

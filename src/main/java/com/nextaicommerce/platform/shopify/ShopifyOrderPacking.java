@@ -72,7 +72,7 @@ public class ShopifyOrderPacking {
                     ON movement.tenant_id=r.tenant_id AND movement.marketplace_connection_id=r.marketplace_connection_id
                       AND movement.idempotency_key='shopify-local:'||o.local_handoff_id::text||':'||r.id::text
                     WHERE r.tenant_id=l.tenant_id AND r.marketplace_connection_id=l.marketplace_connection_id AND r.shopify_order_line_id=l.id
-                      AND r.status='SHIPPED' AND movement.quantity=-r.quantity))))
+                      AND r.status='SHIPPED' AND movement.quantity=-r.quantity)))
             )
             """,Boolean.class,tenant,connection,order));
     }
