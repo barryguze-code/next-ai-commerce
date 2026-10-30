@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ShopifyOrderInventory {
     private final JdbcTemplate jdbc;
     private final boolean enabled;
+    @Value("${app.shopify.orders.bootstrap-scopes:}") private String bootstrapScopes="";
     public ShopifyOrderInventory(JdbcTemplate jdbc,@Value("${app.shopify.orders.inventory-enabled:false}") boolean enabled,
                                  @Value("${app.shopify.orders.enabled:false}") boolean ordersEnabled){this.jdbc=jdbc;this.enabled=enabled&&ordersEnabled;}
     public boolean enabled(){return enabled;}
@@ -159,6 +160,41 @@ public class ShopifyOrderInventory {
             """,tenant);
         for(var l:lines)reserve(tenant,(UUID)l.get("marketplace_connection_id"),(UUID)l.get("id"),(Integer)l.get("reserve_units"));
         return jdbc.queryForObject("SELECT count(*) FROM shopify_order_lines WHERE tenant_id=? AND inventory_state='INVENTORY_SHORTAGE'",Integer.class,tenant);
+    }
+    /** Only called at a fully read, lease-fenced job boundary under the account stock lock. */
+    void bootstrapRemaining(UUID tenant,UUID connection,UUID job){
+        if(!enabled||!Arrays.asList(bootstrapScopes.split(",")).stream().map(String::trim).toList().contains(tenant+"/"+connection))return;
+        lock(tenant);
+        var lines=jdbc.queryForList("""
+            SELECT l.id,l.inventory_revision,l.inventory_hash,l.unfulfilled_quantity,o.source_document_id
+            FROM shopify_order_lines l JOIN shopify_orders o ON o.tenant_id=l.tenant_id AND o.marketplace_connection_id=l.marketplace_connection_id AND o.id=l.order_id
+            JOIN shopify_source_documents d ON d.tenant_id=o.tenant_id AND d.marketplace_connection_id=o.marketplace_connection_id AND d.id=o.source_document_id
+            JOIN shopify_order_controls control ON control.tenant_id=l.tenant_id AND control.marketplace_connection_id=l.marketplace_connection_id
+            WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND d.sync_job_id=? AND d.query_revision=?
+             AND control.inventory_enabled AND control.activated_at IS NOT NULL AND control.baseline_completed_at IS NOT NULL
+             AND o.evidence_complete AND NOT o.is_test AND o.cancelled_at IS NULL AND o.payment_status<>'VOIDED' AND o.review_reason IS NULL
+             AND l.stock_scope='REPORTING_ONLY' AND l.inventory_state='REPORTING_ONLY' AND l.review_reason IS NULL
+             AND l.requires_shipping AND l.ownership='MERCHANT' AND l.unfulfilled_quantity>0
+             AND l.local_handoff_units=0 AND l.local_pending_units=0
+             AND l.inventory_revision=l.source_updated_at AND l.inventory_hash=l.observation_hash
+             AND NOT EXISTS(SELECT 1 FROM shopify_order_cutovers prior WHERE prior.tenant_id=l.tenant_id AND prior.marketplace_connection_id=l.marketplace_connection_id AND prior.order_line_id=l.id)
+            ORDER BY o.source_created_at,l.id FOR UPDATE OF l,o
+            """,tenant,connection,job,ShopifyOrderClient.REVISION);
+        for(var row:lines){
+            UUID line=(UUID)row.get("id");if(!basis(tenant,connection,line))continue;
+            int recorded=jdbc.update("""
+                INSERT INTO shopify_order_cutovers(tenant_id,marketplace_connection_id,order_line_id,source_document_id,sync_job_id,source_revision,source_hash,fulfillment_checkpoint,composition,remaining_units)
+                SELECT l.tenant_id,l.marketplace_connection_id,l.id,?,?,l.inventory_revision,l.inventory_hash,l.success_checkpoint,
+                  (SELECT jsonb_agg(jsonb_build_object('item',c.account_catalog_item_id,'quantity',c.quantity) ORDER BY c.account_catalog_item_id)
+                   FROM shopify_order_components c WHERE c.tenant_id=l.tenant_id AND c.marketplace_connection_id=l.marketplace_connection_id AND c.order_line_id=l.id),l.unfulfilled_quantity
+                FROM shopify_order_lines l WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.id=?
+                  AND l.stock_scope='REPORTING_ONLY' AND l.inventory_revision=? AND l.inventory_hash=? AND l.unfulfilled_quantity=?
+                ON CONFLICT(tenant_id,marketplace_connection_id,order_line_id) DO NOTHING
+                """,row.get("source_document_id"),job,tenant,connection,line,row.get("inventory_revision"),row.get("inventory_hash"),row.get("unfulfilled_quantity"));
+            if(recorded==0)continue;
+            jdbc.update("UPDATE shopify_order_lines SET stock_scope='LIVE',inventory_state='NEEDS_MAPPING',reserve_units=unfulfilled_quantity,updated_at=clock_timestamp() WHERE tenant_id=? AND marketplace_connection_id=? AND id=?",tenant,connection,line);
+            reserve(tenant,connection,line,((Number)row.get("unfulfilled_quantity")).intValue());
+        }
     }
     /** Called only from an explicit guarded local test cycle, never source synchronization. */
     void prepareLocalUat(UUID tenant,UUID connection,UUID line,int units){

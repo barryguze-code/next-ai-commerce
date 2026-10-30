@@ -38,6 +38,7 @@ class ReceivingWorkflowDatabaseTest {
         @Bean JdbcTemplate jdbc(){return new JdbcTemplate(source);}
         @Bean DataSourceTransactionManager transactionManager(){return new DataSourceTransactionManager(source);}
         @Bean CatalogRepository catalog(JdbcTemplate j){return new CatalogRepository(j);}
+        @Bean com.nextaicommerce.platform.web.WorkspaceAccessRepository access(JdbcTemplate j){return new com.nextaicommerce.platform.web.WorkspaceAccessRepository(j);}
         @Bean InventoryRepository inventory(JdbcTemplate j){return new InventoryRepository(j);}
         @Bean ReceivingRepository receiving(JdbcTemplate j,CatalogRepository c){return new ReceivingRepository(j,c);}
         @Bean ReceivingWorkflowRepository work(JdbcTemplate j,ReceivingRepository r,InventoryRepository i){return new ReceivingWorkflowRepository(j,r,i);}
@@ -232,6 +233,7 @@ class ReceivingWorkflowDatabaseTest {
         tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=?",BigDecimal.class,tenant,f.product(),existing)).isEqualByComparingTo("12");});
     }
     @Test void imageSyncWithoutAnEligibleMappingKeepsImagesUnchanged(){
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'OPERATOR')",tenant,user);});
         var client=org.mockito.Mockito.mock(com.nextaicommerce.platform.sync.AmazonSpApiClient.class);
         var controller=new com.nextaicommerce.platform.sync.CatalogImageSyncController(jdbc,tx,client,context.getBean(CatalogRepository.class));
         var session=new org.springframework.mock.web.MockHttpSession();session.setAttribute("selectedTenantId",tenant);
@@ -466,7 +468,7 @@ class ReceivingWorkflowDatabaseTest {
             jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Tab test','America/Los_Angeles',now())",connection,tenant,"test-"+connection);
             var statuses=List.of("Pending","Unshipped","Shipped - Waiting for Pick Up","Shipped","Partially shipped","Cancelled");
             for(int n=0;n<statuses.size();n++){
-                jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status,fulfillment_state) VALUES (?,?,'ATVPDKIKX0DER',?,now(),?,?)",tenant,connection,"TAB-"+n,statuses.get(n),n<2?"READY_TO_SHIP":"SHIPPED");
+                jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status,fulfillment_state,fulfillment_channel) VALUES (?,?,'ATVPDKIKX0DER',?,now(),?,?,'MFN')",tenant,connection,"TAB-"+n,statuses.get(n),n<2?"READY_TO_SHIP":"SHIPPED");
                 jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,?,?,3)",tenant,connection,"TAB-"+n,"ITEM-"+n,"SKU-"+n);
             }
             jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,'TAB-0','SECOND-ITEM','SECOND-SKU',1)",tenant,connection);

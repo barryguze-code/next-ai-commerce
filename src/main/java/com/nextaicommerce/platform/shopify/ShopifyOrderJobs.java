@@ -127,9 +127,11 @@ public class ShopifyOrderJobs {
         guard(j);publicationDeadline(state);state.put("seen",seen);state.put("after",page.next());state.put("retries",0);if(page.more())cursors.add(page.next());state.put("cursors",cursors);
         if(!page.more()){
             jdbc.update("UPDATE shopify_order_controls SET baseline_completed_at=coalesce(baseline_completed_at,clock_timestamp()),updated_at=now() WHERE tenant_id=? AND marketplace_connection_id=?",j.tenant(),j.connection());
-            // Local runtime activation is explicit through the environment flag. The first complete scan
-            // stays reporting-only; a durable cutover arms ONLY subsequently created orders, once.
+            // Activation is explicit. Historical orders remain reporting-only unless the separate,
+            // exact-store bootstrap scope authorizes their remaining-only cutover below.
             if(inventory.enabled())jdbc.update("UPDATE shopify_order_controls SET inventory_enabled=true,activated_at=clock_timestamp(),updated_at=now() WHERE tenant_id=? AND marketplace_connection_id=? AND baseline_completed_at IS NOT NULL AND activated_at IS NULL AND NOT inventory_enabled",j.tenant(),j.connection());
+            inventory.bootstrapRemaining(j.tenant(),j.connection(),j.id());
+            guard(j);publicationDeadline(state); // Cutover and reservations roll back with a lost lease.
             finish(j,state,"COMPLETED","COMPLETED","Shopify Orders sync complete");return false;
         }
         if(((Number)state.get("requests")).intValue()>=1000){finish(j,state,"FAILED","COMPLETED_WITH_WARNINGS","Partial Orders import reached its bounded read limit");return false;}

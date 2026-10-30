@@ -85,4 +85,21 @@ class ShopifyOrderLifecycleTest {
         var o=new Observation(id,created,updated,true,true,false,"PAID",true,Ownership.MERCHANT,3,3,List.of(),"test");
         var p=plan(o,null,cutoff);assertThat(p.state()).isEqualTo(State.TEST);assertThat(p.reserveUnits()).isZero();
     }
+    @Test void verifiedHistoricalCutoverPreservesPastShipmentsAndConsumesOnlyNewDelta(){
+        var baseline=observation(updated,"PAID",false,Ownership.MERCHANT,1,ship(2,"SUCCESS"));
+        var historicalCutoff=updated.plusSeconds(10);
+        var checkpoint=plan(baseline,null,historicalCutoff);
+        assertThat(checkpoint.state()).isEqualTo(State.REPORTING_ONLY);
+        var promoted=new History(id,baseline.updated(),baseline.hash(),State.LIVE,checkpoint.nextSuccess());
+        assertThat(plan(baseline,promoted,historicalCutoff,true).unchanged()).isTrue();
+        var later=observation(updated.plusSeconds(20),"PAID",false,Ownership.MERCHANT,0,ship(3,"SUCCESS"));
+        assertThat(plan(later,promoted,historicalCutoff,true).shipments()).containsExactly(new Shipment(ship(3,"SUCCESS").key(),1));
+        assertThat(plan(later,promoted,historicalCutoff,false).state()).isEqualTo(State.REPORTING_ONLY);
+        var cancelled=observation(updated.plusSeconds(20),"PAID",true,Ownership.MERCHANT,1,ship(2,"SUCCESS"));
+        var cancelPlan=plan(cancelled,promoted,historicalCutoff,true);
+        assertThat(cancelPlan.releaseReservations()).isTrue();assertThat(cancelPlan.shipments()).isEmpty();assertThat(cancelPlan.reserveUnits()).isZero();
+        var reopened=observation(updated.plusSeconds(30),"PAID",false,Ownership.MERCHANT,1,ship(2,"SUCCESS"));
+        var reopenedPlan=plan(reopened,history(cancelled,cancelPlan),historicalCutoff,true);
+        assertThat(reopenedPlan.state()).isEqualTo(State.LIVE);assertThat(reopenedPlan.reserveUnits()).isEqualTo(1);assertThat(reopenedPlan.shipments()).isEmpty();
+    }
 }

@@ -43,7 +43,15 @@ public class ShopifyInventoryPublications {
         AND r.window_end>clock_timestamp()-interval '10 minutes' AND j.completed_at>=?
         AND (NOT ? OR r.window_end>=?)
         AND ((c.channel='SHOPIFY' AND r.sync_profile='SHOPIFY_ORDERS') OR (c.channel='AMAZON' AND j.job_type='FINAL_RECONCILIATION' AND r.sync_profile IN ('ORDER_CHANGES','STARTUP_ORDERS','RECENT_ORDER_RECONCILIATION','ORDER_LIFECYCLE'))))
-     OR EXISTS(SELECT 1 FROM marketplace_sync_jobs j WHERE j.tenant_id=c.tenant_id AND j.marketplace_connection_id=c.id AND j.status IN ('QUEUED','WAITING','RUNNING') AND j.job_type IN ('ORDERS_API_DELTA','ORDERS_30_DAY','ORDER_ITEMS_30_DAY','FINAL_RECONCILIATION','SHOPIFY_ORDERS')))
+     OR EXISTS(SELECT 1 FROM marketplace_sync_jobs j WHERE j.tenant_id=c.tenant_id AND j.marketplace_connection_id=c.id AND j.status IN ('QUEUED','WAITING','RUNNING') AND j.job_type IN ('ORDERS_API_DELTA','ORDERS_30_DAY','ORDER_ITEMS_30_DAY','FINAL_RECONCILIATION','SHOPIFY_ORDERS'))
+     OR (c.channel='SHOPIFY' AND EXISTS(
+      SELECT 1 FROM shopify_orders o WHERE o.tenant_id=c.tenant_id AND o.marketplace_connection_id=c.id
+       AND NOT o.is_test AND o.cancelled_at IS NULL AND o.payment_status<>'VOIDED'
+       AND (NOT o.evidence_complete OR EXISTS(
+        SELECT 1 FROM shopify_order_lines line WHERE line.tenant_id=o.tenant_id AND line.marketplace_connection_id=o.marketplace_connection_id AND line.order_id=o.id
+         AND line.requires_shipping AND line.unfulfilled_quantity>0 AND line.ownership<>'EXTERNAL'
+         AND (line.ownership<>'MERCHANT' OR line.stock_scope<>'LIVE' OR line.inventory_state<>'READY_TO_SHIP'
+          OR line.reserve_units<>line.unfulfilled_quantity))))))
    )
    """,Boolean.class,tenant,Timestamp.from(startup),requireWindowCoverage,Timestamp.from(startup)));
  }

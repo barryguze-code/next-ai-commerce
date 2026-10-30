@@ -90,3 +90,25 @@ BEGIN
 END $$;
 CREATE TRIGGER protect_shopify_publication_intent BEFORE UPDATE ON shopify_inventory_publications
  FOR EACH ROW EXECUTE FUNCTION protect_shopify_publication_intent();
+
+-- Explicitly scoped, remaining-only cutover proof. Never edits archived source or past shipments.
+CREATE TABLE shopify_order_cutovers (
+ tenant_id UUID NOT NULL, marketplace_connection_id UUID NOT NULL, order_line_id UUID NOT NULL,
+ source_document_id UUID NOT NULL, sync_job_id UUID NOT NULL, source_revision TIMESTAMPTZ NOT NULL,
+ source_hash CHAR(64) NOT NULL, fulfillment_checkpoint JSONB NOT NULL,
+ composition JSONB NOT NULL, remaining_units INTEGER NOT NULL CHECK(remaining_units>0),
+ recorded_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+ PRIMARY KEY(tenant_id,marketplace_connection_id,order_line_id),
+ FOREIGN KEY(tenant_id,marketplace_connection_id,order_line_id) REFERENCES shopify_order_lines(tenant_id,marketplace_connection_id,id),
+ FOREIGN KEY(tenant_id,marketplace_connection_id,source_document_id) REFERENCES shopify_source_documents(tenant_id,marketplace_connection_id,id),
+ FOREIGN KEY(tenant_id,marketplace_connection_id,sync_job_id) REFERENCES marketplace_sync_jobs(tenant_id,marketplace_connection_id,id),
+ CHECK(jsonb_typeof(fulfillment_checkpoint)='object'),
+ CHECK(jsonb_typeof(composition)='array' AND jsonb_array_length(composition)>0)
+);
+ALTER TABLE shopify_order_cutovers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shopify_order_cutovers FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON shopify_order_cutovers
+ USING(tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid)
+ WITH CHECK(tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid);
+CREATE TRIGGER shopify_cutover_append_only BEFORE UPDATE OR DELETE ON shopify_order_cutovers
+ FOR EACH ROW EXECUTE FUNCTION preserve_shopify_source_document();

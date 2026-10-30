@@ -360,7 +360,8 @@ public class CollaborationRepository {
               ORDER BY listing.last_seen_at DESC LIMIT 1
             ) artwork ON true
             LEFT JOIN LATERAL(SELECT coalesce(sv.image_url,sp.image_url) image_url FROM shopify_variants sv JOIN shopify_products sp ON sp.tenant_id=sv.tenant_id AND sp.marketplace_connection_id=sv.marketplace_connection_id AND sp.id=sv.product_id
-              WHERE sv.tenant_id=r.tenant_id AND r.subject_type='MARKETPLACE_SKU' AND 'SHOPIFY:'||sv.id::text=r.subject_key AND """+SHOPIFY_STORE_ACCESS+"""
+              WHERE sv.tenant_id=r.tenant_id AND r.subject_type='MARKETPLACE_SKU' AND 'SHOPIFY:'||sv.id::text=r.subject_key AND ("""+SHOPIFY_STORE_ACCESS+"""
+              )
               LIMIT 1) shopify_artwork ON true
             WHERE r.tenant_id=? AND r.id IN (
             """+slots+")",rs->{while(rs.next()){String url=rs.getString(2);if(url!=null&&(url.startsWith("/app/")||url.startsWith("https://")))result.put(rs.getObject(1,UUID.class),url);}return null;},join(tenantId,reviews.stream().map(Review::id).toList()));

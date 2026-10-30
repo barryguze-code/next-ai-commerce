@@ -93,6 +93,7 @@ app:
     orders:
       enabled: ${SHOPIFY_ORDERS_ENABLED:false}
       inventory-enabled: ${SHOPIFY_ORDER_INVENTORY_ENABLED:false}
+      bootstrap-scopes: ${SHOPIFY_ORDER_BOOTSTRAP_SCOPES:}
       polling-enabled: ${SHOPIFY_ORDER_POLLING_ENABLED:false}
       only-scheduling: ${SHOPIFY_ORDER_ONLY_SCHEDULING:false}
   credentials:

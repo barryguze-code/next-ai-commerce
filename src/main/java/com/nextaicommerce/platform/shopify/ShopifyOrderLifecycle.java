@@ -59,6 +59,10 @@ public final class ShopifyOrderLifecycle {
     }
 
     public static Plan plan(Observation now, History old, Instant activatedAt) {
+        return plan(now,old,activatedAt,false);
+    }
+    /** True only when the repository found the immutable, exact-line cutover evidence. */
+    public static Plan plan(Observation now, History old, Instant activatedAt, boolean verifiedCutover) {
         if (old != null && !old.id().equals(now.id()))
             throw new IllegalArgumentException("Order evidence is outside the stored account, connection or line.");
         if (old != null && now.updated().isBefore(old.revision())) return keep(old, "Stale source observation.");
@@ -78,8 +82,8 @@ public final class ShopifyOrderLifecycle {
                 return keep(old, "Previously observed shipment changed; physical stock requires review.");
         }
         if (now.test()) return closed(State.TEST, seen, "Test order; no warehouse operation.");
-        if (activatedAt == null || now.created().isBefore(activatedAt)
-                || (old != null && old.state() == State.REPORTING_ONLY)) {
+        if (activatedAt == null || (!verifiedCutover && (now.created().isBefore(activatedAt)
+                || (old != null && old.state() == State.REPORTING_ONLY)))) {
             successful.forEach((key, f) -> seen.put(key, f.quantity()));
             return closed(State.REPORTING_ONLY, seen, null);
         }

@@ -39,7 +39,7 @@ class ShopifyPublicationDatabaseTest {
   tenant=UUID.randomUUID();connection=UUID.randomUUID();item=UUID.randomUUID();run=UUID.randomUUID();job=UUID.randomUUID();binding=UUID.randomUUID();startup=Instant.now().minusSeconds(60);repository=new ShopifyInventoryPublications(jdbc,tx);
   tx.executeWithoutResult(s->{
    jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES(?,?,'Publication fixture')",tenant,tenant.toString());scope();
-   jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone) VALUES(?,?,'SHOPIFY','fixture.myshopify.com','fixture.myshopify.com','ACTIVE','Fixture','fixture://none','UTC')",connection,tenant);
+   jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone,inventory_activated_at) VALUES(?,?,'SHOPIFY','fixture.myshopify.com','fixture.myshopify.com','ACTIVE','Fixture','fixture://none','UTC',now())",connection,tenant);
    UUID global=UUID.randomUUID();jdbc.update("INSERT INTO global_catalog_products(id,canonical_name,unit_of_measure) VALUES(?,'Fixture product','EA')",global);
    jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES(?,?,?,'000001')",item,tenant,global);
    main=jdbc.queryForObject("SELECT location_id FROM account_catalog_item_locations WHERE tenant_id=? AND account_catalog_item_id=? AND is_default",UUID.class,tenant,item);
@@ -74,6 +74,63 @@ class ShopifyPublicationDatabaseTest {
   assertThat(repository.markSubmitting(ready,startup)).isTrue();
   repository.submit(ready,client,startup);verify(client).setAvailable(eq(ready.target()),eq(7),eq(4),eq(ready.id()),any());
   assertThat(jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant)).isEqualTo(before);
+ }
+ // Fresh import completion alone must not turn historical open commitments into sellable stock.
+ private UUID historicalOpenOrder(boolean complete){
+  UUID order=UUID.randomUUID();
+  tx.executeWithoutResult(t->{scope();
+   UUID source=jdbc.queryForObject("SELECT id FROM shopify_source_documents WHERE tenant_id=? AND marketplace_connection_id=? LIMIT 1",UUID.class,tenant,connection);
+   jdbc.update("INSERT INTO shopify_orders(id,tenant_id,marketplace_connection_id,order_gid,order_name,source_created_at,source_updated_at,is_test,payment_status,fulfillment_status,currency,total,evidence_complete,observation_hash,source_document_id) VALUES(?,?,?,'gid://shopify/Order/1009','#1009',now()-interval '26 days',now(),false,'PAID','PARTIALLY_FULFILLED','USD',10,?,repeat('a',64),?)",order,tenant,connection,complete,source);
+   jdbc.update("INSERT INTO shopify_order_lines(id,tenant_id,marketplace_connection_id,order_id,line_gid,title,ordered_quantity,current_quantity,unfulfilled_quantity,requires_shipping,ownership,source_updated_at,observation_hash,stock_scope,inventory_state,reserve_units) VALUES(?,?,?,?, 'gid://shopify/LineItem/1009','Open physical item',1,1,1,true,'MERCHANT',now(),repeat('b',64),'REPORTING_ONLY','REPORTING_ONLY',0)",UUID.randomUUID(),tenant,connection,order);
+  });return order;
+ }
+ @Test void historicalOpenCommitmentBlocksPublicationWithoutReplayingShipments(){
+  UUID order=historicalOpenOrder(true);
+  String before=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant);
+  assertThat(repository.plan(tenant,connection,startup)).isZero();
+  assertThat(jdbc.queryForObject("SELECT reserve_units FROM shopify_order_lines WHERE tenant_id=? AND order_id=?",Integer.class,tenant,order)).isZero();
+  assertThat(jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant)).isEqualTo(before);
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_order_lines SET unfulfilled_quantity=0 WHERE tenant_id=? AND order_id=?",tenant,order);});
+  assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
+ }
+ @Test void newlyObservedOpenCommitmentFencesPreparedPublication(){
+  repository.plan(tenant,connection,startup);var operation=repository.next(tenant,connection).orElseThrow();
+  var client=mock(ShopifyInventoryClient.class);when(client.available(eq(operation.target()),any())).thenReturn(4);
+  repository.prepare(operation,client,startup);
+  jdbc.update("UPDATE shopify_inventory_publications SET available_at=now() WHERE id=?",operation.id());
+  var ready=repository.next(tenant,connection).orElseThrow();
+  historicalOpenOrder(true);
+  assertThat(repository.markSubmitting(ready,startup)).isFalse();
+  verify(client,never()).setAvailable(any(),anyInt(),anyInt(),any(),any());
+ }
+ @Test void incompleteNonCancelledOrderEvidenceBlocksPublication(){
+  UUID order=historicalOpenOrder(false);
+  assertThat(repository.plan(tenant,connection,startup)).isZero();
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_orders SET cancelled_at=now() WHERE tenant_id=? AND id=?",tenant,order);});
+  assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
+ }
+ @Test void explicitCutoverReservesOnlyRemainingUnitsAndIsImmutableAndIdempotent(){
+  UUID order=historicalOpenOrder(true);var inventory=new ShopifyOrderInventory(jdbc,true,true);
+  UUID evidence=UUID.randomUUID();
+  tx.executeWithoutResult(t->{scope();
+   jdbc.update("INSERT INTO shopify_source_documents(id,tenant_id,marketplace_connection_id,sync_job_id,api_version,query_revision,sha256,response_body) VALUES(?,?,?,?,'2026-10',?,repeat('c',64),'{}')",evidence,tenant,connection,job,ShopifyOrderClient.REVISION);
+   jdbc.update("UPDATE shopify_orders SET source_document_id=? WHERE tenant_id=? AND id=?",evidence,tenant,order);
+   jdbc.update("INSERT INTO shopify_order_controls(tenant_id,marketplace_connection_id,inventory_enabled,activated_at,baseline_completed_at) VALUES(?,?,true,now(),now())",tenant,connection);
+   jdbc.update("UPDATE shopify_order_lines SET variant_id=?,variant_gid='gid://shopify/ProductVariant/1',ordered_quantity=3,current_quantity=3,inventory_revision=source_updated_at,inventory_hash=observation_hash,success_checkpoint='{\"prior-shipment\":2}'::jsonb WHERE tenant_id=? AND order_id=?",variant,tenant,order);
+   inventory.bootstrapRemaining(tenant,connection,job); // No configured scope means no cutover.
+  });
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_order_cutovers WHERE tenant_id=?",Integer.class,tenant)).isZero();
+  org.springframework.test.util.ReflectionTestUtils.setField(inventory,"bootstrapScopes",tenant+"/"+connection);
+  String before=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant);
+  tx.executeWithoutResult(t->{scope();inventory.bootstrapRemaining(tenant,connection,UUID.randomUUID());});
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_order_cutovers WHERE tenant_id=?",Integer.class,tenant)).isZero();
+  tx.executeWithoutResult(t->{scope();inventory.bootstrapRemaining(tenant,connection,job);inventory.bootstrapRemaining(tenant,connection,job);});
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_order_cutovers WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM order_inventory_reservations WHERE tenant_id=? AND status='ACTIVE'",BigDecimal.class,tenant)).isEqualByComparingTo("3");
+  assertThat(jdbc.queryForObject("SELECT fulfillment_checkpoint->>'prior-shipment' FROM shopify_order_cutovers WHERE tenant_id=?",String.class,tenant)).isEqualTo("2");
+  assertThat(jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant)).isEqualTo(before);
+  assertThatThrownBy(()->jdbc.update("UPDATE shopify_order_cutovers SET remaining_units=99 WHERE tenant_id=?",tenant)).isInstanceOf(org.springframework.dao.DataAccessException.class);
+  tx.executeWithoutResult(t->{jdbc.execute("SET LOCAL ROLE publication_reader");jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,UUID.randomUUID().toString());assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_order_cutovers",Integer.class)).isZero();});
  }
  @Test void newWarehouseLocationsAreNotAutomaticallyIncluded(){
   tx.executeWithoutResult(s->{scope();UUID added=UUID.randomUUID();

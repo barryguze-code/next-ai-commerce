@@ -82,7 +82,8 @@ public class ShopifyOrderRepository {
             history=new History(identity,((Timestamp)old.get("inventory_revision")).toInstant(),old.get("inventory_hash").toString(),State.valueOf(old.get("stock_scope").toString()),quantities);
         }
         var observation=new Observation(identity,o.created(),o.updated(),o.complete(),o.test(),o.cancelled()!=null,o.payment(),l.shipping(),l.ownership(),l.ordered(),l.unfulfilled(),l.fulfillments(),hash);
-        Plan plan=ShopifyOrderLifecycle.plan(observation,history,cutoff);
+        boolean cutover=old!=null&&Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM shopify_order_cutovers WHERE tenant_id=? AND marketplace_connection_id=? AND order_line_id=?)",Boolean.class,tenant,connection,old.get("id")));
+        Plan plan=ShopifyOrderLifecycle.plan(observation,history,cutoff,cutover);
         boolean frozenVariantChanged=old!=null&&old.get("basis_hash")!=null&&!Objects.equals(old.get("basis_variant_gid"),l.variant());
         var variants=l.variant()==null?List.<UUID>of():jdbc.queryForList("SELECT id FROM shopify_variants WHERE tenant_id=? AND marketplace_connection_id=? AND variant_gid=?",UUID.class,tenant,connection,l.variant());
         var fields=new LinkedHashMap<String,Object>();fields.put("tenant",tenant);fields.put("connection",connection);fields.put("order",order);fields.put("line",l.gid());

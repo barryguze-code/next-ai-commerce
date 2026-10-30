@@ -49,7 +49,7 @@ class OrderTabTotalsDatabaseTest {
         jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_channel,price,buy_box_price,currency,buy_box_currency,quantity) VALUES (?,?,'US',?,?,20,19,'USD','USD',?)",tenant,connection,sku,channel,quantity);
     }
     UUID order(String id,String status,String state,boolean pickup,String sku,int quantity) {
-        jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,order_status,fulfillment_state,platform_waiting_for_pickup,purchase_date) VALUES (?,?,'US',?,?,?,?,now())",tenant,connection,id,status,state,pickup);
+        jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,order_status,fulfillment_state,platform_waiting_for_pickup,purchase_date,fulfillment_channel) VALUES (?,?,'US',?,?,?,?,now(),'MFN')",tenant,connection,id,status,state,pickup);
         return item(id,sku,quantity);
     }
     UUID item(String order,String sku,int quantity) {
@@ -141,7 +141,7 @@ class OrderTabTotalsDatabaseTest {
     }
     @Test void repeatedSkuTotalsStayWithinOneSecondDatabaseBudget() {
         tx.executeWithoutResult(s->{fixture();listing("REPEAT","MFN",10);
-            jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,order_status,purchase_date) SELECT ?,?,'US','load-'||n,'Unshipped',now() FROM generate_series(1,4500) n",tenant,connection);
+            jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,order_status,purchase_date,fulfillment_channel) SELECT ?,?,'US','load-'||n,'Unshipped',now(),'MFN' FROM generate_series(1,4500) n",tenant,connection);
             jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered,item_price) SELECT ?,?,'load-'||n,'load-'||n||'-'||p,'REPEAT',p,p*20 FROM generate_series(1,4500) n CROSS JOIN generate_series(1,2) p",tenant,connection);
             // Production has collected statistics; freshly bulk-loaded fixtures do not.
             for(String table:List.of("amazon_orders","amazon_order_items","amazon_listings","marketplace_sku_mappings"))jdbc.execute("ANALYZE "+table);
