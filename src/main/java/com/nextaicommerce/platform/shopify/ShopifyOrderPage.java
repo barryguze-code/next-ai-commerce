@@ -2,7 +2,7 @@ package com.nextaicommerce.platform.shopify;
 
 import com.nextaicommerce.platform.collaboration.CollaborationRepository;
 import com.nextaicommerce.platform.web.*;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import org.springframework.stereotype.Component;
@@ -39,7 +39,7 @@ public class ShopifyOrderPage {
         model.addAttribute("selectedStatus",selected);model.addAttribute("shopifyOrdersPage",orders);model.addAttribute("shopifyOrderTabs",reads.tabs(tenant,connection));
         model.addAttribute("shopifyOrderJob",jobs.status(tenant,connection));model.addAttribute("shopifyOrderSetup",connections.setupState(tenant,connection));
         model.addAttribute("canSyncShopifyOrders",mayWrite);model.addAttribute("shopifyShippingSandbox",shippingSandbox);
-        model.addAttribute("orderTime",DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a 'UTC'",Locale.US).withZone(ZoneOffset.UTC));
+        model.addAttribute("orderTime",DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a z",Locale.US).withZone(ZoneId.of("America/Los_Angeles")));
         model.addAttribute("shopifyOrderThreads",collaboration.openSubjectSummaries(tenant,"ORDER",orders.rows().stream().map(ShopifyOrderReadRepository.Order::subjectKey).toList(),actor.getName()));
         model.addAttribute("orderStreamKey",versionUnchecked(tenant,connection));return "orders";
     }

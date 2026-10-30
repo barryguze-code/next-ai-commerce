@@ -75,6 +75,7 @@ public class ShopifyOrderJobs {
             }
             Instant end=clock.instant();var previous=jdbc.queryForList("SELECT window_end FROM marketplace_sync_runs WHERE tenant_id=? AND marketplace_connection_id=? AND sync_profile='SHOPIFY_ORDERS' AND status='COMPLETED' ORDER BY completed_at DESC LIMIT 1",tenant,connection);
             Instant start=previous.isEmpty()?end.minus(Duration.ofDays(30)):((Timestamp)previous.getFirst().get("window_end")).toInstant().minusSeconds(300);
+            start=inventory.bootstrapStart(tenant,connection,start);
             if(start.isBefore(end.minus(Duration.ofDays(59))))throw new IllegalStateException("Shopify Orders gap exceeds the installed read window. Retained allocations require review before resuming.");
             UUID run=UUID.randomUUID(),job=UUID.randomUUID();var state=new LinkedHashMap<String,Object>();
             state.put("actor",actor);state.put("connectionRevision",((Timestamp)rows.getFirst().get("updated_at")).toInstant().toString());state.put("queryRevision",ShopifyOrderClient.REVISION);
@@ -129,7 +130,7 @@ public class ShopifyOrderJobs {
             jdbc.update("UPDATE shopify_order_controls SET baseline_completed_at=coalesce(baseline_completed_at,clock_timestamp()),updated_at=now() WHERE tenant_id=? AND marketplace_connection_id=?",j.tenant(),j.connection());
             // Activation is explicit. Historical orders remain reporting-only unless the separate,
             // exact-store bootstrap scope authorizes their remaining-only cutover below.
-            if(inventory.enabled())jdbc.update("UPDATE shopify_order_controls SET inventory_enabled=true,activated_at=clock_timestamp(),updated_at=now() WHERE tenant_id=? AND marketplace_connection_id=? AND baseline_completed_at IS NOT NULL AND activated_at IS NULL AND NOT inventory_enabled",j.tenant(),j.connection());
+            if(inventory.enabled(j.tenant(),j.connection()))jdbc.update("UPDATE shopify_order_controls SET inventory_enabled=true,activated_at=clock_timestamp(),updated_at=now() WHERE tenant_id=? AND marketplace_connection_id=? AND baseline_completed_at IS NOT NULL AND activated_at IS NULL AND NOT inventory_enabled",j.tenant(),j.connection());
             inventory.bootstrapRemaining(j.tenant(),j.connection(),j.id());
             guard(j);publicationDeadline(state); // Cutover and reservations roll back with a lost lease.
             finish(j,state,"COMPLETED","COMPLETED","Shopify Orders sync complete");return false;

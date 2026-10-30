@@ -14,10 +14,33 @@ import org.springframework.transaction.annotation.Transactional;
 public class ShopifyOrderInventory {
     private final JdbcTemplate jdbc;
     private final boolean enabled;
+    @Value("${app.shopify.orders.inventory-scopes:}") private String inventoryScopes="";
     @Value("${app.shopify.orders.bootstrap-scopes:}") private String bootstrapScopes="";
     public ShopifyOrderInventory(JdbcTemplate jdbc,@Value("${app.shopify.orders.inventory-enabled:false}") boolean enabled,
                                  @Value("${app.shopify.orders.enabled:false}") boolean ordersEnabled){this.jdbc=jdbc;this.enabled=enabled&&ordersEnabled;}
     public boolean enabled(){return enabled;}
+    public boolean enabled(UUID tenant,UUID connection){return enabled&&inScope(inventoryScopes,tenant,connection);}
+    private static boolean inScope(String scopes,UUID tenant,UUID connection){
+        return Arrays.stream(scopes.split(",")).map(String::trim).anyMatch((tenant+"/"+connection)::equals);
+    }
+    /** Re-observe mapped outstanding history in the same fenced scan that will authorize its cutover. */
+    Instant bootstrapStart(UUID tenant,UUID connection,Instant normalStart){
+        if(!enabled(tenant,connection)||!inScope(bootstrapScopes,tenant,connection))return normalStart;
+        Timestamp earliest=jdbc.queryForObject("""
+            SELECT min(o.source_updated_at) FROM shopify_orders o
+            JOIN shopify_order_lines l ON l.tenant_id=o.tenant_id AND l.marketplace_connection_id=o.marketplace_connection_id AND l.order_id=o.id
+            JOIN shopify_variants v ON v.tenant_id=l.tenant_id AND v.marketplace_connection_id=l.marketplace_connection_id AND v.id=l.variant_id
+            JOIN marketplace_sku_mappings m ON m.tenant_id=v.tenant_id AND m.marketplace_connection_id=v.marketplace_connection_id AND m.shopify_variant_id=v.id
+              AND m.status='ACTIVE' AND m.shopify_mapping_hash=v.mapping_hash
+            WHERE o.tenant_id=? AND o.marketplace_connection_id=? AND o.evidence_complete AND NOT o.is_test
+              AND o.cancelled_at IS NULL AND o.payment_status<>'VOIDED' AND o.review_reason IS NULL
+              AND l.stock_scope='REPORTING_ONLY' AND l.inventory_state='REPORTING_ONLY' AND l.review_reason IS NULL
+              AND l.requires_shipping AND l.ownership='MERCHANT' AND l.unfulfilled_quantity>0
+              AND l.local_handoff_units=0 AND l.local_pending_units=0
+              AND EXISTS(SELECT 1 FROM marketplace_sku_mapping_components c WHERE c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id)
+            """,Timestamp.class,tenant,connection);
+        return earliest!=null&&earliest.toInstant().minusSeconds(300).isBefore(normalStart)?earliest.toInstant().minusSeconds(300):normalStart;
+    }
     /** Read-only batch projection using the same shelf-life/location eligibility and shared reservations. */
     @Transactional(readOnly=true)
     public Map<UUID,BigDecimal> availability(UUID tenant,Collection<UUID> items){
@@ -50,14 +73,14 @@ public class ShopifyOrderInventory {
         jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",rs->{},tenant);
     }
     Instant cutoff(UUID tenant,UUID connection){
-        if(!enabled)return null;
+        if(!enabled(tenant,connection))return null;
         var rows=jdbc.queryForList("SELECT activated_at FROM shopify_order_controls WHERE tenant_id=? AND marketplace_connection_id=? AND inventory_enabled AND baseline_completed_at IS NOT NULL",tenant,connection);
         return rows.isEmpty()?null:((Timestamp)rows.getFirst().get("activated_at")).toInstant();
     }
     /** Called within the fenced source publication transaction, before changing reservation targets. */
     boolean ship(UUID tenant,UUID connection,UUID order,UUID line,ShopifyOrderLifecycle.Shipment shipment,
                  ShopifyOrderLifecycle.Fulfillment source){
-        if(!enabled)throw new IllegalStateException("Shopify warehouse operations are disabled.");
+        if(!enabled(tenant,connection))throw new IllegalStateException("Shopify warehouse operations are disabled.");
         // A local packing handoff already consumed these physical units. The source
         // checkpoint and this credit are committed together, so replay cannot spend twice.
         int pending=jdbc.queryForObject("SELECT local_pending_units FROM shopify_order_lines WHERE tenant_id=? AND marketplace_connection_id=? AND id=? FOR UPDATE",Integer.class,tenant,connection,line);
@@ -120,7 +143,7 @@ public class ShopifyOrderInventory {
         }
         return review;
     }
-    void release(UUID tenant,UUID connection,UUID line){jdbc.update("UPDATE order_inventory_reservations SET status='RELEASED' WHERE tenant_id=? AND marketplace_connection_id=? AND shopify_order_line_id=? AND status='ACTIVE'",tenant,connection,line);}
+    void release(UUID tenant,UUID connection,UUID line){if(!enabled(tenant,connection))return;jdbc.update("UPDATE order_inventory_reservations SET status='RELEASED' WHERE tenant_id=? AND marketplace_connection_id=? AND shopify_order_line_id=? AND status='ACTIVE'",tenant,connection,line);}
 
     /** Freeze a valid current-account mapping once. Never replace an existing order's components after catalogue edits. */
     private boolean basis(UUID tenant,UUID connection,UUID line){
@@ -158,12 +181,12 @@ public class ShopifyOrderInventory {
               AND l.inventory_revision=l.source_updated_at AND l.review_reason IS NULL
             ORDER BY o.source_created_at,o.id,l.line_gid FOR UPDATE OF l
             """,tenant);
-        for(var l:lines)reserve(tenant,(UUID)l.get("marketplace_connection_id"),(UUID)l.get("id"),(Integer)l.get("reserve_units"));
+        for(var l:lines)if(enabled(tenant,(UUID)l.get("marketplace_connection_id")))reserve(tenant,(UUID)l.get("marketplace_connection_id"),(UUID)l.get("id"),(Integer)l.get("reserve_units"));
         return jdbc.queryForObject("SELECT count(*) FROM shopify_order_lines WHERE tenant_id=? AND inventory_state='INVENTORY_SHORTAGE'",Integer.class,tenant);
     }
     /** Only called at a fully read, lease-fenced job boundary under the account stock lock. */
     void bootstrapRemaining(UUID tenant,UUID connection,UUID job){
-        if(!enabled||!Arrays.asList(bootstrapScopes.split(",")).stream().map(String::trim).toList().contains(tenant+"/"+connection))return;
+        if(!enabled(tenant,connection)||!inScope(bootstrapScopes,tenant,connection))return;
         lock(tenant);
         var lines=jdbc.queryForList("""
             SELECT l.id,l.inventory_revision,l.inventory_hash,l.unfulfilled_quantity,o.source_document_id
@@ -198,15 +221,18 @@ public class ShopifyOrderInventory {
     }
     /** Called only from an explicit guarded local test cycle, never source synchronization. */
     void prepareLocalUat(UUID tenant,UUID connection,UUID line,int units){
+        if(!enabled(tenant,connection))throw new IllegalStateException("Shopify warehouse operations are disabled.");
         release(tenant,connection,line);
         jdbc.update("UPDATE shopify_order_lines SET stock_scope='TEST',reserve_units=?,unfulfilled_quantity=?,local_handoff_units=0,local_pending_units=0,inventory_revision=source_updated_at,updated_at=clock_timestamp() WHERE tenant_id=? AND marketplace_connection_id=? AND id=?",units,units,tenant,connection,line);
         if(!basis(tenant,connection,line)){state(tenant,line,"NEEDS_MAPPING");return;}
         reserve(tenant,connection,line,units);
     }
     void restoreLocalUatReservations(UUID tenant,UUID connection,UUID order){
+        if(!enabled(tenant,connection))return;
         for(var l:jdbc.queryForList("SELECT id,greatest(reserve_units-local_pending_units,0) units FROM shopify_order_lines WHERE tenant_id=? AND marketplace_connection_id=? AND order_id=? AND stock_scope='LIVE' AND review_reason IS NULL",tenant,connection,order))if(basis(tenant,connection,(UUID)l.get("id")))reserve(tenant,connection,(UUID)l.get("id"),((Number)l.get("units")).intValue());
     }
     private void reserve(UUID tenant,UUID connection,UUID line,int units){
+        if(!enabled(tenant,connection))return;
         if(!basis(tenant,connection,line)){state(tenant,line,"NEEDS_MAPPING");return;}
         var components=jdbc.queryForList("SELECT account_catalog_item_id,quantity FROM shopify_order_components WHERE tenant_id=? AND marketplace_connection_id=? AND order_line_id=? ORDER BY account_catalog_item_id",tenant,connection,line);
         boolean shortage=false;

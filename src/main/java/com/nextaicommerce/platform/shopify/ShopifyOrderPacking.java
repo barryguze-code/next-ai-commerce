@@ -28,13 +28,20 @@ public class ShopifyOrderPacking {
         if(!localUat&&!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM shopify_order_controls c WHERE c.tenant_id=? AND c.marketplace_connection_id=? AND c.last_error IS NULL AND EXISTS(SELECT 1 FROM marketplace_sync_runs run WHERE run.tenant_id=c.tenant_id AND run.marketplace_connection_id=c.marketplace_connection_id AND run.sync_profile='SHOPIFY_ORDERS' AND run.status='COMPLETED' AND run.window_end>=clock_timestamp()-interval '10 minutes'))",Boolean.class,tenant,connection)))return "Refresh Shopify Orders before packing: a recent complete read window is required.";
         if(!Boolean.TRUE.equals(o.get("evidence_complete"))||o.get("review_reason")!=null)return "Complete, current order evidence is required.";
         if(Boolean.TRUE.equals(o.get("is_test"))||o.get("cancelled_at")!=null)return "Cancelled or test orders cannot be packed.";
-        if(!localUat&&((Timestamp)o.get("source_created_at")).toInstant().isBefore(cutoff))return "Imported history is reporting only; stock cannot be deducted retrospectively.";
-        if(Boolean.TRUE.equals(o.get("platform_waiting_for_pickup")))return null;
+        boolean historical=!localUat&&((Timestamp)o.get("source_created_at")).toInstant().isBefore(cutoff);
+        if(Boolean.TRUE.equals(o.get("platform_waiting_for_pickup"))){
+            if(historical&&!verifiedHistoricalHandoff(tenant,connection,(UUID)o.get("id")))
+                return "Imported order needs a verified warehouse handoff before reprinting.";
+            return null;
+        }
         if(Set.of("PENDING","AUTHORIZED","PARTIALLY_PAID","VOIDED","REFUNDED").contains(o.get("payment_status")))return "Payment must be complete before a local shipping handoff.";
         var lines=jdbc.queryForList("SELECT l.*,coalesce((SELECT sum(value::int) FROM jsonb_each_text(l.success_checkpoint)),0) acknowledged FROM shopify_order_lines l WHERE tenant_id=? AND marketplace_connection_id=? AND order_id=? ORDER BY id",tenant,connection,o.get("id"));
         boolean open=false;
         for(var l:lines){
-            int units=((Number)l.get("reserve_units")).intValue();if(units==0)continue;open=true;
+            int units=((Number)l.get("reserve_units")).intValue();
+            if(historical&&Boolean.TRUE.equals(l.get("requires_shipping"))&&((Number)l.get("unfulfilled_quantity")).intValue()>0
+                &&!verifiedCutover(tenant,connection,(UUID)l.get("id")))return "Imported open units need a verified warehouse cutover before packing.";
+            if(units==0)continue;open=true;
             if(!("LIVE".equals(l.get("stock_scope"))||(localUat&&"TEST".equals(l.get("stock_scope"))))||!"READY_TO_SHIP".equals(l.get("inventory_state"))||l.get("review_reason")!=null
                 ||!"MERCHANT".equals(l.get("ownership"))||!Objects.equals(l.get("inventory_revision"),l.get("source_updated_at"))
                 ||((Number)l.get("local_handoff_units")).intValue()!=0)return "Each open line needs verified mapping and complete reserved warehouse stock.";
@@ -49,6 +56,38 @@ public class ShopifyOrderPacking {
             }
         }
         return open?null:"This order has no eligible open warehouse units.";
+    }
+    private boolean verifiedHistoricalHandoff(UUID tenant,UUID connection,UUID order){
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM shopify_orders o WHERE o.tenant_id=? AND o.marketplace_connection_id=? AND o.id=?
+              AND o.local_handoff_id IS NOT NULL AND o.local_handoff_at IS NOT NULL
+              AND EXISTS(SELECT 1 FROM shopify_order_lines l WHERE l.tenant_id=o.tenant_id AND l.marketplace_connection_id=o.marketplace_connection_id AND l.order_id=o.id AND l.local_handoff_units>0)
+              AND NOT EXISTS(SELECT 1 FROM shopify_order_lines l WHERE l.tenant_id=o.tenant_id AND l.marketplace_connection_id=o.marketplace_connection_id AND l.order_id=o.id
+                AND l.requires_shipping AND (l.unfulfilled_quantity>0 OR l.local_handoff_units>0)
+                AND (l.stock_scope<>'LIVE' OR l.ownership<>'MERCHANT' OR l.review_reason IS NOT NULL
+                  OR l.local_handoff_units<=0 OR NOT EXISTS(SELECT 1 FROM shopify_order_cutovers c
+                    WHERE c.tenant_id=l.tenant_id AND c.marketplace_connection_id=l.marketplace_connection_id AND c.order_line_id=l.id
+                      AND c.remaining_units>=l.local_handoff_units)
+                  OR NOT EXISTS(SELECT 1 FROM order_inventory_reservations r JOIN inventory_ledger_entries movement
+                    ON movement.tenant_id=r.tenant_id AND movement.marketplace_connection_id=r.marketplace_connection_id
+                      AND movement.idempotency_key='shopify-local:'||o.local_handoff_id::text||':'||r.id::text
+                    WHERE r.tenant_id=l.tenant_id AND r.marketplace_connection_id=l.marketplace_connection_id AND r.shopify_order_line_id=l.id
+                      AND r.status='SHIPPED' AND movement.quantity=-r.quantity))))
+            )
+            """,Boolean.class,tenant,connection,order));
+    }
+    private boolean verifiedCutover(UUID tenant,UUID connection,UUID line){
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM shopify_order_cutovers c
+            JOIN shopify_order_lines l ON l.tenant_id=c.tenant_id AND l.marketplace_connection_id=c.marketplace_connection_id AND l.id=c.order_line_id
+            WHERE c.tenant_id=? AND c.marketplace_connection_id=? AND c.order_line_id=?
+              AND l.stock_scope='LIVE' AND l.inventory_state='READY_TO_SHIP' AND l.ownership='MERCHANT'
+              AND l.reserve_units=l.unfulfilled_quantity AND l.reserve_units>0 AND l.reserve_units<=c.remaining_units
+              AND l.inventory_revision=l.source_updated_at AND l.inventory_hash=l.observation_hash
+              AND l.inventory_revision>=c.source_revision AND l.review_reason IS NULL
+              AND c.composition=(SELECT jsonb_agg(jsonb_build_object('item',p.account_catalog_item_id,'quantity',p.quantity) ORDER BY p.account_catalog_item_id)
+                FROM shopify_order_components p WHERE p.tenant_id=l.tenant_id AND p.marketplace_connection_id=l.marketplace_connection_id AND p.order_line_id=l.id))
+            """,Boolean.class,tenant,connection,line));
     }
     @Transactional
     public void mark(UUID tenant,UUID connection,UUID id,boolean waiting,String actor){mark(tenant,connection,id,waiting,actor,()->{});}

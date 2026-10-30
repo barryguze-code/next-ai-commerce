@@ -12,6 +12,8 @@ class InventoryPublicationWorkerTest {
  final InventoryPublicationRepository repo=mock(InventoryPublicationRepository.class);
  final AmazonSpApiClient amazon=mock(AmazonSpApiClient.class);final ObjectMapper json=new ObjectMapper();
  final UUID allowedConnection=UUID.randomUUID();
+ @org.junit.jupiter.api.BeforeEach void currentByDefault(){when(repo.current(any(),any())).thenReturn(true);}
+ @Test void invalidatedWarehouseHoldPreventsSubmission(){var p=pending(8,"PENDING",0);when(repo.current(eq(p),any())).thenReturn(false);worker("LIVE",false,true).process(p);verifyNoInteractions(amazon);}
  InventoryPublicationWorker worker(String mode,boolean local,boolean writes){return new InventoryPublicationWorker(repo,mock(TransactionTemplate.class),amazon,json,mode,local,writes,false,allowedConnection.toString(),"");}
  Pending pending(int q,String status,int attempts){return new Pending(UUID.randomUUID(),allowedConnection,"ATVPDKIKX0DER","sku / +",q,2,status,attempts,"seller");}
  @Test void missingAllowlistRejectsLiveStartup(){assertThatThrownBy(()->new InventoryPublicationWorker(repo,mock(TransactionTemplate.class),amazon,json,"LIVE",false,true,false,"","")).isInstanceOf(IllegalStateException.class);}

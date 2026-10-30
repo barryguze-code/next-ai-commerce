@@ -33,4 +33,17 @@ class ShopifyOrderPageAccessTest {
         var model=new ExtendedModelMap();model.addAttribute("canEditCatalog",true);assertThat(page.show(tenant,store,actor,"ALL","",0,25,model)).isEqualTo("orders");
         assertThat(model.get("canSyncShopifyOrders")).isEqualTo(false);assertThat(model.get("canEditCatalog")).isEqualTo(false);verify(reads).page(tenant,store,"ALL","",0,25);verifyNoInteractions(worker);
     }
+    @Test void orderAndSyncTimesUsePacificWithDaylightSavingAndDateRollover(){
+        var connection=new WorkspaceAccessRepository.ConnectionView(store,tenant,"Fixture","Fixture Shopify","SHOPIFY","fixture.myshopify.com","fixture.myshopify.com","Shopify","","ACTIVE",null,true);
+        when(access.listAccountOptions(actor.getName(),false)).thenReturn(List.of(new WorkspaceAccessRepository.AccountOption(tenant,"Fixture","F",null,List.of(connection))));
+        when(jobs.enabled()).thenReturn(true);
+        when(reads.page(tenant,store,"ALL","",0,25)).thenReturn(new ShopifyOrderReadRepository.Page(List.of(),0,0,25));
+        var model=new ExtendedModelMap();page.show(tenant,store,actor,"ALL","",0,25,model);
+        var formatter=(java.time.format.DateTimeFormatter)model.get("orderTime");
+        assertThat(formatter.format(java.time.Instant.parse("2026-10-30T20:24:00Z"))).isEqualTo("10/30/26 · 1:24 PM PDT");
+        assertThat(formatter.format(java.time.Instant.parse("2026-12-01T20:24:00Z"))).isEqualTo("12/01/26 · 12:24 PM PST");
+        assertThat(formatter.format(java.time.Instant.parse("2026-10-30T02:00:00Z"))).isEqualTo("10/29/26 · 7:00 PM PDT");
+        verifyNoInteractions(worker);
+    }
+
 }

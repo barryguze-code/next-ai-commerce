@@ -49,7 +49,7 @@ class LocalShopifyShippingUatDatabaseTest {
         new ShopifySkuRepository(jdbc,true).save(tenant,connection,variant,hash,List.of(item.toString()),List.of("3"),()->{});
         jdbc.update("INSERT INTO shopify_order_controls(tenant_id,marketplace_connection_id,inventory_enabled,activated_at,baseline_completed_at) VALUES(?,?,true,?,?)",tenant,connection,java.sql.Timestamp.from(cutoff),java.sql.Timestamp.from(cutoff.minusSeconds(1)));
         earlyLayer=stock(other,5,40,cutoff.minusSeconds(100));stock(main,10,80,cutoff.minusSeconds(1000));
-        inventory=new ShopifyOrderInventory(jdbc,true,true);repo=new ShopifyOrderRepository(jdbc,inventory,true);
+        inventory=new ShopifyOrderInventory(jdbc,true,true);org.springframework.test.util.ReflectionTestUtils.setField(inventory,"inventoryScopes",tenant+"/"+connection);repo=new ShopifyOrderRepository(jdbc,inventory,true);
     }
     UUID stock(UUID location,int units,int expiryDays,Instant received){
         UUID id=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,unit_cost,currency,source_type,source_id,occurred_at,idempotency_key) VALUES(?,?,?,?,'RECEIPT',?,current_date+?,2,'USD','MANUAL',?,?,?)",id,tenant,item,location,units,expiryDays,UUID.randomUUID(),java.sql.Timestamp.from(received),id.toString());return id;

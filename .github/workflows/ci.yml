@@ -80,3 +80,12 @@ jobs:
             target/next-ai-commerce-1.10.1.jar
             target/surefire-reports/
           if-no-files-found: error
+      - name: Preserve verified Shopify inventory activation hotfix
+        if: github.ref == 'refs/heads/codex/shopify-inventory-activation'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopify-inventory-1-10-2-package
+          path: |
+            target/next-ai-commerce-1.10.2.jar
+            target/surefire-reports/
+          if-no-files-found: error

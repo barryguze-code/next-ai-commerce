@@ -61,7 +61,7 @@ app:
     enabled: ${APP_READ_CACHE_ENABLED:true}
     ttl: ${APP_READ_CACHE_TTL:10s}
     maximum-entries: ${APP_READ_CACHE_MAXIMUM_ENTRIES:256}
-  build-version: ${APP_BUILD_VERSION:1.10.1}
+  build-version: ${APP_BUILD_VERSION:1.10.2}
   inventory:
     publication-simulation-enabled: ${INVENTORY_PUBLICATION_SIMULATION_ENABLED:false}
   public-url: ${APP_PUBLIC_URL:http://localhost:8080}
@@ -81,6 +81,7 @@ app:
     shipping-sandbox-enabled: ${SHOPIFY_SHIPPING_SANDBOX_ENABLED:false}
     inventory:
       write-enabled: false
+      publication-variants: ${SHOPIFY_INVENTORY_PUBLICATION_VARIANTS:}
     prices:
       write-enabled: false
     sale-prices:
@@ -93,6 +94,7 @@ app:
     orders:
       enabled: ${SHOPIFY_ORDERS_ENABLED:false}
       inventory-enabled: ${SHOPIFY_ORDER_INVENTORY_ENABLED:false}
+      inventory-scopes: ${SHOPIFY_ORDER_INVENTORY_SCOPES:}
       bootstrap-scopes: ${SHOPIFY_ORDER_BOOTSTRAP_SCOPES:}
       polling-enabled: ${SHOPIFY_ORDER_POLLING_ENABLED:false}
       only-scheduling: ${SHOPIFY_ORDER_ONLY_SCHEDULING:false}

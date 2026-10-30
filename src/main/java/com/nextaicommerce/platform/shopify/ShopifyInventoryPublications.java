@@ -15,6 +15,26 @@ public class ShopifyInventoryPublications {
  public ShopifyInventoryPublications(JdbcTemplate jdbc,TransactionTemplate tx){this.jdbc=jdbc;this.tx=tx;}
  public record Operation(UUID id,UUID tenant,UUID connection,UUID binding,long revision,UUID variant,String mapping,
    ShopifyInventoryClient.Target target,int desired,Integer expected,String state,int attempts){}
+ private Set<String> variantScopes=Set.of();
+ /** Optional exact tenant/connection/local-variant canary; empty preserves the approved store policy. */
+ @org.springframework.beans.factory.annotation.Value("${app.shopify.inventory.publication-variants:}")
+ void configureVariants(String configured){
+  var parsed=new HashSet<String>();
+  for(String value:configured.split(",")){
+   if(value.isBlank())continue;
+   var ids=value.trim().split("/",-1);
+   if(ids.length!=3)throw new IllegalArgumentException("Specify tenant/connection/variant publication scopes");
+   parsed.add(UUID.fromString(ids[0])+"/"+UUID.fromString(ids[1])+"/"+UUID.fromString(ids[2]));
+  }
+  variantScopes=Set.copyOf(parsed);
+ }
+ private boolean allowsVariant(Operation p){return variantScopes.isEmpty()||variantScopes.contains(p.tenant()+"/"+p.connection()+"/"+p.variant());}
+ // Values are parsed UUIDs only; aliases are code-owned, never request input.
+ private String variantPredicate(String tenant,String connection,String variant){
+  if(variantScopes.isEmpty())return "true";
+  return "("+tenant+"::text||'/'||"+connection+"::text||'/'||"+variant+"::text) IN ("+
+   variantScopes.stream().sorted().map(v->"'"+v+"'").collect(java.util.stream.Collectors.joining(","))+")";
+ }
  private void scope(UUID tenant){
   jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());
   jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",r->{},tenant);
@@ -50,8 +70,7 @@ public class ShopifyInventoryPublications {
        AND (NOT o.evidence_complete OR EXISTS(
         SELECT 1 FROM shopify_order_lines line WHERE line.tenant_id=o.tenant_id AND line.marketplace_connection_id=o.marketplace_connection_id AND line.order_id=o.id
          AND line.requires_shipping AND line.unfulfilled_quantity>0 AND line.ownership<>'EXTERNAL'
-         AND (line.ownership<>'MERCHANT' OR line.stock_scope<>'LIVE' OR line.inventory_state<>'READY_TO_SHIP'
-          OR line.reserve_units<>line.unfulfilled_quantity))))))
+         AND (line.ownership<>'MERCHANT' OR line.variant_id IS NULL))))))
    )
    """,Boolean.class,tenant,Timestamp.from(startup),requireWindowCoverage,Timestamp.from(startup)));
  }
@@ -59,8 +78,9 @@ public class ShopifyInventoryPublications {
   return jdbc.update("""
    INSERT INTO shopify_inventory_publications(tenant_id,marketplace_connection_id,binding_id,binding_revision,variant_id,inventory_item_gid,mapping_hash,shop_gid,location_gid,desired_quantity)
    SELECT binding.tenant_id,binding.marketplace_connection_id,binding.id,binding.revision,v.id,v.inventory_item_gid,v.mapping_hash,binding.shop_gid,binding.location_gid,
-   """+QUANTITY+" "+ELIGIBLE+"""
-   AND NOT EXISTS(SELECT 1 FROM shopify_inventory_publications p WHERE p.tenant_id=v.tenant_id AND p.marketplace_connection_id=v.marketplace_connection_id AND p.variant_id=v.id
+   """+QUANTITY+" "+ELIGIBLE+" AND "+variantPredicate("binding.tenant_id","binding.marketplace_connection_id","v.id")+"""
+   AND ("""+QUANTITY+"=0 OR "+ShopifyPublicationSafety.allowsPositive("binding.tenant_id","mapping.id")+"""
+   ) AND NOT EXISTS(SELECT 1 FROM shopify_inventory_publications p WHERE p.tenant_id=v.tenant_id AND p.marketplace_connection_id=v.marketplace_connection_id AND p.variant_id=v.id
      AND (p.state IN ('PREPARING','READY','VERIFYING','ATTENTION') OR (p.state='CONFIRMED' AND p.binding_revision=binding.revision AND p.mapping_hash=v.mapping_hash AND p.desired_quantity=
    """+QUANTITY+"""
     AND p.confirmed_at>clock_timestamp()-interval '15 minutes')))
@@ -71,7 +91,8 @@ public class ShopifyInventoryPublications {
   return jdbc.query("""
    SELECT p.* FROM shopify_inventory_publications p JOIN shopify_inventory_bindings b ON b.tenant_id=p.tenant_id AND b.marketplace_connection_id=p.marketplace_connection_id AND b.id=p.binding_id
    WHERE p.tenant_id=? AND p.marketplace_connection_id=? AND p.state IN ('PREPARING','READY','VERIFYING') AND p.available_at<=clock_timestamp()
-   ORDER BY p.created_at,p.id LIMIT 1
+   AND (p.state='VERIFYING' OR """+variantPredicate("p.tenant_id","p.marketplace_connection_id","p.variant_id")+"""
+   ) ORDER BY p.created_at,p.id LIMIT 1
    """,(r,n)->new Operation(r.getObject("id",UUID.class),tenant,connection,r.getObject("binding_id",UUID.class),r.getLong("binding_revision"),r.getObject("variant_id",UUID.class),r.getString("mapping_hash"),
      new ShopifyInventoryClient.Target(tenant,connection,r.getString("shop_gid"),r.getString("inventory_item_gid"),r.getString("location_gid")),r.getInt("desired_quantity"),(Integer)r.getObject("expected_quantity"),r.getString("state"),r.getInt("attempts")),tenant,connection).stream().findFirst();
  });}
@@ -79,8 +100,8 @@ public class ShopifyInventoryPublications {
   return !jdbc.queryForList("SELECT id FROM shopify_inventory_publications WHERE tenant_id=? AND marketplace_connection_id=? AND id=? AND state=? AND attempts=? FOR UPDATE SKIP LOCKED",UUID.class,p.tenant(),p.connection(),p.id(),p.state(),p.attempts()).isEmpty();
  }
  private boolean current(Operation p,Instant startup){
-  if(!fresh(p.tenant(),startup))return false;
-  return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 "+ELIGIBLE+" AND binding.id=? AND binding.revision=? AND binding.shop_gid=? AND binding.location_gid=? AND v.id=? AND v.mapping_hash=? AND v.inventory_item_gid=? AND "+QUANTITY+"=?)",Boolean.class,p.tenant(),p.connection(),p.binding(),p.revision(),p.target().shop(),p.target().location(),p.variant(),p.mapping(),p.target().item(),p.desired()));
+  if(!allowsVariant(p)||!fresh(p.tenant(),startup))return false;
+  return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 "+ELIGIBLE+" AND ("+QUANTITY+"=0 OR "+ShopifyPublicationSafety.allowsPositive("binding.tenant_id","mapping.id")+") AND binding.id=? AND binding.revision=? AND binding.shop_gid=? AND binding.location_gid=? AND v.id=? AND v.mapping_hash=? AND v.inventory_item_gid=? AND "+QUANTITY+"=?)",Boolean.class,p.tenant(),p.connection(),p.binding(),p.revision(),p.target().shop(),p.target().location(),p.variant(),p.mapping(),p.target().item(),p.desired()));
  }
  /** Prepare commits the immutable compare value before any mutation is attempted. */
  public void prepare(Operation p,ShopifyInventoryClient client,Instant startup){tx.executeWithoutResult(s->{scope(p.tenant());if(!lock(p))return;

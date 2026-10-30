@@ -83,6 +83,7 @@ public class InventoryPublicationWorker {
     if(attempt>=3&&p.quantity()==0)repository.result(p,"PENDING",attempt,retryDelay(attempt),"Urgent: zero quantity still unconfirmed after repeated attempts.",observed);
     return;
    }
+   if(!repository.current(p,startup))return;
    var body=json.createObjectNode().put("productType","PRODUCT");
    var patch=body.putArray("patches").addObject().put("op","merge").put("path","/attributes/fulfillment_availability");
    patch.putArray("value").addObject().put("fulfillment_channel_code","DEFAULT").put("quantity",p.quantity());

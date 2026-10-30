@@ -107,6 +107,8 @@
 .available-inventory-table [data-column="reserved"] { width: 11%; }
 .available-inventory-table [data-column="available"],
 .platform-standard-tables .available-inventory-table [data-column="physical-available"] { width: 10%; min-width: 115px; white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+.inventory-filter-bar button[data-filter="BLOCKED"]{--ui-action-soft:#ffebed;--ui-action-line:#efb7bf;--ui-action-text:#bd343e}
+.inventory-filter-bar button[data-filter="ACT_SOON"]{--ui-action-soft:#fff2df;--ui-action-line:#efcc9b;--ui-action-text:#ad610d}
 .inventory-filter-bar button[data-filter="BLOCKED"],.inventory-filter-bar button[data-filter="BLOCKED"].active { color:#bd343e; }
 .inventory-filter-bar button[data-filter="BLOCKED"] b,.inventory-filter-bar button[data-filter="BLOCKED"].active { background:#ffebed; border-color:#efb7bf; color:#bd343e; }
 .inventory-filter-bar button[data-filter="ACT_SOON"],.inventory-filter-bar button[data-filter="ACT_SOON"].active { color:#ad610d; }
@@ -515,6 +517,16 @@ html[data-theme="dark"] .inventory-filter-bar button { color:#8e9bac; }
 html[data-theme="dark"] .inventory-filter-bar button b { background:#222d3a; color:#aeb9c6; }
 html[data-theme="dark"] .inventory-filter-bar button.active { border-color:#425365; background:#273442; color:#f0f3f6; }
 html[data-theme="dark"] .inventory-filter-bar button.active b { background:#3a4857; color:#fff; }
+html[data-theme="dark"] .inventory-filter-bar button[data-filter="BLOCKED"]{--ui-action-soft:#40272c;--ui-action-line:#b8555b;--ui-action-text:#ef9ca2}
+html[data-theme="dark"] .inventory-filter-bar button[data-filter="ACT_SOON"]{--ui-action-soft:#3c311f;--ui-action-line:#b17a35;--ui-action-text:#edbd72}
+html[data-theme="dark"] .inventory-filter-bar button[data-filter="BLOCKED"],
+html[data-theme="dark"] .inventory-filter-bar button[data-filter="BLOCKED"] b { color:#ef9ca2; }
+html[data-theme="dark"] .inventory-filter-bar button[data-filter="BLOCKED"] b,
+html[data-theme="dark"] .inventory-filter-bar button[data-filter="BLOCKED"].active { background:#40272c; border-color:#b8555b; }
+html[data-theme="dark"] .inventory-filter-bar button[data-filter="ACT_SOON"],
+html[data-theme="dark"] .inventory-filter-bar button[data-filter="ACT_SOON"] b { color:#edbd72; }
+html[data-theme="dark"] .inventory-filter-bar button[data-filter="ACT_SOON"] b,
+html[data-theme="dark"] .inventory-filter-bar button[data-filter="ACT_SOON"].active { background:#3c311f; border-color:#b17a35; }
 html[data-theme="dark"] .available-inventory-table thead th { background:#121d29; color:#909eae; }
 html[data-theme="dark"] .available-inventory-table td { border-color:#2a3746; color:#aeb9c6; }
 html[data-theme="dark"] .available-inventory-table td strong { color:#e5eaf0; }
@@ -565,6 +577,9 @@ html[data-theme="dark"] .position-picture { border-color:#304a68; background:#17
   .inventory-toolbar-actions .search-field{flex:1 1 280px}
   .inventory-toolbar-actions .search-field input{width:100%}
 }
+/* The shared overflow frame owns the flex space after the tab widget wraps the strip. */
+.inventory-filter-row>.table-tab-overflow{flex:1 1 auto;min-width:0}
+.inventory-filter-row>[data-column-control]{flex:0 0 auto}
 .inventory-filter-row{display:flex;align-items:center;justify-content:space-between;padding-right:14px;border-bottom:1px solid var(--line);background:#fbfcfe}.inventory-filter-row .inventory-filter-bar{flex:1;border-bottom:0}.inventory-filter-row .table-column-control>summary{font-size:0.625rem}
 .related-sku-list article>div strong{overflow:visible;text-overflow:clip;overflow-wrap:anywhere;white-space:normal;line-height:1.4}
 
