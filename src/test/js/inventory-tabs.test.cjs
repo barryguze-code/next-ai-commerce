@@ -3,6 +3,12 @@ const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const fs=require('node:fs');
 const path=require('node:path');
+test('all Inventory stylesheet consumers request the current correction',()=>{
+ for(const file of ['inventory.html','inventory-ledger.html']){
+  const html=fs.readFileSync('src/main/resources/templates/'+file,'utf8');
+  assert.match(html,/href="\/css\/inventory\.css\?v=1\.10\.2"/);
+ }
+});
 test('actual Inventory tab strip uses desktop space and retains semantic selection through narrow overflow',async()=>{
  const browser=await chromium.launch({headless:true});
  try{
