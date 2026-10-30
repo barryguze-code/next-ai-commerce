@@ -74,3 +74,13 @@ Review the final diff and status to ensure unrelated work remains intact. Report
 what changed, what was actually checked, results, unresolved conflicts, and any
 verification blockers. Never claim a test, runtime check, or approval occurred
 without evidence.
+
+## Owner-approved presentation hotfixes
+
+For explicitly classified Tier 1 presentation hotfixes, use the manually dispatched
+`Presentation hotfix` workflow: focused unit regressions, build/package, exact artifact
+verification and production startup smoke only. Browser CI is not a smoke test and
+is not a deployment gate for this lane. The owner performs UAT. Keep browser tests
+and normal feature/release CI intact. Inventory, schema, authorization, calculations
+and integration behavior changes are ineligible; use their normal verification path.
+Do not escalate model/effort or add backup, UAT or broad test cycles unless the owner asks.

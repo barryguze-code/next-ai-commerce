@@ -112,3 +112,13 @@ recommends evaluating model/effort tradeoffs on representative tasks. Its
 explains that supported effort settings depend on the model and trade speed/token
 usage against depth of reasoning. The project table above is our starting policy,
 not a claim about account access, pricing or the exact meaning of an app preset.
+
+## Owner-approved presentation hotfixes
+
+For explicitly classified Tier 1 presentation hotfixes, use the manually dispatched
+`Presentation hotfix` workflow: focused unit regressions, build/package, exact artifact
+verification and production startup smoke only. Browser CI is not a smoke test and
+is not a deployment gate for this lane. The owner performs UAT. Keep browser tests
+and normal feature/release CI intact. Inventory, schema, authorization, calculations
+and integration behavior changes are ineligible; use their normal verification path.
+Do not escalate model/effort or add backup, UAT or broad test cycles unless the owner asks.

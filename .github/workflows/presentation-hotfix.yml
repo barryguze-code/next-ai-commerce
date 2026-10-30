@@ -1,0 +1,58 @@
+name: Presentation hotfix
+on:
+  workflow_dispatch:
+    inputs:
+      classification:
+        description: 'Owner-approved Tier 1 presentation only; no inventory, schema, authorization, calculation or integration behavior changes'
+        required: true
+        type: choice
+        options: [PRESENTATION_ONLY]
+      focused_test:
+        description: 'Focused non-browser Node regression test filename under src/test/js'
+        required: true
+        default: inventory-reservations.test.cjs
+      java_test:
+        description: 'Focused Java test class if Java behavior changed; leave empty for presentation projection only'
+        required: false
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Validate explicit hotfix classification and test selection
+        env:
+          CLASSIFICATION: ${{ inputs.classification }}
+          NODE_TEST: ${{ inputs.focused_test }}
+          JAVA_TEST: ${{ inputs.java_test }}
+        run: |
+          test "$CLASSIFICATION" = PRESENTATION_ONLY
+          [[ "$NODE_TEST" =~ ^[a-zA-Z0-9_-]+\.test\.cjs$ ]]
+          test -f "src/test/js/$NODE_TEST"
+          [[ -z "$JAVA_TEST" || "$JAVA_TEST" =~ ^[a-zA-Z0-9_.]+Test$ ]]
+      - name: Focused unit regressions
+        env:
+          NODE_TEST: ${{ inputs.focused_test }}
+          JAVA_TEST: ${{ inputs.java_test }}
+        run: |
+          node --test "src/test/js/$NODE_TEST"
+          if [[ -n "$JAVA_TEST" ]]; then mvn --batch-mode -Dtest="$JAVA_TEST" test; fi
+      - name: Build exact hotfix package
+        run: |
+          mvn --batch-mode -DskipTests package
+          sha256sum target/next-ai-commerce-*.jar > target/hotfix.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: presentation-hotfix-${{ github.sha }}
+          path: |
+            target/next-ai-commerce-*.jar
+            target/hotfix.sha256
+          retention-days: 14
+# This manually selected Tier 1 lane does not deploy or replace feature/release CI.
+# Tier 2 inventory, schema, permissions and integration changes must use full CI.
