@@ -147,7 +147,7 @@ class ShopifyPublicationDatabaseTest {
    String hash=jdbc.queryForObject("SELECT observation_hash FROM shopify_variants WHERE tenant_id=? AND id=?",String.class,tenant,unmapped);
    var mappings=new ShopifySkuRepository(jdbc,true);mappings.save(tenant,connection,unmapped,hash,List.of(item.toString()),List.of("2"),()->{});mappings.clear(tenant,connection,unmapped,()->{});
    UUID amazon=UUID.randomUUID();
-   jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref) VALUES(?,?,'AMAZON','fixture-seller','ATVPDKIKX0DER','ACTIVE','Fixture','fixture://none')",amazon,tenant);
+   jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone) VALUES(?,?,'AMAZON','fixture-seller','ATVPDKIKX0DER','ACTIVE','Fixture','fixture://none','UTC')",amazon,tenant);
    UUID mapping=jdbc.queryForObject("INSERT INTO marketplace_sku_mappings(tenant_id,marketplace_connection_id,marketplace_sku,account_catalog_item_id,quantity_per_marketplace_unit,status) VALUES(?,?,'AMAZON-PACK',?,8,'ACTIVE') RETURNING id",UUID.class,tenant,amazon,item);
    jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity,sort_order) VALUES(?,?,?,8,0)",tenant,mapping,item);
    assertThat(jdbc.queryForObject("SELECT "+ShopifyPublicationSafety.allowsPositive("?::uuid","?::uuid"),Boolean.class,tenant,mapping)).isFalse();
@@ -197,9 +197,9 @@ class ShopifyPublicationDatabaseTest {
   });
   assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_order_cutovers WHERE tenant_id=?",Integer.class,tenant)).isZero();
   assertThat(new ShopifyOrderPacking(jdbc,inventory).eligibility(tenant,connection,order)).contains("verified warehouse cutover");
-  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_orders SET platform_waiting_for_pickup=true WHERE tenant_id=? AND id=?",tenant,order);});
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_orders SET platform_waiting_for_pickup=true,local_handoff_id=gen_random_uuid(),local_handoff_at=now(),local_handoff_revision=source_updated_at WHERE tenant_id=? AND id=?",tenant,order);});
   assertThat(new ShopifyOrderPacking(jdbc,inventory).eligibility(tenant,connection,order)).contains("verified warehouse handoff");
-  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_orders SET platform_waiting_for_pickup=false WHERE tenant_id=? AND id=?",tenant,order);});
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_orders SET platform_waiting_for_pickup=false,local_handoff_id=NULL,local_handoff_at=NULL,local_handoff_revision=NULL WHERE tenant_id=? AND id=?",tenant,order);});
   org.springframework.test.util.ReflectionTestUtils.setField(inventory,"bootstrapScopes",tenant+"/"+connection);
   String before=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant);
   tx.executeWithoutResult(t->{scope();inventory.bootstrapRemaining(tenant,connection,UUID.randomUUID());});

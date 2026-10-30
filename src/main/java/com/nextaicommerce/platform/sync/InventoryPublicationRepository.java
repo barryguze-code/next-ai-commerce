@@ -118,7 +118,8 @@ public class InventoryPublicationRepository {
          WHERE sr.tenant_id=shop.tenant_id AND sr.marketplace_connection_id=shop.id AND sr.sync_profile='SHOPIFY_ORDERS' AND sr.status='COMPLETED' AND sj.status='COMPLETED'
           AND sr.window_end>clock_timestamp()-interval '10 minutes' AND (?::timestamptz IS NULL OR sj.completed_at>=?))
         OR EXISTS(SELECT 1 FROM marketplace_sync_jobs sj WHERE sj.tenant_id=shop.tenant_id AND sj.marketplace_connection_id=shop.id AND sj.job_type='SHOPIFY_ORDERS' AND sj.status IN ('QUEUED','WAITING','RUNNING'))))
-     AND """+com.nextaicommerce.platform.shopify.ShopifyPublicationSafety.allowsPositive("p.tenant_id","(SELECT m.id FROM marketplace_sku_mappings m WHERE m.tenant_id=p.tenant_id AND m.marketplace_connection_id=p.connection_id AND m.marketplace_sku=p.seller_sku AND m.status='ACTIVE')")+"""
+     AND \s
+     """+com.nextaicommerce.platform.shopify.ShopifyPublicationSafety.allowsPositive("p.tenant_id","(SELECT m.id FROM marketplace_sku_mappings m WHERE m.tenant_id=p.tenant_id AND m.marketplace_connection_id=p.connection_id AND m.marketplace_sku=p.seller_sku AND m.status='ACTIVE')")+"""
    ))
    ORDER BY CASE WHEN p.status='CONFIRMED' THEN 2
                  WHEN p.next_attempt_at<now()-interval '2 minutes' THEN 0 ELSE 1 END,

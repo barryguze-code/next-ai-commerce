@@ -78,7 +78,7 @@ public class ShopifyInventoryPublications {
   return jdbc.update("""
    INSERT INTO shopify_inventory_publications(tenant_id,marketplace_connection_id,binding_id,binding_revision,variant_id,inventory_item_gid,mapping_hash,shop_gid,location_gid,desired_quantity)
    SELECT binding.tenant_id,binding.marketplace_connection_id,binding.id,binding.revision,v.id,v.inventory_item_gid,v.mapping_hash,binding.shop_gid,binding.location_gid,
-   """+QUANTITY+" "+ELIGIBLE+" AND "+variantPredicate("binding.tenant_id","binding.marketplace_connection_id","v.id")+"""
+   """+QUANTITY+" "+ELIGIBLE+" AND "+variantPredicate("binding.tenant_id","binding.marketplace_connection_id","v.id")+" "+"""
    AND ("""+QUANTITY+"=0 OR "+ShopifyPublicationSafety.allowsPositive("binding.tenant_id","mapping.id")+"""
    ) AND NOT EXISTS(SELECT 1 FROM shopify_inventory_publications p WHERE p.tenant_id=v.tenant_id AND p.marketplace_connection_id=v.marketplace_connection_id AND p.variant_id=v.id
      AND (p.state IN ('PREPARING','READY','VERIFYING','ATTENTION') OR (p.state='CONFIRMED' AND p.binding_revision=binding.revision AND p.mapping_hash=v.mapping_hash AND p.desired_quantity=
