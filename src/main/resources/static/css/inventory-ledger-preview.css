@@ -149,3 +149,9 @@ html[data-theme="dark"] #inventory-history-dialog.inventory-ledger-preview .hist
 #inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-editor form{grid-template-columns:110px minmax(140px,1fr) auto auto}
 #inventory-history-dialog.inventory-ledger-preview .ledger-relocate form>.location-add-button{align-self:end;margin-bottom:4px}
 @media(max-width:540px){#inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-editor form{grid-template-columns:minmax(80px,1fr) minmax(100px,2fr)}#inventory-history-dialog.inventory-ledger-preview .ledger-relocate #location-submit{grid-column:2;justify-self:end}}
+
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-editor form{grid-template-columns:110px minmax(140px,1fr) auto}
+.ledger-destination-controls{display:flex;align-items:center;gap:6px;min-width:0}
+.ledger-destination-controls>.location-picker-trigger,.ledger-destination-controls>select{flex:1;min-width:0}
+.ledger-destination-controls>.location-add-button{flex:0 0 auto;margin:0}
+@media(max-width:540px){#inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-editor form{grid-template-columns:minmax(80px,1fr) minmax(100px,2fr)}}

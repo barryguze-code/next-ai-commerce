@@ -36,6 +36,8 @@ jobs:
           [[ "$NODE_TEST" =~ ^[a-zA-Z0-9_-]+\.test\.cjs$ ]]
           test -f "src/test/js/$NODE_TEST"
           [[ -z "$JAVA_TEST" || "$JAVA_TEST" =~ ^[a-zA-Z0-9_.]+Test$ ]]
+      - name: Install unit test dependencies
+        run: npm ci --ignore-scripts
       - name: Focused unit regressions
         env:
           NODE_TEST: ${{ inputs.focused_test }}

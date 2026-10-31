@@ -1,6 +1,11 @@
 {
   "name": "next-ai-commerce-browser-tests",
   "private": true,
-  "scripts": {"test": "node --test src/test/js/*.test.cjs"},
-  "devDependencies": {"playwright": "1.62.1"}
+  "scripts": {
+    "test": "node --test src/test/js/*.test.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0",
+    "playwright": "1.62.1"
+  }
 }
