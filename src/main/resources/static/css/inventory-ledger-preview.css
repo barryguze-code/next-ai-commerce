@@ -140,3 +140,12 @@ html[data-theme="dark"] #inventory-history-dialog.inventory-ledger-preview .hist
 .inventory-ledger-preview .location-editor:not([hidden]){animation:relocation-reveal .15s ease-out}
 @keyframes relocation-reveal{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:translateX(0)}}
 @media(prefers-reduced-motion:reduce){.inventory-ledger-preview .location-editor{animation:none!important}}
+
+/* Location positions are visible immediately; only the selected row owns the editor. */
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate-source.selected{grid-template-columns:minmax(0,1fr) auto}
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate-source.selected>.location-editor{grid-column:1/-1;width:100%}
+
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-fields{display:contents}
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-editor form{grid-template-columns:110px minmax(140px,1fr) auto auto}
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate form>.location-add-button{align-self:end;margin-bottom:4px}
+@media(max-width:540px){#inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-editor form{grid-template-columns:minmax(80px,1fr) minmax(100px,2fr)}#inventory-history-dialog.inventory-ledger-preview .ledger-relocate #location-submit{grid-column:2;justify-self:end}}
