@@ -155,3 +155,5 @@ html[data-theme="dark"] #inventory-history-dialog.inventory-ledger-preview .hist
 .ledger-destination-controls>.location-picker-trigger,.ledger-destination-controls>select{flex:1;min-width:0}
 .ledger-destination-controls>.location-add-button{flex:0 0 auto;margin:0}
 @media(max-width:540px){#inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-editor form{grid-template-columns:minmax(80px,1fr) minmax(100px,2fr)}}
+
+.ledger-relocation-unavailable{grid-column:1/-1;flex-basis:100%;color:var(--muted);font-size:12px}
