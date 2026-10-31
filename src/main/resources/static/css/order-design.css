@@ -124,3 +124,9 @@ html[data-theme=dark] .order-action-summary{background:#3d2e1e;color:#ffd398}
 .orders-workspace .item-order-reference .amazon-order-status{min-width:0;max-width:calc(100% - 32px);width:fit-content;white-space:normal;overflow-wrap:anywhere}
 
 .orders-workspace .order-mapping-values a.order-copy-value{font-weight:650;text-decoration:underline;cursor:pointer}
+
+.order-identifier-line .order-identifier-copy{margin-left:auto;flex:0 0 26px;width:26px;height:26px;padding:4px;border:0;background:transparent;color:var(--muted);cursor:copy}
+.order-identifier-copy svg{display:block;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5}
+.order-identifier-line a.order-sku-copy{cursor:pointer;text-decoration:underline}
+.orders-workspace .order-mapping-values .order-copy-value{cursor:pointer;text-decoration:underline}
+.orders-workspace .order-mapping-values .order-identifier-line{width:100%}

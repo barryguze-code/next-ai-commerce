@@ -60,16 +60,18 @@
  // Live Orders refresh can replace the link; update its target before native navigation.
  document.addEventListener('click',event=>{const link=event.target.closest('[data-fee-variance-clear]');if(link)clearFeeFilter(link);});
  // Add contextual actions without whole-row click handlers or altering table/export cells.
- document.querySelectorAll('[data-fee-order],[data-fee-sku]').forEach(row=>{const host=row.querySelector('.record-collaboration-actions,.order-actions,.item-product-copy,.sku-approved-product,.sku-record-actions')||row.querySelector('td:last-child');if(!host)return;const actions=text('span','','fee-row-actions');const b=text('button','Compare fees');b.type='button';b.addEventListener('click',()=>open(b,row.dataset.feeOrder,row.dataset.feeSku));actions.append(b);host.append(actions);});
+ document.querySelectorAll('[data-fee-order],[data-fee-sku]').forEach(row=>{const host=row.querySelector('.record-collaboration-actions,.order-actions,.item-product-copy,.sku-approved-product,.sku-record-actions')||row.querySelector('td:last-child');if(!host)return;const actions=text('span','','fee-row-actions');const b=text('button','Compare fees');b.type='button';b.hidden=true;b.addEventListener('click',()=>open(b,row.dataset.feeOrder,row.dataset.feeSku));actions.append(b);host.append(actions);});
  // One scoped request for the visible page, no per-row API or historical order scan.
+ function hasFeeVariance(facts,order,sku){return facts.some(f=>f.seller_sku===sku&&(order?f.order_id===order&&['HIGHER','LOWER'].includes(f.state):Number(f.affected_orders)>0));}
  async function previews(){
   const orderMode=location.pathname==='/app/orders',rows=[...document.querySelectorAll(orderMode?'[data-fee-order]':'[data-fee-sku]')];
   const keys=[...new Set(rows.map(r=>orderMode?r.dataset.feeOrder:r.dataset.feeSku))].filter(Boolean).slice(0,200);if(!keys.length)return;
   const params=new URLSearchParams({kind:orderMode?'ORDER':'SKU'});keys.forEach(k=>params.append('key',k));
   try{const response=await fetch('/app/fee-variance/visible?'+params,{headers:{Accept:'application/json'}});if(!response.ok)return;const facts=await response.json();
-   for(const row of rows){const actions=row.querySelector('.fee-row-actions');if(!actions)continue;
-    if(!orderMode){const info=facts.find(f=>f.seller_sku===row.dataset.feeSku);if(info){const link=text('a',info.affected_orders+(Number(info.affected_orders)===1?' affected order':' affected orders'));const u=new URL('/app/orders',location.origin);u.searchParams.set('f_fee_variance','1');u.searchParams.set('f_sku',row.dataset.feeSku);u.searchParams.set('f_sku_op','equals');link.href=u.href;actions.prepend(link);}continue;}
+   for(const row of rows){const actions=row.querySelector('.fee-row-actions');if(!actions)continue;actions.querySelector('button').hidden=!hasFeeVariance(facts,orderMode?row.dataset.feeOrder:null,row.dataset.feeSku);
+    if(!orderMode){const info=facts.find(f=>f.seller_sku===row.dataset.feeSku);if(info&&Number(info.affected_orders)>0){actions.querySelector('button').hidden=false;const link=text('a',info.affected_orders+(Number(info.affected_orders)===1?' affected order':' affected orders'));const u=new URL('/app/orders',location.origin);u.searchParams.set('f_fee_variance','1');u.searchParams.set('f_sku',row.dataset.feeSku);u.searchParams.set('f_sku_op','equals');link.href=u.href;actions.prepend(link);}continue;}
     for(const r of facts.filter(f=>f.order_id===row.dataset.feeOrder&&f.seller_sku===row.dataset.feeSku)){
+     if(['HIGHER','LOWER'].includes(r.state))actions.querySelector('button').hidden=false;
      if(r.state==='MATCHES')continue;
      if(!actions.querySelector('[data-fee-total]')){const scope=text('small',r.currency+' · total for '+r.quantity+(r.quantity===1?' unit':' units'),'fee-total-context');scope.dataset.feeTotal='true';actions.append(scope);}
      const value=text('span',(r.fee_type==='FBA'?'FBA':'Referral')+' '+(r.state==='MATCHES'?'No variance':delta(r)),r.state==='HIGHER'?'fee-higher':r.state==='LOWER'?'fee-lower':'');

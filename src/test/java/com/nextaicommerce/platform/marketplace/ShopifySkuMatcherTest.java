@@ -9,6 +9,12 @@ class ShopifySkuMatcherTest {
  @Test void ambiguousCodesUnsafePacksAndInvalidBarcodesStayUnresolved(){assertThat(ShopifySkuMatcher.match("123-EA","Pizza",List.of(),true,false,List.of(item(a,"123",null),item(b,"123",null))).components()).isEmpty();for(String bad:List.of("123-EAx0","123-EAx10001"))assertThat(ShopifySkuMatcher.match(bad,"Pizza",List.of(),true,false,List.of(item(a,"123",null))).components()).isEmpty();assertThat(ShopifySkuMatcher.match("other","Pizza pack of 3",List.of("8683650091324"),true,false,List.of(item(a,"123","8683650091325"))).components()).isEmpty();}
  @Test void manualQuantityValidationPreservesWholeComponentsAndBounds(){assertThat(ShopifySkuRepository.validate(List.of(a.toString(),a.toString()),List.of("3","12")).get(a)).isEqualByComparingTo("15");for(String q:List.of("0","-1","1.5","10001","NaN"))assertThatThrownBy(()->ShopifySkuRepository.validate(List.of(a.toString()),List.of(q))).isInstanceOf(IllegalArgumentException.class);}
  @Test void nativeLinksUseStringIdentifiersAndExactShopHost(){assertThat(ShopifySkuRepository.admin("unit.myshopify.com","gid://shopify/Product/9007199254740993000","gid://shopify/ProductVariant/9007199254740993001")).isEqualTo("https://unit.myshopify.com/admin/products/9007199254740993000/variants/9007199254740993001");assertThat(ShopifySkuRepository.admin("evil.com","gid://shopify/Product/1","gid://shopify/ProductVariant/2")).isNull();}
+ @Test void ozeryUniqueAccountCodeUsesSixEachesAndSharedAmazonParser(){
+  var parsed=MarketplaceSkuAutoMapper.parse("IB-MKH-342934-SNACKING-OZERY-6xEA");
+  assertThat(parsed.itemCodeTokens()).contains("342934");assertThat(parsed.quantityPerMarketplaceUnit()).isEqualTo(6);
+  var match=ShopifySkuMatcher.match("IB-MKH-342934-SNACKING-OZERY-6xEA","Snacking Rounds",List.of(),true,false,List.of(item(a,"342934",null)));
+  assertThat(match.components()).containsOnly(entry(a,new java.math.BigDecimal("6")));
+ }
  @Test void ozeryDuplicateAccountCodesRemainUnresolvedRatherThanTreatingOuncesAsEaches(){
   var ounce=new ShopifySkuMatcher.Item(a,"Muesli Snacking Rounds",Set.of("342934"),Set.of());
   var each=new ShopifySkuMatcher.Item(b,"Muesli Snacking Rounds",Set.of("342934"),Set.of());
