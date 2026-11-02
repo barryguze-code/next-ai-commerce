@@ -19,6 +19,7 @@ class PersonalCollaborationPresentationTest {
         var review=new CollaborationRepository.Review(reviewId,"CATALOG","product","Product",null,"CONVERSATION","Task","ACTIVE",authName(),null,null,null,java.time.Instant.now(),java.time.Instant.now(),null,2,0,"Fixture","{}","/app/catalog",false);
         var auth=new UsernamePasswordAuthenticationToken("fixture@example.test","unused",List.of());
         when(reviews.review(account,reviewId,auth.getName())).thenReturn(review);
+        when(reviews.reviewsByIds(eq(account),anyList(),eq(auth.getName()))).thenReturn(List.of(review));
         when(reviews.pictures(eq(account),anyList(),eq(auth.getName()))).thenReturn(Map.of(reviewId,"https://example.test/product.png"));
         var session=new org.springframework.mock.web.MockHttpSession();
         session.setAttribute(com.nextaicommerce.platform.web.AccountSelectionController.TENANT_ID,UUID.randomUUID());
@@ -42,5 +43,6 @@ class PersonalCollaborationPresentationTest {
             assertThat(body.reviews()).containsEntry(task,review);
             assertThat(body.pictures()).containsEntry(task,"https://example.test/product.png");
         }
+        verify(reviews,times(3)).reviewsByIds(account,List.of(reviewId),auth.getName());
     }
 }

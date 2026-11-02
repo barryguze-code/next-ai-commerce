@@ -25,6 +25,14 @@ public class WorkspaceModelAdvice {
                 || request.getRequestURI().matches("/app/catalog/imports/[^/]+/progress")
                 || request.getRequestURI().matches("/app/orders/sync/[^/]+/progress"))
                 && session.getAttribute(AccountSelectionController.TENANT_ID) instanceof java.util.UUID)return;
+        // JSON/image responses do not render a workspace picker. Keep live authorization
+        // in the membership filter/repositories; avoid rebuilding its display model per request.
+        Object handler=request.getAttribute(org.springframework.web.servlet.HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE);
+        if(handler instanceof org.springframework.web.method.HandlerMethod method
+                && (method.hasMethodAnnotation(org.springframework.web.bind.annotation.ResponseBody.class)
+                    || method.getBeanType().isAnnotationPresent(org.springframework.web.bind.annotation.RestController.class))
+                && (session.getAttribute(AccountSelectionController.TENANT_ID) instanceof java.util.UUID
+                    || request.getRequestURI().startsWith("/app/collaboration/personal/")))return;
         boolean superAdmin = authentication.getAuthorities().stream()
             .anyMatch(authority -> authority.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
         var accountOptions = repository.listAccountOptions(authentication.getName(), superAdmin);

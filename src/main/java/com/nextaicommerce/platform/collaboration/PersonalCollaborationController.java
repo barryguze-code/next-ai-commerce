@@ -35,14 +35,24 @@ class PersonalCollaborationController {
         var details=new java.util.LinkedHashMap<UUID,CollaborationRepository.Review>();
         var pictures=new java.util.HashMap<UUID,String>();
         var grouped=new java.util.HashMap<UUID,java.util.List<CollaborationRepository.Review>>();
+        var requested=new java.util.LinkedHashMap<UUID,java.util.Map<UUID,java.util.List<UUID>>>();
         for(var row:page.rows()){
             var c=row.card();
             if(c.sourceRestricted()&&c.contextAccount()!=null&&accounts.accountLogo(c.contextAccount())!=null)pictures.put(c.key().id(),"/app/collaboration/personal/tasks/"+c.key().id()+"/account-logo");
             UUID reviewId=c.key().type().equals("REVIEW")?c.key().id():c.alias();
-            if(reviewId==null||c.account()==null)continue;
-            var review=reviews.review(c.account(),reviewId,auth.getName());
-            if(review!=null){details.put(c.key().id(),review);grouped.computeIfAbsent(c.account(),id->new java.util.ArrayList<>()).add(review);}
+            if(reviewId!=null&&c.account()!=null)requested.computeIfAbsent(c.account(),id->new java.util.LinkedHashMap<>())
+                .computeIfAbsent(reviewId,id->new java.util.ArrayList<>()).add(c.key().id());
         }
+        requested.forEach((account,ids)->{
+            // Bound parameter count; no cross-request cache of permissions or mutable task state.
+            var keys=new java.util.ArrayList<>(ids.keySet());
+            for(int offset=0;offset<keys.size();offset+=200){
+                for(var review:reviews.reviewsByIds(account,keys.subList(offset,Math.min(offset+200,keys.size())),auth.getName())){
+                    ids.get(review.id()).forEach(key->details.put(key,review));
+                    grouped.computeIfAbsent(account,id->new java.util.ArrayList<>()).add(review);
+                }
+            }
+        });
         grouped.forEach((account,items)->{
             var artwork=reviews.pictures(account,items,auth.getName());
             details.forEach((key,review)->{if(artwork.containsKey(review.id())){String url=artwork.get(review.id());

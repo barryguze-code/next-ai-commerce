@@ -45,3 +45,40 @@ test('loaded, programmatic and native dates retain the full year and block inval
  Object.getOwnPropertyDescriptor(Input.prototype,'value').set.call(native,'0027-08-10');
  native.events.change();assert.equal(text.value,'08/10/0027');assert.match(text.error,/full year/);
 });
+
+test('explicit expiration year edits preserve month/day and expand 26/27',()=>{
+ const {enteredExpiration}=require('../../main/resources/static/js/short-date-input.js');
+ assert.equal(enteredExpiration('27','2026-07-14'),'2027-07-14');
+ assert.equal(enteredExpiration('26','2027-07-14'),'2026-07-14');
+ assert.equal(enteredExpiration('0027-07-14','2026-07-14'),'2027-07-14');
+ assert.equal(enteredExpiration('27',''),null);
+ assert.equal(enteredExpiration('25','2024-02-29'),null);
+});
+
+test('reused expiration editor never borrows another inventory row month/day',async()=>{
+ const {chromium}=require('playwright');
+ const browser=await chromium.launch({channel:'chrome',headless:true});
+ try{
+  const page=await browser.newPage();
+  await page.setContent('<form><input id="expiry" type="date" data-expiration-year-entry required><button type="button">Elsewhere</button></form>');
+  await page.addScriptTag({path:'src/main/resources/static/js/short-date-input.js'});
+  const text=page.locator('.short-date-text');
+  await page.evaluate(()=>document.querySelector('#expiry').value='2026-07-14');
+  await text.fill('27');await text.press('Tab');
+  assert.equal(await page.locator('#expiry').inputValue(),'2027-07-14');
+  await page.evaluate(()=>document.querySelector('#expiry').value='2026-08-10');
+  await text.fill('27');await text.press('Tab');
+  assert.equal(await page.locator('#expiry').inputValue(),'2027-08-10');
+  await page.evaluate(()=>document.querySelector('#expiry').value='');
+  await text.fill('27');await text.press('Tab');
+  assert.equal(await page.locator('#expiry').inputValue(),'');
+  assert.equal(await text.evaluate(e=>e.checkValidity()),false);
+  // Existing anomalous history stays visible until an explicit correction.
+  await page.evaluate(()=>document.querySelector('#expiry').value='0026-09-12');
+  assert.equal(await text.inputValue(),'09/12/0026');
+  await text.fill('27');await text.press('Tab');
+  assert.equal(await page.locator('#expiry').inputValue(),'2027-09-12');
+  await page.evaluate(()=>{const d=document.querySelector('#expiry');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(d,'0027-11-18');d.dispatchEvent(new Event('change',{bubbles:true}));});
+  assert.equal(await page.locator('#expiry').inputValue(),'2027-11-18');
+ }finally{await browser.close();}
+});

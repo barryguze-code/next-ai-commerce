@@ -98,3 +98,10 @@ jobs:
             target/next-ai-commerce-1.11.0.jar
             target/surefire-reports/
           if-no-files-found: error
+      - name: Preserve tested performance hotfix artifact
+        if: github.ref == 'refs/heads/codex/platform-performance-hotfix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-performance-hotfix-package
+          path: target/next-ai-commerce-1.11.1.jar
+          if-no-files-found: error

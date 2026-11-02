@@ -215,6 +215,17 @@ public class CollaborationRepository {
         return rows.isEmpty()?null:rows.getFirst();
     }
 
+    /** Hydrate one authorized page in one query, preserving per-viewer visibility. */
+    @Transactional(readOnly=true)
+    public List<Review> reviewsByIds(UUID tenantId,List<UUID> ids,String viewerEmail){
+        if(ids.isEmpty())return List.of();
+        setContext(tenantId,viewerEmail);
+        String marks=String.join(",",Collections.nCopies(ids.size(),"?"));
+        var values=new ArrayList<Object>();values.add(tenantId);values.addAll(ids);
+        return jdbc.query("SELECT "+REVIEW_COLUMNS+" FROM collaboration_reviews review LEFT JOIN app_users assignee ON assignee.id=review.assigned_to WHERE review.tenant_id=? AND review.id IN ("+marks+") AND ("+VISIBLE_THREAD+")",
+            (rs,row)->review(rs),values.toArray());
+    }
+
     @Transactional(readOnly=true)
     public Map<String,SubjectSummary> openSubjectSummaries(UUID tenantId,String subjectType,List<String> subjectKeys,String viewerEmail){
         if(subjectKeys.isEmpty())return Map.of();
@@ -588,6 +599,8 @@ public class CollaborationRepository {
         var stores=jdbc.queryForList("SELECT sv.marketplace_connection_id FROM "+table+" sv JOIN marketplace_connections sc ON sc.tenant_id=sv.tenant_id AND sc.id=sv.marketplace_connection_id AND sc.channel='SHOPIFY' AND sc.status<>'DISABLED' WHERE sv.tenant_id=? AND '"+prefix+"'||sv.id::text=? AND "+SHOPIFY_STORE_ACCESS,UUID.class,tenant,key);
         if(stores.size()!=1)throw new IllegalArgumentException("This Shopify record is unavailable in your authorized stores.");return stores.getFirst();
     }
-    private void setContext(UUID tenantId,String viewerEmail){jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)",String.class,tenantId.toString());jdbc.queryForObject("SELECT set_config('app.user_email', ?, true)",String.class,viewerEmail==null?"":viewerEmail);}
+    // Measured production plans spent 12–15s JIT-compiling these permission predicates
+    // versus 9–32ms executing without JIT. Transaction-local only; no pooled-session leak.
+    private void setContext(UUID tenantId,String viewerEmail){jdbc.queryForObject("SELECT set_config('jit','off',true)",String.class);jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)",String.class,tenantId.toString());jdbc.queryForObject("SELECT set_config('app.user_email', ?, true)",String.class,viewerEmail==null?"":viewerEmail);}
     private static Instant instant(java.sql.ResultSet rs,int column)throws java.sql.SQLException{var value=rs.getTimestamp(column);return value==null?null:value.toInstant();}
 }

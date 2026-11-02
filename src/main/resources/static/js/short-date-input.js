@@ -18,7 +18,17 @@
     if(!withTime&&h!==undefined)return null;
     return `${year}-${m.padStart(2,'0')}-${d.padStart(2,'0')}${withTime?'T'+h+':'+minute:''}`;
   }
-  if(typeof module!=='undefined')module.exports={parse,display,mask};
+  // Only explicit expiration-editor input may use a year alone. Never repair loaded history.
+  function enteredExpiration(value,reference){
+    let text=String(value||'').trim();
+    if(/^\d{2}$/.test(text)){
+      const previous=String(reference||'').match(/^\d{4}-(\d{2})-(\d{2})$/);
+      return previous?parse(previous[1]+'/'+previous[2]+'/'+text):null;
+    }
+    if(/^00\d{2}-\d{2}-\d{2}$/.test(text))text='20'+text.slice(2);
+    return /^\d{4}-\d{2}-\d{2}$/.test(text)?parse(display(text)):parse(text);
+  }
+  if(typeof module!=='undefined')module.exports={parse,display,mask,enteredExpiration};
   if(typeof document==='undefined'||window.NextAiShortDates)return;
   window.NextAiShortDates={parse,display,mask};
   const selector='input[type="date"],input[type="datetime-local"]';
@@ -29,11 +39,12 @@
     text.setAttribute('aria-label',(input.getAttribute('aria-label')||input.closest('label')?.childNodes[0]?.textContent?.trim()||'Date')+' (MM/DD/YY'+(withTime?' HH:mm':'')+')');
     text.title='Two-digit years mean 2000–2099';picker.type='button';picker.className='short-date-picker';picker.setAttribute('aria-label','Choose date from calendar');picker.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 11h16"/></svg>';
     input.before(wrap);wrap.append(text,input,picker);input.classList.add('short-date-native');input.tabIndex=-1;input.setAttribute('aria-hidden','true');
-    const sync=()=>{text.value=display(input.value);text.required=input.required;text.disabled=input.disabled;text.readOnly=input.readOnly;picker.disabled=input.disabled||input.readOnly;text.setCustomValidity(input.value&&parse(text.value,withTime)===null?'Check the full year. Enter a date between 2000 and 2099.':'');};
+    let reference=input.value;
+    const sync=()=>{if(parse(display(input.value),withTime)!==null&&input.value)reference=input.value;text.value=display(input.value);text.required=input.required;text.disabled=input.disabled;text.readOnly=input.readOnly;picker.disabled=input.disabled||input.readOnly;text.setCustomValidity(input.value&&parse(text.value,withTime)===null?'Check the full year. Enter a date between 2000 and 2099.':'');};
     // Existing dialogs set .value before opening; keep their displayed date in sync.
     const descriptor=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
-    Object.defineProperty(input,'value',{configurable:true,get(){return descriptor.get.call(this)},set(value){descriptor.set.call(this,value);sync();}});
-    function commit(){const iso=parse(text.value,withTime);const invalid=iso===null||(iso&&input.min&&iso<input.min)||(iso&&input.max&&iso>input.max);text.setCustomValidity(invalid?'Enter a valid '+text.placeholder+' date between 2000 and 2099.':'');if(invalid){descriptor.set.call(input,'');return false;}descriptor.set.call(input,iso);return true;}
+    Object.defineProperty(input,'value',{configurable:true,get(){return descriptor.get.call(this)},set(value){descriptor.set.call(this,value);reference=this.value;sync();}});
+    function commit(final=false){const iso=final&&input.dataset.expirationYearEntry!==undefined?enteredExpiration(text.value,reference):parse(text.value,withTime);const invalid=iso===null||(iso&&input.min&&iso<input.min)||(iso&&input.max&&iso>input.max);text.setCustomValidity(invalid?'Enter a valid '+text.placeholder+' date between 2000 and 2099.':'');if(invalid){descriptor.set.call(input,'');return false;}descriptor.set.call(input,iso);return true;}
     text.addEventListener('input',()=>{
       const digitsBefore=text.value.slice(0,text.selectionStart??text.value.length).replace(/\D/g,'').length;
       text.value=mask(text.value,withTime);let caret=0,seen=0;
@@ -41,8 +52,8 @@
       while(caret<text.value.length&&/\D/.test(text.value[caret]))caret++;
       text.setSelectionRange(caret,caret);if(commit())input.dispatchEvent(new Event('input',{bubbles:true}));
     });
-    text.addEventListener('change',()=>{if(commit()){sync();input.dispatchEvent(new Event('change',{bubbles:true}));}});
-    input.addEventListener('change',sync);input.addEventListener('input',()=>{if(document.activeElement!==text)sync();});
+    text.addEventListener('change',()=>{if(commit(true)){sync();input.dispatchEvent(new Event('change',{bubbles:true}));}});
+    input.addEventListener('change',()=>{if(input.dataset.expirationYearEntry!==undefined){const iso=enteredExpiration(input.value,reference);if(iso!==null)descriptor.set.call(input,iso);}sync();});input.addEventListener('input',()=>{if(document.activeElement!==text)sync();});
     input.addEventListener('invalid',event=>{event.preventDefault();text.focus();text.reportValidity();});
     picker.onclick=()=>{try{input.showPicker();}catch(_){text.focus();}};
     input.form?.addEventListener('reset',()=>queueMicrotask(sync));

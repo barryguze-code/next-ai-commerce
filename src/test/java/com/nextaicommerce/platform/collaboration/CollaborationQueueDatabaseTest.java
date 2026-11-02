@@ -52,6 +52,49 @@ class CollaborationQueueDatabaseTest {
     long revision(){return jdbc.queryForObject("SELECT revision FROM collaboration_queue_state WHERE parent_id=?",Long.class,tenant);}
     void contiguous(){assertThat(jdbc.queryForList("SELECT queue_position FROM collaboration_tasks WHERE parent_id=? AND queue_position IS NOT NULL ORDER BY queue_position",Integer.class,tenant)).containsExactlyElementsOf(java.util.stream.IntStream.rangeClosed(1,order().size()).boxed().toList());}
 
+    @Test void permissionQueryTuningIsTransactionLocalAndRestoresConnectionSetting() throws Exception {
+        try(var connection=jdbc.getDataSource().getConnection()){
+            var source=new SingleConnectionDataSource(connection,true);
+            var same=new JdbcTemplate(source);same.execute("SET jit=on");
+            var transaction=new TransactionTemplate(new DataSourceTransactionManager(source));
+            transaction.executeWithoutResult(status->{
+                new CollaborationRepository(same).reviewsByIds(UUID.randomUUID(),List.of(UUID.randomUUID()),email);
+                assertThat(same.queryForObject("show jit",String.class)).isEqualTo("off");
+            });
+            assertThat(same.queryForObject("show jit",String.class)).isEqualTo("on");
+        }
+    }
+
+    @Test void convertedReviewsStaySuppressedWhenTaskAndSourceHaveOppositeStates() {
+        UUID account=UUID.randomUUID(),review=UUID.randomUUID(),task=UUID.randomUUID();
+        jdbc.update("insert into tenants(id,slug,display_name) values (?,?,'Origin')",account,account.toString());
+        jdbc.update("insert into parent_tenant_accounts(parent_id,account_id) values (?,?)",tenant,account);
+        jdbc.update("insert into collaboration_reviews(id,tenant_id,subject_type,subject_key,subject_label,title,requested_by) values (?,?,'GENERAL','test','Source','Source',?)",review,account,email);
+        jdbc.update("insert into collaboration_messages(tenant_id,review_id,author_email,sender_id,message_type,body) values (?,?,?,?,'TEAM_CHAT','visible')",account,review,email,user);
+        jdbc.update("insert into collaboration_tasks(id,parent_id,account_id,title,created_by,source_review_id,state,queue_position,closed_at) values (?,?,?,'Converted',?,?,'DONE',null,now())",task,tenant,account,user,review);
+        jdbc.update("insert into collaboration_task_participants(parent_id,task_id,user_id,assigned,added_by) values (?,?,?,true,?)",tenant,task,user,user);
+        var accounts=org.mockito.Mockito.mock(com.nextaicommerce.platform.web.WorkspaceAccessRepository.class);
+        org.mockito.Mockito.when(accounts.listAccountOptions(email,false)).thenReturn(List.of(new com.nextaicommerce.platform.web.WorkspaceAccessRepository.AccountOption(account,"Origin","O",null,List.of())));
+        var personal=new PersonalCollaborationQueue(jdbc,new ParentTenantRepository(jdbc),accounts);
+        assertThat(tx.execute(t->personal.view(email,false,"ACTIVE","")).rows()).isEmpty();
+        assertThat(tx.execute(t->personal.view(email,false,"CLOSED","")).rows()).extracting(r->r.card().key().id()).containsExactly(task);
+        jdbc.update("update collaboration_tasks set state='OPEN',queue_position=1,closed_at=null where id=?",task);
+        jdbc.update("update collaboration_reviews set status='CLOSED',closed_at=now() where id=?",review);
+        assertThat(tx.execute(t->personal.view(email,false,"CLOSED","")).rows()).isEmpty();
+        assertThat(tx.execute(t->personal.view(email,false,"ACTIVE","")).rows()).extracting(r->r.card().key().id()).containsExactly(task);
+    }
+
+    @Test void unrankedViewsNeverCreateOrLockPersonalOrdering() {
+        var accounts=org.mockito.Mockito.mock(com.nextaicommerce.platform.web.WorkspaceAccessRepository.class);
+        org.mockito.Mockito.when(accounts.listAccountOptions(email,false)).thenReturn(List.of());
+        var personal=new PersonalCollaborationQueue(jdbc,new ParentTenantRepository(jdbc),accounts);
+        for(String view:List.of("ACTIVE","CLOSED","PRIVATE")) {
+            tx.execute(t->personal.view(email,false,view,""));
+            assertThat(jdbc.queryForObject("select count(*) from collaboration_personal_queues where user_id=?",Integer.class,user))
+                .as(view+" must not reconcile or lock the unrelated personal ordering").isZero();
+        }
+    }
+
     @Test void activeLegacyStatusAndMessageSearchShareTheSameAudience() {
         UUID account=UUID.randomUUID(),active=UUID.randomUUID(),closed=UUID.randomUUID();
         jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,'Legacy account')",account,account.toString());
@@ -140,6 +183,8 @@ class CollaborationQueueDatabaseTest {
         var nativeTask=tx.execute(t->personal.authorized(email,false,new PersonalCollaborationQueue.Key("TASK",task)));
         assertThat(nativeTask.sourceRestricted()).isTrue();assertThat(nativeTask.account()).isNull();
         assertThat((Object)tx.execute(t->reviews.review(account,denied,email))).isNull();
+        var batchReviews=tx.execute(t->reviews.reviewsByIds(account,List.of(allowed,denied),email));
+        assertThat(batchReviews).extracting(CollaborationRepository.Review::id).containsExactly(allowed);
         assertThat((Object)tx.execute(t->reviews.attachment(account,allowed,files.get(denied),email))).isNull();
         assertThat((Object)tx.execute(t->reviews.attachment(account,allowed,files.get(allowed),email))).isNotNull();
         assertThatThrownBy(()->tx.execute(t->reviews.messages(account,denied,email,"TEAM_CHAT"))).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);

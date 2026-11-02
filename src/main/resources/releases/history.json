@@ -4,6 +4,13 @@
   "title": "Personal collaboration and clearer account workspaces",
   "sections": [
     {
+      "title": "Performance and expiration entry",
+      "items": [
+        "Collaboration views load without repeatedly reconciling personal priorities; task details are fetched together with current access checks.",
+        "Inventory expiration corrections accept two-digit years; the redundant shelf summary cards have been removed."
+      ]
+    },
+    {
       "title": "Conversations and personal priorities",
       "items": [
         "Find active, assigned and closed conversations in the shared collaboration table, with original product pictures or the owning account logo.",

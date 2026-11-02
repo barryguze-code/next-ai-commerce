@@ -121,7 +121,7 @@ public class PersonalCollaborationQueue {
     public Card authorized(String email,boolean staff,Key key) {
         db.queryForObject("select set_config('app.user_email',?,true)",String.class,email);
         UUID user=db.queryForObject("select id from app_users where lower(email)=lower(?) and status='ACTIVE'",UUID.class,email);
-        Card card=sources(user,email,staff,"ALL").get(key);
+        Card card=sources(user,email,staff,"ALL",key).get(key);
         if(card==null)throw new org.springframework.security.access.AccessDeniedException("Conversation unavailable.");
         return card;
     }
@@ -129,52 +129,61 @@ public class PersonalCollaborationQueue {
     @Transactional(isolation=Isolation.REPEATABLE_READ)
     public Page view(String email,boolean staff,String view,String query) {
         if(!Set.of("ASSIGNED","ACTIVE","PRIVATE","CLOSED").contains(view))throw new IllegalArgumentException("Choose a conversation view.");
-        Page personal=load(email,staff,null,null,null);
-        if(view.equals("ASSIGNED"))return search(new Page(personal.rows().stream().filter(r->!r.card().closed()).toList(),personal.revision()),email,query);
+        if(view.equals("ASSIGNED")) {
+            Page personal=load(email,staff,null,null,null);
+            return search(new Page(personal.rows().stream().filter(r->!r.card().closed()).toList(),personal.revision()),email,query);
+        }
+        // Unranked views neither reconcile nor lock a user's independent priority queue.
+        db.queryForObject("select set_config('app.user_email',?,true)",String.class,email);
         UUID user=db.queryForObject("select id from app_users where lower(email)=lower(?) and status='ACTIVE'",UUID.class,email);
-        var ranks=new HashMap<Key,Integer>();
-        personal.rows().forEach(r->ranks.put(r.card().key(),r.position()));
         var visible=sources(user,email,staff,view);
         visible.values().stream().map(Card::alias).filter(Objects::nonNull).toList()
             .forEach(id->visible.remove(new Key("REVIEW",id)));
         var rows=visible.values().stream()
             .filter(c->c.closed()==view.equals("CLOSED"))
-            .sorted(Comparator.comparing(Card::created).reversed()).map(c->new Row(c,ranks.get(c.key()))).toList();
-        return search(new Page(rows,personal.revision()),email,query,view.equals("PRIVATE"));
+            .sorted(Comparator.comparing(Card::created).reversed()).map(c->new Row(c,null)).toList();
+        return search(new Page(rows,0),email,query,view.equals("PRIVATE"));
     }
 
     private Map<Key,Card> sources(UUID user,String email,boolean staff) {
         return sources(user,email,staff,"ASSIGNED");
     }
     private Map<Key,Card> sources(UUID user,String email,boolean staff,String view) {
+        return sources(user,email,staff,view,null);
+    }
+    private Map<Key,Card> sources(UUID user,String email,boolean staff,String view,Key key) {
+        // Same permission plan as CollaborationRepository; never change database/global JIT.
+        db.queryForObject("SELECT set_config('jit','off',true)",String.class);
         var cards=new LinkedHashMap<Key,Card>();
         var accounts=access.listAccountOptions(email,staff);
         var names=new HashMap<UUID,String>(); var stores=new HashSet<UUID>();
         for(var a:accounts){names.put(a.id(),a.name());a.stores().forEach(s->stores.add(s.id()));}
-        for(var parent:view.equals("PRIVATE")?List.<ParentTenantRepository.Parent>of():parents.available(email)){
+        for(var parent:(view.equals("PRIVATE")||(key!=null&&!key.type().equals("TASK")))?List.<ParentTenantRepository.Parent>of():parents.available(email)){
             db.queryForObject("select set_config('app.parent_id',?,true)",String.class,parent.id().toString());
             db.query("""
               select t.id,t.title,t.account_id,t.store_id,t.state,t.source_review_id,t.personal_reopened_at,
                      t.created_at,coalesce(t.subject_type,'PLATFORM'),origin.display_name from collaboration_tasks t LEFT JOIN tenants origin ON origin.id=t.account_id join collaboration_task_participants p
               on p.parent_id=t.parent_id and p.task_id=t.id where t.parent_id=? and p.user_id=? and (p.assigned or ?<>'ASSIGNED')
+              and (?::uuid is null or t.id=?)
               order by t.created_at,t.id
               """,r->{UUID a=r.getObject(3,UUID.class),s=r.getObject(4,UUID.class);
                 boolean visible=names.containsKey(a)&&(s==null||stores.contains(s));
                 var k=new Key("TASK",r.getObject(1,UUID.class));cards.put(k,new Card(k,r.getString(2),visible?a:null,
                    a==null?parent.name():visible?names.get(a):r.getString(10),parent.id(),r.getString(5),visible?s:null,r.getString(9),
-                   r.getObject(6,UUID.class),r.getTimestamp(7),r.getTimestamp(8),a,s,a!=null&&!visible));},parent.id(),user,view);
+                   r.getObject(6,UUID.class),r.getTimestamp(7),r.getTimestamp(8),a,s,a!=null&&!visible));},parent.id(),user,view,key==null?null:key.id(),key==null?null:key.id());
         }
-        for(var a:accounts){
+        for(var a:(key!=null&&!key.type().equals("REVIEW"))?List.<WorkspaceAccessRepository.AccountOption>of():accounts){
             db.queryForObject("select set_config('app.tenant_id',?,true)",String.class,a.id().toString());
             db.query("""
                 select review.id,review.title,review.status,review.personal_reopened_at,review.created_at,review.subject_type
-                from collaboration_reviews review where review.tenant_id=? and (?<>'ASSIGNED' or review.assigned_to=? or exists
+                from collaboration_reviews review where review.tenant_id=? and (?::uuid is null or review.id=?)
+                and (?='ALL' or ?='ASSIGNED' or (review.status='CLOSED')=(?='CLOSED')) and (?<>'ASSIGNED' or review.assigned_to=? or exists
                 (select 1 from collaboration_assignments ca where ca.tenant_id=review.tenant_id and ca.review_id=review.id and ca.user_id=?))
                 and (?<>'PRIVATE' or exists(select 1 from collaboration_messages mine where mine.tenant_id=review.tenant_id
                     and mine.review_id=review.id and mine.message_type='PRIVATE_NOTE' and lower(mine.author_email)=lower(?)))
                 and (
                 """+CollaborationRepository.VISIBLE_THREAD+")",r->{var k=new Key("REVIEW",r.getObject(1,UUID.class));
-                    cards.put(k,new Card(k,r.getString(2),a.id(),a.name(),null,r.getString(3),null,r.getString(6),null,r.getTimestamp(4),r.getTimestamp(5)));},a.id(),view,user,user,view,email);
+                    cards.put(k,new Card(k,r.getString(2),a.id(),a.name(),null,r.getString(3),null,r.getString(6),null,r.getTimestamp(4),r.getTimestamp(5)));},a.id(),key==null?null:key.id(),key==null?null:key.id(),view,view,view,view,user,user,view,email);
         }
         return cards;
     }

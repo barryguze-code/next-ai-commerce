@@ -49,7 +49,7 @@ public class InventoryController {
             @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate oldDate,
             @RequestParam @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate newDate,
             @RequestParam BigDecimal expectedQuantity,RedirectAttributes redirect){
-        try{inventory.changeExpiration(tenant(session),auth.getName(),itemId,locationId,oldDate,newDate,expectedQuantity,orders.getObject());
+        try{inventory.changeExpiration(tenant(session),auth.getName(),itemId,locationId,oldDate,newDate.getYear()>=0&&newDate.getYear()<100?newDate.plusYears(2000):newDate,expectedQuantity,orders.getObject());
             redirect.addFlashAttribute("inventorySuccess","Expiration corrected. Shelf quantity is unchanged and open-order reservations were recalculated.");
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("inventoryError",e.getMessage());}
         catch(Exception e){log.error("Expiration correction failed",e);redirect.addFlashAttribute("inventoryError","The expiration could not be changed. Nothing was saved.");}

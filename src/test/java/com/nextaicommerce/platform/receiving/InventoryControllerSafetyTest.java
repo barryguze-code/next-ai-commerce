@@ -36,6 +36,12 @@ class InventoryControllerSafetyTest {
         session=mock(HttpSession.class);when(session.getAttribute("selectedTenantId")).thenReturn(tenantId);
     }
 
+    @Test void explicitShortYearCorrectionPreservesOriginalBatchAndQuantity() {
+        UUID item=UUID.randomUUID(),location=UUID.randomUUID();var old=LocalDate.of(2026,7,14);
+        controller.changeExpiration(session,authentication,item,location,old,LocalDate.of(27,7,14),new BigDecimal("12"),new RedirectAttributesModelMap());
+        verify(inventory).changeExpiration(tenantId,"operator@example.com",item,location,old,LocalDate.of(2027,7,14),new BigDecimal("12"),null);
+    }
+
     @Test
     void manualReceiptRequiresExplanationBeforeWriting(){
         var response=controller.inlineReceipt(authentication,session,UUID.randomUUID(),BigDecimal.ONE,UUID.randomUUID(),LocalDate.now()," ");
