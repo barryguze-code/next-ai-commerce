@@ -624,3 +624,5 @@ Red/green regression: unranked view creates queue state before fix (expected0/ac
 
 
 First normal CI41546512895 passed on328d826. Owner's subsequent inventory clarification adds the shared account-only picker, safe local return routes and two focused warehouse tests. Warehouse/Advice/Template tests pass; final candidate CI pending. Independent review of warehouse ownership/redirect behavior and final deployment script PASS; screen-reader label corrected. No live operations yet.
+
+Final candidate CI41547555947 passed Java but failed one relocation browser success case (538passed/1failed/1skipped). Test forced the production30s network deadline to50ms even in success scenarios; narrowed acceleration to intentional timeout mode, retained all outcome/duplicate-POST assertions. All7 relocation cases pass locally. Warehouse query candidate is investigation only: first materialized listing comparison improved latency but failed exact all-column equality, so it has NOT been applied to application code. Consistent-snapshot/column-only diagnostics pending; no inventory data changed.
