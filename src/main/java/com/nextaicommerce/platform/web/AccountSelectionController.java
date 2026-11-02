@@ -56,7 +56,8 @@ public class AccountSelectionController {
 
     @PostMapping("/app/select-account")
     String choose(@RequestParam UUID tenantId, @RequestParam String tenantName,
-            Authentication authentication, HttpSession session,HttpServletResponse response) {
+            Authentication authentication, HttpSession session,HttpServletResponse response,
+            @RequestParam(defaultValue="/app") String returnTo) {
         boolean superAdmin = authentication.getAuthorities().stream()
             .anyMatch(a -> a.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
         if (!repository.canAccessAccount(tenantId, authentication.getName(), superAdmin))
@@ -66,7 +67,7 @@ public class AccountSelectionController {
         session.removeAttribute(STORE_ID);
         session.removeAttribute(STORE_NAME);
         remember(response,LAST_TENANT_COOKIE,tenantId);forget(response,LAST_STORE_COOKIE);
-        return "redirect:/app";
+        return "redirect:"+safeWorkspacePath(returnTo);
     }
 
     @PostMapping("/app/select-store")
@@ -103,6 +104,6 @@ public class AccountSelectionController {
     }
 
     private static String safeWorkspacePath(String path) {
-        return path != null && path.matches("/app(?:/(?:orders|marketplace-skus|inventory(?:/ledger)?))?") ? path : "/app";
+        return path != null && path.matches("/app(?:/(?:orders|marketplace-skus|receiving|inventory(?:/ledger|/replenishment|/physical-counts/history)?))?") ? path : "/app";
     }
 }

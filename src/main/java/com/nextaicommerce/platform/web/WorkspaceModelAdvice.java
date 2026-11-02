@@ -39,6 +39,12 @@ public class WorkspaceModelAdvice {
         restoreRememberedWorkspace(request,session,accountOptions);
         model.addAttribute("accountOptions", accountOptions);
         model.addAttribute("currentWorkspacePath", request.getRequestURI());
+        String path=request.getRequestURI();
+        boolean warehouse=(path.startsWith("/app/inventory")&&!path.startsWith("/app/inventory/fba-shipments"))||path.startsWith("/app/receiving");
+        model.addAttribute("warehouseWorkspace",warehouse);
+        String warehouseReturn=path.startsWith("/app/receiving")?"/app/receiving":path.startsWith("/app/inventory/ledger")?"/app/inventory/ledger":
+            path.startsWith("/app/inventory/replenishment")?"/app/inventory/replenishment":path.startsWith("/app/inventory/physical-counts")?"/app/inventory/physical-counts/history":"/app/inventory";
+        model.addAttribute("warehouseReturnTo",warehouseReturn);
         Object selectedAccountId = session.getAttribute(AccountSelectionController.TENANT_ID);
         accountOptions.stream().filter(account -> account.id().equals(selectedAccountId)).findFirst()
             .ifPresent(account -> { model.addAttribute("selectedAccountInitials", account.initials()); model.addAttribute("selectedAccountLogoUrl", account.logoUrl()); });
