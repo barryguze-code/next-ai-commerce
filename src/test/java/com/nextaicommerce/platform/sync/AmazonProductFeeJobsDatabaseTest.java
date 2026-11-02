@@ -24,7 +24,7 @@ class AmazonProductFeeJobsDatabaseTest {
         else{schema="public"; // This branch owns a disposable cluster; match production function lookup.
         embedded=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();url=embedded.getJdbcUrl("postgres","postgres");}
         var ds=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);
-        org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+        org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).locations(com.nextaicommerce.platform.testing.FixtureMigrations.location(schema)).load().migrate();
         jdbc=new JdbcTemplate(ds);tx=new TransactionTemplate(new DataSourceTransactionManager(ds));
         publicationRole=schema+"_pub";jdbc.execute("CREATE ROLE "+publicationRole+" NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT");
         jdbc.execute("GRANT USAGE ON SCHEMA "+schema+" TO "+publicationRole);

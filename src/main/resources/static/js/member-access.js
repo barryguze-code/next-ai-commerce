@@ -2,6 +2,20 @@
   'use strict';
   window.filterUserAccess=value=>{const query=value.trim().toLowerCase();document.querySelectorAll('.access-row').forEach(row=>row.hidden=!row.dataset.search.includes(query));};
   const dialog=document.getElementById('member-access-dialog'),form=document.getElementById('member-access-form'),revoke=document.getElementById('revoke-member-dialog');
+  const filter=document.getElementById('users-account-filter');
+  if(filter){
+    const key='nextai.users.account:'+filter.dataset.user+':'+filter.dataset.workspace;
+    const url=new URL(location.href);
+    try{
+      const last=localStorage.getItem(key);
+      if(!url.searchParams.has('account') && last && last!==filter.value && [...filter.options].some(o=>o.value===last)){
+        url.searchParams.set('account',last);location.replace(url);return;
+      }
+      localStorage.setItem(key,filter.value);
+    }catch{}
+    filter.onchange=()=>{url.searchParams.set('account',filter.value);url.searchParams.delete('invite');location.assign(url);};
+    if(filter.dataset.invite==='true')document.getElementById('invite-dialog').showModal();
+  }
   if(!dialog||!form||!revoke)return;
   let trigger;
   document.querySelectorAll('[data-revoke-store]').forEach(storeForm=>storeForm.addEventListener('submit',event=>{

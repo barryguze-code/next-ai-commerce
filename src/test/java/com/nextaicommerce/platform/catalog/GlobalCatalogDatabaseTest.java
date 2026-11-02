@@ -24,7 +24,7 @@ class GlobalCatalogDatabaseTest {
             url=postgres.getJdbcUrl("postgres","postgres");
         }
         var source=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);
-        org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+        org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations(com.nextaicommerce.platform.testing.FixtureMigrations.location(schema)).load().migrate();
         jdbc=new JdbcTemplate(source);
     }
     @AfterAll static void cleanup() throws Exception {

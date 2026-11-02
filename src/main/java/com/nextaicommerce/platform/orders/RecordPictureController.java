@@ -24,7 +24,7 @@ public class RecordPictureController {
   boolean platform=auth.getAuthorities().stream().anyMatch(a->a.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
   if(write&&!access.canAdministerAccount(tenant,auth.getName(),platform))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
   jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());
-  if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM app_users u WHERE u.id=? AND (EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.user_id=u.id AND m.tenant_id=?) OR EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)))",Boolean.class,id,tenant)))throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+  if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM app_users u WHERE u.id=? AND (EXISTS(SELECT 1 FROM effective_account_memberships m WHERE m.user_id=u.id AND m.tenant_id=?) OR EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)))",Boolean.class,id,tenant)))throw new ResponseStatusException(HttpStatus.NOT_FOUND);
   if(write&&!platform&&Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM platform_administrators WHERE user_id=? AND active)",Boolean.class,id)))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
  }
  @GetMapping("/app/profile/picture") @ResponseBody

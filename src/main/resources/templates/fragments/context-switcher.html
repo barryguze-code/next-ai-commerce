@@ -33,4 +33,29 @@
   <dialog id="account-brand-dialog" class="invite-dialog"><form method="post" enctype="multipart/form-data" th:action="@{/app/platform/accounts/{id}/logo(id=${selectedAccountId})}" class="dialog-shell"><div class="dialog-header"><div><span class="eyebrow dark">Company identity</span><h2>Update company logo</h2><p>This logo appears in the workspace picker and selected-store control.</p></div><button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button></div><div class="dialog-body operation-form"><label>Company logo<input name="logo" type="file" accept="image/png,image/jpeg,image/webp" required><small>PNG, JPEG, or WebP up to 2 MB.</small></label></div><div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button" type="submit">Save logo</button></div></form></dialog>
   <script>function filterWorkspaceChoices(input){const query=input.value.trim().toLowerCase();const popover=input.closest('.context-popover');popover.querySelectorAll('.context-account').forEach(account=>{const accountMatch=account.dataset.accountSearch.includes(query);let storeMatch=false;account.querySelectorAll('[data-store-search]').forEach(store=>{const match=!query||accountMatch||store.dataset.storeSearch.includes(query);store.hidden=!match;storeMatch=storeMatch||match;});account.hidden=!!query&&!accountMatch&&!storeMatch;});}function openAccountBrandDialog(){const dialog=document.getElementById('account-brand-dialog');if(!dialog)return;if(dialog.parentElement!==document.body)document.body.appendChild(dialog);if(!dialog.open)dialog.showModal();}</script>
 </details>
+<details class="context-menu" data-collaboration-scope th:fragment="collaborationFilter">
+  <summary class="context-switcher" aria-label="Filter collaboration by account or store">
+    <span class="context-icon context-account-initials" data-collaboration-scope-initials hidden></span>
+    <img class="context-brand-logo" src="/images/next-ai-mark-transparent.png" alt="">
+    <span class="context-copy"><strong id="collaboration-scope-label">All accounts</strong><small id="collaboration-scope-caption">All accessible accounts</small></span>
+    <span class="context-selected-channel" data-collaboration-channel hidden><img alt=""></span><span class="chevron">⌄</span>
+  </summary>
+  <section class="context-popover">
+    <header><strong>Accounts and stores</strong><small>Filter this collaboration view</small></header>
+    <div class="context-account">
+      <button type="button" class="context-account-button selected" data-collaboration-account="" data-name="All accounts"><img class="account-brand-logo" src="/images/next-ai-mark-transparent.png" alt=""><span><strong>All accessible accounts</strong></span></button>
+    </div>
+    <div class="context-account" th:each="option:${collaborationAccounts}">
+      <button type="button" class="context-account-button" th:attr="data-collaboration-account=${option.id},data-name=${option.name},data-logo=${option.logoUrl},data-initials=${option.initials}">
+        <span class="avatar" th:if="${option.logoUrl == null}" th:text="${option.initials}"></span><img class="account-brand-logo" th:if="${option.logoUrl != null}" th:src="${option.logoUrl}" alt=""><span><strong th:text="${option.name}"></strong><small>All stores</small></span>
+      </button>
+      <div class="context-stores">
+        <button type="button" th:each="store:${option.stores}" th:attr="data-collaboration-account=${option.id},data-collaboration-store=${store.id},data-name=${store.name},data-logo=${option.logoUrl},data-initials=${option.initials},data-channel=${store.channel},data-marketplace-label=${store.marketplaceLabel},data-country-flag=${store.countryFlag}">
+          <span class="mini-channel" th:classappend="${store.channel == 'WALMART' ? ' walmart-channel' : (store.channel == 'SHOPIFY' ? ' shopify-channel' : ' amazon-channel')}"><img th:src="${store.channel == 'AMAZON' ? '/images/channels/amazon-seller.png' : (store.channel == 'SHOPIFY' ? '/images/channels/shopify-bag.png' : '/images/channels/walmart-official.png')}" th:alt="${store.channel}"></span>
+          <span><strong th:text="${store.name}"></strong><small th:text="${store.countryFlag + ' ' + store.marketplaceLabel}"></small></span>
+        </button>
+      </div>
+    </div>
+  </section>
+</details>
 </body></html>

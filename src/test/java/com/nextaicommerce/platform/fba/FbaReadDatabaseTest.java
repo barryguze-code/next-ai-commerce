@@ -39,6 +39,7 @@ class FbaReadDatabaseTest {
         var mapper=new com.nextaicommerce.platform.marketplace.MarketplaceSkuAutoMapper(jdbc,tx);
         // Backfill must work even when a listing already has its image.
         jdbc.update("UPDATE amazon_listings SET catalog_barcodes='[]',catalog_barcodes_asin=NULL,image_url='https://example.com/image.png' WHERE tenant_id=?",tenant);
+        jdbc.update("INSERT INTO marketplace_connection_credentials(tenant_id,marketplace_connection_id,encrypted_payload,encryption_nonce) VALUES (?,?,?,?)",tenant,store,new byte[]{1},new byte[]{2});
         var amazon=mock(AmazonSpApiClient.class);String body="""
           {"asin":"B000TEST","identifiers":[{"marketplaceId":"US","identifiers":[{"identifierType":"UPC","identifier":"012345678905"}]}]}
           """;
@@ -85,7 +86,7 @@ class FbaReadDatabaseTest {
         else{schema="public"; // This branch owns a disposable cluster; match production function lookup.
         postgres=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();url=postgres.getJdbcUrl("postgres","postgres");}
         var source=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);
-        org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+        org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations(com.nextaicommerce.platform.testing.FixtureMigrations.location(schema)).load().migrate();
         jdbc=new JdbcTemplate(source);tx=new TransactionTemplate(new DataSourceTransactionManager(source));
         jdbc.execute("ALTER FUNCTION "+schema+".ensure_item_default_location() SET search_path TO "+schema);
     }

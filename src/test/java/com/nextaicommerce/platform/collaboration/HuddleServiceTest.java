@@ -64,14 +64,15 @@ class HuddleServiceTest {
         UUID reviewId=UUID.randomUUID(),messageId=UUID.randomUUID();
         when(repository.saveHuddle(any(),any(),any(),any(),any(),any(),any(),any(),eq(true)))
             .thenReturn(new CollaborationRepository.PostedMessage(reviewId,messageId));
-        when(repository.queueNotifications(tenant,reviewId,messageId,Set.of(barry.id()),"COMPLETED")).thenReturn(1);
+        when(repository.queueNotifications(tenant,reviewId,messageId,Set.of(alex.id()),"COMPLETED")).thenReturn(1);
         var huddle=service.create(tenant,barry,"CATALOG","B0123","Cold item","/app/catalog","{}",List.of(alex));
         service.join(tenant,huddle.id(),alex.id());
         service.message(tenant,huddle.id(),alex.id(),"Resolved—the mapping is correct.");
 
-        service.save(tenant,huddle.id(),alex.id(),true);
+        assertThatThrownBy(()->service.save(tenant,huddle.id(),alex.id(),true)).isInstanceOf(IllegalArgumentException.class);
+        service.save(tenant,huddle.id(),barry.id(),true);
 
-        verify(repository).queueNotifications(tenant,reviewId,messageId,Set.of(barry.id()),"COMPLETED");
+        verify(repository).queueNotifications(tenant,reviewId,messageId,Set.of(alex.id()),"COMPLETED");
         verify(notifications).deliverAsync(tenant);
     }
 
@@ -83,12 +84,15 @@ class HuddleServiceTest {
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not available");
     }
 
-    @Test void huddlesExpireAndDisappearWithoutWritingHistory(){
+    @Test void huddlesRemainActiveUntilCreatorEndsThem(){
         var huddle=service.create(tenant,barry,"PLATFORM","GENERAL","General team huddle","/app/collaboration","{}",List.of(alex));
         var expired=service.expire(Instant.now().plus(HuddleService.IDLE_TTL).plusSeconds(1));
-        assertThat(expired).singleElement().satisfies(item->{
-            assertThat(item.tenantId()).isEqualTo(tenant);assertThat(item.huddle().status()).isEqualTo("ENDED");
-        });
+        assertThat(expired).isEmpty();
+        assertThat(service.forParticipant(tenant,barry.id())).hasSize(1);
+        assertThatThrownBy(()->service.end(tenant,huddle.id(),alex.id())).isInstanceOf(IllegalArgumentException.class);
+        service.leave(tenant,huddle.id(),alex.id());
+        assertThat(service.find(tenant,huddle.id(),barry.id()).status()).isEqualTo("ACTIVE");
+        service.end(tenant,huddle.id(),barry.id());
         assertThat(service.forParticipant(tenant,barry.id())).isEmpty();
         verify(repository,never()).saveHuddle(any(),any(),any(),any(),any(),any(),any(),any(),any(Boolean.class));
     }

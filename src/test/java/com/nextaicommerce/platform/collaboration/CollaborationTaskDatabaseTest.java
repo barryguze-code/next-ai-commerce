@@ -23,7 +23,7 @@ class CollaborationTaskDatabaseTest {
         postgres=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();url=postgres.getJdbcUrl("postgres","postgres");}
         var source=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);
         jdbc=new JdbcTemplate(source);tx=new TransactionTemplate(new DataSourceTransactionManager(source));
-        Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+        Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations(com.nextaicommerce.platform.testing.FixtureMigrations.location(schema)).load().migrate();
     }
     @AfterAll static void cleanup() throws Exception {
         if(jdbc!=null&&schema!=null&&schema.matches("collaboration_task_test_[a-f0-9]{32}"))jdbc.execute("DROP SCHEMA IF EXISTS "+schema+" CASCADE");
@@ -63,6 +63,7 @@ class CollaborationTaskDatabaseTest {
     }
     @Test void recordConversationAlsoSupportsDueDatesAndKeepsItsContext(){
         tx.executeWithoutResult(s->{
+            jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id) VALUES (?,?,'ATVPDKIKX0DER','TEST-ORDER')",tenant,store);
             LocalDate date=LocalDate.of(2026,12,20);
             var posted=repository.createDatedConversation(tenant,"ORDER","TEST-ORDER","Test order",null,"CONVERSATION","Review order","Please check","TEAM_CHAT","{}","/app/orders",actor,null,date,"UTC",List.of());
             var saved=repository.review(tenant,posted.reviewId(),actor);

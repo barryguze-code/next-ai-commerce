@@ -14,7 +14,7 @@ function fixture(){
 test('shared icons use one versioned URL including channel artwork',()=>{
   const f=fixture();
   assert.equal(f.api.source('mapping'),f.api.source('sku-mapped'));
-  assert.equal(f.api.source('amazon'),'/images/platform/table/amazon.com-logo.png?v=20261008-badges');
+  assert.equal(f.api.source('amazon'),'/images/platform/table/amazon.com-logo.png?v=20261031-collaboration-local');
 });
 test('content mutations scan only added connected subtrees, not the document',()=>{
   const f=fixture();let scans=0;

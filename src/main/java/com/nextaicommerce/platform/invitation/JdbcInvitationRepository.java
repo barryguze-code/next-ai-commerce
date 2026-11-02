@@ -27,7 +27,7 @@ public class JdbcInvitationRepository implements InvitationRepository {
         if (Boolean.TRUE.equals(superAdmin)) return ActorAccess.SUPER_ADMIN;
 
         return jdbc.query(
-            "SELECT role FROM tenant_memberships WHERE tenant_id = ? AND user_id = ?",
+            "SELECT role FROM effective_account_memberships WHERE tenant_id = ? AND user_id = ?",
             resultSet -> resultSet.next() ? toActorAccess(resultSet.getString("role")) : ActorAccess.NONE,
             tenantId, actorUserId);
     }
@@ -45,6 +45,15 @@ public class JdbcInvitationRepository implements InvitationRepository {
         Set<UUID> marketplaceConnectionIds) {
 
         setTenant(tenantId);
+        if (!invitedBySuperAdmin && Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM effective_account_memberships WHERE tenant_id=? AND user_id=?
+                    AND role='ADMIN' AND stores_restricted)
+                """, Boolean.class, tenantId, invitedBy))) {
+            var allowed = jdbc.queryForList("SELECT marketplace_connection_id FROM membership_store_access WHERE tenant_id=? AND user_id=?",
+                    UUID.class, tenantId, invitedBy);
+            if (marketplaceConnectionIds.isEmpty() || !allowed.containsAll(marketplaceConnectionIds))
+                throw new InvitationException("Choose stores assigned to you in this account.");
+        }
         UUID invitationId = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO tenant_invitations
@@ -84,15 +93,50 @@ public class JdbcInvitationRepository implements InvitationRepository {
     @Override
     public void accept(StoredInvitation invitation, UUID acceptingUserId, UUID actorUserId) {
         setTenant(invitation.tenantId());
-        jdbc.update("""
+        var grant=jdbc.queryForMap("SELECT tenant_access_kind,home_or_guest_tenant,invited_by FROM tenant_invitations WHERE tenant_id=? AND id=?",
+                invitation.tenantId(),invitation.id());
+        String kind=(String)grant.get("tenant_access_kind");
+        UUID parent=(UUID)grant.get("home_or_guest_tenant"),inviter=(UUID)grant.get("invited_by");
+        if(parent!=null){
+            jdbc.queryForObject("SELECT set_config('app.parent_id',?,true)",String.class,parent.toString());
+            if("GUEST".equals(kind)){
+                if (!Boolean.TRUE.equals(jdbc.queryForObject("""
+                    SELECT EXISTS(SELECT 1 FROM app_users u WHERE u.id=? AND u.status='ACTIVE'
+                      AND EXISTS(SELECT 1 FROM invitation_store_access WHERE invitation_id=? AND tenant_id=?)
+                      AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)
+                        OR EXISTS(SELECT 1 FROM effective_account_memberships m WHERE m.user_id=u.id
+                          AND m.tenant_id=? AND m.role IN ('OWNER','ADMIN')
+                          AND (NOT m.stores_restricted OR NOT EXISTS(
+                            SELECT marketplace_connection_id FROM invitation_store_access WHERE invitation_id=? AND tenant_id=m.tenant_id
+                            EXCEPT SELECT marketplace_connection_id FROM membership_store_access WHERE tenant_id=m.tenant_id AND user_id=m.user_id)))))
+                    """,Boolean.class,inviter,invitation.id(),invitation.tenantId(),invitation.tenantId(),invitation.id())))
+                    throw new InvitationException("A current administrator for the selected stores must renew this invitation.");
+                if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND user_id=?)",
+                        Boolean.class,invitation.tenantId(),acceptingUserId)))throw new InvitationException("Review this person’s existing account grant first.");
+            }else{
+                if(!Boolean.TRUE.equals(jdbc.queryForObject("""
+                     SELECT EXISTS(SELECT 1 FROM app_users u WHERE u.id=? AND u.status='ACTIVE' AND
+                     (EXISTS(SELECT 1 FROM platform_administrators a WHERE a.user_id=u.id AND a.active)
+                      OR EXISTS(SELECT 1 FROM parent_tenant_memberships m WHERE m.parent_id=? AND m.user_id=u.id
+                         AND m.home_membership AND m.active AND m.role IN ('OWNER','ADMIN'))))
+                     """,Boolean.class,inviter,parent)))throw new InvitationException("The tenant invitation requires a current manager.");
+                jdbc.update("INSERT INTO parent_tenant_memberships(parent_id,user_id,role,home_membership) VALUES (?,?,?,true)",
+                        parent,acceptingUserId,kind);
+            }
+        }
+        int directModified=jdbc.update("""
             INSERT INTO tenant_memberships
                 (tenant_id, user_id, role, created_by, updated_by, stores_restricted)
             VALUES (?, ?, ?, ?, ?, true)
             ON CONFLICT (tenant_id, user_id) DO UPDATE
                 SET role = EXCLUDED.role, updated_by = EXCLUDED.updated_by, stores_restricted = true
-            """, invitation.tenantId(), acceptingUserId, invitation.role().name(), actorUserId, actorUserId);
+                WHERE ? = 'ACCOUNT'
+            """, invitation.tenantId(), acceptingUserId, invitation.role().name(), actorUserId, actorUserId, kind);
+        if ("GUEST".equals(kind) && directModified==0) throw new InvitationException("Review this person’s existing account grant first.");
 
-        jdbc.update("""
+        if("GUEST".equals(kind))jdbc.update("INSERT INTO guest_account_grants(parent_id,account_id,user_id,granted_by) VALUES (?,?,?,?)",
+                parent,invitation.tenantId(),acceptingUserId,inviter);
+        if (directModified>0) jdbc.update("""
             INSERT INTO membership_store_access
                 (tenant_id, user_id, marketplace_connection_id, granted_by)
             SELECT tenant_id, ?, marketplace_connection_id, ?

@@ -30,6 +30,12 @@ public class InvitationWorkflowService {
     @Transactional
     public void invite(UUID tenantId, String accountName, String actorEmail, String email,
             InvitationRole role, Set<UUID> storeIds) {
+        invite(tenantId,accountName,actorEmail,email,role,storeIds,"ACCOUNT");
+    }
+
+    @Transactional
+    public void invite(UUID tenantId,String accountName,String actorEmail,String email,InvitationRole role,
+                       Set<UUID> storeIds,String accessKind) {
         String normalizedEmail = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
         UUID actorId = userId(actorEmail);
         if (actorId == null) throw new InvitationException("The signed-in administrator was not found.");
@@ -42,6 +48,8 @@ public class InvitationWorkflowService {
             throw new InvitationException("A pending invitation already exists for this email address.");
         var created = invitations.create(tenantId, actorId, normalizedEmail, role, storeIds,
             "Team invitation from Users & Access");
+
+        classify(tenantId,actorId,created.invitationId(),accessKind,storeIds);
 
         List<UserState> users = jdbc.query("SELECT id, status FROM app_users WHERE lower(email)=?",
             (rs, row) -> new UserState(rs.getObject("id", UUID.class), rs.getString("status")), normalizedEmail);
@@ -59,6 +67,23 @@ public class InvitationWorkflowService {
         String inviterName = jdbc.queryForObject("SELECT display_name FROM app_users WHERE id=?",
             String.class, actorId);
         mailer.send(normalizedEmail, inviterName, accountName, roleLabel(role), url);
+    }
+
+    private void classify(UUID account,UUID actor,UUID invite,String kind,Set<UUID> stores) {
+        if("ACCOUNT".equals(kind))return;
+        if(!Set.of("GUEST","OWNER","ADMIN","MEMBER").contains(kind))throw new InvitationException("Choose the invitation scope.");
+        var parents=jdbc.queryForList("SELECT parent_id FROM parent_tenant_accounts WHERE account_id=?",UUID.class,account);
+        if(parents.size()!=1)throw new InvitationException("Set up this account’s tenant first.");
+        UUID parent=parents.getFirst();
+        jdbc.queryForObject("SELECT set_config('app.parent_id',?,true)",String.class,parent.toString());
+        if("GUEST".equals(kind)){
+            if(stores==null||stores.isEmpty())throw new InvitationException("Choose the stores for guest access.");
+        }else if(!Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM platform_administrators WHERE user_id=? AND active)
+                    OR EXISTS(SELECT 1 FROM parent_tenant_memberships WHERE parent_id=? AND user_id=?
+                         AND active AND home_membership AND role IN ('OWNER','ADMIN'))
+                """,Boolean.class,actor,parent,actor)))throw new InvitationException("A tenant manager must invite home members.");
+        jdbc.update("UPDATE tenant_invitations SET tenant_access_kind=?,home_or_guest_tenant=? WHERE tenant_id=? AND id=?",kind,parent,account,invite);
     }
 
     @Transactional
@@ -80,6 +105,8 @@ public class InvitationWorkflowService {
             """, tenantId, invitationId);
         var created = invitations.create(tenantId, actorId, previous.email(), previous.role(), stores,
             "Invitation resent from Users & Access");
+        String kind=jdbc.queryForObject("SELECT tenant_access_kind FROM tenant_invitations WHERE tenant_id=? AND id=?",String.class,tenantId,invitationId);
+        classify(tenantId,actorId,created.invitationId(),kind,stores);
         sendCreatedInvitation(tenantId, accountName, actorId, previous.email(), previous.role(), created);
     }
 
@@ -124,7 +151,7 @@ public class InvitationWorkflowService {
         jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenantId.toString());
         Boolean allowed = jdbc.queryForObject("""
             SELECT EXISTS(SELECT 1 FROM platform_administrators WHERE user_id=? AND active)
-                OR EXISTS(SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND user_id=? AND role IN ('OWNER','ADMIN'))
+                OR EXISTS(SELECT 1 FROM effective_account_memberships WHERE tenant_id=? AND user_id=? AND role IN ('OWNER','ADMIN'))
             """, Boolean.class, actorId, tenantId, actorId);
         if (!Boolean.TRUE.equals(allowed)) throw new InvitationException("Administrator access is required.");
         return actorId;

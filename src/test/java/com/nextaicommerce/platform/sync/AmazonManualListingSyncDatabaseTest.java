@@ -26,7 +26,7 @@ class AmazonManualListingSyncDatabaseTest {
             url=postgres.getJdbcUrl("postgres","postgres");
         }
         var source=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);
-        org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+        org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations(com.nextaicommerce.platform.testing.FixtureMigrations.location(schema)).load().migrate();
         jdbc=new JdbcTemplate(source);tx=new TransactionTemplate(new DataSourceTransactionManager(source));
     }
     @AfterAll static void cleanup() throws Exception {
@@ -40,6 +40,25 @@ class AmazonManualListingSyncDatabaseTest {
             jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON','test','ATVPDKIKX0DER','test','ACTIVE','Test','America/Los_Angeles',now())",connection,tenant);
         });
     }
+    @Test void barcodeEnrichmentSkipsDisconnectedStoreWithoutDeferringEachListing() {
+        jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,platform_status) VALUES (?,?,'ATVPDKIKX0DER','test-sku','B097YHZ1P5','VISIBLE')",tenant,connection);
+        var amazon=org.mockito.Mockito.mock(AmazonSpApiClient.class);
+        var mapper=org.mockito.Mockito.mock(com.nextaicommerce.platform.marketplace.MarketplaceSkuAutoMapper.class);
+        org.mockito.Mockito.when(amazon.get(org.mockito.ArgumentMatchers.eq(tenant),org.mockito.ArgumentMatchers.eq(connection),org.mockito.ArgumentMatchers.anyString()))
+            .thenThrow(new IllegalStateException("Amazon credentials are not connected."));
+        UUID differentConnection=UUID.randomUUID();
+        jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON','other-test','ATVPDKIKX0DER','test','ACTIVE','Other test','America/Los_Angeles',now())",differentConnection,tenant);
+        jdbc.update("INSERT INTO marketplace_connection_credentials(tenant_id,marketplace_connection_id,encrypted_payload,encryption_nonce) VALUES (?,?,?,?)",tenant,differentConnection,new byte[]{1},new byte[]{2});
+        new AmazonBarcodeEnrichment(jdbc,tx,amazon,mapper,true).enrich();
+        org.mockito.Mockito.verifyNoInteractions(amazon,mapper);
+        assertThat(jdbc.queryForObject("SELECT catalog_barcodes_retry_at FROM amazon_listings WHERE tenant_id=?",java.sql.Timestamp.class,tenant)).isNull();
+        jdbc.update("INSERT INTO marketplace_connection_credentials(tenant_id,marketplace_connection_id,encrypted_payload,encryption_nonce) VALUES (?,?,?,?)",tenant,connection,new byte[]{1},new byte[]{2});
+        new AmazonBarcodeEnrichment(jdbc,tx,amazon,mapper,true).enrich();
+        org.mockito.Mockito.verify(amazon).get(org.mockito.ArgumentMatchers.eq(tenant),org.mockito.ArgumentMatchers.eq(connection),org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.verifyNoInteractions(mapper);
+        assertThat(jdbc.queryForObject("SELECT catalog_barcodes_retry_at FROM amazon_listings WHERE tenant_id=?",java.sql.Timestamp.class,tenant)).isNotNull();
+    }
+
     @Test void queuesOnceWithoutPublishingOrCreatingAnotherRun() { tx.executeWithoutResult(s->{
         assertThat(sync.availability(tenant,connection).allowed()).isTrue();
         sync.request(tenant,connection);

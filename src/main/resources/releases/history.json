@@ -1,5 +1,28 @@
 [
 {
+  "version": "1.11.0",
+  "title": "Personal collaboration and clearer account workspaces",
+  "sections": [
+    {
+      "title": "Conversations and personal priorities",
+      "items": [
+        "Find active, assigned and closed conversations in the shared collaboration table, with original product pictures or the owning account logo.",
+        "Drag Priority or Subject handles in @Me to save your own task order across sign-ins and restarts. Other teammates keep their own order.",
+        "Browse additional conversations by creation date: This week, Last week, Last month and older groups.",
+        "Open task details directly from every conversation tab and follow the original source when your account access permits."
+      ]
+    },
+    {
+      "title": "Account and connection clarity",
+      "items": [
+        "Review accounts with consistent table styling and compact workspace headers.",
+        "See marketplace providers in Channel and edit a store’s display name without changing its connection credentials.",
+        "Completed setup notices no longer remain across unrelated pages; connection warnings remain available in Marketplace Connections."
+      ]
+    }
+  ]
+},
+{
   "version": "1.10.0",
   "title": "Shopify orders and shared warehouse operations",
   "sections": [

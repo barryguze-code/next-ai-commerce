@@ -13,7 +13,7 @@
   if(!ids.length)return;
   const body=new FormData();c.dialog.querySelectorAll('input[type=hidden]').forEach(input=>{if(input.name.includes('csrf'))body.set(input.name,input.value);});ids.forEach(id=>body.append('messageId',id));
   c.busy=true;let saved=false;
-  try{const response=await fetch('/app/collaboration/reviews/'+encodeURIComponent(c.reviewId)+'/read',{method:'POST',body,headers:{Accept:'application/json'}});if(!response.ok)throw new Error('Read receipt not saved');saved=true;ids.forEach(id=>{c.read.add(id);c.unread.delete(id);});updateIcon(c);document.dispatchEvent(new Event('collaboration-messages-read'));}
+  try{const response=await fetch((c.apiBase||'/app/collaboration')+'/reviews/'+encodeURIComponent(c.reviewId)+'/read',{method:'POST',body,headers:{Accept:'application/json'}});if(!response.ok)throw new Error('Read receipt not saved');saved=true;ids.forEach(id=>{c.read.add(id);c.unread.delete(id);});updateIcon(c);document.dispatchEvent(new Event('collaboration-messages-read'));}
   catch(_){/* Leave unread on failure; retry after the next visibility/scroll event. */}
   finally{c.busy=false;if(saved&&eligible(c)&&ids.length===250)schedule();}
  }
@@ -24,7 +24,7 @@
   const nodes=[...list.querySelectorAll('.conversation-messages article')];
   nodes.forEach((node,index)=>node.dataset.readMessageId=event.detail.messageIds[index]);
   const icon=dialog.querySelector('#thread-status-icon');
-  context={dialog,list,nodes:nodes.filter(node=>node.dataset.readMessageId),reviewId:event.detail.reviewId,read:new Set(),unread:new Set(event.detail.unreadMentionMessageIds||[]),icon,originalIcon:icon?.src,originalAlt:icon?.alt,busy:false};updateIcon(context);
+  context={apiBase:event.detail.apiBase,dialog,list,nodes:nodes.filter(node=>node.dataset.readMessageId),reviewId:event.detail.reviewId,read:new Set(),unread:new Set(event.detail.unreadMentionMessageIds||[]),icon,originalIcon:icon?.src,originalAlt:icon?.alt,busy:false};updateIcon(context);
   observer=new IntersectionObserver(schedule,{root:list,threshold:[0,.5,1]});nodes.forEach(node=>observer.observe(node));schedule();
  });
  document.addEventListener('visibilitychange',schedule);window.addEventListener('focus',schedule);window.addEventListener('online',schedule);

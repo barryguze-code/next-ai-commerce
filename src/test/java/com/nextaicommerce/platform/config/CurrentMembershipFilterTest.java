@@ -24,6 +24,12 @@ class CurrentMembershipFilterTest {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("member@example.test","",List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
     }
     @AfterEach void cleanup(){SecurityContextHolder.clearContext();}
+    @Test void revokedStaffSessionCannotOpenOverallBoard() throws Exception {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("staff@example.test","",List.of(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"))));
+        request.setServletPath("/app/collaboration/board/overall");
+        filter.doFilter(request,response,(req,res)->{throw new AssertionError("Revoked staff reached board");});
+        assertThat(response.getStatus()).isEqualTo(403);
+    }
     @Test void revokedMembershipCannotReuseSession() throws Exception {
         filter.doFilter(request,response,(req,res)->{throw new AssertionError("Must not reach controller");});
         assertThat(response.getStatus()).isEqualTo(403);assertThat(request.getSession().getAttribute("selectedTenantId")).isNull();

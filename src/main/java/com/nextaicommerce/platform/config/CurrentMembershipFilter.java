@@ -20,8 +20,18 @@ final class CurrentMembershipFilter extends OncePerRequestFilter {
         var auth=SecurityContextHolder.getContext().getAuthentication();
         var session=request.getSession(false);String path=request.getServletPath();
         var service=services.getIfAvailable();
+        if(service!=null && session!=null && auth!=null && path.startsWith("/app")
+                && auth.getAuthorities().stream().anyMatch(a->a.getAuthority().equals("ROLE_PLATFORM_ADMIN"))
+                && !service.activePlatformAdministrator(auth.getName())) {
+            session.invalidate();
+            SecurityContextHolder.clearContext();
+            response.sendError(403,"Your platform access changed. Sign in again.");
+            return;
+        }
         if(service==null||auth==null||!auth.isAuthenticated()||session==null||!path.startsWith("/app")
                 ||path.equals("/app/select-account")||path.equals("/app/select-store")
+                ||(path.equals("/app/collaboration") && request.getParameterMap().isEmpty())||path.startsWith("/app/collaboration/personal/")
+                ||path.equals("/app/collaboration/board")||path.startsWith("/app/collaboration/board/")
                 ||auth.getAuthorities().stream().anyMatch(a->a.getAuthority().equals("ROLE_PLATFORM_ADMIN"))
                 ||!(session.getAttribute(AccountSelectionController.TENANT_ID) instanceof UUID tenant)) {
             chain.doFilter(request,response);return;

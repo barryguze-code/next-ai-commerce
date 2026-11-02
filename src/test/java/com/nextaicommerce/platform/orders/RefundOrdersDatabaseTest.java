@@ -14,7 +14,7 @@ class RefundOrdersDatabaseTest {
  @BeforeAll static void setup() throws Exception {
   schema="refund_test_"+UUID.randomUUID().toString().replace("-","");
   var ds=new DriverManagerDataSource("jdbc:postgresql://127.0.0.1:55432/next_ai_commerce_test?currentSchema="+schema,"postgres",java.nio.file.Files.readString(java.nio.file.Path.of(".local/database-password")).trim());
-  org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+  org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).locations(com.nextaicommerce.platform.testing.FixtureMigrations.location(schema)).load().migrate();
   jdbc=new JdbcTemplate(ds);tx=new TransactionTemplate(new DataSourceTransactionManager(ds));
  }
  @AfterAll static void cleanup(){if(jdbc!=null&&schema.matches("refund_test_[a-f0-9]{32}"))jdbc.execute("DROP SCHEMA "+schema+" CASCADE");}

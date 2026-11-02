@@ -58,7 +58,7 @@ class MarketplaceSkuCsvDatabaseTest {
   });
   when(list.mappingComponents(eq(tenant),eq(store),anyList())).thenReturn(Map.of());when(export.stock.stocks(any(),any(),any())).thenReturn(Map.of());when(export.refunds.fourWeeks(any(),any(),any())).thenReturn(Map.of());
   var request=new MarketplaceSkuCsvExport.Request("","ALL","status","asc",Map.of(),List.of("product-details","available"),Map.of());
-  var artifact=tx.execute(s->export.generate(tenant,store,request));assertThat(new String(artifact.bytes(),java.nio.charset.StandardCharsets.UTF_8)).contains("\"0000147\"").contains("\"7\"").doesNotContain(" units state\"");
+  var artifact=tx.execute(s->{jdbc.execute("SET LOCAL TIME ZONE 'UTC'");return export.generate(tenant,store,request);});assertThat(new String(artifact.bytes(),java.nio.charset.StandardCharsets.UTF_8)).contains("\"0000147\"").contains("\"7\"").doesNotContain(" units state\"");
   assertThat(jdbc.queryForObject("SELECT quantity FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=?",Integer.class,tenant,store)).isEqualTo(9);
   assertThat(jdbc.queryForObject("SELECT payload FROM amazon_inventory_snapshots",String.class)).isEqualTo("untouched historical snapshot");
  }

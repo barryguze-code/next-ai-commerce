@@ -19,8 +19,8 @@ public class ShopifyConnectionController {
         this.repository=repository;this.service=service;this.access=access;
     }
     @PostMapping("/app/connections/shopify")
-    String add(@RequestParam String displayName,@RequestParam String marketplaceIdentifier,HttpSession session,Authentication actor,RedirectAttributes redirect){
-        UUID tenant=(UUID)session.getAttribute(AccountSelectionController.TENANT_ID);access.require(tenant,null,actor);
+    String add(@RequestParam String displayName,@RequestParam String marketplaceIdentifier,@RequestParam(required=false) UUID accountId,HttpSession session,Authentication actor,RedirectAttributes redirect){
+        UUID tenant=(UUID)session.getAttribute(AccountSelectionController.TENANT_ID);tenant=repository.connectionDestination(tenant,accountId,actor.getName());access.require(tenant,null,actor);
         try{
             if(!service.enabled())throw new IllegalStateException("Shopify setup is not enabled in this environment yet.");
             repository.addShopifyConnection(tenant,displayName,marketplaceIdentifier);

@@ -40,7 +40,7 @@ public class HuddleService {
     public record ExpiredHuddle(UUID tenantId,HuddleView huddle) {}
 
     private static final class HuddleState {
-        final UUID id=UUID.randomUUID();
+        UUID id=UUID.randomUUID();
         final UUID tenantId;
         final String subjectType;
         final String subjectKey;
@@ -51,7 +51,7 @@ public class HuddleService {
         final Map<UUID,Participant> participants=new LinkedHashMap<>();
         final Set<UUID> joinedParticipantIds=new LinkedHashSet<>();
         final List<LiveMessage> messages=new ArrayList<>();
-        final Instant createdAt=Instant.now();
+        Instant createdAt=Instant.now();
         Instant expiresAt=createdAt.plus(IDLE_TTL);
         Instant endedAt;
         UUID savedReviewId;
@@ -69,9 +69,14 @@ public class HuddleService {
     private final CollaborationRepository collaboration;
     private final CollaborationNotificationWorker notifications;
     private final ObjectMapper json;
+    private final HuddlePersistenceRepository persistence;
 
     public HuddleService(CollaborationRepository collaboration,CollaborationNotificationWorker notifications,ObjectMapper json){
-        this.collaboration=collaboration;this.notifications=notifications;this.json=json;
+        this(collaboration,notifications,json,null);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public HuddleService(CollaborationRepository collaboration,CollaborationNotificationWorker notifications,ObjectMapper json,HuddlePersistenceRepository persistence){
+        this.collaboration=collaboration;this.notifications=notifications;this.json=json;this.persistence=persistence;
     }
 
     public HuddleView create(UUID tenantId,Participant creator,String subjectType,String subjectKey,String subjectLabel,
@@ -87,7 +92,7 @@ public class HuddleService {
                 long additional=unique.keySet().stream().filter(id->!existing.participants.containsKey(id)).count();
                 if(existing.participants.size()+additional>MAX_PARTICIPANTS)throw new IllegalArgumentException("Invite up to two teammates to a huddle.");
                 unique.values().forEach(person->{existing.participants.putIfAbsent(person.id(),person);existing.joinedParticipantIds.add(person.id());});
-                existing.expiresAt=Instant.now().plus(IDLE_TTL);return view(existing);
+                existing.joinedParticipantIds.add(creator.id());existing.expiresAt=Instant.now().plus(IDLE_TTL);return persist(existing);
             }
         }
         long tenantActive=huddles.values().stream().filter(huddle->{synchronized(huddle){return huddle.tenantId.equals(tenantId)&&huddle.endedAt==null;}}).count();
@@ -97,7 +102,7 @@ public class HuddleService {
         if(active>=MAX_ACTIVE_PER_USER)throw new IllegalArgumentException("Finish one of your active huddles before starting another.");
         String snapshot=validSnapshot(contextSnapshot);String safeParent=safeParentUrl(parentUrl);
         var state=new HuddleState(tenantId,safeType,safeKey,clean(subjectLabel,300,"Team workspace"),safeParent,snapshot,creator,unique.values());
-        huddles.put(state.id,state);return view(state);
+        huddles.put(state.id,state);return persist(state);
     }
 
     public HuddleView message(UUID tenantId,UUID huddleId,UUID senderId,String body){
@@ -108,13 +113,13 @@ public class HuddleService {
             if(state.messages.size()>=MAX_MESSAGES)throw new IllegalArgumentException("This huddle reached its live-message limit. Save it and continue in collaboration.");
             Participant sender=state.participants.get(senderId);
             state.messages.add(new LiveMessage(UUID.randomUUID(),sender.id(),sender.name(),sender.email(),clean,Instant.now()));
-            state.expiresAt=Instant.now().plus(IDLE_TTL);return view(state);
+            state.expiresAt=Instant.now().plus(IDLE_TTL);return persist(state);
         }
     }
 
     public HuddleView join(UUID tenantId,UUID huddleId,UUID participantId){
         HuddleState state=required(tenantId,huddleId);
-        synchronized(state){requireActiveParticipant(state,participantId);state.joinedParticipantIds.add(participantId);state.expiresAt=Instant.now().plus(IDLE_TTL);return view(state);}
+        synchronized(state){requireActiveParticipant(state,participantId);state.joinedParticipantIds.add(participantId);state.expiresAt=Instant.now().plus(IDLE_TTL);return persist(state);}
     }
 
     public UUID tenantForParticipant(UUID huddleId,UUID participantId){
@@ -130,29 +135,36 @@ public class HuddleService {
             long added=unique.keySet().stream().filter(id->!state.participants.containsKey(id)).count();
             if(state.participants.size()+added>MAX_PARTICIPANTS)throw new IllegalArgumentException("A huddle supports up to three people.");
             unique.values().forEach(p->{state.participants.putIfAbsent(p.id(),p);state.joinedParticipantIds.add(p.id());});
-            state.expiresAt=Instant.now().plus(IDLE_TTL);return view(state);
+            state.expiresAt=Instant.now().plus(IDLE_TTL);return persist(state);
         }
     }
 
     public HuddleView leave(UUID tenantId,UUID huddleId,UUID participantId){
         HuddleState state=required(tenantId,huddleId);
         synchronized(state){
-            requireActiveParticipant(state,participantId);state.participants.remove(participantId);state.joinedParticipantIds.remove(participantId);
-            if(state.participants.size()<2){state.endedAt=Instant.now();state.expiresAt=state.endedAt;}
-            return view(state);
+            requireActiveParticipant(state,participantId);state.joinedParticipantIds.remove(participantId);
+            return persist(state);
         }
     }
 
     public HuddleView end(UUID tenantId,UUID huddleId,UUID participantId){
         HuddleState state=required(tenantId,huddleId);
-        synchronized(state){requireActiveParticipant(state,participantId);state.endedAt=Instant.now();state.expiresAt=state.endedAt;return view(state);}
+        synchronized(state){requireActiveParticipant(state,participantId);if(!state.startedBy.id().equals(participantId))throw new IllegalArgumentException("Only the chat creator can end it for everyone.");state.endedAt=Instant.now();state.expiresAt=state.endedAt;return persist(state);}
     }
 
     public SaveResult save(UUID tenantId,UUID huddleId,UUID participantId,boolean closeConversation){
+        return save(tenantId,huddleId,participantId,closeConversation,"Saved chat",null,"America/Los_Angeles");
+    }
+    public SaveResult save(UUID tenantId,UUID huddleId,UUID participantId,boolean closeConversation,String title,java.time.LocalDate dueDate,String zone){
         HuddleState state=required(tenantId,huddleId);
         synchronized(state){
             if(!state.participants.containsKey(participantId))throw new IllegalArgumentException("This huddle is not available to your user.");
             if(state.savedReviewId!=null)return new SaveResult(view(state),state.savedReviewId);
+            if(!state.startedBy.id().equals(participantId))throw new IllegalArgumentException("Only the chat creator can save and end it for everyone.");
+            if(persistence!=null){
+                UUID task=persistence.convert(tenantId,view(state),participantId,title,dueDate,zone);
+                state.savedReviewId=task;state.endedAt=Instant.now();return new SaveResult(persist(state),task);
+            }
             if(state.saving)throw new IllegalArgumentException("This huddle is already being saved.");
             state.saving=true;
             try{
@@ -173,26 +185,26 @@ public class HuddleService {
     }
 
     public HuddleView find(UUID tenantId,UUID huddleId,UUID participantId){
-        HuddleState state=huddles.get(huddleId);if(state==null||!state.tenantId.equals(tenantId))return null;
+        HuddleState state=lookup(tenantId,huddleId);if(state==null||!state.tenantId.equals(tenantId))return null;
         synchronized(state){return state.participants.containsKey(participantId)?view(state):null;}
     }
 
     public List<HuddleView> forParticipant(UUID tenantId,UUID participantId){
+        if(persistence!=null)for(var stored:persistence.active(tenantId,participantId))huddles.putIfAbsent(stored.id(),restore(tenantId,stored));
         return huddles.values().stream().map(state->{synchronized(state){return state.tenantId.equals(tenantId)
-            &&state.endedAt==null&&state.participants.containsKey(participantId)?view(state):null;}})
+            &&state.endedAt==null&&state.joinedParticipantIds.contains(participantId)?view(state):null;}})
             .filter(java.util.Objects::nonNull).sorted((left,right)->right.createdAt().compareTo(left.createdAt())).toList();
     }
 
     public List<ExpiredHuddle> expire(Instant now){
         var expired=new ArrayList<ExpiredHuddle>();
         huddles.forEach((id,state)->{synchronized(state){
-            if(state.endedAt==null&&!state.expiresAt.isAfter(now)){state.endedAt=now;expired.add(new ExpiredHuddle(state.tenantId,view(state)));}
-            else if(state.endedAt!=null&&state.endedAt.plus(ENDED_RETENTION).isBefore(now))huddles.remove(id,state);
+            if(state.endedAt!=null&&state.endedAt.plus(ENDED_RETENTION).isBefore(now))huddles.remove(id,state);
         }});return expired;
     }
 
     private HuddleState required(UUID tenantId,UUID huddleId){
-        HuddleState state=huddles.get(huddleId);if(state==null||!state.tenantId.equals(tenantId))throw new IllegalArgumentException("This huddle is no longer available.");return state;
+        HuddleState state=lookup(tenantId,huddleId);if(state==null||!state.tenantId.equals(tenantId))throw new IllegalArgumentException("This huddle is no longer available.");return state;
     }
     private static void requireActiveParticipant(HuddleState state,UUID participantId){
         if(!state.participants.containsKey(participantId))throw new IllegalArgumentException("This huddle is not available to your user.");
@@ -201,7 +213,22 @@ public class HuddleService {
     private HuddleView view(HuddleState state){
         String status=state.savedReviewId!=null?"SAVED":state.endedAt!=null?"ENDED":"ACTIVE";
         return new HuddleView(state.id,state.subjectType,state.subjectKey,state.subjectLabel,state.parentUrl,state.contextSnapshot,
-            state.startedBy,List.copyOf(state.participants.values()),Set.copyOf(state.joinedParticipantIds),List.copyOf(state.messages),state.createdAt,state.expiresAt,status,state.savedReviewId);
+            state.startedBy,List.copyOf(state.participants.values()),Set.copyOf(state.joinedParticipantIds),List.copyOf(state.messages),state.createdAt,state.endedAt,status,state.savedReviewId);
+    }
+    private HuddleView persist(HuddleState state){
+        HuddleView result=view(state);
+        if(persistence!=null)try{persistence.save(state.tenantId,result);}catch(RuntimeException failure){huddles.remove(state.id,state);throw failure;}
+        return result;
+    }
+    private HuddleState lookup(UUID tenant,UUID id){
+        HuddleState state=huddles.get(id);
+        if(state==null&&persistence!=null){var stored=persistence.load(tenant,id);if(stored!=null){huddles.putIfAbsent(id,restore(tenant,stored));state=huddles.get(id);}}
+        return state;
+    }
+    private HuddleState restore(UUID tenant,HuddleView stored){
+        var state=new HuddleState(tenant,stored.subjectType(),stored.subjectKey(),stored.subjectLabel(),stored.parentUrl(),stored.contextSnapshot(),stored.startedBy(),stored.participants());
+        state.id=stored.id();state.createdAt=stored.createdAt();state.messages.addAll(stored.messages());state.joinedParticipantIds.clear();state.joinedParticipantIds.addAll(stored.joinedParticipantIds());state.savedReviewId=stored.savedReviewId();
+        if(!"ACTIVE".equals(stored.status()))state.endedAt=stored.expiresAt()==null?Instant.now():stored.expiresAt();return state;
     }
     private String validSnapshot(String value){
         if(value==null||value.isBlank())return "{}";if(value.length()>16_000)throw new IllegalArgumentException("The record snapshot is too large.");

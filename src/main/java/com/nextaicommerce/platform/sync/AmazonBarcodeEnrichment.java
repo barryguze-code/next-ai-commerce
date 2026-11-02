@@ -31,6 +31,8 @@ public class AmazonBarcodeEnrichment {
       SELECT l.marketplace_connection_id,l.marketplace_id,l.asin FROM amazon_listings l
       JOIN marketplace_connections c ON c.tenant_id=l.tenant_id AND c.id=l.marketplace_connection_id
       WHERE l.tenant_id=? AND c.channel='AMAZON' AND c.status='ACTIVE' AND l.platform_status='VISIBLE'
+        AND EXISTS (SELECT 1 FROM marketplace_connection_credentials credentials
+          WHERE credentials.tenant_id=l.tenant_id AND credentials.marketplace_connection_id=l.marketplace_connection_id)
         AND nullif(l.asin,'') IS NOT NULL AND nullif(l.marketplace_id,'') IS NOT NULL
         AND (l.catalog_barcodes_checked_at IS NULL OR l.catalog_barcodes_asin IS DISTINCT FROM l.asin
           OR l.catalog_barcodes_checked_at<now()-interval '30 days')

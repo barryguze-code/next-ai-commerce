@@ -100,3 +100,10 @@ html[data-theme=dark] .sidebar-huddle-menu,html[data-theme=dark] .sidebar-huddle
 @media(prefers-reduced-motion:reduce){.sidebar-collaboration.is-ringing .chat-sound-wave{animation:none}}
 
 #contextual-thread-dialog[data-scope=GLOBAL_PRODUCT] :is([data-thread-tab=PRIVATE_NOTE],.thread-assignment,[data-thread-assign-self],[data-edit-due],.conversation-history-link){display:none!important}
+/* CD-approved size for the owner's original-source control only. */
+#contextual-thread-dialog #thread-parent-link{width:54px;height:54px;flex:0 0 54px;padding:0}
+#contextual-thread-dialog #thread-parent-link>img{width:48px;height:48px;max-width:100%;max-height:100%;object-fit:contain}
+@media(max-width:650px){
+  #contextual-thread-dialog #thread-parent-link{width:43px;height:43px;flex-basis:43px}
+  #contextual-thread-dialog #thread-parent-link>img{width:38px;height:38px}
+}

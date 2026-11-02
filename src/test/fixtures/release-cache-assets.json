@@ -21,7 +21,7 @@
     "/js/table-widget.js",
     "/js/mapping-widget.js"
   ],
-  "reference_count": 39,
+  "reference_count": 41,
   "templates": [
     "carrier-connections.html",
     "collaboration.html",
@@ -32,6 +32,7 @@
     "inventory.html",
     "marketplace-skus.html",
     "orders.html",
+    "personal-collaboration.html",
     "physical-count-history.html",
     "receiving-work.html",
     "receiving-workspace.html"
@@ -49,13 +50,13 @@
     "/js/background-jobs.js": "1.7.1",
     "/js/buy-shipping.js": "shopify-parity-1",
     "/js/marketplace-sku-design.js": "1.7.1",
-    "/js/order-design.js": "pickup-truck-1",
+    "/js/order-design.js": "1.10.4",
     "/js/order-smart-filters.js": "1.7.1",
     "/js/platform-controls.js": "1.7.1",
     "/js/profit.js": "1.9.7-shared-profit-uat",
     "/js/receiving-work.js": "20261029-expiry-year",
     "/js/table-data-tools.js": "shopify-orders-1",
-    "/js/table-widget.js": "1.9.1",
+    "/js/table-widget.js": "1.11.0",
     "/js/mapping-widget.js": "1.9.1"
   }
 }

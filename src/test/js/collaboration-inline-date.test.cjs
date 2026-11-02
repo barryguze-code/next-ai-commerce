@@ -11,7 +11,7 @@ test('due dates edit inline with masking, cancellation, validation and recoverab
   await page.route('**/app/collaboration/reviews/42/due-date',async r=>{posted=r.request().postData();await r.fulfill({status:fail?500:200,contentType:'application/json',body:JSON.stringify(fail?{}:{id:42,status:'ACTIVE',dueDate:posted.includes('2026-12-15')?'2026-12-15':null,dueAt:null})});});
   await page.goto('http://dates.test/');
   const fragment=fs.readFileSync('src/main/resources/templates/fragments/collaboration-thread.html','utf8');
-  const editor=fragment.slice(fragment.indexOf('<div id="collaboration-due-editor"'),fragment.indexOf('</th:block>'));
+  const editor=fragment.slice(fragment.indexOf('<div th:fragment="dueEditor"'),fragment.indexOf('</th:block>'));
   await page.setContent(`<body class="app-page"><table><tr data-review-id="42" data-due-at="" data-status="ACTIVE"><td><button data-edit-due data-review-id="42"><span>No due date</span></button><small data-overdue-label hidden>Overdue</small></td></tr></table>${editor}</body>`);
   for(const name of ['collaboration-task-dates','short-date-input'])await page.addStyleTag({path:path.resolve(`src/main/resources/static/css/${name}.css`)});
   for(const name of ['short-date-input','collaboration-task-dates'])await page.addScriptTag({path:path.resolve(`src/main/resources/static/js/${name}.js`)});

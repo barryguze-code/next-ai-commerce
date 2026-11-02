@@ -21,21 +21,22 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 public class InvitationController {
     private static final Logger log = LoggerFactory.getLogger(InvitationController.class);
     private final InvitationWorkflowService workflow;
+    private final WorkspaceAccessRepository accounts;
 
-    InvitationController(InvitationWorkflowService workflow) {
-        this.workflow = workflow;
+    InvitationController(InvitationWorkflowService workflow,WorkspaceAccessRepository accounts) {
+        this.workflow = workflow; this.accounts=accounts;
     }
 
     @PostMapping("/app/users/invitations")
     String invite(@RequestParam String email, @RequestParam InvitationRole role,
-            @RequestParam(required = false) List<UUID> storeIds,
-            Authentication authentication, HttpSession session, RedirectAttributes redirect) {
-        UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
-        String tenantName = (String) session.getAttribute(AccountSelectionController.TENANT_NAME);
+            @RequestParam(required = false) List<UUID> storeIds,@RequestParam(defaultValue="ACCOUNT") String accessKind,
+            @RequestParam(required=false) UUID account,Authentication authentication, HttpSession session, RedirectAttributes redirect) {
+        UUID tenantId = account!=null?account:(UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
+        String tenantName = tenantId==null?null:accounts.listAccountOptions(authentication.getName(),accounts.isCurrentPlatformAdmin(authentication.getName())).stream().filter(a->a.id().equals(tenantId)).map(WorkspaceAccessRepository.AccountOption::name).findFirst().orElseThrow(()->new org.springframework.security.access.AccessDeniedException("Account unavailable."));
         if (tenantId == null || tenantName == null) return "redirect:/app/select-account";
         try {
             workflow.invite(tenantId, tenantName, authentication.getName(), email, role,
-                storeIds == null ? java.util.Set.of() : new LinkedHashSet<>(storeIds));
+                storeIds == null ? java.util.Set.of() : new LinkedHashSet<>(storeIds),accessKind);
             redirect.addFlashAttribute("invitationSuccess", "Invitation emailed to " + email.trim().toLowerCase() + ".");
         } catch (InvitationException exception) {
             log.warn("Invitation declined tenantId={} actor={} reason={}",
@@ -46,14 +47,14 @@ public class InvitationController {
             redirect.addFlashAttribute("invitationError",
                 "We couldn't send the invitation. Please try again or contact support.");
         }
-        return "redirect:/app/users";
+        return "redirect:/app/users?account="+tenantId;
     }
 
     @PostMapping("/app/users/invitations/{invitationId}/resend")
     String resend(@org.springframework.web.bind.annotation.PathVariable UUID invitationId,
-            Authentication authentication, HttpSession session, RedirectAttributes redirect) {
-        UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
-        String tenantName = (String) session.getAttribute(AccountSelectionController.TENANT_NAME);
+            @RequestParam(required=false) UUID account,Authentication authentication, HttpSession session, RedirectAttributes redirect) {
+        UUID tenantId = account!=null?account:(UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
+        String tenantName = tenantId==null?null:accounts.listAccountOptions(authentication.getName(),accounts.isCurrentPlatformAdmin(authentication.getName())).stream().filter(a->a.id().equals(tenantId)).map(WorkspaceAccessRepository.AccountOption::name).findFirst().orElseThrow(()->new org.springframework.security.access.AccessDeniedException("Account unavailable."));
         if (tenantId == null || tenantName == null) return "redirect:/app/select-account";
         try {
             workflow.resend(tenantId, tenantName, authentication.getName(), invitationId);
@@ -67,13 +68,13 @@ public class InvitationController {
                 tenantId, invitationId, authentication.getName(), exception);
             redirect.addFlashAttribute("invitationError", "We couldn't resend the invitation. Please try again.");
         }
-        return "redirect:/app/users";
+        return "redirect:/app/users?account="+tenantId;
     }
 
     @PostMapping("/app/users/invitations/{invitationId}/revoke")
     String revoke(@org.springframework.web.bind.annotation.PathVariable UUID invitationId,
-            Authentication authentication, HttpSession session, RedirectAttributes redirect) {
-        UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
+            @RequestParam(required=false) UUID account,Authentication authentication, HttpSession session, RedirectAttributes redirect) {
+        UUID tenantId = account!=null?account:(UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
         if (tenantId == null) return "redirect:/app/select-account";
         try {
             workflow.revoke(tenantId, authentication.getName(), invitationId);
@@ -87,7 +88,7 @@ public class InvitationController {
                 tenantId, invitationId, authentication.getName(), exception);
             redirect.addFlashAttribute("invitationError", "We couldn't revoke the invitation. Please try again.");
         }
-        return "redirect:/app/users";
+        return "redirect:/app/users?account="+tenantId;
     }
 
     @GetMapping("/invitation/accept")

@@ -148,7 +148,7 @@ public class CollaborationController {
             String safeBody=body==null||body.isBlank()?null:clean(body,4000);
             var posted=repository.reply(tenantId,reviewId,authentication.getName(),safeBody,type,status,files);
             if("CLOSED".equals(status))mentions.queueCompletion(tenantId,posted,authentication.getName());
-            else if("TEAM_CHAT".equals(type))mentions.queue(tenantId,posted,safeBody,authentication.getName());
+            else if("TEAM_CHAT".equals(type))mentions.queueReply(tenantId,posted,safeBody,authentication.getName());
         }catch(IllegalArgumentException ex){redirect.addFlashAttribute("collaborationError",ex.getMessage());}
         catch(Exception ex){redirect.addFlashAttribute("collaborationError","The message could not be saved. Please try again.");}
         return "redirect:"+safeReturn(returnTo);
@@ -234,8 +234,8 @@ public class CollaborationController {
         catch(IllegalArgumentException ex){throw ex;}catch(Exception ex){throw new IllegalArgumentException("The record snapshot is invalid.");}
     }
     private static UUID tenant(HttpSession session){Object selected=session.getAttribute(AccountSelectionController.TENANT_ID);if(selected instanceof UUID tenantId)return tenantId;throw new IllegalArgumentException("Choose an account first.");}
-    private static String normalizeMessageType(String value){return "PRIVATE_NOTE".equalsIgnoreCase(value)?"PRIVATE_NOTE":"TEAM_CHAT";}
-    private static String normalizeView(String value){String view=value==null?"ACTIVE":value.toUpperCase(Locale.ROOT);return Set.of("ACTIVE","MENTIONS","PRIVATE","CLOSED","ALL").contains(view)?view:"ACTIVE";}
+    static String normalizeMessageType(String value){return "PRIVATE_NOTE".equalsIgnoreCase(value)?"PRIVATE_NOTE":"TEAM_CHAT";}
+    private static String normalizeView(String value){String view=value==null?"ACTIVE":value.toUpperCase(Locale.ROOT);return Set.of("ACTIVE","MENTIONS","ASSIGNED","PRIVATE","CLOSED","ALL").contains(view)?view:"ACTIVE";}
     private static String clean(String value,int max){String result=value==null?"":value.trim();if(result.length()>max)throw new IllegalArgumentException("Keep the conversation details concise.");return result;}
     private static String blankToNull(String value){return value==null||value.isBlank()?null:value.trim();}
     private static String safeParentUrl(String value){return value!=null&&value.startsWith("/app")&&!value.startsWith("//")?value:null;}

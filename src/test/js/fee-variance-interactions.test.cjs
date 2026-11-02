@@ -19,7 +19,11 @@ async function fixture(options={}){
   boundary_at:'2026-10-20T10:00:00Z',charge_received_at:'2026-10-21T10:00:00Z'});
  await page.route('**/*',async route=>{
   const request=route.request(),url=new URL(request.url());
-  if(url.pathname==='/app/fee-variance/visible')return route.fulfill({json:[]});
+  if(url.pathname==='/app/fee-variance/visible'){
+   const facts=['A','B'].map(letter=>url.searchParams.get('kind')==='SKU'
+    ? {seller_sku:'SKU-'+letter,affected_orders:1} : row('ORDER-'+letter));
+   return route.fulfill({json:facts});
+  }
   if(url.pathname==='/app/fee-variance/approve'){
    const payload=request.postDataJSON();requests.push(payload);postSeen.resolve();
    if(options.delayApproval)await postRelease.promise;

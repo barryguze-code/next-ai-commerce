@@ -24,6 +24,17 @@ class CollaborationMentionServiceTest {
             "I should not email myself @barry.guze",members,"BARRY@example.com")).isEmpty();
     }
 
+    @Test void replyMentionsNotifyWithoutCreatingAssignments(){
+        var repository=mock(CollaborationRepository.class);var notifications=mock(CollaborationNotificationWorker.class);
+        var service=new CollaborationMentionService(repository,notifications);
+        UUID account=UUID.randomUUID(),review=UUID.randomUUID(),message=UUID.randomUUID(),recipient=UUID.randomUUID();
+        when(repository.members(account)).thenReturn(List.of(new CollaborationRepository.Member(recipient,"Teammate","other@example.test","teammate")));
+        when(repository.queueMentions(account,review,message,java.util.Set.of(recipient))).thenReturn(1);
+        service.queueReply(account,new CollaborationRepository.PostedMessage(review,message),"Please check @teammate","sender@example.test");
+        verify(repository).queueMentions(account,review,message,java.util.Set.of(recipient));verify(notifications).deliverAsync(account);
+        org.mockito.Mockito.verify(repository,org.mockito.Mockito.never()).assign(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anySet(),org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
     @Test
     void completingAConversationQueuesEmailForEveryOtherParticipant() {
         var repository=mock(CollaborationRepository.class);

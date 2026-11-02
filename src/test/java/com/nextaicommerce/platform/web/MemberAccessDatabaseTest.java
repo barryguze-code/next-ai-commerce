@@ -25,7 +25,7 @@ class MemberAccessDatabaseTest {
         postgres=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();url=postgres.getJdbcUrl("postgres","postgres");}
         var source=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);
         jdbc=new JdbcTemplate(source);tx=new TransactionTemplate(new DataSourceTransactionManager(source));
-        Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+        Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations(com.nextaicommerce.platform.testing.FixtureMigrations.location(schema)).load().migrate();
     }
     @AfterAll static void cleanup() throws Exception {
         if(jdbc!=null&&schema!=null&&schema.matches("member_access_test_[a-f0-9]{32}"))jdbc.execute("DROP SCHEMA IF EXISTS "+schema+" CASCADE");
@@ -40,6 +40,42 @@ class MemberAccessDatabaseTest {
             jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'ADMIN'),(?,?,'ADMIN'),(?,?,'VIEWER')",tenant,admin,tenant,user,other,user);
             for(UUID c:List.of(store,second,foreign))jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,inventory_activated_at,reporting_timezone) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test://none','ACTIVE','Test store',now(),'America/Los_Angeles')",c,c.equals(foreign)?other:tenant,c.toString());
             jdbc.update("INSERT INTO membership_store_access(tenant_id,user_id,marketplace_connection_id,granted_by) VALUES (?,?,?,?),(?,?,?,?),(?,?,?,?)",tenant,user,store,admin,tenant,user,second,admin,other,user,foreign,admin);
+        });
+    }
+    @Test void connectionDisplayRenameIsTenantScopedAndPreservesIdentityAndState(){
+        var before=jdbc.queryForMap("SELECT * FROM marketplace_connections WHERE id=?",store);
+        tx.executeWithoutResult(t->access.renameConnection(tenant,store,"  Renamed store  "));
+        var after=jdbc.queryForMap("SELECT * FROM marketplace_connections WHERE id=?",store);
+        assertThat(after.remove("display_name")).isEqualTo("Renamed store");before.remove("display_name");after.remove("updated_at");before.remove("updated_at");assertThat(after).isEqualTo(before);
+        assertThatThrownBy(()->tx.executeWithoutResult(t->access.renameConnection(other,store,"Wrong account"))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->tx.executeWithoutResult(t->access.renameConnection(tenant,store," "))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(jdbc.queryForObject("SELECT display_name FROM marketplace_connections WHERE id=?",String.class,store)).isEqualTo("Renamed store");
+    }
+
+    @Test void businessDetailsAreExplicitScopedAndAuditedWithoutAddress() {
+        assertThatThrownBy(()->tx.executeWithoutResult(s->access.saveBusinessDetails(tenant,actor,"Public name","Legal","Private address",null))).isInstanceOf(AccessDeniedException.class);
+        jdbc.update("INSERT INTO platform_administrators(user_id) VALUES (?)",admin);
+        tx.executeWithoutResult(s->{
+            assertThat(access.businessDetails(tenant,actor).name()).isNull();
+            access.saveBusinessDetails(tenant,actor,"Public name","Legal","Private address",null);
+            assertThat(access.businessDetails(tenant,actor).address()).isEqualTo("Private address");
+            assertThat(access.businessDetails(other,actor).address()).isNull();
+            assertThat(jdbc.queryForObject("SELECT details::text FROM audit_events WHERE tenant_id=? AND action='BUSINESS_DETAILS_UPDATED'",String.class,tenant))
+                .contains("display_name","legal_business_name","registered_business_address").doesNotContain("Private address","Legal");
+        });
+    }
+    @Test void directoryOmitsGrantAndContactMetadataAndRevokedStaffCannotWrite() {
+        var visible=tx.execute(s->access.directoryMembers(tenant));
+        assertThat(visible).allSatisfy(m->{assertThat(m.email()).isEmpty();assertThat(m.role()).isEmpty();assertThat(m.storeIds()).isEmpty();});
+        jdbc.update("INSERT INTO platform_administrators(user_id,active,revoked_at) VALUES (?,false,now())",admin);
+        assertThatThrownBy(()->tx.executeWithoutResult(s->access.saveBusinessDetails(other,actor,"Public name","Forbidden","",null))).isInstanceOf(AccessDeniedException.class);
+    }
+    @Test void countMatchesDirectoryWithOverlappingStaffAndIndependentStaff(){
+        jdbc.update("INSERT INTO platform_administrators(user_id) VALUES (?),(?)",admin,user);
+        tx.executeWithoutResult(s->{
+            var row=access.listAllAccounts().stream().filter(a->a.id().equals(other)).findFirst().orElseThrow();
+            assertThat(row.users()).isEqualTo(access.listMembers(other).size());
+            assertThat(access.listMembers(other)).extracting(WorkspaceAccessRepository.MemberView::id).doesNotHaveDuplicates().contains(admin,user);
         });
     }
     @Test void selectedStoreRevocationWorksForAdminAndPreservesOtherAccount(){

@@ -38,3 +38,7 @@ html body.app-page .collaboration-search input[type=search]{height:24px!importan
 .collaboration-record-choices button:hover,.collaboration-record-choices button[aria-pressed=true]{background:var(--ui-action-soft);color:var(--ui-action-text)}
 .collaboration-record-filter summary:focus-visible,.collaboration-record-choices button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .collaboration-card:has(.collaboration-record-filter[open]){overflow:visible}
+
+/* Keep the page introduction compact without squeezing its text. */
+.collaboration-workspace .workspace-header>div:first-child{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px 16px;min-width:0}
+.collaboration-workspace .workspace-header .page-intro{margin:0;max-width:none}

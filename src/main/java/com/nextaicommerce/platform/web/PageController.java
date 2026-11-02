@@ -27,7 +27,7 @@ public class PageController {
         addAccessModel(authentication, model);
         UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
         var syncStatuses=repository.listCurrentSyncStatuses(tenantId).stream()
-            .filter(sync -> !"COMPLETED".equals(sync.status()) && !"ENRICHING".equals(sync.status()))
+            .filter(sync -> "QUEUED".equals(sync.status()) || "RUNNING".equals(sync.status()))
             .toList();
         model.addAttribute("syncStatuses",syncStatuses);
         model.addAttribute("syncInProgress",syncStatuses.stream().anyMatch(sync->
@@ -39,16 +39,33 @@ public class PageController {
     }
 
     @GetMapping("/app/users")
-    String users(Authentication authentication, HttpSession session, Model model) {
-        if (!addTenantModel(session, model)) return "redirect:/app/select-account";
+    String users(Authentication authentication, HttpSession session, Model model,
+            @RequestParam(required=false) UUID account,@RequestParam(defaultValue="false") boolean invite) {
         addAccessModel(authentication, model);
-        UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
-        if(!repository.canAdministerAccount(tenantId,authentication.getName(),authentication.getAuthorities().stream().anyMatch(a->a.getAuthority().equals("ROLE_PLATFORM_ADMIN"))))
-            throw new org.springframework.security.access.AccessDeniedException("Only this account's administrators can manage users.");
-        String tenantName = (String) session.getAttribute(AccountSelectionController.TENANT_NAME);
-        var members = repository.listMembers(tenantId);
-        var invitationRows = repository.listInvitations(tenantId);
-        var stores = repository.listConnections(tenantId, tenantName);
+        String email=authentication.getName();
+        boolean staff=repository.isCurrentPlatformAdmin(email);
+        var choices=repository.listAccountOptions(email,staff);
+        UUID workspace=(UUID)session.getAttribute(AccountSelectionController.TENANT_ID);
+        UUID target=account==null?workspace:account;
+        if(target==null) return "redirect:/app/select-account";
+        var selected=choices.stream().filter(a->a.id().equals(target)).findFirst()
+            .orElseThrow(()->new org.springframework.security.access.AccessDeniedException("This account is unavailable."));
+        boolean manage=repository.canAdministerAccount(target,email,staff);
+        model.addAttribute("selectedAccountId",target);
+        model.addAttribute("selectedAccountName",selected.name());
+        model.addAttribute("workspaceScope",workspace);
+        model.addAttribute("filterAccounts",choices);
+        model.addAttribute("manageFilteredAccount",manage);
+        model.addAttribute("openInvitation",invite && manage);
+        model.addAttribute("canInviteHome",manage && repository.canInviteHome(target,email));
+        var permittedStores=selected.stores().stream().map(WorkspaceAccessRepository.ConnectionView::id).collect(Collectors.toSet());
+        var members = manage?repository.listMembers(target).stream().map(m->{
+            var visible=m.storeIds().stream().filter(permittedStores::contains).toList();
+            return new WorkspaceAccessRepository.MemberView(m.id(),m.displayName(),m.email(),m.role(),m.status(),visible.size(),
+                visible,m.protectedMember() || visible.size()!=m.storeIds().size());
+        }).toList():repository.directoryMembers(target);
+        var invitationRows = manage?repository.listInvitations(target):java.util.List.<WorkspaceAccessRepository.InvitationView>of();
+        var stores = selected.stores();
         model.addAttribute("members", members);
         model.addAttribute("invitations", invitationRows);
         model.addAttribute("activeUsers", members.stream().filter(member -> "ACTIVE".equals(member.status())).count());

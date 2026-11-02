@@ -42,3 +42,8 @@ for(const id of ['shopify-credential-form','shopify-verify-form','shopify-permis
 }
 const retry=document.getElementById('shopify-connection-dialog')?.dataset.retryId;
 if(retry){const button=[...document.querySelectorAll('[data-channel="SHOPIFY"][data-id]')].find(b=>b.dataset.id===retry);if(button)openShopifySetup(button);}
+
+(()=>{const dialog=document.getElementById('connection-name-dialog');if(!dialog)return;let trigger;
+ document.querySelectorAll('[data-edit-connection-name]').forEach(button=>button.addEventListener('click',()=>{trigger=button;dialog.querySelector('[name=id]').value=button.dataset.id;dialog.querySelector('[name=displayName]').value=button.dataset.name;dialog.showModal();}));
+ dialog.querySelectorAll('[data-close-connection-name]').forEach(button=>button.onclick=()=>dialog.close());dialog.addEventListener('close',()=>trigger?.focus());
+})();

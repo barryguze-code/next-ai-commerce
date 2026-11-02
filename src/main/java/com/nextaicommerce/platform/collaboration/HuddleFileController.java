@@ -22,13 +22,19 @@ public class HuddleFileController {
  private final HuddleService huddles;
  private final CollaborationRepository repository;
  private final HuddleWebSocketHandler socket;
- public HuddleFileController(HuddleService huddles,CollaborationRepository repository,HuddleWebSocketHandler socket){this.huddles=huddles;this.repository=repository;this.socket=socket;}
+ private final HuddlePersistenceRepository persistence;
+ public HuddleFileController(HuddleService huddles,CollaborationRepository repository,HuddleWebSocketHandler socket){this(huddles,repository,socket,null);}
+ @org.springframework.beans.factory.annotation.Autowired
+ public HuddleFileController(HuddleService huddles,CollaborationRepository repository,HuddleWebSocketHandler socket,HuddlePersistenceRepository persistence){this.huddles=huddles;this.repository=repository;this.socket=socket;this.persistence=persistence;}
  private Access access(UUID room,HttpSession session,Authentication auth){
   if(!(session.getAttribute(AccountSelectionController.TENANT_ID) instanceof UUID selected))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
   var member=repository.currentMember(selected,auth.getName());if(member==null)throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+  var permitted=repository.huddleTenants(auth.getName());
   UUID tenant=huddles.tenantForParticipant(room,member.id());
-  if(tenant==null||!repository.huddleTenants(auth.getName()).contains(tenant))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+  if(tenant==null)tenant=permitted.stream().filter(account->huddles.find(account,room,member.id())!=null).findFirst().orElse(null);
+  if(tenant==null||!permitted.contains(tenant))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
   var view=huddles.find(tenant,room,member.id());if(view==null||!"ACTIVE".equals(view.status()))throw new ResponseStatusException(HttpStatus.GONE);
+  if(!view.joinedParticipantIds().contains(member.id()))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
   return new Access(tenant,member.id(),view);
  }
  static String fileType(byte[] bytes){
@@ -46,14 +52,14 @@ public class HuddleFileController {
   cleanup();long total=files.values().stream().mapToLong(f->f.bytes.length).sum(),roomTotal=files.values().stream().filter(f->f.room.equals(room)).mapToLong(f->f.bytes.length).sum();
   if(total+file.getSize()>64*1024*1024||roomTotal+file.getSize()>8*1024*1024)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Temporary file storage is full. Use saved collaboration for more files.");
   byte[] bytes=file.getBytes();String type=fileType(bytes),name=Optional.ofNullable(file.getOriginalFilename()).orElse("Attachment").replaceAll("[\\r\\n\\\\/]","_");if(name.length()>120)name=name.substring(0,120);
-  UUID id=UUID.randomUUID();files.put(id,new File(room,access.tenant,name,type,bytes,Instant.now().plusSeconds(2700)));
+  UUID id=persistence==null?UUID.randomUUID():persistence.file(access.tenant,room,name,type,bytes);if(persistence==null)files.put(id,new File(room,access.tenant,name,type,bytes,Instant.MAX));
   try{var updated=huddles.message(access.tenant,room,access.user,"Shared file: "+name+"\n/app/huddles/"+room+"/files/"+id);socket.publishFile(access.tenant,updated);}
   catch(RuntimeException failure){files.remove(id);throw failure;}
-  return Map.of("message","File shared. Temporary files expire after 45 minutes.");
+  return Map.of("message","File shared and retained with this chat.");
  }
  @GetMapping("/app/huddles/{room}/files/{id}") @ResponseBody
  public ResponseEntity<byte[]> download(@PathVariable UUID room,@PathVariable UUID id,HttpSession session,Authentication auth){
-  access(room,session,auth);var file=files.get(id);if(file==null||!file.room.equals(room)||file.expires.isBefore(Instant.now()))throw new ResponseStatusException(HttpStatus.GONE);
+  var access=access(room,session,auth);var file=files.get(id);if(persistence!=null){var saved=persistence.file(access.tenant,room,id);file=saved==null?null:new File(room,access.tenant,saved.name(),saved.type(),saved.bytes(),Instant.MAX);}if(file==null||!file.room.equals(room)||file.expires.isBefore(Instant.now()))throw new ResponseStatusException(HttpStatus.GONE);
   return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.parseMediaType(file.type))
    .header("X-Content-Type-Options","nosniff").header("Content-Security-Policy","default-src 'none'; sandbox")
    .header(HttpHeaders.CONTENT_DISPOSITION,ContentDisposition.attachment().filename(file.name,java.nio.charset.StandardCharsets.UTF_8).build().toString()).body(file.bytes);

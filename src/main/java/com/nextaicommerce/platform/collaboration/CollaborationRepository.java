@@ -51,12 +51,36 @@ public class CollaborationRepository {
     private static final String SHOPIFY_STORE_ACCESS="""
         EXISTS(SELECT 1 FROM app_users viewer WHERE lower(viewer.email)=lower(%s) AND viewer.status='ACTIVE'
           AND (EXISTS(SELECT 1 FROM platform_administrators admin WHERE admin.user_id=viewer.id AND admin.active)
-            OR EXISTS(SELECT 1 FROM tenant_memberships member WHERE member.tenant_id=sv.tenant_id AND member.user_id=viewer.id
+            OR EXISTS(SELECT 1 FROM effective_account_memberships member WHERE member.tenant_id=sv.tenant_id AND member.user_id=viewer.id
               AND (member.role='OWNER' OR (member.role='ADMIN' AND NOT member.stores_restricted)
                 OR EXISTS(SELECT 1 FROM membership_store_access grant_store WHERE grant_store.tenant_id=member.tenant_id AND grant_store.user_id=member.user_id AND grant_store.marketplace_connection_id=sv.marketplace_connection_id)))))
         """.formatted(VIEWER);
-    private static final String SHOPIFY_THREAD_ACCESS="(review.subject_type<>'MARKETPLACE_SKU' OR review.subject_key NOT LIKE 'SHOPIFY:%' OR EXISTS(SELECT 1 FROM shopify_variants sv JOIN marketplace_connections sc ON sc.tenant_id=sv.tenant_id AND sc.id=sv.marketplace_connection_id AND sc.channel='SHOPIFY' AND sc.status<>'DISABLED' WHERE sv.tenant_id=review.tenant_id AND 'SHOPIFY:'||sv.id::text=review.subject_key AND "+SHOPIFY_STORE_ACCESS+")) AND (review.subject_type<>'ORDER' OR review.subject_key NOT LIKE 'SHOPIFY_ORDER:%' OR EXISTS(SELECT 1 FROM shopify_orders sv JOIN marketplace_connections sc ON sc.tenant_id=sv.tenant_id AND sc.id=sv.marketplace_connection_id AND sc.channel='SHOPIFY' AND sc.status<>'DISABLED' WHERE sv.tenant_id=review.tenant_id AND 'SHOPIFY_ORDER:'||sv.id::text=review.subject_key AND "+SHOPIFY_STORE_ACCESS+"))";
-    private static final String VISIBLE_THREAD="("+"""
+    private static final String LEGACY_AMAZON_STORES="""
+        SELECT listing.marketplace_connection_id store FROM amazon_listings listing
+        WHERE review.subject_type='MARKETPLACE_SKU' AND listing.tenant_id=review.tenant_id AND listing.seller_sku=review.subject_key
+        UNION
+        SELECT orders.marketplace_connection_id store FROM amazon_orders orders
+        WHERE review.subject_type='ORDER' AND orders.tenant_id=review.tenant_id AND orders.amazon_order_id=review.subject_key
+        """;
+    private static final String SOURCE_STORE="coalesce(review.marketplace_connection_id,(SELECT CASE WHEN count(*)=1 THEN (array_agg(origin.store))[1] END FROM ("+LEGACY_AMAZON_STORES+") origin))";
+    // A source conversation never grants access to another marketplace store.
+    private static final String REVIEW_STORE_ACCESS="""
+        ((review.marketplace_connection_id IS NULL AND review.subject_type NOT IN ('ORDER','MARKETPLACE_SKU')) OR
+        (SOURCE_STORE IS NULL AND EXISTS(SELECT 1 FROM app_users unrestricted WHERE lower(unrestricted.email)=lower(%s) AND unrestricted.status='ACTIVE'
+          AND (EXISTS(SELECT 1 FROM platform_administrators admin WHERE admin.user_id=unrestricted.id AND admin.active)
+            OR EXISTS(SELECT 1 FROM effective_account_memberships member WHERE member.tenant_id=review.tenant_id AND member.user_id=unrestricted.id
+              AND (member.role='OWNER' OR (member.role='ADMIN' AND NOT member.stores_restricted)))))) OR EXISTS(
+          SELECT 1 FROM marketplace_connections connection WHERE connection.tenant_id=review.tenant_id
+          AND connection.id=SOURCE_STORE AND EXISTS(
+            SELECT 1 FROM app_users viewer WHERE lower(viewer.email)=lower(%s) AND viewer.status='ACTIVE'
+            AND (EXISTS(SELECT 1 FROM platform_administrators admin WHERE admin.user_id=viewer.id AND admin.active)
+              OR EXISTS(SELECT 1 FROM effective_account_memberships member WHERE member.tenant_id=review.tenant_id AND member.user_id=viewer.id
+                AND (member.role='OWNER' OR (member.role='ADMIN' AND NOT member.stores_restricted)
+                  OR EXISTS(SELECT 1 FROM membership_store_access grant_store WHERE grant_store.tenant_id=member.tenant_id
+                    AND grant_store.user_id=member.user_id AND grant_store.marketplace_connection_id=SOURCE_STORE)))))))
+        """.replace("SOURCE_STORE",SOURCE_STORE).formatted(VIEWER,VIEWER);
+    private static final String SHOPIFY_THREAD_ACCESS=REVIEW_STORE_ACCESS+" AND (review.subject_type<>'MARKETPLACE_SKU' OR review.subject_key NOT LIKE 'SHOPIFY:%' OR EXISTS(SELECT 1 FROM shopify_variants sv JOIN marketplace_connections sc ON sc.tenant_id=sv.tenant_id AND sc.id=sv.marketplace_connection_id AND sc.channel='SHOPIFY' AND sc.status<>'DISABLED' WHERE sv.tenant_id=review.tenant_id AND 'SHOPIFY:'||sv.id::text=review.subject_key AND "+SHOPIFY_STORE_ACCESS+")) AND (review.subject_type<>'ORDER' OR review.subject_key NOT LIKE 'SHOPIFY_ORDER:%' OR EXISTS(SELECT 1 FROM shopify_orders sv JOIN marketplace_connections sc ON sc.tenant_id=sv.tenant_id AND sc.id=sv.marketplace_connection_id AND sc.channel='SHOPIFY' AND sc.status<>'DISABLED' WHERE sv.tenant_id=review.tenant_id AND 'SHOPIFY_ORDER:'||sv.id::text=review.subject_key AND "+SHOPIFY_STORE_ACCESS+"))";
+    static final String VISIBLE_THREAD="("+"""
         EXISTS (SELECT 1 FROM collaboration_messages visible_message
                 WHERE visible_message.review_id=review.id AND visible_message.message_type='TEAM_CHAT')
         OR EXISTS (SELECT 1 FROM collaboration_messages private_message
@@ -85,8 +109,8 @@ public class CollaborationRepository {
         review.context_snapshot::text,review.parent_url,
         EXISTS (SELECT 1 FROM collaboration_mentions mine JOIN app_users me ON me.id=mine.mentioned_user_id
                 WHERE mine.review_id=review.id AND mine.notification_kind='MENTION' AND lower(me.email)=lower(%s)),
-        review.due_date,review.due_time_zone,review.marketplace_connection_id
-        """.formatted(VIEWER,VIEWER,VIEWER)+","+UNREAD_MESSAGES;
+        review.due_date,review.due_time_zone,REVIEW_SOURCE_STORE
+        """.replace("REVIEW_SOURCE_STORE",SOURCE_STORE).formatted(VIEWER,VIEWER,VIEWER)+","+UNREAD_MESSAGES;
 
     private final JdbcTemplate jdbc;
     public CollaborationRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
@@ -102,7 +126,7 @@ public class CollaborationRepository {
             if(Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS(SELECT 1 FROM app_users u WHERE lower(u.email)=lower(?) AND u.status='ACTIVE'
                   AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)
-                    OR EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=? AND m.user_id=u.id
+                    OR EXISTS(SELECT 1 FROM effective_account_memberships m WHERE m.tenant_id=? AND m.user_id=u.id
                       AND m.role IN ('OWNER','ADMIN','OPERATOR','VIEWER'))))
                 """,Boolean.class,email,tenant)))result.add(tenant);
         }
@@ -114,7 +138,7 @@ public class CollaborationRepository {
         setContext(tenantId,null);
         var rows=jdbc.query("""
             SELECT user_account.id,user_account.display_name,user_account.email FROM app_users user_account
-            WHERE user_account.status='ACTIVE' AND (EXISTS(SELECT 1 FROM tenant_memberships membership WHERE membership.tenant_id=? AND membership.user_id=user_account.id) OR EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=user_account.id AND p.active))
+            WHERE user_account.status='ACTIVE' AND (EXISTS(SELECT 1 FROM effective_account_memberships membership WHERE membership.tenant_id=? AND membership.user_id=user_account.id) OR EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=user_account.id AND p.active))
             ORDER BY lower(user_account.display_name),lower(user_account.email),user_account.id
             """,(rs,row)->new Member(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),null),tenantId);
         var counts=new java.util.HashMap<String,Integer>();rows.forEach(member->counts.merge(baseHandle(member),1,Integer::sum));
@@ -140,6 +164,7 @@ public class CollaborationRepository {
         String normalized=view==null?"ACTIVE":view.toUpperCase(Locale.ROOT);
         String condition=switch(normalized){
             case "CLOSED"->" AND review.status='CLOSED'";
+            case "ASSIGNED"->" AND review.status='ACTIVE' AND (lower(assignee.email)=lower("+VIEWER+") OR EXISTS(SELECT 1 FROM collaboration_assignments a JOIN app_users u ON u.id=a.user_id WHERE a.review_id=review.id AND a.tenant_id=review.tenant_id AND lower(u.email)=lower("+VIEWER+")))";
             case "MENTIONS"->" AND review.status='ACTIVE' AND EXISTS (SELECT 1 FROM collaboration_mentions filter_mention JOIN app_users filter_user ON filter_user.id=filter_mention.mentioned_user_id WHERE filter_mention.review_id=review.id AND filter_mention.notification_kind='MENTION' AND lower(filter_user.email)=lower("+VIEWER+"))";
             case "PRIVATE"->" AND review.status='ACTIVE' AND EXISTS (SELECT 1 FROM collaboration_messages filter_private WHERE filter_private.review_id=review.id AND filter_private.message_type='PRIVATE_NOTE' AND lower(filter_private.author_email)=lower("+VIEWER+"))";
             case "ALL"->"";
@@ -281,8 +306,8 @@ public class CollaborationRepository {
     public PostedMessage create(UUID tenantId,String subjectType,String subjectKey,String subjectLabel,String marketplace,
             String actionKind,String title,String message,String messageType,String contextSnapshot,String parentUrl,
             String authorEmail,UUID assigneeId,Instant dueAt,List<AttachmentUpload> attachments){
-        setContext(tenantId,authorEmail);String type=normalizeMessageType(messageType);UUID shopifyStore=shopifySubjectStore(tenantId,subjectType,subjectKey);
-        if(shopifyStore!=null&&assigneeId!=null&&!permittedShopifyMember(tenantId,shopifyStore,assigneeId))throw new IllegalArgumentException("Choose a teammate with access to this Shopify store.");
+        setContext(tenantId,authorEmail);String type=normalizeMessageType(messageType);UUID shopifyStore=sourceSubjectStore(tenantId,subjectType,subjectKey);
+        if(shopifyStore!=null&&assigneeId!=null&&!permittedSourceMember(tenantId,shopifyStore,assigneeId))throw new IllegalArgumentException("Choose a teammate with access to this store.");
         UUID reviewId=jdbc.queryForObject("""
             INSERT INTO collaboration_reviews(tenant_id,subject_type,subject_key,subject_label,marketplace,action_kind,title,
               requested_by,created_by,assigned_to,due_at,context_snapshot,parent_url,marketplace_connection_id)
@@ -309,6 +334,11 @@ public class CollaborationRepository {
     public PostedMessage createStoreTask(UUID tenantId,UUID storeId,String title,String description,String actor,Set<UUID> people,java.time.LocalDate date,String zone){
         setContext(tenantId,actor);
         if(storeId!=null&&!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM marketplace_connections WHERE tenant_id=? AND id=?)",Boolean.class,tenantId,storeId)))throw new IllegalArgumentException("Choose a store from this account.");
+        if(storeId!=null){
+            UUID actorId=jdbc.queryForObject("SELECT id FROM app_users WHERE lower(email)=lower(?) AND status='ACTIVE'",UUID.class,actor);
+            if(!permittedSourceMember(tenantId,storeId,actorId))throw new org.springframework.security.access.AccessDeniedException("Source store access required.");
+            for(UUID person:people)if(!permittedSourceMember(tenantId,storeId,person))throw new IllegalArgumentException("Choose teammates with access to this store.");
+        }
         var posted=createGeneralTask(tenantId,title,description.isBlank()?title:description,actor,people,deadline(date,zone));
         jdbc.update("UPDATE collaboration_reviews SET marketplace_connection_id=?,due_date=?,due_time_zone=? WHERE tenant_id=? AND id=?",storeId,date==null?null:java.sql.Date.valueOf(date),date==null?null:zone,tenantId,posted.reviewId());
         return posted;
@@ -371,7 +401,7 @@ public class CollaborationRepository {
     @Transactional
     public PostedMessage saveHuddle(UUID tenantId,String subjectType,String subjectKey,String subjectLabel,String contextSnapshot,
             String parentUrl,Member creator,List<HuddleTranscriptMessage> transcript,boolean closeConversation){
-        setContext(tenantId,creator.email());UUID shopifyStore=shopifySubjectStore(tenantId,subjectType,subjectKey);
+        setContext(tenantId,creator.email());UUID shopifyStore=sourceSubjectStore(tenantId,subjectType,subjectKey);
         List<HuddleTranscriptMessage> messages=transcript==null?List.of():transcript;
         Instant createdAt=messages.isEmpty()?Instant.now():messages.getFirst().createdAt();
         Instant updatedAt=messages.isEmpty()?createdAt:messages.getLast().createdAt();
@@ -443,25 +473,30 @@ public class CollaborationRepository {
 
     @Transactional(readOnly=true)
     public AttachmentData attachment(UUID tenantId,UUID attachmentId,String viewerEmail){
+        return attachment(tenantId,null,attachmentId,viewerEmail);
+    }
+
+    @Transactional(readOnly=true)
+    public AttachmentData attachment(UUID tenantId,UUID reviewId,UUID attachmentId,String viewerEmail){
         setContext(tenantId,viewerEmail);
         var rows=jdbc.query("""
             SELECT attachment.file_name,attachment.content_type,attachment.content
             FROM collaboration_attachments attachment
             JOIN collaboration_messages message ON message.id=attachment.message_id AND message.tenant_id=attachment.tenant_id
             JOIN collaboration_reviews review ON review.tenant_id=attachment.tenant_id AND review.id=attachment.review_id
-            WHERE (%s) AND attachment.tenant_id=? AND attachment.id=? AND
+            WHERE (%s) AND attachment.tenant_id=? AND attachment.id=? AND (?::uuid IS NULL OR attachment.review_id=?::uuid) AND
               (message.message_type='TEAM_CHAT' OR lower(message.author_email)=lower(?))
-            """.formatted(SHOPIFY_THREAD_ACCESS),(rs,row)->new AttachmentData(rs.getString(1),rs.getString(2),rs.getBytes(3)),tenantId,attachmentId,viewerEmail);
+            """.formatted(SHOPIFY_THREAD_ACCESS),(rs,row)->new AttachmentData(rs.getString(1),rs.getString(2),rs.getBytes(3)),tenantId,attachmentId,reviewId,reviewId,viewerEmail);
         return rows.isEmpty()?null:rows.getFirst();
     }
 
     @Transactional
     public PostedMessage assign(UUID tenantId,UUID reviewId,String actor,Set<UUID> requested,boolean replace){
         setContext(tenantId,actor);
-        if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM app_users u WHERE lower(u.email)=lower(?) AND u.status='ACTIVE' AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active) OR EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.user_id=u.id AND m.tenant_id=? AND m.role IN ('OWNER','ADMIN','OPERATOR'))))",Boolean.class,actor,tenantId)))throw new org.springframework.security.access.AccessDeniedException("Your role cannot assign tasks.");
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM app_users u WHERE lower(u.email)=lower(?) AND u.status='ACTIVE' AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active) OR EXISTS(SELECT 1 FROM effective_account_memberships m WHERE m.user_id=u.id AND m.tenant_id=? AND m.role IN ('OWNER','ADMIN','OPERATOR'))))",Boolean.class,actor,tenantId)))throw new org.springframework.security.access.AccessDeniedException("Your role cannot assign tasks.");
         var review=review(tenantId,reviewId,actor);if(review==null||review.messageCount()==review.privateNoteCount())throw new IllegalArgumentException("Choose a team conversation.");
         jdbc.queryForObject("SELECT id FROM collaboration_reviews WHERE tenant_id=? AND id=? FOR UPDATE",UUID.class,tenantId,reviewId);
-        var team=members(tenantId);if(review.subjectKey().startsWith("SHOPIFY:")||review.subjectKey().startsWith("SHOPIFY_ORDER:"))team=team.stream().filter(member->permittedShopifyMember(tenantId,review.storeId(),member.id())).toList();var valid=team.stream().map(Member::id).collect(java.util.stream.Collectors.toSet());
+        var team=members(tenantId);if(review.storeId()!=null)team=team.stream().filter(member->permittedSourceMember(tenantId,review.storeId(),member.id())).toList();var valid=team.stream().map(Member::id).collect(java.util.stream.Collectors.toSet());
         if(!valid.containsAll(requested))throw new IllegalArgumentException("Choose active teammates from this account.");
         var before=new LinkedHashSet<>(jdbc.queryForList("SELECT user_id FROM collaboration_assignments WHERE tenant_id=? AND review_id=?",UUID.class,tenantId,reviewId));
         UUID legacy=jdbc.queryForObject("SELECT assigned_to FROM collaboration_reviews WHERE tenant_id=? AND id=?",UUID.class,tenantId,reviewId);if(legacy!=null)before.add(legacy);
@@ -482,14 +517,14 @@ public class CollaborationRepository {
     @Transactional public int queueNotifications(UUID tenantId,UUID reviewId,UUID messageId,Set<UUID> memberIds,String kind){if(messageId==null||memberIds.isEmpty())return 0;setContext(tenantId,null);int queued=0;for(UUID memberId:memberIds)queued+=jdbc.update("""
         INSERT INTO collaboration_mentions(tenant_id,review_id,message_id,mentioned_user_id,notification_kind)
         SELECT ?,?,?,member.id,? FROM app_users member
-        WHERE (EXISTS(SELECT 1 FROM tenant_memberships membership WHERE membership.tenant_id=? AND membership.user_id=member.id) OR EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=member.id AND p.active)) AND member.id=? AND member.status='ACTIVE'
+        WHERE (EXISTS(SELECT 1 FROM effective_account_memberships membership WHERE membership.tenant_id=? AND membership.user_id=member.id) OR EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=member.id AND p.active)) AND member.id=? AND member.status='ACTIVE'
         AND EXISTS(SELECT 1 FROM collaboration_reviews review WHERE review.tenant_id=? AND review.id=? AND (%s))
         ON CONFLICT (message_id,mentioned_user_id,notification_kind) DO NOTHING
         """.formatted(SHOPIFY_THREAD_ACCESS.replace(VIEWER,"member.email")),tenantId,reviewId,messageId,kind,tenantId,memberId,tenantId,reviewId);return queued;}
 
     @Transactional(readOnly=true)
     public Set<UUID> participantMemberIds(UUID tenantId,UUID reviewId,String excludingEmail){setContext(tenantId,excludingEmail);return new LinkedHashSet<>(jdbc.query("""
-        SELECT DISTINCT member.id FROM tenant_memberships membership JOIN app_users member ON member.id=membership.user_id
+        SELECT DISTINCT member.id FROM effective_account_memberships membership JOIN app_users member ON member.id=membership.user_id
         WHERE membership.tenant_id=? AND member.status='ACTIVE' AND lower(member.email)<>lower(?)
           AND EXISTS (SELECT 1 FROM collaboration_messages team WHERE team.review_id=? AND team.message_type='TEAM_CHAT') AND (
             lower(member.email)=(SELECT lower(requested_by) FROM collaboration_reviews WHERE tenant_id=? AND id=?) OR
@@ -506,7 +541,8 @@ public class CollaborationRepository {
         SELECT claimed.id,claimed.review_id,recipient.display_name,recipient.email,tenant.display_name,review.subject_label,message.author_email,message.body,claimed.notification_kind
         FROM claimed JOIN app_users recipient ON recipient.id=claimed.mentioned_user_id JOIN tenants tenant ON tenant.id=claimed.tenant_id
         JOIN collaboration_reviews review ON review.id=claimed.review_id JOIN collaboration_messages message ON message.id=claimed.message_id
-        WHERE """+SHOPIFY_THREAD_ACCESS.replace(VIEWER,"recipient.email")+"""
+        WHERE recipient.status='ACTIVE' AND (EXISTS(SELECT 1 FROM effective_account_memberships membership WHERE membership.tenant_id=claimed.tenant_id AND membership.user_id=recipient.id)
+          OR EXISTS(SELECT 1 FROM platform_administrators admin WHERE admin.user_id=recipient.id AND admin.active)) AND """+SHOPIFY_THREAD_ACCESS.replace(VIEWER,"recipient.email")+"""
         """,(rs,row)->new PendingMention(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7),rs.getString(8),rs.getString(9)),tenantId,limit);}
     @Transactional public void mentionSent(UUID tenantId,UUID mentionId){setContext(tenantId,null);jdbc.update("UPDATE collaboration_mentions SET status='SENT',sent_at=now(),last_error=NULL,updated_at=now() WHERE tenant_id=? AND id=?",tenantId,mentionId);}
     @Transactional public void mentionFailed(UUID tenantId,UUID mentionId,String error,boolean retry){setContext(tenantId,null);jdbc.update("UPDATE collaboration_mentions SET status=?,last_error=?,next_attempt_at=now()+(interval '1 minute'*greatest(1,attempt_count*attempt_count)),updated_at=now() WHERE tenant_id=? AND id=?",retry?"FAILED":"SKIPPED",cleanError(error),tenantId,mentionId);}
@@ -520,14 +556,30 @@ public class CollaborationRepository {
     private static String normalizeMessageType(String value){return "PRIVATE_NOTE".equalsIgnoreCase(value)?"PRIVATE_NOTE":"TEAM_CHAT";}
     private static Object[] join(Object first,List<?> rest){var values=new ArrayList<>();values.add(first);values.addAll(rest);return values.toArray();}
     private static Object[] append(List<?> values,Object last){var result=new ArrayList<Object>(values);result.add(last);return result.toArray();}
-    private static String baseHandle(Member member){String source=member.name()==null||member.name().isBlank()?member.email().split("@",2)[0]:member.name();String handle=source.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+",".").replaceAll("(^\\.|\\.$)","");return handle.isBlank()?"teammate":handle;}
+    static String baseHandle(Member member){String source=member.name()==null||member.name().isBlank()?member.email().split("@",2)[0]:member.name();String handle=source.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+",".").replaceAll("(^\\.|\\.$)","");return handle.isBlank()?"teammate":handle;}
     private static String cleanError(String value){if(value==null)return "Email delivery failed.";String clean=value.replaceAll("[\\r\\n]+"," ");return clean.substring(0,Math.min(500,clean.length()));}
     private void guardShopifyReview(UUID tenant,UUID review){
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM collaboration_reviews review WHERE review.tenant_id=? AND review.id=? AND ("+REVIEW_STORE_ACCESS+"))",Boolean.class,tenant,review)))throw new org.springframework.security.access.AccessDeniedException("Source store access required.");
         for(var row:jdbc.queryForList("SELECT subject_type,subject_key FROM collaboration_reviews WHERE tenant_id=? AND id=? AND ((subject_type='MARKETPLACE_SKU' AND subject_key LIKE 'SHOPIFY:%') OR (subject_type='ORDER' AND subject_key LIKE 'SHOPIFY_ORDER:%'))",tenant,review))shopifySubjectStore(tenant,row.get("subject_type").toString(),row.get("subject_key").toString());
+    }
+    private boolean permittedSourceMember(UUID tenant,UUID store,UUID member){
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM (SELECT tenant_id,id marketplace_connection_id FROM marketplace_connections WHERE status<>'DISABLED') sv WHERE sv.tenant_id=? AND sv.marketplace_connection_id=? AND "+SHOPIFY_STORE_ACCESS.replace(VIEWER,"(SELECT email FROM app_users WHERE id=?)")+")",Boolean.class,tenant,store,member));
     }
     private boolean permittedShopifyMember(UUID tenant,UUID store,UUID member){
         return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM (SELECT tenant_id,id marketplace_connection_id FROM marketplace_connections WHERE channel='SHOPIFY' AND status<>'DISABLED') sv WHERE sv.tenant_id=? AND sv.marketplace_connection_id=? AND "+SHOPIFY_STORE_ACCESS.replace(VIEWER,"(SELECT email FROM app_users WHERE id=?)")+")",Boolean.class,tenant,store,member));
     }
+    private UUID sourceSubjectStore(UUID tenant,String type,String key){
+        UUID shopify=shopifySubjectStore(tenant,type,key);if(shopify!=null)return shopify;
+        if(!List.of("ORDER","MARKETPLACE_SKU").contains(type.toUpperCase(Locale.ROOT)))return null;
+        String table="ORDER".equalsIgnoreCase(type)?"amazon_orders":"amazon_listings";
+        String column="ORDER".equalsIgnoreCase(type)?"amazon_order_id":"seller_sku";
+        var stores=jdbc.queryForList("SELECT DISTINCT marketplace_connection_id FROM "+table+" WHERE tenant_id=? AND "+column+"=?",UUID.class,tenant,key);
+        if(stores.size()!=1)throw new IllegalArgumentException("The source store is missing or ambiguous. Open the record in its marketplace store.");
+        UUID store=stores.getFirst();
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM (SELECT ?::uuid tenant_id,?::uuid marketplace_connection_id) sv WHERE "+SHOPIFY_STORE_ACCESS+")",Boolean.class,tenant,store)))throw new org.springframework.security.access.AccessDeniedException("Source store access required.");
+        return store;
+    }
+
     private UUID shopifySubjectStore(UUID tenant,String type,String key){
         boolean variant="MARKETPLACE_SKU".equalsIgnoreCase(type)&&key.startsWith("SHOPIFY:");
         boolean order="ORDER".equalsIgnoreCase(type)&&key.startsWith("SHOPIFY_ORDER:");

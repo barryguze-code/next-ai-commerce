@@ -9,12 +9,14 @@ test('header presence opens a floating huddle, protects text, pins, minimizes, a
   await page.route('**/app/collaboration/teammates',route=>route.fulfill({contentType:'application/json',body:JSON.stringify([{id:'me',name:'Barry'},{id:'jack',name:'Jack'},{id:'ecem',name:'Ecem'},{id:'alex',name:'Alex Offline',email:'alex@example.com'}])}));
   await page.route('http://huddle.test/',route=>route.fulfill({contentType:'text/html',body:'<main></main>'}));
   await page.goto('http://huddle.test/');
-  await page.setContent('<main><header class="workspace-header"><h1>Orders</h1><div class="header-actions"></div></header><button id="work">Work on order</button></main>');
+  await page.setContent('<body class="app-page"><main><header class="workspace-header"><h1>Orders</h1><div class="header-actions"></div></header><button id="work">Work on order</button></main>');
   await page.addStyleTag({content:'.workspace-header{display:flex;align-items:center;justify-content:space-between}'});
+  await page.addStyleTag({path:path.resolve('src/main/resources/static/css/platform-ui.css')});
   await page.addStyleTag({path:path.resolve('src/main/resources/static/css/collaboration-thread.css')});
   await page.addStyleTag({path:path.resolve('src/main/resources/static/css/huddle-floating.css')});
   await page.addStyleTag({path:path.resolve('src/main/resources/static/css/chat-composer.css')});
   await page.addScriptTag({path:path.resolve('src/main/resources/static/js/huddle-floating.js')});
+  await page.addScriptTag({path:path.resolve('src/main/resources/static/js/ux-components.js')});
   await page.evaluate(()=>{
    window.sent=[];window.sender=x=>{sent.push(x);return true;};
    window.people=[{id:'me',name:'Barry'},{id:'jack',name:'Jack'},{id:'ecem',name:'Ecem'}];
@@ -34,7 +36,7 @@ test('header presence opens a floating huddle, protects text, pins, minimizes, a
   assert.equal(await page.locator('.huddle-person-identity').first().evaluate(el=>getComputedStyle(el).display),'flex');
   await page.getByRole('button',{name:'Jack · Online',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>sent[0].participantIds),['jack']);
-  await page.evaluate(()=>{window.room={id:'room',status:'ACTIVE',participants:people.slice(0,2),messages:[{senderId:'jack',senderName:'Jack',body:'<img src=x onerror=alert(1)>'}]};LiveHuddleUI.event({type:'HUDDLE_STARTED',huddle:room},sender);});
+  await page.evaluate(()=>{window.room={id:'room',status:'ACTIVE',startedBy:people[0],participants:people.slice(0,2),messages:[{senderId:'jack',senderName:'Jack',body:'<img src=x onerror=alert(1)>'}]};LiveHuddleUI.event({type:'HUDDLE_STARTED',huddle:room},sender);});
   assert.equal(await page.locator('.floating-huddle').count(),1);
   assert.equal(await page.locator('.floating-huddle-messages img').count(),0);
   assert.match(await page.locator('.floating-huddle-messages').innerText(),/<img/);
@@ -64,7 +66,18 @@ test('header presence opens a floating huddle, protects text, pins, minimizes, a
   assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).evaluate(el=>el===document.activeElement),true);
   await page.getByRole('button',{name:'Close huddle',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Save as a task',exact:true}).isVisible(),true);
-  await page.getByRole('button',{name:'Keep chatting',exact:true}).click();
+  assert.deepEqual(await page.locator('.huddle-close-dialog footer button').allTextContents(),['Close without saving','Save as a task']);
+  assert.equal(await page.getByRole('button',{name:'Done',exact:true}).count(),0);
+  const sentBefore=await page.evaluate(()=>sent.length);
+  await page.getByRole('button',{name:'Close confirmation',exact:true}).click();
+  assert.equal(await page.evaluate(()=>sent.length),sentBefore,'X returns to chat without saving or leaving');
+  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='Huddle message');
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).evaluate(el=>el===document.activeElement),true);
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).evaluate(el=>getComputedStyle(el).outlineWidth),'0px');
+  assert.equal(await page.locator('.floating-huddle form').evaluate(el=>getComputedStyle(el).outlineWidth),'2px');
+  await page.getByRole('button',{name:'Close huddle',exact:true}).click();
+  await page.getByRole('button',{name:'Save as a task',exact:true}).click();
+  assert.equal(await page.evaluate(()=>sent.at(-1).type),'SAVE');
   await page.evaluate(()=>LiveHuddleUI.event({type:'OFFLINE'},sender));
   assert.equal(await page.getByRole('button',{name:'Send',exact:true}).isDisabled(),true);
  }finally{await browser.close();}

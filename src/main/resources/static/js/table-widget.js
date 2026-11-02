@@ -140,6 +140,7 @@ function prepareContextColumn(root){
           control.classList.add('table-action-entry');
           const icon=document.createElement('span');icon.className='table-action-icon';icon.setAttribute('aria-hidden','true');
           icon.textContent=control.dataset.actionIcon||(control.matches('[data-open-selection]')?'⇉':menu?'↗':'±');
+          if(control.dataset.actionImage?.startsWith('/images/platform/table/')){const img=document.createElement('img');img.src=control.dataset.actionImage;img.alt='';img.width=24;img.height=24;img.style.objectFit='contain';icon.replaceChildren(img);}
           const label=document.createElement('span');label.className='table-action-label';
           const strong=document.createElement('strong');strong.textContent=control.textContent.trim()||control.getAttribute('aria-label')||control.title||'Open';
           const small=document.createElement('small');small.textContent=control.dataset.actionDescription||(control.matches('[data-open-selection]')?'Open your checked documents in one workspace':menu?(document.body.classList.contains('platform-standard-tables')?'Open this record’s settings':'Open only this document; keep your selection'):'Update stock for the mapped products');
@@ -256,9 +257,12 @@ function init(root){
   let order=[...(saved.order||[])].filter(valid);defaults.forEach(c=>{if(!order.includes(c.id))order.push(c.id)});
   if(key==='orders'&&order.includes('profit')&&order.includes('sales')){order=order.filter(id=>id!=='profit');order.splice(order.indexOf('sales')+1,0,'profit');}
   if(key==='orders'&&order.includes('fees')){order=order.filter(id=>id!=='fees');order.splice(order.indexOf('profit')+1,0,'fees');}
-  const pinned=id=>id==='record-context'||(key==='orders'&&id==='picture');
+  const pinned=id=>id==='record-context'||(root.dataset.priorityAfterRecord==='true'&&id==='priority')||(key==='orders'&&id==='picture');
   if(key==='marketplace-skus'){const financial=['profit','est-fees','available','4w-sales'];order=order.filter(id=>!financial.includes(id)).concat(financial.filter(valid));}
   order=[...order.filter(pinned),...order.filter(id=>!pinned(id))];
+  if(root.dataset.priorityAfterRecord==='true'&&valid('priority')){
+    order=order.filter(id=>id!=='priority');order.splice(order.indexOf('record-context')+1,0,'priority');
+  }
   const visibility=Object.fromEntries(defaults.map(c=>[c.id,c.required?true:(saved.visibility?.[c.id]??c.defaultVisible)]));
   let host=document.querySelector('[data-column-control="'+key+'"]');
   if(!host){host=document.createElement('div');host.dataset.columnControl=key;(root.closest('.table-wrap')||root).before(host)}

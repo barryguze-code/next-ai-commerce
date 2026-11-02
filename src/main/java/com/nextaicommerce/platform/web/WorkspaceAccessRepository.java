@@ -16,6 +16,11 @@ import com.nextaicommerce.platform.sync.AmazonSyncProgress;
 
 @Repository
 public class WorkspaceAccessRepository {
+    private static final String DIRECTORY_FROM="""
+            FROM app_users u
+            LEFT JOIN effective_account_memberships m ON u.id = m.user_id AND m.tenant_id=?
+            WHERE m.user_id IS NOT NULL OR (u.status='ACTIVE' AND EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active))
+            """;
     public record AccountView(UUID id, String name, String initials, String slug, String status, int users, int connections, boolean hasLogo) {}
     public record AccountOption(UUID id, String name, String initials, String logoUrl, List<ConnectionView> stores) {}
     public record ConnectionView(UUID id, UUID tenantId, String tenantName, String name, String channel,
@@ -82,13 +87,59 @@ public class WorkspaceAccessRepository {
                 (rs, row) -> new Object[]{rs.getObject(1, UUID.class), rs.getString(2), rs.getString(3), rs.getString(4),rs.getBoolean(5)})) {
             UUID tenantId = (UUID) tenant[0];
             setTenant(tenantId);
-            Integer users = jdbc.queryForObject("SELECT count(*) FROM tenant_memberships WHERE tenant_id = ?", Integer.class, tenantId);
+            Integer users = jdbc.queryForObject("SELECT count(*) "+DIRECTORY_FROM, Integer.class, tenantId);
             Integer connections = jdbc.queryForObject("SELECT count(*) FROM marketplace_connections WHERE tenant_id = ?", Integer.class, tenantId);
             String name = (String) tenant[1];
             result.add(new AccountView(tenantId, name, accountInitials(name), (String) tenant[2], (String) tenant[3],
                 users == null ? 0 : users, connections == null ? 0 : connections,(Boolean)tenant[4]));
         }
         return result;
+    }
+
+    public record BusinessDetails(String displayName,String name,String address) {}
+
+    @Transactional(readOnly=true)
+    public List<MemberView> directoryMembers(UUID account) {
+        setTenant(account);
+        return jdbc.query("""
+            SELECT u.id,u.display_name FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
+            WHERE m.tenant_id=? AND u.status='ACTIVE' ORDER BY lower(u.display_name),u.id
+            """,(rs,n)->new MemberView(rs.getObject(1,UUID.class),rs.getString(2),"","","ACTIVE",0,List.of(),true),account);
+    }
+
+    @Transactional(readOnly=true)
+    public BusinessDetails businessDetails(UUID account,String actor) {
+        if (!isCurrentPlatformAdmin(actor)) throw new org.springframework.security.access.AccessDeniedException("Platform access required.");
+        return jdbc.queryForObject("SELECT display_name,legal_business_name,registered_business_address FROM tenants WHERE id=? AND status='ACTIVE'",
+            (rs,n)->new BusinessDetails(rs.getString(1),rs.getString(2),rs.getString(3)),account);
+    }
+
+    @Transactional
+    public void saveBusinessDetails(UUID account,String actor,String displayName,String name,String address,LogoData logo) {
+        if (!isCurrentPlatformAdmin(actor)) throw new org.springframework.security.access.AccessDeniedException("Platform access required.");
+        displayName=displayName.strip(); name=name.strip(); address=address.strip();
+        if(displayName.isEmpty()||displayName.length()>160)throw new IllegalArgumentException("Enter an account name of up to 160 characters.");
+        if(name.length()>240 || address.length()>1200) throw new IllegalArgumentException("Use up to 240 characters for the name and 1,200 for the address.");
+        setTenant(account);
+        BusinessDetails old=jdbc.queryForObject("SELECT display_name,legal_business_name,registered_business_address FROM tenants WHERE id=? AND status='ACTIVE' FOR UPDATE",
+            (rs,n)->new BusinessDetails(rs.getString(1),rs.getString(2),rs.getString(3)),account);
+        boolean nameChanged=!java.util.Objects.equals(old.name(),name.isEmpty()?null:name);
+        boolean addressChanged=!java.util.Objects.equals(old.address(),address.isEmpty()?null:address);
+        boolean displayChanged=!old.displayName().equals(displayName);
+        if (!displayChanged && logo==null && !nameChanged && !addressChanged) return;
+        jdbc.update("UPDATE tenants SET display_name=?,legal_business_name=nullif(?,''), registered_business_address=nullif(?,'') WHERE id=? AND status='ACTIVE'",displayName,name,address,account);
+        if(logo!=null)saveAccountLogo(account,logo.contentType(),logo.bytes());
+        jdbc.update("""
+            INSERT INTO audit_events(tenant_id,actor_user_id,actor_is_super_admin,action,target_type,target_id,reason,details)
+            SELECT ?,id,true,'BUSINESS_DETAILS_UPDATED','ACCOUNT',?,'Edited account business details',
+                jsonb_build_object('changedFields',array_remove(ARRAY[CASE WHEN ? THEN 'display_name' END, CASE WHEN ? THEN 'logo' END, CASE WHEN ? THEN 'legal_business_name' END, CASE WHEN ? THEN 'registered_business_address' END],NULL)) FROM app_users WHERE lower(email)=lower(?)
+            """,account,account.toString(),displayChanged,logo!=null,nameChanged,addressChanged,actor);
+    }
+
+    @Transactional(readOnly=true)
+    public List<String> memberInitials(UUID account){
+        setTenant(account);
+        return jdbc.query("SELECT u.display_name "+DIRECTORY_FROM+" ORDER BY lower(u.display_name),u.id LIMIT 3",(rs,n)->accountInitials(rs.getString(1)),account);
     }
 
     private static String accountInitials(String name) {
@@ -99,7 +150,20 @@ public class WorkspaceAccessRepository {
     }
 
     @Transactional
-    public void addAccount(String displayName) {
+    public UUID createClient(String displayName, String email) {
+        if (!isCurrentPlatformAdmin(email)) throw new IllegalArgumentException("Platform administrator access is required.");
+        UUID account = addAccount(displayName);
+        UUID parent = UUID.randomUUID();
+        jdbc.queryForObject("SELECT set_config('app.parent_id', ?, true)", String.class, parent.toString());
+        jdbc.queryForObject("SELECT set_config('app.user_email', ?, true)", String.class, email);
+        UUID actor = jdbc.queryForObject("SELECT id FROM app_users WHERE lower(email)=lower(?) AND status='ACTIVE'", UUID.class, email);
+        jdbc.update("INSERT INTO parent_tenants(id,name,created_by) SELECT ?,display_name,? FROM tenants WHERE id=?", parent,actor,account);
+        jdbc.update("INSERT INTO parent_tenant_accounts(parent_id,account_id) VALUES (?,?)", parent,account);
+        jdbc.update("INSERT INTO parent_tenant_events(parent_id,actor_id,event_kind,details) VALUES (?,?,'CREATED',jsonb_build_object('account',?::uuid))", parent,actor,account);
+        return account;
+    }
+
+    private UUID addAccount(String displayName) {
         if (displayName == null || displayName.isBlank())
             throw new IllegalArgumentException("Enter an account name.");
         String cleanName = displayName.trim().replaceAll("\\s+", " ");
@@ -116,6 +180,7 @@ public class WorkspaceAccessRepository {
             UUID.class,slug,cleanName);
         setTenant(tenantId);
         jdbc.update("INSERT INTO warehouse_locations(tenant_id,code,name) VALUES (?,'MAIN','Main storage')",tenantId);
+        return tenantId;
     }
 
     @Transactional(readOnly = true)
@@ -125,7 +190,7 @@ public class WorkspaceAccessRepository {
         for (AccountView account : listAllAccounts()) {
             setTenant(account.id());
             Integer count = jdbc.queryForObject("""
-                SELECT count(*) FROM tenant_memberships m JOIN app_users u ON u.id = m.user_id
+                SELECT count(*) FROM effective_account_memberships m JOIN app_users u ON u.id = m.user_id
                 WHERE m.tenant_id = ? AND lower(u.email) = lower(?)
                 """, Integer.class, account.id(), email);
             if (count != null && count > 0) result.add(account);
@@ -159,7 +224,7 @@ public class WorkspaceAccessRepository {
             SELECT EXISTS(SELECT 1 FROM tenants t CROSS JOIN app_users u
               WHERE t.id=? AND t.status='ACTIVE' AND lower(u.email)=lower(?) AND u.status='ACTIVE'
                 AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)
-                  OR EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=t.id AND m.user_id=u.id
+                  OR EXISTS(SELECT 1 FROM effective_account_memberships m WHERE m.tenant_id=t.id AND m.user_id=u.id
                     AND m.role IN ('OWNER','ADMIN','OPERATOR'))))
             """,Boolean.class,tenantId,email));
     }
@@ -169,11 +234,11 @@ public class WorkspaceAccessRepository {
         if (superAdmin) return all;
         setTenant(account.id());
         String role = jdbc.query("""
-            SELECT m.role FROM tenant_memberships m JOIN app_users u ON u.id=m.user_id
+            SELECT m.role FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
             WHERE m.tenant_id=? AND lower(u.email)=lower(?)
             """, rs -> rs.next() ? rs.getString(1) : "", account.id(), email);
         boolean restricted = Boolean.TRUE.equals(jdbc.queryForObject("""
-            SELECT coalesce(bool_or(m.stores_restricted),false) FROM tenant_memberships m
+            SELECT coalesce(bool_or(m.stores_restricted),false) FROM effective_account_memberships m
             JOIN app_users u ON u.id=m.user_id WHERE m.tenant_id=? AND lower(u.email)=lower(?)
             """, Boolean.class, account.id(), email));
         if ("OWNER".equals(role) || ("ADMIN".equals(role) && !restricted)) return all;
@@ -190,7 +255,7 @@ public class WorkspaceAccessRepository {
         if (superAdmin) return jdbc.queryForObject("SELECT count(*) FROM tenants WHERE id=? AND status='ACTIVE'", Integer.class, tenantId) == 1;
         setTenant(tenantId);
         Integer count = jdbc.queryForObject("""
-            SELECT count(*) FROM tenant_memberships m JOIN app_users u ON u.id=m.user_id
+            SELECT count(*) FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
             WHERE m.tenant_id=? AND lower(u.email)=lower(?)
             """, Integer.class, tenantId, email);
         return count != null && count == 1;
@@ -201,11 +266,50 @@ public class WorkspaceAccessRepository {
         if (superAdmin) return jdbc.queryForObject("SELECT count(*) FROM tenants WHERE id=? AND status='ACTIVE'", Integer.class, tenantId) == 1;
         setTenant(tenantId);
         return Boolean.TRUE.equals(jdbc.queryForObject("""
-            SELECT EXISTS(SELECT 1 FROM tenant_memberships m
+            SELECT EXISTS(SELECT 1 FROM effective_account_memberships m
               JOIN app_users u ON u.id=m.user_id JOIN tenants t ON t.id=m.tenant_id
               WHERE m.tenant_id=? AND lower(u.email)=lower(?)
                 AND u.status='ACTIVE' AND t.status='ACTIVE' AND m.role IN ('OWNER','ADMIN'))
             """, Boolean.class, tenantId, email));
+    }
+
+    @Transactional(readOnly=true)
+    public boolean canInviteHome(UUID account,String email) {
+        if (owningTenant(account)==null) return false;
+        if (isCurrentPlatformAdmin(email)) return true;
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
+              WHERE m.tenant_id=? AND m.tenant_managed AND lower(u.email)=lower(?) AND u.status='ACTIVE')
+            """,Boolean.class,account,email));
+    }
+
+    private UUID owningTenant(UUID account) {
+        setTenant(account);
+        return jdbc.query("SELECT parent_id FROM parent_tenant_accounts WHERE account_id=?",
+                rs->rs.next()?rs.getObject(1,UUID.class):null,account);
+    }
+
+    @Transactional(readOnly=true)
+    public List<AccountOption> connectionDestinations(UUID current,String email) {
+        boolean staff=isCurrentPlatformAdmin(email);
+        UUID owner=owningTenant(current);
+        return listAccountOptions(email,staff).stream().filter(account->{
+            if(!account.id().equals(current) && (owner==null || !owner.equals(owningTenant(account.id()))))return false;
+            setTenant(account.id());
+            return staff || Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
+                WHERE m.tenant_id=? AND lower(u.email)=lower(?) AND u.status='ACTIVE'
+                AND (m.role='OWNER' OR (m.role='ADMIN' AND NOT m.stores_restricted)))
+                """,Boolean.class,account.id(),email));
+        }).toList();
+    }
+
+    @Transactional(readOnly=true)
+    public UUID connectionDestination(UUID current,UUID requested,String email) {
+        UUID target=requested==null?current:requested;
+        if(current==null || connectionDestinations(current,email).stream().noneMatch(a->a.id().equals(target)))
+            throw new org.springframework.security.access.AccessDeniedException("Choose an account you administer in this tenant.");
+        return target;
     }
 
     @Transactional(readOnly = true)
@@ -382,6 +486,14 @@ public class WorkspaceAccessRepository {
     }
 
     @Transactional
+    public void renameConnection(UUID tenantId,UUID connectionId,String displayName){
+        if(displayName==null||displayName.isBlank()||displayName.length()>160)throw new IllegalArgumentException("Enter a store name up to 160 characters.");
+        setTenant(tenantId);
+        if(jdbc.update("UPDATE marketplace_connections SET display_name=? WHERE tenant_id=? AND id=?",displayName.trim(),tenantId,connectionId)!=1)
+            throw new IllegalArgumentException("Marketplace store was not found.");
+    }
+
+    @Transactional
     public void addConnection(UUID tenantId, String channel, String displayName,
             String sellerIdentifier, String marketplaceIdentifier) {
         if (!List.of("AMAZON", "WALMART").contains(channel))
@@ -473,7 +585,7 @@ public class WorkspaceAccessRepository {
         setTenant(tenantId);
         var grants = new java.util.HashMap<UUID, List<UUID>>();
         jdbc.query("""
-            SELECT m.user_id,c.id FROM tenant_memberships m
+            SELECT m.user_id,c.id FROM effective_account_memberships m
             JOIN marketplace_connections c ON c.tenant_id=m.tenant_id AND c.status<>'DISABLED'
             WHERE m.tenant_id=? AND (m.role='OWNER' OR (m.role='ADMIN' AND NOT m.stores_restricted)
               OR EXISTS(SELECT 1 FROM membership_store_access a WHERE a.tenant_id=m.tenant_id
@@ -483,9 +595,7 @@ public class WorkspaceAccessRepository {
         return jdbc.query("""
             SELECT u.id, u.display_name, u.email, CASE WHEN EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active) THEN 'SUPER ADMIN' ELSE m.role END AS role, u.status,
                    EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active) AS platform_admin
-            FROM app_users u
-            LEFT JOIN tenant_memberships m ON u.id = m.user_id AND m.tenant_id=?
-            WHERE m.user_id IS NOT NULL OR (u.status='ACTIVE' AND EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active))
+            """+DIRECTORY_FROM+"""
             ORDER BY lower(u.display_name), lower(u.email)
             """, (rs, row) -> new MemberView(
                 rs.getObject("id", UUID.class), rs.getString("display_name"), rs.getString("email"),

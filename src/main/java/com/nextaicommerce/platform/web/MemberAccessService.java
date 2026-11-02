@@ -9,6 +9,12 @@ import org.springframework.transaction.annotation.Transactional;
 /** Account-scoped membership changes. Never deletes a login or another account's access. */
 @Service
 public class MemberAccessService {
+    public boolean activePlatformAdministrator(String email) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM app_users u JOIN platform_administrators p ON p.user_id=u.id
+                          WHERE lower(u.email)=lower(?) AND u.status='ACTIVE' AND p.active)
+            """,Boolean.class,email));
+    }
     private final JdbcTemplate jdbc;
     public MemberAccessService(JdbcTemplate jdbc) { this.jdbc=jdbc; }
     private void scope(UUID tenant) {
@@ -19,7 +25,7 @@ public class MemberAccessService {
     public Access current(UUID tenant,String email) {
         scope(tenant);
         var rows=jdbc.query("""
-            SELECT m.role,m.stores_restricted,u.id FROM tenant_memberships m
+            SELECT m.role,m.stores_restricted,u.id FROM effective_account_memberships m
             JOIN app_users u ON u.id=m.user_id JOIN tenants t ON t.id=m.tenant_id
             WHERE m.tenant_id=? AND lower(u.email)=lower(?) AND u.status='ACTIVE' AND t.status='ACTIVE'
             """,(rs,n)->new Object[]{rs.getString(1),rs.getBoolean(2),rs.getObject(3,UUID.class)},tenant,email);
@@ -52,10 +58,12 @@ public class MemberAccessService {
             SELECT u.id, EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)
             FROM app_users u WHERE lower(u.email)=lower(?) AND u.status='ACTIVE'
             AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)
-              OR EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=? AND m.user_id=u.id AND m.role IN ('OWNER','ADMIN')))
+              OR EXISTS(SELECT 1 FROM effective_account_memberships m WHERE m.tenant_id=? AND m.user_id=u.id AND m.role IN ('OWNER','ADMIN')))
             """,(rs,n)->new Object[]{rs.getObject(1,UUID.class),rs.getBoolean(2)},email,tenant);
         if(actors.isEmpty())throw new AccessDeniedException("Only this account's administrators can manage access.");
         UUID actor=(UUID)actors.getFirst()[0];boolean platform=(boolean)actors.getFirst()[1];
+        if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM effective_account_memberships WHERE tenant_id=? AND user_id=? AND tenant_managed)",Boolean.class,tenant,target)))
+            throw new AccessDeniedException("Manage this person's inherited access at the tenant level.");
         var members=jdbc.query("""
             SELECT m.role, EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=m.user_id AND p.active)
             FROM tenant_memberships m WHERE m.tenant_id=? AND m.user_id=? FOR UPDATE
@@ -65,12 +73,19 @@ public class MemberAccessService {
         validateChange(actor.equals(target),"OWNER".equals(previous)||(boolean)members.getFirst()[1],role,revoke);
         if("ADMIN".equals(previous) && (revoke || !"ADMIN".equals(role))) {
             int others=jdbc.queryForObject("""
-                SELECT count(*) FROM tenant_memberships m JOIN app_users u ON u.id=m.user_id
+                SELECT count(*) FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
                 WHERE m.tenant_id=? AND m.user_id<>? AND m.role IN ('OWNER','ADMIN') AND u.status='ACTIVE'
                 """,Integer.class,tenant,target);
             if(others==0)throw new IllegalArgumentException("Keep at least one active administrator in this account.");
         }
         var before=jdbc.queryForList("SELECT marketplace_connection_id FROM membership_store_access WHERE tenant_id=? AND user_id=?",UUID.class,tenant,target);
+        if(!platform) {
+            Access managing=current(tenant,email);
+            if(managing==null || managing.restricted() && (!managing.stores().containsAll(before)
+                    || !managing.stores().containsAll(stores) || !current(tenant,
+                    jdbc.queryForObject("SELECT email FROM app_users WHERE id=?",String.class,target)).restricted()))
+                throw new AccessDeniedException("Manage only people and stores assigned to you in this account.");
+        }
         if(!revoke) {
             var valid=Set.copyOf(jdbc.queryForList("SELECT id FROM marketplace_connections WHERE tenant_id=? AND status<>'DISABLED'",UUID.class,tenant));
             if(!valid.containsAll(stores))throw new IllegalArgumentException("Choose stores belonging to this account.");

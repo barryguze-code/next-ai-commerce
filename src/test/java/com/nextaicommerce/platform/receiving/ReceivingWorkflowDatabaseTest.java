@@ -59,7 +59,7 @@ class ReceivingWorkflowDatabaseTest {
         pool.setJdbcUrl(url+(url.contains("?")?"&":"?")+"currentSchema="+schema);
         pool.setUsername("postgres");pool.setPassword(password);
         pool.setMaximumPoolSize(4);pool.setMinimumIdle(1);source=new com.zaxxer.hikari.HikariDataSource(pool);
-        Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+        Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations(com.nextaicommerce.platform.testing.FixtureMigrations.location(schema)).load().migrate();
         jdbc=new JdbcTemplate(source);
         // Production triggers explicitly select public; bind their isolated test copies to this test schema.
         for(String fn:List.of("ensure_item_default_location","fill_inventory_ledger_location","fill_receiving_receipt_location","fill_order_reservation_location"))
@@ -722,8 +722,17 @@ class ReceivingWorkflowDatabaseTest {
         inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows,true);
         assertThat(stock(f)).isEqualByComparingTo("2");
     }
+    void discussionAccessFixture(){
+        tx.executeWithoutResult(s->{
+            jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'ADMIN') ON CONFLICT DO NOTHING",tenant,user);
+            UUID otherReader=jdbc.queryForObject("INSERT INTO app_users(email,display_name) VALUES ('other@example.test','Other') ON CONFLICT(email) DO UPDATE SET display_name=excluded.display_name RETURNING id",UUID.class);
+            jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'ADMIN') ON CONFLICT DO NOTHING",tenant,otherReader);
+            UUID source=jdbc.queryForObject("SELECT marketplace_connection_id FROM amazon_orders WHERE tenant_id=? AND amazon_order_id='SHELF-ORDER'",UUID.class,tenant);
+            jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku) VALUES (?,?,'ATVPDKIKX0DER','SHELF-SKU')",tenant,source);
+        });
+    }
     @Test void orderConversationsFollowMappedAssetsWithoutLeakingPrivateNotes(){
-        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");
+        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");discussionAccessFixture();
         var repo=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc);
         tx.executeWithoutResult(s->{
             var publicNote=repo.create(tenant,"ORDER","SHELF-ORDER","Synthetic order","Amazon","NOTE","QA","Public note","TEAM_CHAT","{}","/app/orders?q=SHELF-ORDER",actor,null,null,List.of());
@@ -742,7 +751,7 @@ class ReceivingWorkflowDatabaseTest {
     }
 
     @Test void ordersInheritSkuDiscussionsButNotOtherTenantsOrPrivateNotes(){
-        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");
+        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");discussionAccessFixture();
         var repo=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc);
         tx.executeWithoutResult(s->{
             var shared=repo.create(tenant,"MARKETPLACE_SKU","SHELF-SKU","SKU","Amazon","NOTE","QA","Shared SKU note","TEAM_CHAT","{}","/app/marketplace-skus",actor,null,null,List.of());
@@ -763,11 +772,12 @@ class ReceivingWorkflowDatabaseTest {
         });
     }
     @Test void collaborationReadReceiptsArePersonalExactAndPreserveAssignments(){
-        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");
+        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");discussionAccessFixture();
         var repo=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc);
         tx.executeWithoutResult(s->{
             var reader=UUID.randomUUID();String email="reader-"+reader+"@example.test";
             jdbc.update("INSERT INTO app_users(id,email,display_name) VALUES (?,?,'Reader')",reader,email);
+            jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'ADMIN')",tenant,reader);
             var first=repo.create(tenant,"MARKETPLACE_SKU","SHELF-SKU","SKU","Amazon","NOTE","QA","@reader first","TEAM_CHAT","{}","/app/marketplace-skus",actor,null,null,List.of());
             jdbc.update("INSERT INTO collaboration_mentions(tenant_id,review_id,message_id,mentioned_user_id) VALUES (?,?,?,?)",tenant,first.reviewId(),first.messageId(),reader);
             var second=repo.reply(tenant,first.reviewId(),actor,"@reader arrived later","TEAM_CHAT",null,List.of());

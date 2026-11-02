@@ -36,7 +36,10 @@ public class AdministrationController {
         PageController.addAccessModel(authentication, model);
         UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
         String tenantName = (String) session.getAttribute(AccountSelectionController.TENANT_NAME);
-        var connections = repository.listConnections(tenantId, tenantName);
+        var choices=repository.listAccountOptions(authentication.getName(),repository.isCurrentPlatformAdmin(authentication.getName()));
+        var connections=choices.stream().filter(a->a.id().equals(tenantId)).flatMap(a->a.stores().stream()).toList();
+        var visible=connections.stream().map(WorkspaceAccessRepository.ConnectionView::id).collect(Collectors.toSet());
+        model.addAttribute("connectionAccounts",repository.connectionDestinations(tenantId,authentication.getName()));
         var connectionErrors = new java.util.LinkedHashMap<UUID,String>();
         var shopifyVerified = new java.util.LinkedHashMap<UUID,String>();
         for (var connection : connections) {
@@ -63,13 +66,27 @@ public class AdministrationController {
             .filter(connection -> "ACTIVE".equals(connection.status()) && !connectionErrors.containsKey(connection.id())).count());
         model.addAttribute("setupConnectionCount", connections.stream()
             .filter(connection -> "PENDING".equals(connection.status()) || "ERROR".equals(connection.status()) || connectionErrors.containsKey(connection.id())).count());
-        var syncStatuses=repository.listCurrentSyncStatuses(tenantId);
+        var syncStatuses=repository.listCurrentSyncStatuses(tenantId).stream().filter(s->visible.contains(s.connectionId())).toList();
         model.addAttribute("syncStatuses",syncStatuses);
+        model.addAttribute("connectionSyncNotes",syncStatuses.stream().filter(s->s.message()!=null&&!s.message().isBlank()).filter(s->java.util.Set.of("FAILED","CANCELLED","COMPLETED_WITH_WARNINGS").contains(s.status()))
+            .collect(java.util.stream.Collectors.toMap(WorkspaceAccessRepository.SyncStatusView::connectionId,WorkspaceAccessRepository.SyncStatusView::message,(a,b)->a)));
         model.addAttribute("syncInProgress",syncStatuses.stream().anyMatch(sync->
             "QUEUED".equals(sync.status())||"RUNNING".equals(sync.status())));
         model.addAttribute("syncJobsByConnection", repository.listCurrentSyncJobs(tenantId).stream()
-            .collect(Collectors.groupingBy(WorkspaceAccessRepository.SyncJobView::connectionId)));
+            .filter(s->visible.contains(s.connectionId())).collect(Collectors.groupingBy(WorkspaceAccessRepository.SyncJobView::connectionId)));
         return "connections";
+    }
+
+    @PostMapping("/app/connections/name")
+    String renameConnection(@RequestParam UUID id,@RequestParam String displayName,HttpSession session,Authentication authentication,RedirectAttributes redirect){
+        UUID tenant=(UUID)session.getAttribute(AccountSelectionController.TENANT_ID);
+        if(tenant==null)return "redirect:/app/select-account";
+        shopifyAccess.require(tenant,id,authentication);
+        try{repository.renameConnection(tenant,id,displayName);
+            if(id.equals(session.getAttribute(AccountSelectionController.STORE_ID)))session.setAttribute(AccountSelectionController.STORE_NAME,displayName.trim());
+            redirect.addFlashAttribute("connectionSuccess","Store name updated.");
+        }catch(IllegalArgumentException ex){redirect.addFlashAttribute("connectionError",ex.getMessage());}
+        return "redirect:/app/connections";
     }
 
     @PostMapping("/app/connections/{connectionId}/disconnect")
@@ -77,8 +94,9 @@ public class AdministrationController {
         UUID tenantId=(UUID)session.getAttribute(AccountSelectionController.TENANT_ID);
         if(tenantId==null)return "redirect:/app/select-account";
         try {
+            shopifyAccess.require(tenantId,connectionId,authentication);
             boolean isShopify="SHOPIFY".equals(repository.findConnection(tenantId,connectionId).channel());
-            if(isShopify){shopifyAccess.require(tenantId,connectionId,authentication);repository.disconnectShopifyConnection(tenantId,connectionId);}
+            if(isShopify){repository.disconnectShopifyConnection(tenantId,connectionId);}
             else repository.disconnectConnection(tenantId,connectionId);
             if(connectionId.equals(session.getAttribute(AccountSelectionController.STORE_ID))){
                 session.removeAttribute(AccountSelectionController.STORE_ID);
@@ -91,10 +109,11 @@ public class AdministrationController {
 
     @PostMapping("/app/connections/{connectionId}/credentials")
     String saveCredentials(@PathVariable UUID connectionId, @RequestParam Map<String, String> form,
-            HttpSession session, RedirectAttributes redirect) {
+            HttpSession session, Authentication authentication, RedirectAttributes redirect) {
         UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
         if (tenantId == null) return "redirect:/app/select-account";
         try {
+            shopifyAccess.require(tenantId,connectionId,authentication);
             credentialService.connect(tenantId, connectionId, form);
             redirect.addFlashAttribute("connectionSuccess",
                 "Connection verified. We are now preparing the store's Amazon data.");
@@ -107,11 +126,12 @@ public class AdministrationController {
     @PostMapping("/app/connections")
     String addConnection(@RequestParam String channel, @RequestParam String displayName,
             @RequestParam(defaultValue = "") String sellerIdentifier,
-            @RequestParam String marketplaceIdentifier,
-            HttpSession session, RedirectAttributes redirect) {
+            @RequestParam String marketplaceIdentifier,@RequestParam(required=false) UUID accountId,
+            HttpSession session, Authentication authentication, RedirectAttributes redirect) {
         UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
         if (tenantId == null) return "redirect:/app/select-account";
         try {
+            tenantId=repository.connectionDestination(tenantId,accountId,authentication.getName());
             repository.addConnection(tenantId, channel, displayName, sellerIdentifier, marketplaceIdentifier);
             redirect.addFlashAttribute("connectionSuccess", "Store added. Select Set up to connect it.");
         } catch (RuntimeException ex) {
@@ -127,14 +147,26 @@ public class AdministrationController {
         var accounts = repository.listAllAccounts();
         model.addAttribute("accounts", accounts);
         model.addAttribute("accountCount", accounts.size());
+        model.addAttribute("memberInitials",accounts.stream().collect(Collectors.toMap(WorkspaceAccessRepository.AccountView::id,a->repository.memberInitials(a.id()))));
         model.addAttribute("autoOpenAddAccount", create);
         return "accounts";
     }
 
+    @GetMapping("/app/platform/accounts/{account}/business-details") @ResponseBody
+    WorkspaceAccessRepository.BusinessDetails businessDetails(@PathVariable UUID account,Authentication actor) {
+        return repository.businessDetails(account,actor.getName());
+    }
+
+    @PostMapping("/app/platform/accounts/{account}/business-details") @ResponseBody
+    ResponseEntity<?> saveBusinessDetails(@PathVariable UUID account,Authentication actor,@RequestParam String displayName,@RequestParam String name,@RequestParam String address,@RequestParam(required=false) MultipartFile logo) throws java.io.IOException {
+        try { repository.saveBusinessDetails(account,actor.getName(),displayName,name,address,logo==null||logo.isEmpty()?null:validatedLogo(logo)); return ResponseEntity.noContent().build(); }
+        catch(IllegalArgumentException ex){ return ResponseEntity.badRequest().body(Map.of("error",ex.getMessage())); }
+    }
+
     @PostMapping("/app/platform/accounts")
-    String addAccount(@RequestParam String displayName, RedirectAttributes redirect) {
+    String addAccount(@RequestParam String displayName, Authentication actor, RedirectAttributes redirect) {
         try {
-            repository.addAccount(displayName);
+            repository.createClient(displayName, actor.getName());
             redirect.addFlashAttribute("accountSuccess", "Account created. Open it to add marketplace stores.");
         } catch (RuntimeException ex) {
             redirect.addFlashAttribute("accountError", ex.getMessage());
@@ -150,14 +182,18 @@ public class AdministrationController {
         if(!repository.canAdministerAccount(tenantId,authentication.getName(),superAdmin))
             return "redirect:/app?accountLogoError=forbidden";
         try{
+            var picture=validatedLogo(logo);
+            repository.saveAccountLogo(tenantId,picture.contentType(),picture.bytes());
+            redirect.addFlashAttribute("accountSuccess","Company logo saved. It now appears wherever this account is selected.");
+        }catch(Exception e){redirect.addFlashAttribute("accountError",e instanceof IllegalArgumentException?e.getMessage():"The company logo could not be saved.");}
+        return superAdmin?"redirect:/app/platform/accounts":"redirect:/app";
+    }
+    private WorkspaceAccessRepository.LogoData validatedLogo(MultipartFile logo) throws java.io.IOException {
             if(logo==null||logo.isEmpty())throw new IllegalArgumentException("Choose a PNG, JPEG, or WebP logo.");
             if(logo.getSize()>2_000_000)throw new IllegalArgumentException("Use a logo smaller than 2 MB.");
             String type=logo.getContentType()==null?"":logo.getContentType();
             if(!java.util.Set.of("image/png","image/jpeg","image/webp").contains(type))throw new IllegalArgumentException("Use a PNG, JPEG, or WebP logo.");
-            repository.saveAccountLogo(tenantId,type,logo.getBytes());
-            redirect.addFlashAttribute("accountSuccess","Company logo saved. It now appears wherever this account is selected.");
-        }catch(Exception e){redirect.addFlashAttribute("accountError",e instanceof IllegalArgumentException?e.getMessage():"The company logo could not be saved.");}
-        return superAdmin?"redirect:/app/platform/accounts":"redirect:/app";
+            return new WorkspaceAccessRepository.LogoData(logo.getBytes(),type);
     }
     @GetMapping("/app/platform/accounts/{tenantId}/logo") @ResponseBody
     ResponseEntity<byte[]> logo(@PathVariable UUID tenantId, Authentication authentication){

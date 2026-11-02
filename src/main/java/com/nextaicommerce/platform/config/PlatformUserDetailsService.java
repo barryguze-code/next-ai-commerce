@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
@@ -19,15 +18,8 @@ public class PlatformUserDetailsService implements UserDetailsService {
     private record LoginUser(UUID id, String email, String passwordHash, String status, boolean superAdmin) {}
 
     private final JdbcTemplate jdbc;
-    private final String fallbackEmail;
-    private final String fallbackPassword;
-
-    PlatformUserDetailsService(JdbcTemplate jdbc,
-            @Value("${app.local-admin.email}") String fallbackEmail,
-            @Value("${app.local-admin.password}") String fallbackPassword) {
+    PlatformUserDetailsService(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
-        this.fallbackEmail = fallbackEmail.toLowerCase(Locale.ROOT);
-        this.fallbackPassword = fallbackPassword;
     }
 
     @Override
@@ -42,8 +34,6 @@ public class PlatformUserDetailsService implements UserDetailsService {
                 rs.getString("password_hash"), rs.getString("status"), rs.getBoolean("super_admin")), email);
 
         if (users.isEmpty()) {
-            if (email.equals(fallbackEmail)) return User.withUsername(fallbackEmail)
-                .password("{noop}" + fallbackPassword).roles("PLATFORM_ADMIN").build();
             throw new UsernameNotFoundException("Invalid email or password");
         }
 
@@ -55,7 +45,7 @@ public class PlatformUserDetailsService implements UserDetailsService {
         if (login.superAdmin()) authorities.add(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"));
         for (UUID tenantId : jdbc.query("SELECT id FROM tenants", (rs, row) -> rs.getObject(1, UUID.class))) {
             jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenantId.toString());
-            jdbc.queryForList("SELECT role FROM tenant_memberships WHERE tenant_id = ? AND user_id = ?",
+            jdbc.queryForList("SELECT role FROM effective_account_memberships WHERE tenant_id = ? AND user_id = ?",
                 String.class, tenantId, login.id()).forEach(role ->
                     authorities.add(new SimpleGrantedAuthority("ROLE_" + role)));
         }

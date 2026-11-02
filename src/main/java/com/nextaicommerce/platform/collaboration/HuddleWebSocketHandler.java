@@ -27,7 +27,7 @@ public class HuddleWebSocketHandler extends TextWebSocketHandler {
     private static final Logger log=LoggerFactory.getLogger(HuddleWebSocketHandler.class);
     private static final Set<String> CHAT_ROLES=Set.of("ROLE_PLATFORM_ADMIN","ROLE_OWNER","ROLE_ADMIN","ROLE_OPERATOR","ROLE_VIEWER");
     private record ClientMessage(String type,UUID huddleId,List<UUID> participantIds,String subjectType,String subjectKey,
-            String subjectLabel,String parentUrl,String contextSnapshot,String body,Boolean closeConversation) {}
+            String subjectLabel,String parentUrl,String contextSnapshot,String body,Boolean closeConversation,String title,String dueDate,String timeZone) {}
     private record Client(UUID tenantId,HuddleService.Participant person,boolean canHuddle,WebSocketSession session) {}
 
     private final Map<String,Client> clients=new ConcurrentHashMap<>();
@@ -78,7 +78,7 @@ public class HuddleWebSocketHandler extends TextWebSocketHandler {
                 case "MESSAGE"->broadcast(scope,"HUDDLE_UPDATED",huddles.message(scope,message.huddleId(),client.person().id(),message.body()));
                 case "LEAVE"->leave(actor,message.huddleId());
                 case "END"->broadcast(scope,"HUDDLE_ENDED",huddles.end(scope,message.huddleId(),client.person().id()));
-                case "SAVE"->{var saved=huddles.save(scope,message.huddleId(),client.person().id(),Boolean.TRUE.equals(message.closeConversation()));
+                case "SAVE"->{var saved=huddles.save(scope,message.huddleId(),client.person().id(),Boolean.TRUE.equals(message.closeConversation()),message.title()==null?"Saved chat":message.title(),message.dueDate()==null||message.dueDate().isBlank()?null:java.time.LocalDate.parse(message.dueDate()),message.timeZone()==null?"America/Los_Angeles":message.timeZone());
                     broadcast(scope,"HUDDLE_SAVED",saved.huddle(),Map.of("reviewId",saved.reviewId(),"closeConversation",Boolean.TRUE.equals(message.closeConversation())));}
                 default->throw new IllegalArgumentException("That huddle action is not supported.");
             }

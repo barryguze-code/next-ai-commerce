@@ -21,7 +21,7 @@
     const start=document.querySelector('#thread-conversation-start [name=timeZone]');if(start)start.value=zone();
     document.addEventListener('click',event=>{
       const trigger=event.target.closest('[data-edit-due]');if(!trigger||trigger.disabled||!trigger.dataset.reviewId)return;
-      event.preventDefault();event.stopPropagation();if(busy)return;if(active)close();active=trigger;form.action='/app/collaboration/reviews/'+encodeURIComponent(trigger.dataset.reviewId)+'/due-date';
+      event.preventDefault();event.stopPropagation();if(busy)return;if(active)close();active=trigger;form.action=trigger.dataset.dueUrl||'/app/collaboration/reviews/'+encodeURIComponent(trigger.dataset.reviewId)+'/due-date';
       form.elements.dueDate.value=trigger.dataset.dueDate||'';form.elements.timeZone.value=trigger.dataset.timeZone||zone();
       error.hidden=true;trigger.after(editor);trigger.hidden=true;trigger.setAttribute('aria-expanded','true');editor.hidden=false;(form.elements.dueDate.closest('.short-date-control')?.querySelector('.short-date-text')||form.elements.dueDate).focus();
     });

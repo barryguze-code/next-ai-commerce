@@ -47,6 +47,14 @@ import org.springframework.test.web.servlet.MockMvc;
 class SecurityConfigTest {
     private static final UUID TENANT_ID = UUID.randomUUID();
     @Autowired MockMvc mvc;
+    @Test void originalSourceNavigationRequiresCsrfAndRetainsViewerReadAccess() throws Exception {
+        mvc.perform(post("/app/collaboration/personal/open-source").with(user("viewer@example.test").roles("VIEWER")))
+            .andExpect(status().isForbidden());
+        // This MVC slice excludes the personal controller; 404 proves security allows the
+        // read-navigation route, while the controller tests cover record-level authorization.
+        mvc.perform(post("/app/collaboration/personal/open-source").with(user("viewer@example.test").roles("VIEWER")).with(csrf()))
+            .andExpect(status().isNotFound());
+    }
     @Test void viewerCannotSubmitGlobalCatalogueSelection()throws Exception{
         mvc.perform(post("/app/catalog/products").with(user("viewer@example.com").roles("VIEWER")).with(csrf())
             .sessionAttr("selectedTenantId",TENANT_ID).param("globalProductId",UUID.randomUUID().toString()).param("globalRevision","reviewed"))
@@ -117,13 +125,19 @@ class SecurityConfigTest {
         @Bean WorkspaceAccessRepository workspaceAccessRepository() {
             return new WorkspaceAccessRepository(null) {
                 @Override public List<AccountView> listAllAccounts() { return List.of(); }
+                @Override public List<AccountOption> connectionDestinations(UUID current,String email) { return List.of(); }
                 @Override public List<AccountView> listAvailableAccounts(String email, boolean superAdmin) { return List.of(); }
                 @Override public List<ConnectionView> listConnections(UUID tenantId, String tenantName) { return List.of(); }
                 @Override public List<AccountOption> listAccountOptions(String email,boolean admin){
                     var request=(org.springframework.web.context.request.ServletRequestAttributes)org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+                    if(request!=null && "/app/users".equals(request.getRequest().getRequestURI()))
+                        return List.of(new AccountOption(TENANT_ID,"Ibcore","IB",null,List.of()));
                     boolean mappingRequest=request!=null&&"/app/marketplace-skus/mappings".equals(request.getRequest().getRequestURI());
                     return mappingRequest&&"operator@example.com".equals(email)?List.of(new AccountOption(TENANT_ID,"Ibcore","IB",null,List.of(new ConnectionView(StubConfig.MAPPING_STORE,TENANT_ID,"Ibcore","Ibcore","AMAZON","seller","ATVPDKIKX0DER","Amazon US","US","ACTIVE",null,false)))):List.of();
                 }
+                @Override public boolean isCurrentPlatformAdmin(String email){return false;}
+                @Override public boolean canInviteHome(UUID account,String email){return false;}
+                @Override public List<MemberView> directoryMembers(UUID account){return List.of();}
                 @Override public List<MemberView> listMembers(UUID tenantId) { return List.of(); }
                 @Override public List<InvitationView> listInvitations(UUID tenantId) { return List.of(); }
                 @Override public int pendingInvitationCount(UUID tenantId) { return 0; }
@@ -131,7 +145,7 @@ class SecurityConfigTest {
                 @Override public List<SyncJobView> listCurrentSyncJobs(UUID tenantId) { return List.of(); }
                 @Override public boolean historicalSyncInProgress(UUID tenantId) { return false; }
                 @Override public boolean canAccessAccount(UUID tenantId, String email, boolean superAdmin) { return true; }
-                @Override public boolean canAdministerAccount(UUID tenantId, String email, boolean superAdmin) { return true; }
+                @Override public boolean canAdministerAccount(UUID tenantId, String email, boolean superAdmin) { return !"operator@example.com".equals(email); }
                 @Override public boolean canOperateAccount(UUID tenantId,String email){return true;}
                 @Override public void saveAccountLogo(UUID tenantId,String contentType,byte[] bytes) {}
                 @Override public LogoData accountLogo(UUID tenantId) { return new LogoData(new byte[] {1, 2, 3}, "image/png"); }
@@ -282,7 +296,9 @@ class SecurityConfigTest {
     }
 
     @Test void operatorCannotManageUsersOrConnections() throws Exception {
-        mvc.perform(get("/app/users").with(user("operator@example.com").roles("OPERATOR")))
+        mvc.perform(get("/app/users").param("account",TENANT_ID.toString()).param("invite","true").with(user("operator@example.com").roles("OPERATOR")))
+            .andExpect(status().isOk()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.model().attribute("openInvitation",false)).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.model().attribute("manageFilteredAccount",false));
+        mvc.perform(get("/app/users").param("account",UUID.randomUUID().toString()).with(user("operator@example.com").roles("OPERATOR")))
             .andExpect(status().isForbidden());
         mvc.perform(get("/app/connections").with(user("operator@example.com").roles("OPERATOR")))
             .andExpect(status().isForbidden());

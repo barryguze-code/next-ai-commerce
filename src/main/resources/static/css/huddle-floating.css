@@ -66,3 +66,5 @@ html body.app-page .huddle-people-panel input[type=search]{height:36px;min-heigh
 .huddle-person-avatar .huddle-presence-dot{position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border:2px solid var(--card,#fff);box-sizing:content-box}
 .huddle-directory-person small{white-space:nowrap}.huddle-people-empty{padding:18px 8px;margin:0;text-align:center;color:var(--muted,#65748a);font-size:12px;line-height:18px}
 html[data-theme=dark] .huddle-people-tabs button[aria-pressed=true]{background:#263b55;color:#e2e9f3}
+
+.huddle-top-icon>img{display:block;width:34px;height:34px;object-fit:contain;margin:auto}

@@ -321,3 +321,8 @@ html[data-theme="dark"] .invite-dialog{border-color:#304156;background:#131e2a;b
 html[data-theme="dark"] .invite-dialog .dialog-shell,html[data-theme="dark"] .invite-dialog .dialog-header,html[data-theme="dark"] .invite-dialog .dialog-actions{background:#151f2c}
 @keyframes platform-dialog-in{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
 @media(max-width:620px){.invite-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px);border-radius:17px}.invite-dialog .dialog-shell{max-height:calc(100dvh - 22px)}.invite-dialog .dialog-header{padding:16px 17px 13px}.invite-dialog .dialog-body{padding:15px 17px}.invite-dialog .dialog-actions{padding:12px 17px}}
+.context-menu[data-collaboration-scope] .context-switcher [hidden]{display:none!important}
+
+button[data-account-title]{appearance:none;line-height:inherit;font:inherit;font-weight:600;color:inherit;background:transparent;border:0;padding:0;text-align:left;cursor:pointer}
+button[data-account-title]:hover{text-decoration:underline}
+button[data-account-title]:focus-visible{outline:2px solid var(--blue,#2e6be6);outline-offset:4px;border-radius:3px}

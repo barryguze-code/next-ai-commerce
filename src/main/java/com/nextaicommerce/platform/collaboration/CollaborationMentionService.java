@@ -33,6 +33,15 @@ public class CollaborationMentionService {
         }
     }
 
+    /** Replies notify mentioned teammates without changing task assignment or personal ranks. */
+    public void queueReply(UUID tenantId,CollaborationRepository.PostedMessage posted,String body,String authorEmail){
+        if(posted==null||posted.messageId()==null||body==null||body.isBlank())return;
+        try{
+            Set<UUID> mentioned=mentionedMemberIds(body,repository.members(tenantId),authorEmail);
+            if(repository.queueMentions(tenantId,posted.reviewId(),posted.messageId(),mentioned)>0)notifications.deliverAsync(tenantId);
+        }catch(Exception exception){log.error("Reply mention could not be queued — conversation {}. The message remains saved.",posted.reviewId(),exception);}
+    }
+
     public void assign(UUID tenantId,UUID reviewId,String actor,Set<UUID> people){
         if(repository.assign(tenantId,reviewId,actor,people,true)!=null)notifications.deliverAsync(tenantId);
     }

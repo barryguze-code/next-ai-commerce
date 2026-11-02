@@ -39,6 +39,25 @@ import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 class TemplateRenderingTest {
+    @Test void finalAccountAndConnectionControlsReuseTheSharedTable() throws Exception {
+        UUID account=UUID.randomUUID(),store=UUID.randomUUID();var c=webContext();
+        c.setVariables(Map.of("canManageUsers",true,"canEditCatalog",true,"selectedAccountName","Account","selectedAccountId",account,
+            "accounts",List.of(new com.nextaicommerce.platform.web.WorkspaceAccessRepository.AccountView(account,"Account","A","account","ACTIVE",1,1,false)),
+            "accountCount",1,"memberInitials",Map.of(account,List.of("A"))));
+        String accounts=templateEngine().process("accounts",c);
+        assertThat(accounts).contains("data-account-title","data-business-details").doesNotContain("Every business account registered");
+        c.setVariable("connections",List.of(new ConnectionView(store,account,"Account","Store one","AMAZON","SELLER","ATVPDKIKX0DER","Amazon US","🇺🇸","ACTIVE",null,true)));
+        c.setVariable("connectionCount",1);c.setVariable("shopifyEnabled",false);c.setVariable("connectionErrors",Map.of());c.setVariable("shopifyVerified",Map.of());c.setVariable("connectionAccounts",List.of());
+        String connections=templateEngine().process("connections",c);
+        assertThat(connections).contains("data-column=\"channel\"",">Amazon</strong>","Edit store name","name=\"displayName\"");
+        java.nio.file.Files.createDirectories(java.nio.file.Path.of(".local/browser-fixtures"));
+        java.nio.file.Files.writeString(java.nio.file.Path.of(".local/browser-fixtures/accounts-final.html"),accounts);
+        java.nio.file.Files.writeString(java.nio.file.Path.of(".local/browser-fixtures/connections-final.html"),connections);
+        c.setVariable("syncStatuses",List.of(new SyncStatusView(store,"Store one","FAILED",100,"SHOPIFY_ORDERS","Retained warning",Instant.now(),false)));
+        c.setVariable("syncJobsByConnection",Map.of());
+        assertThat(templateEngine().process("fragments/sync-onboarding",c)).doesNotContain("Needs attention","Retained warning");
+    }
+
     @Test void globalCatalogueRendersBoundedServerControls() throws Exception{
         var context=webContext();context.setVariable("products",List.of());context.setVariable("globalPage",new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductPage(List.of(),32412,0,25));
         context.setVariable("query","339807");context.setVariable("globalSort","product");context.setVariable("globalDirection","asc");
@@ -184,7 +203,7 @@ class TemplateRenderingTest {
         var engine = templateEngine();
         var context = webContext();
         context.setVariables(Map.ofEntries(
-            Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),
+            Map.entry("manageFilteredAccount", true), Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),
             Map.entry("canManageUsers", true), Map.entry("canEditCatalog", true),
             Map.entry("isSuperAdmin", true), Map.entry("selectedAccountName", "Ibcore LLC"),
             Map.entry("signedInEmail", "barry.guze@gmail.com"), Map.entry("roleLabel", "Super Admin"),
@@ -207,7 +226,7 @@ class TemplateRenderingTest {
             .doesNotContain("Not assigned");
         var globalContext = webContext();
         globalContext.setVariables(Map.ofEntries(
-            Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),
+            Map.entry("manageFilteredAccount", true), Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),
             Map.entry("canManageUsers", true), Map.entry("canEditCatalog", true),
             Map.entry("isSuperAdmin", true), Map.entry("selectedAccountName", "Ibcore LLC"),
             Map.entry("signedInEmail", "barry.guze@gmail.com"), Map.entry("roleLabel", "Super Admin"),
@@ -225,7 +244,7 @@ class TemplateRenderingTest {
         var vendor = new VendorView(UUID.randomUUID(), "KeHE", "KEHE", "USD",
             new BigDecimal("18"), new BigDecimal("125"), 20, "ACTIVE");
         var base = Map.<String,Object>ofEntries(
-            Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),
+            Map.entry("manageFilteredAccount", true), Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),
             Map.entry("canManageUsers", true), Map.entry("canEditCatalog", true),
             Map.entry("isSuperAdmin", true), Map.entry("selectedAccountName", "Ibcore LLC"),
             Map.entry("signedInEmail", "barry.guze@gmail.com"), Map.entry("roleLabel", "Super Admin"),
@@ -274,7 +293,7 @@ class TemplateRenderingTest {
             "5 days left","Action","Inventory actions","Plan sale pricing","Adjust inventory",
             "Remove or return stock","Amazon shelf-life discounts",
             "Receive an item not on the invoice",
-            "Received at zero cost","24 each","Ski Queen Gjetost","FEFO").doesNotContain("inventory-action-dialog");
+            "Received at zero cost","24 each","Ski Queen Gjetost").doesNotContain("inventory-action-dialog");
 
         var countReview=webContext();countReview.setVariables(base);
         countReview.setVariable("physicalCount",new com.nextaicommerce.platform.receiving.PhysicalCountImportService.ImportView(
@@ -455,7 +474,7 @@ class TemplateRenderingTest {
             new MockHttpServletRequest(servletContext), new MockHttpServletResponse());
         WebContext context = new WebContext(exchange);
         context.setVariables(Map.ofEntries(
-            Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),
+            Map.entry("manageFilteredAccount", true), Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),
             Map.entry("isSuperAdmin", true), Map.entry("selectedAccountName", "Ibcore"),
             Map.entry("signedInEmail", "barry.guze@gmail.com"), Map.entry("roleLabel", "Super Admin"),
             Map.entry("activeUsers", 1L), Map.entry("pendingInvitations", 0),
@@ -486,7 +505,7 @@ class TemplateRenderingTest {
         var review=new com.nextaicommerce.platform.collaboration.CollaborationRepository.Review(UUID.randomUUID(),"PLATFORM","GENERAL","Team task",null,"CONVERSATION","Check inventory","ACTIVE","barry@example.test","Barry","barry@example.test",null,now,now,null,1,0,"Barry","{}","/app/collaboration",false);
         context.setVariables(Map.ofEntries(Map.entry("canViewOperations",true),Map.entry("canManageConnections",true),Map.entry("canManageUsers",true),Map.entry("canEditCatalog",true),Map.entry("isSuperAdmin",true),Map.entry("signedInEmail","barry@example.test"),Map.entry("selectedAccountName","Local account"),Map.entry("selectedView","ACTIVE"),Map.entry("currentReturnTo","/app/collaboration"),Map.entry("reviews",List.of(review)),Map.entry("members",List.of(new com.nextaicommerce.platform.collaboration.CollaborationRepository.Member(UUID.randomUUID(),"Barry","barry@example.test","barry")))));
         var html=templateEngine().process("collaboration",context);
-        assertThat(html).contains("Assigned to","collaboration-assigned-red.png","data-assign-review","Assign teammates","data-context-menu","collaboration-message-count");
+        assertThat(html).contains("Assigned to","collaboration-assigned-dots.png","Create follow-up task","data-assign-review","Assign teammates","data-context-menu","collaboration-message-count");
         assertThat(html).doesNotContain("class=\"collaboration-context\"");
         assertThat(html).contains("data-column=\"due\"","No due date","Create task");
     }
@@ -510,7 +529,7 @@ class TemplateRenderingTest {
         var sync = new SyncStatusView(connectionId, "Ibcore", "RUNNING", 3,
             "LISTINGS_SNAPSHOT", "Downloading your product listings", Instant.now());
         context.setVariables(Map.ofEntries(
-            Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),
+            Map.entry("manageFilteredAccount", true), Map.entry("canViewOperations", true), Map.entry("canManageConnections", true),
             Map.entry("canManageUsers", true), Map.entry("isSuperAdmin", true),
             Map.entry("selectedAccountName", "Ibcore LLC"),
             Map.entry("signedInEmail", "barry.guze@gmail.com"), Map.entry("roleLabel", "Super Admin"),
