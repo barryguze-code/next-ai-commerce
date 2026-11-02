@@ -84,7 +84,7 @@ test('receiving tabs, expiration batches, fee navigation and overage confirmatio
   await page.getByRole('button',{name:'Back to receipt',exact:true}).click();assert.equal(await page.locator('[name=quantity]').inputValue(),'8');assert.equal(await page.locator('[data-batch-quantity]').inputValue(),'2');
   await page.getByRole('button',{name:'Item fees…',exact:true}).click();await page.getByRole('button',{name:'Save and continue receiving',exact:true}).click();await page.locator('[name=quantity]').waitFor();
   assert.equal(await page.locator('[name=quantity]').inputValue(),'8');assert.equal(await page.locator('[data-batch-date]').inputValue(),'2027-02-16');
-  await page.locator('[name=pack]').fill('10');assert.equal(await page.locator('[name=quantity]').inputValue(),'10');
+  await page.locator('[name=pack]').fill('10');await page.waitForFunction(()=>document.querySelector('[name=quantity]').value==='10');assert.equal(await page.locator('[name=quantity]').inputValue(),'10');
   await page.getByRole('button',{name:'Save receipt',exact:true}).click();await page.locator('#rw-warning-dialog').getByRole('button',{name:'Keep editing',exact:true}).last().click();assert.equal(posts,0);
   await page.getByRole('button',{name:'Save receipt',exact:true}).click();await page.getByRole('button',{name:'Receive with overage',exact:true}).click();
   await page.waitForFunction(()=>!document.getElementById('receiving-drawer').open);
