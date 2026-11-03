@@ -52,6 +52,35 @@ class CollaborationQueueDatabaseTest {
     long revision(){return jdbc.queryForObject("SELECT revision FROM collaboration_queue_state WHERE parent_id=?",Long.class,tenant);}
     void contiguous(){assertThat(jdbc.queryForList("SELECT queue_position FROM collaboration_tasks WHERE parent_id=? AND queue_position IS NOT NULL ORDER BY queue_position",Integer.class,tenant)).containsExactlyElementsOf(java.util.stream.IntStream.rangeClosed(1,order().size()).boxed().toList());}
 
+    @Test void completionNotifiesAllParticipantsOnceButReopenAndRepeatedCloseDoNot() {
+        var publisher=org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class);
+        queue=new CollaborationTaskQueueRepository(jdbc,publisher);
+        var task=tx.execute(s->queue.create(tenant,null,null,"Completion","",email,Set.of(stranger)));
+        org.mockito.Mockito.clearInvocations(publisher);
+        tx.execute(s->queue.state(tenant,task.reviewId(),email,"DONE",revision()));
+        var event=org.mockito.ArgumentCaptor.forClass(CollaborationTaskQueueRepository.TaskNotification.class);
+        org.mockito.Mockito.verify(publisher).publishEvent(event.capture());
+        assertThat(event.getValue().kind()).isEqualTo("COMPLETED");
+        assertThat(event.getValue().people()).containsExactlyInAnyOrder(user,stranger);
+        var mailer=org.mockito.Mockito.mock(com.nextaicommerce.platform.invitation.PlatformMailer.class);
+        var listener=new CollaborationTaskNotificationListener(jdbc,queue,mailer,new DataSourceTransactionManager(jdbc.getDataSource()),true,"https://example.test");
+        org.mockito.Mockito.doThrow(new IllegalStateException("Fixture delivery failure")).when(mailer).sendHtml(org.mockito.ArgumentMatchers.eq(email),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString());
+        listener.notify(event.getValue());
+        org.mockito.Mockito.verify(mailer).sendHtml(org.mockito.ArgumentMatchers.eq(email),org.mockito.ArgumentMatchers.contains("Conversation completed"),org.mockito.ArgumentMatchers.contains("Task completed by"));
+        org.mockito.Mockito.verify(mailer).sendHtml(org.mockito.ArgumentMatchers.eq(otherEmail),org.mockito.ArgumentMatchers.contains("Conversation completed"),org.mockito.ArgumentMatchers.contains("Task completed by"));
+        tx.execute(s->queue.state(tenant,task.reviewId(),email,"DONE",revision()));
+        tx.execute(s->queue.state(tenant,task.reviewId(),email,"OPEN",revision()));
+        org.mockito.Mockito.verifyNoMoreInteractions(publisher);
+    }
+
+    @Test void participantIsNotNecessarilyAnAssignee() {
+        var task=tx.execute(s->queue.create(tenant,null,null,"Assignment truth","",email,Set.of(stranger)));
+        var access=org.mockito.Mockito.mock(com.nextaicommerce.platform.web.WorkspaceAccessRepository.class);
+        var personal=new PersonalCollaborationQueue(jdbc,new ParentTenantRepository(jdbc),access);
+        assertThat(tx.execute(s->personal.view(email,false,"ACTIVE","")).rows().stream().filter(r->r.card().key().id().equals(task.reviewId())).findFirst().orElseThrow().card().assignedToMe()).isFalse();
+        assertThat(tx.execute(s->personal.view(otherEmail,false,"ACTIVE","")).rows().stream().filter(r->r.card().key().id().equals(task.reviewId())).findFirst().orElseThrow().card().assignedToMe()).isTrue();
+    }
+
     @Test void permissionQueryTuningIsTransactionLocalAndRestoresConnectionSetting() throws Exception {
         try(var connection=jdbc.getDataSource().getConnection()){
             var source=new SingleConnectionDataSource(connection,true);

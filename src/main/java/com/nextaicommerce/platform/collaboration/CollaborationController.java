@@ -160,6 +160,22 @@ public class CollaborationController {
         return "redirect:"+safeReturn(returnTo);
     }
 
+    @PostMapping(value="/app/collaboration/reviews/{reviewId}/reply",produces="application/json") @ResponseBody
+    ResponseEntity<?> replyJson(@PathVariable UUID reviewId,@RequestParam(required=false) String body,
+            @RequestParam(defaultValue="TEAM_CHAT") String messageType,@RequestParam(required=false) String status,
+            @RequestParam(name="attachments",required=false) List<MultipartFile> attachments,HttpSession session,Authentication authentication){
+        UUID tenantId=tenant(session);
+        try{
+            var files=attachments(attachments);String type=normalizeMessageType(messageType);
+            if((body==null||body.isBlank())&&files.isEmpty()&&status==null)throw new IllegalArgumentException("Enter a message.");
+            String safeBody=body==null||body.isBlank()?null:clean(body,4000);
+            var posted=repository.reply(tenantId,reviewId,authentication.getName(),safeBody,type,status,files);
+            if("CLOSED".equals(status))mentions.queueCompletion(tenantId,posted,authentication.getName());
+            else if("TEAM_CHAT".equals(type))mentions.queueReply(tenantId,posted,safeBody,authentication.getName());
+            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(java.util.Map.of("reviewId",reviewId));
+        }catch(IllegalArgumentException ex){return ResponseEntity.badRequest().body(java.util.Map.of("error",ex.getMessage()));}
+    }
+
     @PostMapping("/app/collaboration/reviews/{reviewId}/reopen")
     String reopen(@PathVariable UUID reviewId,@RequestParam(defaultValue="/app/collaboration?view=ACTIVE") String returnTo,
             HttpSession session,Authentication authentication,RedirectAttributes redirect){

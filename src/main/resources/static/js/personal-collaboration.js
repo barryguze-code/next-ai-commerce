@@ -48,7 +48,7 @@
                 const id=r.card.key.type+r.card.key.id,at=page.dates?.[id];
                 return !firstIds.has(id)&&at&&(!window.from||Date.parse(at)>=Date.parse(window.from))&&Date.parse(at)<Date.parse(window.until);
             });
-            if(rows.length||(filtered.length&&['THIS_WEEK','LAST_WEEK'].includes(window.key)))groups.push([labels[window.key]||window.key,rows]);
+            if(rows.length)groups.push([labels[window.key]||window.key,rows]);
         }
         let wrap=columns.querySelector('.table-wrap');
         if(!wrap){wrap=element('div','',columns);wrap.className='table-wrap';}
@@ -87,7 +87,7 @@
                 if(!expanded[key])continue;
             }
             const tbody=section;
-            const limit=label?count+(extent[key]||0):count;
+            const limit=label==='Older'?25+(extent[key]||0):label?rows.length:count;
             for(const row of rows.slice(0,limit)) {
                 const closed=['DONE','CLOSED'].includes(row.card.state);
                 const c=row.card, article=element('tr','',tbody);
@@ -195,10 +195,10 @@
                     finally {busy=false;}
                 };
             }
-            if(rows.length>limit){
+            if(label==='Older'&&rows.length>limit){
                 const moreCell=element('td','',element('tr','',section));moreCell.colSpan=ranked?9:8;
                 const more=element('button','Load more',moreCell);more.type='button';more.className='secondary-button';more.onclick=()=>{
-                extent[key]=(extent[key]||0)+Number(size.value); save();render();
+                extent[key]=(extent[key]||0)+25; save();render();
             };
             }
         }

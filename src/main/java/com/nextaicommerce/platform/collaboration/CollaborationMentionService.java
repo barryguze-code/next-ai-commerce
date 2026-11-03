@@ -25,9 +25,15 @@ public class CollaborationMentionService {
     public void queue(UUID tenantId, CollaborationRepository.PostedMessage posted, String body, String authorEmail) {
         if(posted==null||posted.messageId()==null||body==null||body.isBlank()) return;
         try {
-            Set<UUID> mentioned=mentionedMemberIds(body,repository.members(tenantId),authorEmail);
-            var assignment=mentioned.isEmpty()?null:repository.assign(tenantId,posted.reviewId(),authorEmail,mentioned,false);
-            if(assignment!=null||repository.queueMentions(tenantId,posted.reviewId(),posted.messageId(),mentioned)>0) notifications.deliverAsync(tenantId);
+            var team=repository.members(tenantId);Set<UUID> mentioned=mentionedMemberIds(body,team,authorEmail);
+            var review=repository.review(tenantId,posted.reviewId(),authorEmail);
+            if(review==null)return;
+            var byId=new java.util.HashMap<UUID,CollaborationRepository.Member>();
+            for(var member:team)byId.put(member.id(),member);
+            mentioned.removeIf(id->review.assignedTo(byId.get(id).email()));
+            repository.queueMentions(tenantId,posted.reviewId(),posted.messageId(),mentioned);
+            // Initial assignments already queued ASSIGNED mail atomically. Only unassigned mentions need MENTION mail.
+            notifications.deliverAsync(tenantId);
         } catch(Exception exception) {
             log.error("Collaboration mention could not be queued — conversation {}. The message remains saved.",posted.reviewId(),exception);
         }

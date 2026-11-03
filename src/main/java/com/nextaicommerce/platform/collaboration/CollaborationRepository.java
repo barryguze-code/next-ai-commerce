@@ -337,13 +337,14 @@ public class CollaborationRepository {
         var posted=create(tenantId,"PLATFORM","GENERAL:"+UUID.randomUUID(),title,null,"TASK",title,description,
             "TEAM_CHAT","{}",null,authorEmail,null,dueAt,List.of());
         // Create and assign atomically: invalid/cross-account assignees must not leave an orphan task.
-        assign(tenantId,posted.reviewId(),authorEmail,people,true);
+        assign(tenantId,posted.reviewId(),authorEmail,initialAssignees(tenantId,authorEmail,people,description),true);
         return posted;
     }
 
     @Transactional
     public PostedMessage createStoreTask(UUID tenantId,UUID storeId,String title,String description,String actor,Set<UUID> people,java.time.LocalDate date,String zone){
         setContext(tenantId,actor);
+        people=initialAssignees(tenantId,actor,people,description);
         if(storeId!=null&&!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM marketplace_connections WHERE tenant_id=? AND id=?)",Boolean.class,tenantId,storeId)))throw new IllegalArgumentException("Choose a store from this account.");
         if(storeId!=null){
             UUID actorId=jdbc.queryForObject("SELECT id FROM app_users WHERE lower(email)=lower(?) AND status='ACTIVE'",UUID.class,actor);
@@ -353,6 +354,13 @@ public class CollaborationRepository {
         var posted=createGeneralTask(tenantId,title,description.isBlank()?title:description,actor,people,deadline(date,zone));
         jdbc.update("UPDATE collaboration_reviews SET marketplace_connection_id=?,due_date=?,due_time_zone=? WHERE tenant_id=? AND id=?",storeId,date==null?null:java.sql.Date.valueOf(date),date==null?null:zone,tenantId,posted.reviewId());
         return posted;
+    }
+
+    private Set<UUID> initialAssignees(UUID tenantId,String actor,Set<UUID> explicit,String body){
+        if(!explicit.isEmpty())return explicit;
+        var mentioned=CollaborationMentionService.mentionedMemberIds(body,members(tenantId),actor);
+        if(!mentioned.isEmpty())return mentioned;
+        return Set.of(jdbc.queryForObject("SELECT id FROM app_users WHERE lower(email)=lower(?) AND status='ACTIVE'",UUID.class,actor));
     }
 
     @Transactional
@@ -403,7 +411,7 @@ public class CollaborationRepository {
         boolean team="TEAM_CHAT".equals(normalizeMessageType(messageType));
         var posted=createDatedConversation(tenantId,subjectType,subjectKey,subjectLabel,marketplace,actionKind,title,message,messageType,
             contextSnapshot,parentUrl,actor,null,team?date:null,zone,files);
-        if(team&&!people.isEmpty())assign(tenantId,posted.reviewId(),actor,people,true);
+        if(team)assign(tenantId,posted.reviewId(),actor,initialAssignees(tenantId,actor,people,message),true);
         return posted;
     }
 
@@ -474,7 +482,10 @@ public class CollaborationRepository {
 
     @Transactional
     public PostedMessage reply(UUID tenantId,UUID reviewId,String authorEmail,String body,String messageType,String status,List<AttachmentUpload> attachments){
-        setContext(tenantId,authorEmail);guardShopifyReview(tenantId,reviewId);String type=normalizeMessageType(messageType);UUID messageId=null;
+        setContext(tenantId,authorEmail);guardShopifyReview(tenantId,reviewId);
+        if(review(tenantId,reviewId,authorEmail)==null)throw new org.springframework.security.access.AccessDeniedException("Conversation access required.");
+        String type=normalizeMessageType(messageType);UUID messageId=null;
+        if("CLOSED".equals(status))jdbc.queryForObject("SELECT id FROM collaboration_reviews WHERE tenant_id=? AND id=? FOR UPDATE",UUID.class,tenantId,reviewId);
         if((body!=null&&!body.isBlank())||(attachments!=null&&!attachments.isEmpty())){
             String safeBody=body==null||body.isBlank()?"Shared an attachment.":body.trim();
             messageId=jdbc.query("""
@@ -550,7 +561,7 @@ public class CollaborationRepository {
         String oldNames=team.stream().filter(m->before.contains(m.id())).map(Member::name).collect(java.util.stream.Collectors.joining(", "));
         String newNames=team.stream().filter(m->after.contains(m.id())).map(Member::name).collect(java.util.stream.Collectors.joining(", "));
         UUID message=jdbc.queryForObject("INSERT INTO collaboration_messages(tenant_id,review_id,author_email,sender_id,message_type,body) VALUES (?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?)),'TEAM_CHAT',?) RETURNING id",UUID.class,tenantId,reviewId,actor,actor,actorName+" changed assignment from "+(oldNames.isEmpty()?"unassigned":oldNames)+" to "+(newNames.isEmpty()?"unassigned":newNames)+".");
-        var added=new LinkedHashSet<>(after);added.removeAll(before);queueNotifications(tenantId,reviewId,message,added,"ASSIGNED");
+        var added=new LinkedHashSet<>(after);added.removeAll(before);added.remove(currentMember(tenantId,actor).id());queueNotifications(tenantId,reviewId,message,added,"ASSIGNED");
         return new PostedMessage(reviewId,message);
     }
 
@@ -564,14 +575,16 @@ public class CollaborationRepository {
         """.formatted(SHOPIFY_THREAD_ACCESS.replace(VIEWER,"member.email")),tenantId,reviewId,messageId,kind,tenantId,memberId,tenantId,reviewId);return queued;}
 
     @Transactional(readOnly=true)
-    public Set<UUID> participantMemberIds(UUID tenantId,UUID reviewId,String excludingEmail){setContext(tenantId,excludingEmail);return new LinkedHashSet<>(jdbc.query("""
-        SELECT DISTINCT member.id FROM effective_account_memberships membership JOIN app_users member ON member.id=membership.user_id
-        WHERE membership.tenant_id=? AND member.status='ACTIVE' AND lower(member.email)<>lower(?)
+    public Set<UUID> participantMemberIds(UUID tenantId,UUID reviewId,String viewerEmail){setContext(tenantId,viewerEmail);return new LinkedHashSet<>(jdbc.query("""
+        SELECT DISTINCT member.id FROM app_users member
+        WHERE member.status='ACTIVE' AND (EXISTS(SELECT 1 FROM effective_account_memberships membership WHERE membership.tenant_id=? AND membership.user_id=member.id) OR EXISTS(SELECT 1 FROM platform_administrators admin WHERE admin.user_id=member.id AND admin.active))
           AND EXISTS (SELECT 1 FROM collaboration_messages team WHERE team.review_id=? AND team.message_type='TEAM_CHAT') AND (
+            EXISTS (SELECT 1 FROM collaboration_assignments a WHERE a.tenant_id=? AND a.review_id=? AND a.user_id=member.id) OR
+            member.id=(SELECT assigned_to FROM collaboration_reviews WHERE tenant_id=? AND id=?) OR
             lower(member.email)=(SELECT lower(requested_by) FROM collaboration_reviews WHERE tenant_id=? AND id=?) OR
             EXISTS (SELECT 1 FROM collaboration_messages message WHERE message.tenant_id=? AND message.review_id=? AND message.message_type='TEAM_CHAT' AND lower(message.author_email)=lower(member.email)) OR
             EXISTS (SELECT 1 FROM collaboration_mentions mention JOIN collaboration_messages message ON message.id=mention.message_id AND message.message_type='TEAM_CHAT' WHERE mention.tenant_id=? AND mention.review_id=? AND mention.mentioned_user_id=member.id))
-        """,(rs,row)->rs.getObject(1,UUID.class),tenantId,excludingEmail,reviewId,tenantId,reviewId,tenantId,reviewId,tenantId,reviewId));}
+        """,(rs,row)->rs.getObject(1,UUID.class),tenantId,reviewId,tenantId,reviewId,tenantId,reviewId,tenantId,reviewId,tenantId,reviewId,tenantId,reviewId));}
 
     @Transactional
     public List<PendingMention> claimPendingMentions(UUID tenantId,int limit){setContext(tenantId,null);return jdbc.query("""

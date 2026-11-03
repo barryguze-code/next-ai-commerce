@@ -126,3 +126,5 @@ html[data-theme=dark] .sidebar-huddle-menu,html[data-theme=dark] .sidebar-huddle
 
 #contextual-thread-dialog .thread-record{flex:1;min-width:0}
 #contextual-thread-dialog .dialog-close{flex:none}
+
+.thread-draft-audience{flex-basis:100%;margin:0;font-size:.85rem;color:var(--muted,#65748b)}

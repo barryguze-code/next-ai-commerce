@@ -161,6 +161,9 @@ public class CollaborationTaskQueueRepository {
             jdbc.update("UPDATE collaboration_tasks SET state=?,queue_position=?,closed_at=NULL,updated_at=now() WHERE parent_id=? AND id=?",state,position,tenant,review);
         }
         revision=changed(tenant,review,user,"STATE","{\"from\":\""+current.state()+"\",\"to\":\""+state+"\"}");
-        queueMutation(false);return new Position(review,state,position,revision);
+        queueMutation(false);
+        if("DONE".equals(state))notify(tenant,review,email,new LinkedHashSet<>(jdbc.queryForList(
+            "SELECT user_id FROM collaboration_task_participants WHERE parent_id=? AND task_id=?",UUID.class,tenant,review)),"COMPLETED");
+        return new Position(review,state,position,revision);
     }
 }

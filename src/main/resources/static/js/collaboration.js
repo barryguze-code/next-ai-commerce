@@ -38,9 +38,9 @@
     const choices=available.filter(member=>[member.handle,member.name,member.email].some(value=>(value||'').toLowerCase().includes(current.query))).slice(0,6);
     if(!choices.length){menu.hidden=true;return;}
     menu.innerHTML=choices.map(member=>'<button type="button" role="option" data-handle="'+escape(member.handle)+'"><span>'+escape((member.name||'?').trim().charAt(0).toUpperCase())+'</span><div><strong>'+escape(member.name)+'</strong><small><b>@'+escape(member.handle)+'</b> · '+escape(member.email)+'</small></div></button>').join('');menu.hidden=false;positionMentionMenu(field,menu);
-    $$('button',menu).forEach(button=>button.addEventListener('mousedown',event=>{event.preventDefault();const match=mentionState(field);if(!match)return;field.setRangeText('@'+button.dataset.handle+' ',match.start,match.end,'end');menu.hidden=true;field.focus();}));
+    $$('button',menu).forEach(button=>button.addEventListener('mousedown',event=>{event.preventDefault();const match=mentionState(field);if(!match)return;field.setRangeText('@'+button.dataset.handle+' ',match.start,match.end,'end');menu.hidden=true;field.focus();if(field.form===view().start)updateDraftAudience();}));
   }
-  function wireComposer(field){if(field.dataset.mentionReady)return;field.dataset.mentionReady='true';field.addEventListener('input',()=>showMentions(field));field.addEventListener('click',()=>showMentions(field));field.addEventListener('scroll',()=>showMentions(field));field.addEventListener('keydown',event=>{const menu=composerFor(field)?.querySelector('.mention-menu'),buttons=menu&&!menu.hidden?$$('button',menu):[];if(event.key==='Escape')closeMentionMenu(field);if(!buttons.length||!['ArrowDown','ArrowUp','Enter'].includes(event.key))return;event.preventDefault();let index=buttons.findIndex(button=>button.classList.contains('is-highlighted'));if(event.key==='Enter'&&index>=0){buttons[index].dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));return;}index=event.key==='ArrowUp'?(index<=0?buttons.length-1:index-1):(index+1)%buttons.length;buttons.forEach((button,i)=>button.classList.toggle('is-highlighted',i===index));});field.addEventListener('blur',()=>setTimeout(()=>closeMentionMenu(field),120));}
+  function wireComposer(field){if(field.dataset.mentionReady)return;field.dataset.mentionReady='true';field.addEventListener('input',()=>{showMentions(field);if(field.form===view().start)updateDraftAudience();});field.addEventListener('click',()=>showMentions(field));field.addEventListener('scroll',()=>showMentions(field));field.addEventListener('keydown',event=>{const menu=composerFor(field)?.querySelector('.mention-menu'),buttons=menu&&!menu.hidden?$$('button',menu):[];if(event.key==='Escape')closeMentionMenu(field);if(!buttons.length||!['ArrowDown','ArrowUp','Enter'].includes(event.key))return;event.preventDefault();let index=buttons.findIndex(button=>button.classList.contains('is-highlighted'));if(event.key==='Enter'&&index>=0){buttons[index].dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));return;}index=event.key==='ArrowUp'?(index<=0?buttons.length-1:index-1):(index+1)%buttons.length;buttons.forEach((button,i)=>button.classList.toggle('is-highlighted',i===index));});field.addEventListener('blur',()=>setTimeout(()=>closeMentionMenu(field),120));}
   function wireEnterToSend(field,form){if(field.dataset.enterSendReady)return;field.dataset.enterSendReady='true';field.addEventListener('keydown',event=>{if(event.defaultPrevented||event.isComposing||event.key!=='Enter'||event.shiftKey)return;event.preventDefault();const submit=$('.primary-button[type="submit"]',form)||$('button[type="submit"]',form);form.requestSubmit(submit);});}
   function wireAttachments(root=document){$$('.thread-attachment-button input',root).forEach(input=>{if(input.dataset.fileReady)return;input.dataset.fileReady='true';input.addEventListener('change',()=>{const label=input.closest('.thread-compose-tools').querySelector('[data-attachment-name]');label.textContent=input.files.length?input.files.length===1?input.files[0].name:input.files.length+' files selected':'No files selected';});});}
   function snapshotFrom(button){
@@ -72,12 +72,12 @@
     $$('[data-thread-composer-hint]',elements.dialog).forEach(hint=>hint.textContent=globalScope()?'Shared with platform administrators across accounts. Email notifications are off.':state.messageType==='PRIVATE_NOTE'?'Visible only to your signed-in account.':'Type @ to notify a teammate by email.');
   }
   async function sendGlobal(form,submitter){
-    const current=state;if((!globalScope()&&!state?.personalContext)||form.dataset.saving)return;form.dataset.saving='true';
-    let feedback=form.querySelector('[data-global-feedback]');if(!feedback){feedback=document.createElement('p');feedback.dataset.globalFeedback='';feedback.setAttribute('role','status');form.append(feedback);}feedback.textContent='Saving…';
+    const current=state,reviewId=state.currentReviewId,mode=state.messageType;if(form.dataset.saving)return;form.dataset.saving='true';const field=$('textarea',form),fileInput=$('input[type=file]',form),sentText=field.value,sentFiles=[...(fileInput?.files||[])];
+    let feedback=form.querySelector('[data-global-feedback]')||form.querySelector('[data-thread-composer-hint]');if(!feedback){feedback=document.createElement('p');feedback.dataset.globalFeedback='';feedback.setAttribute('role','status');form.append(feedback);}feedback.textContent='Saving…';const send=$('button[type=submit]',form);if(send)send.disabled=true;
     const data=new FormData(form);if(submitter?.name==='status')data.set('status',submitter.value);
     const url=submitter?.name==='reopen'?api('/reviews/'+encodeURIComponent(submitter.value)+'/reopen'):form.action;
-    try{const response=await fetch(url,{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json();if(!response.ok)throw Error(result.error||'The shared discussion could not be saved.');if(state!==current)return;form.reset();feedback.textContent='';await loadConversation(result.reviewId,true);if(globalScope())await markRecordConversationActive('GLOBAL_PRODUCT',state.key);else window.dispatchEvent(new Event('personal-collaboration-updated'));}
-    catch(error){if(state===current)feedback.textContent=error.message;}finally{delete form.dataset.saving;}
+    try{const response=await fetch(url,{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||'The shared discussion could not be saved.');if(state!==current||state.currentReviewId!==reviewId||state.messageType!==mode)return;if(field.value===sentText)field.value='';if(fileInput&&[...fileInput.files].every((f,i)=>f===sentFiles[i])&&fileInput.files.length===sentFiles.length)fileInput.value='';feedback.textContent='';const refreshed=await loadConversation(result.reviewId,state.showBack,true);if(refreshed===false&&state===current&&state.currentReviewId===reviewId&&state.messageType===mode)feedback.textContent='Reply saved. Refresh to see it in the conversation.';if(globalScope())await markRecordConversationActive('GLOBAL_PRODUCT',state.key);else window.dispatchEvent(new Event('personal-collaboration-updated'));}
+    catch(error){if(state===current&&state.currentReviewId===reviewId&&state.messageType===mode)feedback.textContent=error.message;}finally{delete form.dataset.saving;if(send)send.disabled=false;}
   }
   function subjectText(review){return review.title==='Conversation about '+review.subjectLabel?review.subjectLabel:review.title||review.subjectLabel;}
   function renderSubject(review,initial){
@@ -104,14 +104,28 @@
     const current=state,memberUrl=state.generalMembersUrl||api('/members'),generation=++draftMemberGeneration,root=$('#thread-management');if(!root)return;
     $('.conversation-close-button',root).hidden=true;
     const options=$('[data-thread-assignment-options]',root),label=$('[data-thread-assignees]',root),error=$('[data-thread-management-error]',root);
-    const refresh=()=>{const names=$$('input:checked',options).map(input=>input.nextElementSibling.textContent);current.draftPeople=$$('input:checked',options).map(input=>input.value);label.textContent=names.join(', ')||'Unassigned';};
+    const refresh=()=>{const names=$$('input:checked',options).map(input=>input.nextElementSibling.textContent);current.draftPeople=$$('input:checked',options).map(input=>input.value);current.draftExplicit=current.draftPeople.length>0;updateDraftAudience();label.textContent=names.join(', ')||'You';};
     options.replaceChildren();label.textContent='Unassigned';error.textContent='';
     $('[data-thread-save-assignment]',root).onclick=()=>{refresh();$('details',root).open=false;};
     $('[data-thread-assign-self]',root).onclick=()=>{const me=(root.dataset.currentEmail||'').toLowerCase();const person=$$('input',options).find(input=>input.dataset.email===me);if(person){person.checked=true;refresh();}else error.textContent='Choose an account with your membership before assigning.';};
     const due=$('[data-thread-due]',root),date=$('[data-thread-draft-date]',root);delete due.dataset.reviewId;delete due.dataset.dueUrl;date.hidden=true;date.querySelector('input').value='';
     due.querySelector('span').textContent='Add due date';due.onclick=()=>{date.hidden=!date.hidden;date.querySelector('input').focus();};date.querySelector('input').onchange=event=>{current.draftDue=event.target.value;due.querySelector('span').textContent=current.draftDue?'Due '+current.draftDue:'Add due date';};
     const team=await members();if(state!==current||state.currentReview||generation!==draftMemberGeneration||memberUrl!==(state.generalMembersUrl||api('/members')))return;
-    for(const person of team){const row=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');input.type='checkbox';input.value=person.id;input.dataset.email=(person.email||'').toLowerCase();name.textContent=person.name||person.email;row.append(input,name);options.append(row);input.onchange=refresh;}
+    for(const person of team){const row=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');input.type='checkbox';input.value=person.id;input.dataset.email=(person.email||'').toLowerCase();name.textContent=person.name||person.email;row.append(input,name);options.append(row);input.onchange=refresh;}updateDraftAudience();
+  }
+  async function updateDraftAudience(){
+    const current=state;if(!current||current.currentReview||current.messageType==='PRIVATE_NOTE'||globalScope()){$('[data-draft-audience]')?.setAttribute('hidden','');return;}
+    const requestedUrl=current.general?current.generalMembersUrl:api('/members'),team=await members();if(state!==current||current.currentReview||requestedUrl!==(state.general?state.generalMembersUrl:api('/members')))return;
+    const root=$('#thread-management'),field=$('textarea',view().start),actor=(root.dataset.currentEmail||'').toLowerCase();
+    const handles=[...field.value.matchAll(/(?:^|\s)@([A-Za-z0-9._-]+)/g)].map(m=>m[1].toLowerCase());
+    const mentioned=team.filter(p=>p.email?.toLowerCase()!==actor&&handles.includes(p.handle?.toLowerCase()));
+    const chosen=current.draftExplicit?team.filter(p=>(current.draftPeople||[]).includes(p.id)):mentioned;
+    if(!current.draftExplicit)$('[data-thread-assignees]',root).textContent=chosen.map(p=>p.name||p.email).join(', ')||'You';
+    let notice=$('[data-draft-audience]',root);if(!notice){notice=document.createElement('p');notice.dataset.draftAudience='';notice.className='thread-draft-audience';notice.setAttribute('role','status');root.append(notice);}
+    const others=[...chosen,...mentioned].filter(p=>p.email?.toLowerCase()!==actor);
+    notice.textContent=others.length?'Selected or mentioned teammates will be notified.':'Assigned to you. Nobody else will be notified. ';
+    if(!others.length){const add=document.createElement('button');add.type='button';add.className='text-button';add.textContent='Add @people to inform teammates';add.onclick=()=>{field.focus();field.setRangeText((field.value&&!/\s$/.test(field.value)?' ':'')+'@',field.value.length,field.value.length,'end');showMentions(field);};notice.append(add);}
+    notice.hidden=Boolean(current.generalPersonal&&!current.generalAccount);
   }
   function draftData(form){
     const data=new FormData(form);data.set('title',state.draftTitle??state.label);data.set('dueDate',state.draftDue||'');
@@ -140,7 +154,7 @@
       $('#thread-record-type').textContent=personal?(option?.dataset.name||'All accounts'):(context?.dataset.accountName||'Selected account');$('#thread-record-context').textContent='';$('#thread-record-badges').replaceChildren();$('#thread-parent-link').hidden=true;
       if(personal){state.generalMembersUrl=state.generalAccount?'/app/collaboration/personal/members?'+new URLSearchParams({account:state.generalAccount}):null;renderDraftManagement();}};
     picker.hidden=!personal||Boolean(account);if(personal)$$('[data-collaboration-account]:not([data-collaboration-store])',personal).filter(b=>b.dataset.collaborationAccount).forEach(b=>select.append(new Option(b.dataset.name,b.dataset.collaborationAccount)));
-    select.value=account;select.onchange=()=>{clearDrafts();state.draftDue='';state.generalAccount=select.value;state.generalStore='';state.draftPeople=[];updateAccount();};
+    select.value=account;select.onchange=()=>{clearDrafts();state.draftDue='';state.generalAccount=select.value;state.generalStore='';state.draftPeople=[];state.draftExplicit=false;updateAccount();};
     dialog().dataset.general='true';updateAccount();view().start.reset();showNewConversation();$('button[type=submit]',view().start).setAttribute('aria-label','Create task');dialog().showModal();$('#thread-title-input').focus();
   };
   function handleHuddleEvent(event){lastPong=Date.now();window.LiveHuddleUI?.event(event,sendHuddle);}
@@ -283,7 +297,7 @@
     configureForms();if(!reload)return;if(state.currentReviewId)loadConversation(state.currentReviewId,state.showBack);else if(state.active?.length)loadConversation(state.active[0].id,false);else showNewConversation();
   }
   function showNewConversation(){
-    state.currentReview=null;state.currentReviewId=null;state.draftTitle=state.general?'':state.label.slice(0,240);state.draftPeople=[];state.draftDue='';
+    state.currentReview=null;state.currentReviewId=null;state.draftTitle=state.general?'':state.label.slice(0,240);state.draftPeople=[];state.draftExplicit=false;state.draftDue='';
     const elements=view();elements.reply.hidden=true;elements.start.hidden=!state.canCollaborate;elements.list.innerHTML='<div class="conversation-empty"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg><strong>'+(state.messageType==='PRIVATE_NOTE'?'Add a private note':'Start a team conversation')+'</strong><span>'+(state.messageType==='PRIVATE_NOTE'?'Only your signed-in user can read it.':'Keep the discussion attached to this exact record.')+'</span>'+(state.closedCount?'<a class="conversation-history-link" href="'+escape(state.historyUrl)+'">View '+state.closedCount+' closed conversation'+(state.closedCount===1?'':'s')+'</a>':'')+'</div>';configureForms();renderDraftManagement();renderSubject(null,true);if(!elements.start.hidden)$('#thread-title-input').focus();
   }
   function showPicker(){
@@ -292,11 +306,11 @@
     elements.list.innerHTML='<section class="conversation-picker"><header><strong>'+all.length+' conversation'+(all.length===1?'':'s')+' for this record</strong><span>Choose by date, status, and participants.</span></header><div>'+all.map(review=>'<button type="button" data-conversation-id="'+review.id+'"><span class="conversation-picker-icon '+(review.status==='CLOSED'?'closed':'active')+'"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg></span><span><strong>'+escape(formatDate(review.createdAt))+'</strong><small class="conversation-picker-meta"><span class="conversation-picker-status">'+escape(review.status==='CLOSED'?'Closed':'Active')+'</span><span>'+escape(review.participants||review.requester)+'</span><span class="conversation-picker-count">'+review.messageCount+' message'+(review.messageCount===1?'':'s')+'</span></small></span><b aria-hidden="true">›</b></button>').join('')+'</div><footer>'+(state.canCollaborate?'<button type="button" class="conversation-new-button" data-new-conversation>＋ New conversation</button>':'')+'<a class="conversation-history-link" href="'+escape(state.historyUrl)+'">Open filtered history</a></footer></section>';
     $$('[data-conversation-id]',elements.list).forEach(button=>button.addEventListener('click',()=>loadConversation(button.dataset.conversationId,true)));$('[data-new-conversation]',elements.list)?.addEventListener('click',showNewConversation);
   }
-  async function loadConversation(reviewId,showBack=false){
+  async function loadConversation(reviewId,showBack=false,preserve=false){
     if(state.currentReviewId!==reviewId)clearDrafts();
-    const elements=view();state.currentReviewId=reviewId;state.showBack=showBack;elements.start.hidden=true;elements.reply.hidden=true;elements.list.innerHTML='<div class="conversation-loading">Loading conversation…</div>';
+    const elements=view();state.currentReviewId=reviewId;state.showBack=showBack;if(!preserve){elements.start.hidden=true;elements.reply.hidden=true;elements.list.innerHTML='<div class="conversation-loading">Loading conversation…</div>';}
     const requestedType=state.messageType,requestedState=state;
-    document.dispatchEvent(new Event('collaboration-thread-loading'));
+    if(!preserve)document.dispatchEvent(new Event('collaboration-thread-loading'));
     try{
       const response=await fetch(api('/reviews/')+encodeURIComponent(reviewId)+'?messageType='+requestedType,{headers:{Accept:'application/json'},cache:'no-store'});
       if(!response.ok)throw new Error();const conversation=await response.json();
@@ -306,11 +320,11 @@
       elements.list.innerHTML=renderMessages(conversation,showBack);
       if((globalScope()||state.personalContext)&&conversation.review.status==='CLOSED'){const reopen=document.createElement('button');reopen.type='button';reopen.className='secondary-button';reopen.textContent='Reopen conversation';reopen.onclick=()=>sendGlobal(view().reply,{name:'reopen',value:conversation.review.id});elements.list.append(reopen);}
       elements.reply.action=api('/reviews/')+conversation.review.id+'/reply';
-      elements.reply.hidden=!state.canCollaborate||conversation.review.status==='CLOSED';configureForms();renderManagement(conversation.review);
+      elements.reply.hidden=!state.canCollaborate||conversation.review.status==='CLOSED';configureForms();renderManagement(conversation.review);$('[data-draft-audience]')?.setAttribute('hidden','');
       $('[data-conversation-back]',elements.list)?.addEventListener('click',showPicker);
       if(!elements.reply.hidden)$('textarea',elements.reply).focus();elements.list.scrollTop=elements.list.scrollHeight;
-      document.dispatchEvent(new CustomEvent('collaboration-thread-rendered',{detail:{reviewId,messageType:requestedType,messageIds:conversation.messages.map(message=>message.id),scope:state.type,apiBase:state.personalContext?api(''):null,unreadMentionMessageIds:conversation.unreadMentionMessageIds||[]}}));
-    }catch(_){if(state!==requestedState||state.currentReviewId!==reviewId)return;elements.list.innerHTML='<div class="history-error">This conversation could not be loaded. Please try again.</div>';}
+      document.dispatchEvent(new CustomEvent('collaboration-thread-rendered',{detail:{reviewId,messageType:requestedType,messageIds:conversation.messages.map(message=>message.id),scope:state.type,apiBase:state.personalContext?api(''):null,unreadMentionMessageIds:conversation.unreadMentionMessageIds||[]}}));return true;
+    }catch(_){if(state!==requestedState||state.currentReviewId!==reviewId||state.messageType!==requestedType)return;if(!preserve)elements.list.innerHTML='<div class="history-error">This conversation could not be loaded. Please try again.</div>';return false;}
   }
   async function loadSubject(forcePicker){
     const elements=view(),requestedState=state;elements.list.innerHTML='<div class="conversation-loading">Loading conversations…</div>';elements.start.hidden=true;elements.reply.hidden=true;
@@ -375,7 +389,7 @@
       added.forEach(button=>window.prepareRecordCollaboration(button));
     }).observe(document.body,{childList:true,subtree:true});
     $$('[data-collaboration-composer]').forEach(field=>{wireComposer(field);wireEnterToSend(field,field.closest('form'));});wireAttachments();$$('[data-thread-tab]').forEach(button=>button.addEventListener('click',()=>selectTab(button.dataset.threadTab)));
-    $$('.collaboration-composer').forEach(form=>form.addEventListener('submit',event=>{const field=$('textarea',form),files=$('input[type=file]',form)?.files;if(form===view().start){if(state?.general){event.preventDefault();sendGeneral(form);return;}if(!state.draftTitle?.trim()){event.preventDefault();const error=$('[data-thread-title-error]');error.textContent='Enter a subject.';error.hidden=false;$('#thread-title-input').focus();return;}form.elements.title.value=state.draftTitle;$$('[data-draft-field]',form).forEach(n=>n.remove());for(const [name,value] of [['dueDate',state.draftDue||''],...(state.draftPeople||[]).map(id=>['people',id])]){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;input.dataset.draftField='';form.append(input);}}if(!event.submitter?.name&&!field.value.trim()&&!files?.length){event.preventDefault();field.focus();return;}if(globalScope()||state?.personalContext){event.preventDefault();sendGlobal(form,event.submitter);}}));
+    $$('.collaboration-composer').forEach(form=>form.addEventListener('submit',event=>{const field=$('textarea',form),files=$('input[type=file]',form)?.files;if(form===view().start){if(state?.general){event.preventDefault();sendGeneral(form);return;}if(!state.draftTitle?.trim()){event.preventDefault();const error=$('[data-thread-title-error]');error.textContent='Enter a subject.';error.hidden=false;$('#thread-title-input').focus();return;}form.elements.title.value=state.draftTitle;$$('[data-draft-field]',form).forEach(n=>n.remove());for(const [name,value] of [['dueDate',state.draftDue||''],...(state.draftPeople||[]).map(id=>['people',id])]){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;input.dataset.draftField='';form.append(input);}}if(!event.submitter?.name&&!field.value.trim()&&!files?.length){event.preventDefault();field.focus();return;}if(globalScope()||state?.personalContext||form===view().reply){event.preventDefault();sendGlobal(form,event.submitter);}}));
     $$('[data-thread-dialog-close]').forEach(button=>button.addEventListener('click',()=>dialog().close()));
     dialog()?.addEventListener('close',()=>{clearDrafts();if(state?.personalContext||state?.general){const trigger=state.trigger;trigger?.focus({preventScroll:true});window.dispatchEvent(new Event('personal-collaboration-updated'));}});
     dialog()?.addEventListener('click',event=>{if(event.target===event.currentTarget)dialog().close();});

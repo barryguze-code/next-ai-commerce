@@ -40,4 +40,12 @@ class GeneralTaskControllerTest {
         assertThat(controller.createGeneralTask("Title","Details",null,"","UTC",java.util.List.of(),session(),user).getStatusCode().value()).isEqualTo(200);
         verify(repository).createStoreTaskWithFiles(tenant,null,"Title","Details",user.getName(),Set.of(),null,"UTC",java.util.List.of());
     }
+    @Test void sharedReplyNegotiatesJsonWithoutRedirectingTheDialog() throws Exception{
+        var mvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+        when(repository.reply(tenant,review,user.getName(),"Hello","TEAM_CHAT",null,java.util.List.of())).thenReturn(new CollaborationRepository.PostedMessage(review,UUID.randomUUID()));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/app/collaboration/reviews/"+review+"/reply").session(session()).principal(user).accept("application/json").param("body","Hello"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.reviewId").value(review.toString()));
+        verify(mentions).queueReply(eq(tenant),any(),eq("Hello"),eq(user.getName()));
+    }
 }

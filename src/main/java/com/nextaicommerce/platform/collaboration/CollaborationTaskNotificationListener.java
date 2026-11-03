@@ -33,10 +33,13 @@ public class CollaborationTaskNotificationListener {
                     JOIN app_users u ON u.id=a.user_id AND u.status='ACTIVE'
                     JOIN parent_tenants p ON p.id=a.parent_id JOIN collaboration_tasks t ON t.parent_id=a.parent_id AND t.id=a.task_id
                     WHERE a.parent_id=? AND a.task_id=? AND a.user_id=? AND (?<>'ASSIGNED' OR a.assigned)
-                    """,(rs,n)->new CollaborationRepository.PendingMention(UUID.randomUUID(),event.task(),rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4),event.actor(),"Open the task to review the latest details.",event.kind()),event.parent(),event.task(),person,event.kind()));
+                    """,(rs,n)->new CollaborationRepository.PendingMention(UUID.randomUUID(),event.task(),rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4),event.actor(),"COMPLETED".equals(event.kind())?"Task completed by "+event.actor()+". Open the conversation to review its history.":"Open the task to review the latest details.",event.kind()),event.parent(),event.task(),person,event.kind()));
                 return result;
             });
-            for(var person:recipients)mailer.sendHtml(person.recipientEmail(),CollaborationEmailContent.subject(person),CollaborationEmailContent.html(person,publicUrl+"/app/collaboration/board?parent="+event.parent()+"&task="+event.task()));
+            for(var person:recipients){
+                try{mailer.sendHtml(person.recipientEmail(),CollaborationEmailContent.subject(person),CollaborationEmailContent.html(person,publicUrl+"/app/collaboration/board?parent="+event.parent()+"&task="+event.task()));}
+                catch(RuntimeException failure){org.slf4j.LoggerFactory.getLogger(getClass()).warn("Task notification delivery failed for task {}; continuing remaining recipients",event.task());}
+            }
         }catch(RuntimeException failure){org.slf4j.LoggerFactory.getLogger(getClass()).warn("Task notification was not delivered for task {}",event.task());}
     }
 }
