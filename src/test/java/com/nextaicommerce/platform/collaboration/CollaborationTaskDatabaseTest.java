@@ -72,6 +72,22 @@ class CollaborationTaskDatabaseTest {
             assertThat(repository.setDueDate(tenant,posted.reviewId(),actor,null,"UTC").subjectKey()).isEqualTo("TEST-ORDER");
         });
     }
+    @Test void subjectEditsPreserveSourceAndRejectForeignThreads(){
+        tx.executeWithoutResult(s->{
+            var posted=repository.createStoreTask(tenant,store,"Original subject","Initial details",actor,Set.of(user),null,"UTC");
+            var before=repository.review(tenant,posted.reviewId(),actor);
+            var saved=repository.setTitle(tenant,posted.reviewId(),actor,"  Revised subject  ");
+            assertThat(saved.title()).isEqualTo("Revised subject");
+            assertThat(saved.subjectLabel()).isEqualTo(before.subjectLabel());
+            assertThat(saved.subjectKey()).isEqualTo(before.subjectKey());assertThat(saved.storeId()).isEqualTo(store);
+            assertThat(saved.messageCount()).isEqualTo(before.messageCount());assertThat(saved.assignedTo(actor)).isTrue();
+            assertThatThrownBy(()->repository.setTitle(other,posted.reviewId(),actor,"Wrong account")).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+            assertThatThrownBy(()->repository.setTitle(tenant,posted.reviewId(),actor," ")).isInstanceOf(IllegalArgumentException.class);
+            repository.reply(tenant,posted.reviewId(),actor,null,"TEAM_CHAT","CLOSED",List.of());
+            var clarified=repository.setTitle(tenant,posted.reviewId(),actor,"Closed clarification");
+            assertThat(clarified.title()).isEqualTo("Closed clarification");assertThat(clarified.status()).isEqualTo("CLOSED");
+        });
+    }
     @Test void deadlineUsesCalendarDaysAcrossDaylightSaving(){
         assertThat(CollaborationRepository.deadline(LocalDate.of(2026,3,8),"America/Los_Angeles")).isEqualTo(Instant.parse("2026-03-09T07:00:00Z"));
         assertThat(CollaborationRepository.deadline(LocalDate.of(2026,11,1),"America/Los_Angeles")).isEqualTo(Instant.parse("2026-11-02T08:00:00Z"));

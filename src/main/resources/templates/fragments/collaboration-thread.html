@@ -4,9 +4,9 @@
 <dialog id="contextual-thread-dialog" class="invite-dialog contextual-thread-dialog">
   <section class="dialog-shell">
     <div class="dialog-header thread-dialog-header">
-      <div class="thread-record">
+      <div class="thread-record"><img id="thread-account-logo" class="thread-record-visual" src="/images/next-ai-mark-transparent.png" alt="Account logo" hidden>
         <a id="thread-parent-link" class="thread-record-visual" href="#" data-tooltip="Go to original source" aria-label="Go to original source" hidden><img src="/images/platform/table/collaboration-original-redirect.png?v=20261008-1" alt="" decoding="async"></a>
-        <div><div class="thread-status-line"><img id="thread-status-icon" src="/images/platform/table/collaboration-no-message-gray.png" alt="No messages"><small id="thread-record-type" class="eyebrow dark">Collaboration</small></div><h2 id="thread-record-title">Record conversation</h2><p id="thread-record-context">Record context</p><div class="thread-record-meta"><div id="thread-record-badges" class="thread-record-badges"></div></div></div>
+        <div><div class="thread-status-line"><img id="thread-status-icon" src="/images/platform/table/collaboration-no-message-gray.png" alt="No messages"><small id="thread-record-type" class="eyebrow dark">Collaboration</small></div><div class="thread-subject-heading"><h2 id="thread-record-title">Record conversation</h2><button type="button" data-thread-edit-title aria-label="Edit subject" title="Edit subject" hidden><img src="/images/platform/table/edit.png" alt=""></button></div><div class="thread-subject-editor" hidden><input id="thread-title-input" aria-label="Subject" maxlength="240" autocomplete="off" placeholder="What needs to be done?"><button type="button" data-thread-save-title>Save</button><button type="button" data-thread-cancel-title>Cancel</button></div><p data-thread-title-error role="alert" hidden></p><label id="thread-new-account" hidden>Account<select aria-label="Task account"></select></label><p id="thread-record-context">Record context</p><div class="thread-record-meta"><div id="thread-record-badges" class="thread-record-badges"></div></div></div>
       </div>
       <button class="dialog-close" type="button" aria-label="Close conversation" data-thread-dialog-close>×</button>
     </div>
@@ -16,7 +16,7 @@
       <button type="button" data-thread-assign-self>Assign to me</button>
       <button type="button" class="task-due-button" data-edit-due data-thread-due aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4M16 3v4M4 11h16"/></svg><span>Add due date</span></button>
       <button class="conversation-close-button" type="submit" form="thread-conversation-reply" name="status" value="CLOSED" formnovalidate><img src="/images/platform/table/collaboration-complete.png" alt="" width="24" height="24"><span>Close conversation</span></button>
-      <span data-thread-management-error role="status"></span>
+      <label data-thread-draft-date hidden>Due date<input type="date" aria-label="Task due date"></label><span data-thread-management-error role="status"></span>
     </div>
     <div class="thread-mode-switch" role="tablist" aria-label="Conversation visibility">
       <button type="button" role="tab" aria-selected="true" data-thread-tab="TEAM_CHAT"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg><span><strong>Collaborate</strong><small>Visible to permitted teammates</small></span></button>

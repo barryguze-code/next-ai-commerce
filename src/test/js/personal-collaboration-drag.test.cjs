@@ -42,7 +42,7 @@ test('foundation retains one table across tabs with five initial rows and disjoi
         await page.goto('https://personal.test/app/collaboration');
         await page.locator('tr[data-card-id]').first().waitFor();
         assert.equal(await page.locator('tr[data-card-id]').count(),5);
-        assert.deepEqual(await page.locator('.personal-group-toggle').allTextContents(),['This week · 0','Last week · 0','▸ Last month · 8']);
+        assert.deepEqual(await page.locator('.personal-group-toggle').allTextContents(),['This week · 0','Last week · 0','Last month · 8']);
         assert.equal(await page.getByRole('button',{name:'This week · 0',exact:true}).isDisabled(),true);
         assert.equal(await page.getByRole('button',{name:'Last week · 0',exact:true}).isDisabled(),true);
         assert.equal(await page.locator('#personal-status').textContent(),'13 assigned conversations across all accessible accounts · Showing 5');
@@ -123,54 +123,25 @@ test('foundation retains one table across tabs with five initial rows and disjoi
     } finally {await browser.close();}
 });
 
-test('task dialog mirrors All or selected account and reuses the styled choice list',async()=>{
-    const browser=await chromium.launch({channel:'chrome',headless:true});
-    try {
-        const page=await browser.newPage();
-        let writes=0;
-        await page.route('https://scope.test/**',async route=>{
-            const url=new URL(route.request().url()),path=url.pathname;
-            if(path.startsWith('/images/'))return route.abort();
-            if(path.startsWith('/js/')||path.startsWith('/css/')){
-                return route.fulfill({path:'src/main/resources/static'+path,
-                    contentType:path.startsWith('/js/')?'application/javascript':'text/css'});
-            }
-            if(path.endsWith('/members'))return route.fulfill({json:[]});
-            if(path.endsWith('/create')){writes++;return route.fulfill({status:500});}
-            const source=fs.readFileSync('src/main/resources/templates/fragments/sidebar-user.html','utf8');
-            const dialog=source.slice(source.indexOf('  <dialog id="general-task-dialog"'),source.indexOf('  </dialog>')+11);
-            const chosen=url.searchParams.has('account');
-            const label=chosen?'Account one':'All accounts',logo=chosen?'/images/one.png':'/images/next-ai-mark-transparent.png';
-            const body='<html><body><main id="personal-queue" data-filter-account="'+(chosen?'one':'')+'" data-filter-store="">'+
-                '<div class="context-switcher"><img src="'+logo+'"><strong id="collaboration-scope-label">'+label+'</strong></div>'+
-                '<button data-collaboration-account="" data-name="All accounts"></button>'+
-                '<button data-collaboration-account="one" data-name="Account one" data-logo="/images/one.png"></button>'+
-                '<button data-new-task>Create task</button></main>'+dialog+
-                '<script defer src="/js/platform-controls.js"></script><script defer src="/js/general-task.js"></script></body></html>';
-            return route.fulfill({contentType:'text/html',body});
-        });
-        await page.goto('https://scope.test/');
-        await page.locator('[data-new-task]').click();
-        const dialog=page.locator('#general-task-dialog');
-        assert.equal(await dialog.locator('header small').textContent(),'All accounts');
-        assert.match(await dialog.locator('.task-store-logo').getAttribute('src'),/next-ai-mark-transparent/);
-        assert.equal(await dialog.locator('select[name=account]').getAttribute('hidden'),'');
-        assert.equal(await dialog.locator('select[name=account]').inputValue(),'');
-        await dialog.locator('input[name=title]').fill('Test task');
-        await dialog.getByRole('button',{name:'Create task',exact:true}).click();
-        assert.equal(writes,0);
-        await dialog.getByRole('option',{name:'Account one',exact:true}).click();
-        assert.equal(await dialog.locator('select[name=account]').inputValue(),'one');
-        assert.equal(await dialog.locator('header small').textContent(),'Account one');
-        await dialog.locator('[data-task-cancel]').first().click();
-
-        await page.goto('https://scope.test/?account=one');
-        await page.locator('[data-new-task]').click();
-        assert.equal(await dialog.locator('select[name=account]').inputValue(),'one');
-        assert.equal(await dialog.locator('header small').textContent(),'Account one');
-        assert.match(await dialog.locator('.task-store-logo').getAttribute('src'),/one.png/);
-        assert.equal(writes,0);
-    } finally {await browser.close();}
+test('task creation mirrors selected account and uses the shared dialog',async()=>{
+ const browser=await chromium.launch({channel:'chrome',headless:true});try{
+  const page=await browser.newPage();page.setDefaultTimeout(5000);
+  await page.route('https://scope.test/**',async route=>{
+   const url=new URL(route.request().url()),path=url.pathname;
+   if(path.startsWith('/images/'))return route.abort();
+   if(path.startsWith('/js/')||path.startsWith('/css/'))return route.fulfill({path:'src/main/resources/static'+path,contentType:path.startsWith('/js/')?'application/javascript':'text/css'});
+   if(path.endsWith('/members'))return route.fulfill({json:[]});
+   if(path.endsWith('/personal/data'))return route.fulfill({json:{rows:[],windows:[]}});
+   let html=fs.readFileSync('.local/browser-fixtures/personal-collaboration.html','utf8').replace(/<aside[\s\S]*?<\/aside>/,'');
+   html=html.replace('</main>','<details open><summary>Choose fixture account</summary><button data-collaboration-account="one" data-name="Account one" data-logo="/images/one.png">Account one</button></details></main>').replace('</body>','<button data-new-task>Create task</button><script src="/js/general-task.js"></script></body>');
+   return route.fulfill({contentType:'text/html',body:html});
+  });
+  await page.goto('https://scope.test/');await page.locator('[data-new-task]').first().click();const dialog=page.locator('#contextual-thread-dialog');
+  assert.equal(await page.locator('#general-task-dialog').count(),0);assert.equal(await dialog.locator('#thread-record-type').textContent(),'All accounts');
+  await dialog.getByLabel('Task account').selectOption('one');assert.equal(await dialog.locator('#thread-record-type').textContent(),'Account one');assert.match(await dialog.locator('#thread-account-logo').getAttribute('src'),/one.png/);
+  await dialog.locator('[data-thread-dialog-close]').first().click();await page.locator('[data-collaboration-account=one]').click();await page.waitForFunction(()=>document.querySelector('#personal-queue').dataset.filterAccount==='one');await page.locator('[data-new-task]').first().click();
+  assert.equal(await dialog.getByLabel('Task account').isVisible(),false);assert.equal(await dialog.locator('#thread-record-type').textContent(),'Account one');
+ }finally{await browser.close();}
 });
 
 test('task artwork and the shared detail popup work in every tab without navigating or losing filters',async()=>{
@@ -211,7 +182,8 @@ test('task artwork and the shared detail popup work in every tab without navigat
             await page.waitForFunction(()=>document.querySelector('#thread-parent-link')?.getAttribute('href')==='/app/catalog?q=product1');
             assert.equal(page.url(),'https://details.test/');
             assert.equal(await page.locator('#contextual-thread-dialog [data-thread-tab=PRIVATE_NOTE]').isVisible(),false);
-            assert.equal(await page.locator('#thread-record-title').textContent(),detail.subjectLabel);
+            await page.waitForFunction(title=>document.querySelector('#thread-record-title').textContent===title,detail.title);
+            assert.equal(await page.locator('#thread-record-title').textContent(),detail.title);
             assert.equal(await page.locator('#contextual-thread-dialog').getAttribute('data-personal'),'true');
             await page.locator('[data-thread-dialog-close]').first().click();
         }

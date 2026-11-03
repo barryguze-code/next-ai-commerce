@@ -28,6 +28,11 @@ class PersonalCollaborationActions {
         return reviews.setDueDate(card.account(),id,email,date,zone);
     }
     @Transactional
+    public CollaborationRepository.Review title(String email,boolean staff,java.util.UUID id,String title){
+        var card=editable(email,staff,id);
+        return reviews.setTitle(card.account(),id,email,title);
+    }
+    @Transactional
     public CollaborationRepository.Review assign(String email,boolean staff,java.util.UUID id,java.util.Set<java.util.UUID> people) {
         var card=editable(email,staff,id);
         reviews.assign(card.account(),id,email,people,true);
@@ -37,13 +42,18 @@ class PersonalCollaborationActions {
     @Transactional
     public void create(String email,boolean staff,java.util.UUID account,java.util.UUID store,String title,String body,
             java.util.Set<java.util.UUID> people,java.time.LocalDate date,String zone) {
+        create(email,staff,account,store,title,body,people,date,zone,List.of());
+    }
+    @Transactional
+    public void create(String email,boolean staff,java.util.UUID account,java.util.UUID store,String title,String body,
+            java.util.Set<java.util.UUID> people,java.time.LocalDate date,String zone,List<CollaborationRepository.AttachmentUpload> files) {
         var option=accounts.listAccountOptions(email,staff).stream().filter(a->a.id().equals(account)).findFirst()
             .orElseThrow(()->new AccessDeniedException("Choose an accessible account."));
         if(!accounts.canOperateAccount(account,email))throw new AccessDeniedException("Task creation is unavailable for this account.");
         if(store!=null&&option.stores().stream().noneMatch(s->s.id().equals(store)))throw new AccessDeniedException("Choose an accessible store.");
         if(title==null||title.isBlank()||title.length()>240||body.length()>4000)throw new IllegalArgumentException("Enter a title up to 240 characters and details up to 4,000 characters.");
         java.time.ZoneId.of(zone);
-        var posted=reviews.createStoreTask(account,store,title.trim(),body.trim(),email,people,date,zone);
+        var posted=reviews.createStoreTaskWithFiles(account,store,title.trim(),body.trim(),email,people,date,zone,files);
         mentions.queue(account,posted,body,email);
     }
 

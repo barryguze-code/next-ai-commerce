@@ -127,6 +127,9 @@ class CollaborationQueueDatabaseTest {
         var personal=new PersonalCollaborationQueue(jdbc,new ParentTenantRepository(jdbc),accounts);
         var card=tx.execute(t->personal.view(email,false,"ACTIVE","")).rows().getFirst().card();
         assertThat(card.contextAccount()).isEqualTo(account);assertThat(card.contextStore()).isEqualTo(store);assertThat(card.context()).isEqualTo("Origin account");
+        assertThat(card.assignedToMe()).isTrue();
+        jdbc.update("UPDATE collaboration_task_participants SET assigned=false WHERE task_id=? AND user_id=?",task,user);
+        assertThat(tx.execute(t->personal.view(email,false,"ACTIVE","")).rows().getFirst().card().assignedToMe()).isFalse();
         assertThat(card.sourceRestricted()).isTrue();assertThat(card.account()).isNull();assertThat(card.store()).isNull();
         assertThatThrownBy(()->tx.execute(t->personal.authorized(email,false,new PersonalCollaborationQueue.Key("REVIEW",source)))).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
         assertThatThrownBy(()->tx.execute(t->personal.authorized(otherEmail,false,new PersonalCollaborationQueue.Key("TASK",task)))).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);

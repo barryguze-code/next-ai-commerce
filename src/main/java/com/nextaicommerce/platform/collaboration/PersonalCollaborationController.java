@@ -139,10 +139,10 @@ class PersonalCollaborationController {
     ResponseEntity<?> create(@RequestParam UUID account,@RequestParam(required=false) UUID store,
             @RequestParam String title,@RequestParam(defaultValue="") String description,
             @RequestParam(required=false) java.util.Set<UUID> people,@RequestParam(required=false) String dueDate,
-            @RequestParam(defaultValue="America/Los_Angeles") String timeZone,Authentication auth){
+            @RequestParam(defaultValue="America/Los_Angeles") String timeZone,@RequestParam(required=false) java.util.List<org.springframework.web.multipart.MultipartFile> attachments,Authentication auth){
         try{
             actions.create(auth.getName(),staff(auth),account,store,title,description,people==null?java.util.Set.of():people,
-                dueDate==null||dueDate.isBlank()?null:java.time.LocalDate.parse(dueDate),timeZone);
+                dueDate==null||dueDate.isBlank()?null:java.time.LocalDate.parse(dueDate),timeZone,CollaborationController.attachments(attachments));
             return ResponseEntity.ok(java.util.Map.of("url","/app/collaboration"));
         }catch(IllegalArgumentException ex){return ResponseEntity.badRequest().body(java.util.Map.of("error",ex.getMessage()));}
     }

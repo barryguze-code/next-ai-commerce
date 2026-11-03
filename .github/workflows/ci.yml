@@ -114,9 +114,9 @@ jobs:
           if-no-files-found: error
 
       - name: Preserve tested receipt performance hotfix artifact
-        if: github.ref == 'refs/heads/codex/receipt-performance-hotfix'
+        if: github.ref == 'refs/heads/codex/collaboration-uat-hotfix'
         uses: actions/upload-artifact@v4
         with:
-          name: receipt-performance-hotfix-package
-          path: target/next-ai-commerce-1.11.4.jar
+          name: collaboration-uat-hotfix-package
+          path: target/next-ai-commerce-1.11.5.jar
           if-no-files-found: error

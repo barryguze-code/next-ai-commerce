@@ -22,22 +22,22 @@ class GeneralTaskControllerTest {
 
     @Test void createsAccountTaskWithMultipleAssigneesAndLocalDueDate(){
         UUID second=UUID.randomUUID();var people=Set.of(person,second);var posted=new CollaborationRepository.PostedMessage(review,UUID.randomUUID());
-        when(repository.createStoreTask(tenant,null,"Follow up","Details",user.getName(),people,LocalDate.parse("2026-10-02"),"America/Los_Angeles")).thenReturn(posted);
-        var response=controller.createGeneralTask(" Follow up "," Details ",people,"2026-10-02","America/Los_Angeles",session(),user);
+        when(repository.createStoreTaskWithFiles(tenant,null,"Follow up","Details",user.getName(),people,LocalDate.parse("2026-10-02"),"America/Los_Angeles",java.util.List.of())).thenReturn(posted);
+        var response=controller.createGeneralTask(" Follow up "," Details ",people,"2026-10-02","America/Los_Angeles",java.util.List.of(),session(),user);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody().toString()).contains("threadId="+review);
-        verify(repository).createStoreTask(tenant,null,"Follow up","Details",user.getName(),people,LocalDate.parse("2026-10-02"),"America/Los_Angeles");
+        verify(repository).createStoreTaskWithFiles(tenant,null,"Follow up","Details",user.getName(),people,LocalDate.parse("2026-10-02"),"America/Los_Angeles",java.util.List.of());
         assertThat(CollaborationRepository.deadline(LocalDate.parse("2026-10-02"),"America/Los_Angeles")).isEqualTo(Instant.parse("2026-10-03T07:00:00Z"));
     }
     @Test void rejectsInvalidInputBeforeSaving(){
-        assertThat(controller.createGeneralTask(" ","Details",null,null,"UTC",session(),user).getStatusCode().value()).isEqualTo(400);
-        assertThat(controller.createGeneralTask("Title","Details",null,"not-a-date","UTC",session(),user).getStatusCode().value()).isEqualTo(400);
-        assertThat(controller.createGeneralTask("Title","x".repeat(4001),null,null,"UTC",session(),user).getStatusCode().value()).isEqualTo(400);
+        assertThat(controller.createGeneralTask(" ","Details",null,null,"UTC",java.util.List.of(),session(),user).getStatusCode().value()).isEqualTo(400);
+        assertThat(controller.createGeneralTask("Title","Details",null,"not-a-date","UTC",java.util.List.of(),session(),user).getStatusCode().value()).isEqualTo(400);
+        assertThat(controller.createGeneralTask("Title","x".repeat(4001),null,null,"UTC",java.util.List.of(),session(),user).getStatusCode().value()).isEqualTo(400);
         verifyNoInteractions(repository);
     }
     @Test void allowsUnassignedWithoutDueDate(){
-        when(repository.createStoreTask(tenant,null,"Title","Details",user.getName(),Set.of(),null,"UTC")).thenReturn(new CollaborationRepository.PostedMessage(review,UUID.randomUUID()));
-        assertThat(controller.createGeneralTask("Title","Details",null,"","UTC",session(),user).getStatusCode().value()).isEqualTo(200);
-        verify(repository).createStoreTask(tenant,null,"Title","Details",user.getName(),Set.of(),null,"UTC");
+        when(repository.createStoreTaskWithFiles(tenant,null,"Title","Details",user.getName(),Set.of(),null,"UTC",java.util.List.of())).thenReturn(new CollaborationRepository.PostedMessage(review,UUID.randomUUID()));
+        assertThat(controller.createGeneralTask("Title","Details",null,"","UTC",java.util.List.of(),session(),user).getStatusCode().value()).isEqualTo(200);
+        verify(repository).createStoreTaskWithFiles(tenant,null,"Title","Details",user.getName(),Set.of(),null,"UTC",java.util.List.of());
     }
 }

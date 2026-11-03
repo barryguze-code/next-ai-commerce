@@ -7,7 +7,7 @@
     let filters = {};
     try { filters = JSON.parse(sessionStorage.getItem(storage)) || {}; } catch {}
     search.value = filters.search || '';
-    size.value = filters.size || 5;
+    try { size.value = Math.max(1,Math.min(50,Number(localStorage.getItem(storage+'.initialRows'))||Number(filters.size)||5)); } catch { size.value=filters.size||5; }
     account.value=filters.account||'';
     const type=root.querySelector('#personal-type');type.value=filters.type||'';
     let store=filters.store||'';
@@ -81,7 +81,7 @@
             if(label){
                 const groupCell=element('td','',element('tr','',section));groupCell.colSpan=ranked?9:8;
                 const heading=element('button',(rows.length?(expanded[key]?'▾ ':'▸ '):'')+label+' · '+rows.length,groupCell);
-                heading.className='personal-group-toggle';heading.type='button';heading.dataset.groupKey=key;heading.setAttribute('aria-expanded',String(Boolean(expanded[key])));
+                heading.className='personal-group-toggle';heading.textContent=label+' · '+rows.length;const arrow=element('span','',heading);arrow.className='personal-group-chevron';arrow.setAttribute('aria-hidden','true');heading.title=(expanded[key]?'Collapse ':'Expand ')+label;heading.type='button';heading.dataset.groupKey=key;heading.setAttribute('aria-expanded',String(Boolean(expanded[key])));
                 heading.disabled=!rows.length;
                 heading.onclick=()=>{expanded[key]=!expanded[key];save();render();restoreGroup(key,true);};
                 if(!expanded[key])continue;
@@ -133,15 +133,15 @@
                 const picture=page.pictures?.[c.key.id]||accountChoice?.dataset.logo;
                 article.dataset.image=picture||'';article.dataset.title=detail?.subjectLabel||c.title;
                 const rail=element('div','',layout);rail.className='table-overview-rail';
-                const chatButton=element('button','',rail);chatButton.className='collaboration-row-button';chatButton.type='button';chatButton.dataset.conversationCount=String(detail?.messageCount||0);chatButton.dataset.assignedToMe=String(!closed);chatButton.dataset.unreadMessageCount=String(detail?.unreadMessageCount||0);chatButton.setAttribute('aria-label','Open conversation');
-                const chat=element('img','',chatButton);chat.src='/images/platform/table/collaboration-assigned-dots.png';chat.dataset.collaborationIcon='';chat.alt='Assigned conversation';chat.className='platform-icon';
+                const chatButton=element('button','',rail);chatButton.className='collaboration-row-button';chatButton.type='button';chatButton.dataset.conversationCount=String(detail?.messageCount||0);chatButton.dataset.assignedToMe=String(!closed&&(c.assignedToMe??(c.key.type==='REVIEW'&&(detail?.assigneeEmail||'').split(',').some(email=>email.trim().toLowerCase()===root.dataset.user.toLowerCase()))));chatButton.dataset.unreadMessageCount=String(detail?.unreadMessageCount||0);chatButton.setAttribute('aria-label','Open conversation');
+                const chat=element('img','',chatButton);chat.src=window.NextAiIcons?.source(chatButton.dataset.assignedToMe==='true'?'collaboration-assigned-red':'collaboration-blue')||'/images/platform/table/collaboration-blue.png';chat.dataset.collaborationIcon='';chat.alt=chatButton.dataset.assignedToMe==='true'?'Assigned to you':'Conversation';chat.className='platform-icon';
                 const copy=element('div','',layout);copy.className='collaboration-record-copy';
                 if(ranked){const handle=element('button','⠿',copy);handle.type='button';handle.draggable=true;handle.className='personal-priority-handle personal-subject-handle';handle.dataset.focusKey='subject-priority';handle.setAttribute('aria-label','Move priority for '+c.title);
                     handle.onkeydown=article.querySelector('.personal-priority-handle')?.onkeydown;}
-                element('strong',detail?.subjectLabel||c.title,copy);element('small',c.context,copy);
+                element('strong',subjectTitle(detail,c),copy);element('small',c.context,copy);
                 const heading=element('td','',article);heading.className='collaboration-topic';
 
-                const open=element('button',c.title,heading);open.type='button';open.className='collaboration-open-thread';open.dataset.focusKey='open';open.dataset.open='';
+                const open=element('button',(detail?.messageCount||0)+' messages',heading);open.title=c.title;open.type='button';open.className='collaboration-open-thread';open.dataset.focusKey='open';open.dataset.open='';
                 open.onclick=()=>{
                     if(detail){
                         Object.assign(open.dataset,{reviewId:detail.id,subjectType:detail.subjectType,subjectKey:detail.subjectKey,
@@ -150,7 +150,7 @@
                         window.openCollaborationReview?.(open);
                     }else if(c.parent)openNativeTask(c,open);
                 };
-                if(detail) element('small',detail.messageCount+' messages',heading);
+
                 const peopleCell=element('td','',article);
                 const people=element('div','',peopleCell);people.className='collaboration-participants';
                 initials(people,detail?.participants||'','People',true);
@@ -209,13 +209,18 @@
         }
         window.NextAiTableWidget?.refresh();
         if(focusedGroup&&document.activeElement===document.body)restoreGroup(focusedGroup,false);
-        const panel=root.querySelector('.table-column-panel');
-        if(panel&&!panel.querySelector('[data-initial-rows]')){
-            const label=element('label','Initial rows ',panel),input=element('input','',label);
-            input.type='number';input.min='1';input.max='50';input.value=size.value;input.dataset.initialRows='';
-            input.onchange=()=>{size.value=Math.max(1,Math.min(50,Number(input.value)||5));save();render();};
-        }
     }
+    function subjectTitle(detail,card){
+        return detail?.title&&detail.title!=='Conversation about '+detail.subjectLabel?detail.title:(detail?.subjectLabel||card.title);
+    }
+    let savedTimer;
+    size.onchange=()=>{
+        size.value=Math.max(1,Math.min(50,Number(size.value)||5));
+        const feedback=root.querySelector('#personal-size-saved');
+        try{localStorage.setItem(storage+'.initialRows',size.value);feedback.textContent='Saved';}
+        catch{feedback.textContent='For this visit';}
+        save();render();clearTimeout(savedTimer);savedTimer=setTimeout(()=>feedback.textContent='',2500);
+    };
     function sourceContext(card,detail){
         const sourceStore=card.store||detail.storeId;
         const option=[...root.querySelectorAll('[data-collaboration-store]')].find(b=>b.dataset.collaborationAccount===card.account&&b.dataset.collaborationStore===sourceStore);

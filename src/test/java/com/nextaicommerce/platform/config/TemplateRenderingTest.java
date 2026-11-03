@@ -170,7 +170,7 @@ class TemplateRenderingTest {
             "Item Sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
             "Showing 1–1 of 1","data-order-stream","Sync now","Last Amazon order check",
             "New Amazon orders just arrived","Open this order in Seller Central","Open the Amazon product page",
-            "/images/channels/amazon-seller.png","amazon.com/dp/B012345678","Orders/Units","Unmapped",
+            "aria-label=\"Subject\"","amazon.com/dp/B012345678","Orders/Units","Unmapped",
             "data-copy-sku=","has-issues","aria-current=\"page\"","12 orders / 15 units","status=UNSHIPPED").doesNotContain("order-day",">Historical<","Reporting only","status=PENDING","Stock readiness","data-fedex-shipping","openFedExShipping(this)","Buy shipping label");
         assertThat(templateEngine().process("orders",context)).doesNotContain("status=WAITING_FOR_PICKUP");
         context.setVariable("orderTabs",List.of(new com.nextaicommerce.platform.orders.OrderRepository.OrderTab("WAITING_FOR_PICKUP","Waiting for pickup",false,1,1)));

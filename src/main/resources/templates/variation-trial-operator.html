@@ -2,7 +2,7 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amazon relationship trial | Next AI Commerce</title>
 <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css"><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5">
-<script defer src="/js/platform-ui.js?v=1.6.6"></script><link rel="stylesheet" href="/css/variation-trial-operator.css?v=20261021-1"><script defer src="/js/variation-trial-operator.js?v=20261021-1"></script></head>
+<script defer src="/js/platform-ui.js?v=1.6.6"></script><link rel="stylesheet" href="/css/variation-trial-operator.css?v=20261021-1"><script defer src="/js/variation-trial-operator.js?v=20261021-1"></script><th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block></head>
 <body class="app-page"><aside class="sidebar"><a class="brand" href="/app">Next AI Commerce</a><div th:replace="~{fragments/sidebar-nav :: nav('marketplace-skus')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
 <main class="workspace variation-trial" data-variation-trial>
 <header class="workspace-header"><div><span class="eyebrow dark">Local operator trial</span><h1>Amazon relationship trial</h1><p>One bounded collection of variation relationships. Amazon writes and inventory enforcement remain off.</p></div></header>
@@ -25,4 +25,4 @@
 </div><p class="trial-help">Cancellation stops further scheduling; an in-flight request may still finish. A completed trial does not enable parent inventory enforcement.</p>
 <noscript><p role="alert">JavaScript is required for these controls. No trial has been started by this page.</p></noscript>
 </section><p><a href="/app/marketplace-skus">Return to Marketplace SKUs</a></p>
-</main></body></html>
+</main><th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block></body></html>

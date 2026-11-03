@@ -1,6 +1,7 @@
 (()=>{
   if(window.NextAiCollaborationReady)return;
   window.NextAiCollaborationReady=true;
+  let draftMemberGeneration=0;
   let state=null,huddleSocket=null,huddleReconnect=null,lastPong=Date.now(),summariesRefreshing=false;
   const $=(selector,scope=document)=>scope.querySelector(selector);
   const $$=(selector,scope=document)=>[...scope.querySelectorAll(selector)];
@@ -16,7 +17,7 @@
   const historyUrl=(type,key)=>type==='GLOBAL_PRODUCT'?'/app/platform/catalog':'/app/collaboration?view=ALL&entityType='+encodeURIComponent(type)+'&subjectKey='+encodeURIComponent(key);
   const socketOpen=()=>huddleSocket?.readyState===WebSocket.OPEN;
   const sendHuddle=payload=>{if(!socketOpen())return false;huddleSocket.send(JSON.stringify(payload));return true;};
-  async function members(){const url=api('/members');if(!memberRequests.has(url))memberRequests.set(url,fetch(url,{headers:{Accept:'application/json'}}).then(response=>response.ok?response.json():[]).catch(()=>[]));return memberRequests.get(url);}
+  async function members(){const url=state?.general?state.generalMembersUrl:api('/members');if(!url)return [];if(!memberRequests.has(url))memberRequests.set(url,fetch(url,{headers:{Accept:'application/json'}}).then(response=>response.ok?response.json():[]).catch(()=>[]));return memberRequests.get(url);}
   function mentionState(field){const before=field.value.slice(0,field.selectionStart??field.value.length),match=before.match(/(^|\s)@([A-Za-z0-9._-]*)$/);return match?{query:match[2].toLowerCase(),start:before.length-match[2].length-1,end:before.length}:null;}
   const composerFor=field=>field.closest('.collaboration-composer,.huddle-composer');
   function closeMentionMenu(field){const menu=composerFor(field)?.querySelector('.mention-menu');if(menu)menu.hidden=true;}
@@ -32,7 +33,8 @@
   async function showMentions(field){
     if(state?.messageType==='PRIVATE_NOTE')return closeMentionMenu(field);
     const current=mentionState(field),menu=composerFor(field)?.querySelector('.mention-menu');if(!current||!menu)return closeMentionMenu(field);
-    const available=await members();
+    const requestedState=state,requestedUrl=state?.general?state.generalMembersUrl:api('/members'),requestedValue=field.value;
+    const available=await members();if(state!==requestedState||field.value!==requestedValue||(state?.general?state.generalMembersUrl:api('/members'))!==requestedUrl)return;
     const choices=available.filter(member=>[member.handle,member.name,member.email].some(value=>(value||'').toLowerCase().includes(current.query))).slice(0,6);
     if(!choices.length){menu.hidden=true;return;}
     menu.innerHTML=choices.map(member=>'<button type="button" role="option" data-handle="'+escape(member.handle)+'"><span>'+escape((member.name||'?').trim().charAt(0).toUpperCase())+'</span><div><strong>'+escape(member.name)+'</strong><small><b>@'+escape(member.handle)+'</b> · '+escape(member.email)+'</small></div></button>').join('');menu.hidden=false;positionMentionMenu(field,menu);
@@ -60,11 +62,12 @@
     if(dialog()){dialog().dataset.visibility=state.messageType;dialog().dataset.scope=state.type;dialog().dataset.personal=String(Boolean(state.personalContext));
       const modes=$('.thread-mode-switch',dialog());if(modes)modes.hidden=Boolean(state.personalContext);}
     $$('.chat-add-person',dialog()).forEach(button=>button.hidden=state.messageType==='PRIVATE_NOTE');
-    const management=$('#thread-management');if(management)management.hidden=!state.currentReview||!state.canCollaborate||state.currentReview.status!=='ACTIVE'||state.messageType==='PRIVATE_NOTE';
-    const elements=view(),snapshot=JSON.stringify(state.snapshot||{});if(elements.start)elements.start.action=api('/reviews');
+    const management=$('#thread-management');if(management)management.hidden=!state.canCollaborate||(state.currentReview&&state.currentReview.status!=='ACTIVE')||state.messageType==='PRIVATE_NOTE';
+    const elements=view(),snapshot=JSON.stringify(state.snapshot||{});if(elements.start)elements.start.action=state.general?state.generalAction:api('/reviews');
     $$('[data-thread-tab=PRIVATE_NOTE]',dialog()).forEach(button=>button.hidden=globalScope());
-    const audience=$('[data-thread-tab=TEAM_CHAT] small',dialog());if(audience)audience.textContent=globalScope()?'Shared with platform administrators across accounts.':'Visible to permitted teammates';if(elements.start){const form=elements.start;form.elements.subjectType.value=state.type;form.elements.subjectKey.value=state.key;form.elements.subjectLabel.value=state.label;form.elements.title.value='Conversation about '+state.label;form.elements.messageType.value=state.messageType;form.elements.contextSnapshot.value=snapshot;form.elements.parentUrl.value=state.parentUrl||location.pathname+location.search;}
+    const audience=$('[data-thread-tab=TEAM_CHAT] small',dialog());if(audience)audience.textContent=globalScope()?'Shared with platform administrators across accounts.':'Visible to permitted teammates';if(elements.start){const form=elements.start;form.elements.subjectType.value=state.type;form.elements.subjectKey.value=state.key;form.elements.subjectLabel.value=state.label;form.elements.title.value=state.draftTitle??state.label;form.elements.messageType.value=state.messageType;form.elements.contextSnapshot.value=snapshot;form.elements.parentUrl.value=state.parentUrl||location.pathname+location.search;}
     if(elements.reply)elements.reply.elements.messageType.value=state.messageType;
+    const modes=$('.thread-mode-switch',dialog());if(modes&&state.general)modes.hidden=true;
     $$('.collaboration-composer textarea',elements.dialog).forEach(field=>{field.placeholder=state.messageType==='PRIVATE_NOTE'?'Write a private note…':'Write a message… Type @ to mention a teammate';});
     $$('[data-thread-composer-hint]',elements.dialog).forEach(hint=>hint.textContent=globalScope()?'Shared with platform administrators across accounts. Email notifications are off.':state.messageType==='PRIVATE_NOTE'?'Visible only to your signed-in account.':'Type @ to notify a teammate by email.');
   }
@@ -76,6 +79,70 @@
     try{const response=await fetch(url,{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json();if(!response.ok)throw Error(result.error||'The shared discussion could not be saved.');if(state!==current)return;form.reset();feedback.textContent='';await loadConversation(result.reviewId,true);if(globalScope())await markRecordConversationActive('GLOBAL_PRODUCT',state.key);else window.dispatchEvent(new Event('personal-collaboration-updated'));}
     catch(error){if(state===current)feedback.textContent=error.message;}finally{delete form.dataset.saving;}
   }
+  function subjectText(review){return review.title==='Conversation about '+review.subjectLabel?review.subjectLabel:review.title||review.subjectLabel;}
+  function renderSubject(review,initial){
+    const title=$('#thread-record-title'),editor=$('.thread-subject-editor'),input=$('#thread-title-input'),edit=$('[data-thread-edit-title]');
+    title.textContent=initial?(state.draftTitle||'New task'):subjectText(review);title.hidden=initial;editor.hidden=!initial;
+    input.style.font=getComputedStyle(title).font;input.value=initial?state.draftTitle:subjectText(review);input.oninput=()=>{if(!state.currentReview){state.draftTitle=input.value;view().start.elements.title.value=input.value;}};
+    $$('[data-thread-save-title],[data-thread-cancel-title]').forEach(button=>button.hidden=initial);
+    edit.hidden=initial||!state.canCollaborate||globalScope()||state.messageType==='PRIVATE_NOTE';
+    $('[data-thread-title-error]').hidden=true;
+    edit.onclick=()=>{title.hidden=true;edit.hidden=true;editor.hidden=false;input.value=subjectText(state.currentReview);input.focus();};
+    const cancel=()=>renderSubject(state.currentReview,false);
+    $('[data-thread-cancel-title]').onclick=cancel;
+    input.onkeydown=event=>{if(event.key==='Escape'&&state.currentReview){event.preventDefault();event.stopPropagation();cancel();edit.focus();}else if(event.key==='Enter'){event.preventDefault();if(state.currentReview)$('[data-thread-save-title]').click();else view().start.querySelector('textarea').focus();}};
+    $('[data-thread-save-title]').onclick=async event=>{
+      const current=state,reviewId=state.currentReviewId,mode=state.messageType,button=event.currentTarget,error=$('[data-thread-title-error]');if(button.disabled)return;
+      if(!input.value.trim()){error.textContent='Enter a subject.';error.hidden=false;input.focus();return;}
+      button.disabled=true;
+      const data=new FormData();$$('input[type=hidden]',view().reply).filter(input=>input.name.includes('csrf')).forEach(input=>data.set(input.name,input.value));data.set('title',input.value.trim());
+      try{const response=await fetch(api('/reviews/'+reviewId+'/title'),{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||'The subject could not be saved.');if(state!==current||state.currentReviewId!==reviewId||state.messageType!==mode)return;state.currentReview=result;renderSubject(result,false);edit.focus();window.dispatchEvent(new Event('personal-collaboration-updated'));}
+      catch(ex){if(state===current&&state.currentReviewId===reviewId&&state.messageType===mode){error.textContent=ex.message;error.hidden=false;}}finally{button.disabled=false;}
+    };
+  }
+  async function renderDraftManagement(){
+    const current=state,memberUrl=state.generalMembersUrl||api('/members'),generation=++draftMemberGeneration,root=$('#thread-management');if(!root)return;
+    $('.conversation-close-button',root).hidden=true;
+    const options=$('[data-thread-assignment-options]',root),label=$('[data-thread-assignees]',root),error=$('[data-thread-management-error]',root);
+    const refresh=()=>{const names=$$('input:checked',options).map(input=>input.nextElementSibling.textContent);current.draftPeople=$$('input:checked',options).map(input=>input.value);label.textContent=names.join(', ')||'Unassigned';};
+    options.replaceChildren();label.textContent='Unassigned';error.textContent='';
+    $('[data-thread-save-assignment]',root).onclick=()=>{refresh();$('details',root).open=false;};
+    $('[data-thread-assign-self]',root).onclick=()=>{const me=(root.dataset.currentEmail||'').toLowerCase();const person=$$('input',options).find(input=>input.dataset.email===me);if(person){person.checked=true;refresh();}else error.textContent='Choose an account with your membership before assigning.';};
+    const due=$('[data-thread-due]',root),date=$('[data-thread-draft-date]',root);delete due.dataset.reviewId;delete due.dataset.dueUrl;date.hidden=true;date.querySelector('input').value='';
+    due.querySelector('span').textContent='Add due date';due.onclick=()=>{date.hidden=!date.hidden;date.querySelector('input').focus();};date.querySelector('input').onchange=event=>{current.draftDue=event.target.value;due.querySelector('span').textContent=current.draftDue?'Due '+current.draftDue:'Add due date';};
+    const team=await members();if(state!==current||state.currentReview||generation!==draftMemberGeneration||memberUrl!==(state.generalMembersUrl||api('/members')))return;
+    for(const person of team){const row=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');input.type='checkbox';input.value=person.id;input.dataset.email=(person.email||'').toLowerCase();name.textContent=person.name||person.email;row.append(input,name);options.append(row);input.onchange=refresh;}
+  }
+  function draftData(form){
+    const data=new FormData(form);data.set('title',state.draftTitle??state.label);data.set('dueDate',state.draftDue||'');
+    for(const person of state.draftPeople||[])data.append('people',person);
+    return data;
+  }
+  async function sendGeneral(form){
+    if(form.dataset.saving)return;const current=state,error=$('[data-thread-title-error]');
+    if(!current.draftTitle?.trim()){error.textContent='Enter a subject.';error.hidden=false;$('#thread-title-input').focus();return;}
+    if(current.generalPersonal&&!current.generalAccount){error.textContent='Choose an account.';error.hidden=false;$('#thread-new-account select').focus();return;}
+    form.dataset.saving='true';const submit=$('[type=submit]',form),accountPicker=$('#thread-new-account select');submit.disabled=true;accountPicker.disabled=true;
+    const data=draftData(form);data.set('description',data.get('message')||'');if(current.generalPersonal){data.set('account',current.generalAccount);if(current.generalStore)data.set('store',current.generalStore);}
+    try{const response=await fetch(current.generalAction,{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json().catch(()=>({}));if(state!==current)return;if(!response.ok)throw Error(result.error||'The task could not be saved. Your draft is still here.');if(typeof result.url!=='string'||!/^\/app\/collaboration(?:\?|$)/.test(result.url))throw Error('Task saved. Open Collaborate to find it.');location.assign(result.url);}
+    catch(ex){if(state===current){error.textContent=ex.message;error.hidden=false;}}finally{delete form.dataset.saving;submit.disabled=false;accountPicker.disabled=false;}
+  }
+  window.openGeneralTask=button=>{
+    clearDrafts();
+    const personal=$('#personal-queue'),context=$('#general-task-context');
+    const account=personal?personal.dataset.filterAccount||'':context?.dataset.account||'',store=personal?personal.dataset.filterStore||'':context?.dataset.store||'';
+    state={general:true,generalPersonal:Boolean(personal),generalAccount:account,generalStore:store,generalAction:personal?'/app/collaboration/personal/create':'/app/collaboration/general-tasks',
+      generalMembersUrl:personal?(account?'/app/collaboration/personal/members?'+new URLSearchParams({account}):null):'/app/collaboration/members',
+      trigger:button,type:'PLATFORM',key:'',label:'',snapshot:{},canCollaborate:true,messageType:'TEAM_CHAT',currentReviewId:null};
+    const picker=$('#thread-new-account'),select=$('select',picker);select.replaceChildren(new Option('Choose an account',''));
+    const updateAccount=()=>{const option=personal?$$('[data-collaboration-account]:not([data-collaboration-store])',personal).find(b=>b.dataset.collaborationAccount===state.generalAccount):null;
+      $('#thread-account-logo').hidden=false;$('#thread-account-logo').src=(personal?option?.dataset.logo:context?.dataset.logo)||'/images/next-ai-mark-transparent.png';
+      $('#thread-record-type').textContent=personal?(option?.dataset.name||'All accounts'):(context?.dataset.accountName||'Selected account');$('#thread-record-context').textContent='';$('#thread-record-badges').replaceChildren();$('#thread-parent-link').hidden=true;
+      if(personal){state.generalMembersUrl=state.generalAccount?'/app/collaboration/personal/members?'+new URLSearchParams({account:state.generalAccount}):null;renderDraftManagement();}};
+    picker.hidden=!personal||Boolean(account);if(personal)$$('[data-collaboration-account]:not([data-collaboration-store])',personal).filter(b=>b.dataset.collaborationAccount).forEach(b=>select.append(new Option(b.dataset.name,b.dataset.collaborationAccount)));
+    select.value=account;select.onchange=()=>{clearDrafts();state.draftDue='';state.generalAccount=select.value;state.generalStore='';state.draftPeople=[];updateAccount();};
+    dialog().dataset.general='true';updateAccount();view().start.reset();showNewConversation();$('button[type=submit]',view().start).setAttribute('aria-label','Create task');dialog().showModal();$('#thread-title-input').focus();
+  };
   function handleHuddleEvent(event){lastPong=Date.now();window.LiveHuddleUI?.event(event,sendHuddle);}
   function updateAssignment(review){
     const current=($('#thread-management')?.dataset.currentEmail||'').toLowerCase();
@@ -109,7 +176,8 @@
   };
   async function renderManagement(review){
     const root=$('#thread-management');if(!root)return;updateAssignment(review);
-    const close=$('.conversation-close-button',root);
+    $('[data-thread-draft-date]',root).hidden=true;
+    const close=$('.conversation-close-button',root);if(close)close.hidden=false;
     if(close){
       close.removeAttribute('onclick');
       close.onclick=async event=>{
@@ -123,6 +191,7 @@
     if(globalScope()){root.hidden=!state.canCollaborate||review.status!=='ACTIVE';return;}
     const assigned=(review.assigneeEmail||'').toLowerCase().split(',').map(value=>value.trim()).includes((root.dataset.currentEmail||'').toLowerCase());
     const statusIcon=$('#thread-status-icon');if(statusIcon){statusIcon.src=window.NextAiIcons.source(review.status==='ACTIVE'&&assigned?'collaboration-assigned-red':review.messageCount>0?'collaboration-blue':'collaboration-no-message-gray');statusIcon.alt=assigned?'Assigned to you':review.messageCount>0?'Active conversation':'No messages';}
+    const dueButton=$('[data-thread-due]');if(dueButton){dueButton.onclick=null;dueButton.removeAttribute('aria-expanded');}
     window.CollaborationTaskDates?.prepare(review);
     if(state.personalContext){const due=$('[data-thread-due]');if(due)due.dataset.dueUrl=api('/reviews/'+review.id+'/due-date');}
     root.hidden=!state.canCollaborate||review.status!=='ACTIVE'||state.messageType==='PRIVATE_NOTE';if(root.hidden)return;
@@ -150,7 +219,7 @@
     }
     const active=Number(button.dataset.activeCount||0),origin=Number(button.dataset.originCount??active),related=Number(button.dataset.relatedCount||0),mine=Number(button.dataset.mineCount||0);
     const directMessages=Number(button.dataset.directMessageCount??origin),relatedMessages=Number(button.dataset.relatedMessageCount??related);
-    const attention=mine>0||Number(button.dataset.urgentUnreadMentionCount||0)>0;
+    const attention=mine>0;
     const tone=attention?'mine':origin>0?'origin':related>0?'related':'empty';
     const file=attention?'collaboration-assigned-red':origin>0?'collaboration-blue':'collaboration-no-message-gray';
     button.dataset.contextTone=tone;button.classList.toggle('has-conversation',active>0);button.classList.remove('closed-history');
@@ -201,28 +270,38 @@
     if(!('WebSocket'in window)||huddleSocket?.readyState===WebSocket.OPEN||huddleSocket?.readyState===WebSocket.CONNECTING)return;clearTimeout(huddleReconnect);const protocol=location.protocol==='https:'?'wss:':'ws:';huddleSocket=new WebSocket(protocol+'//'+location.host+'/ws/huddles');
     huddleSocket.addEventListener('open',()=>{lastPong=Date.now();});huddleSocket.addEventListener('message',message=>{try{handleHuddleEvent(JSON.parse(message.data))}catch(error){console.warn('A live huddle update could not be displayed.',error);}});huddleSocket.addEventListener('close',event=>{window.LiveHuddleUI?.event({type:'OFFLINE'},sendHuddle);if(event.code!==1003&&event.code!==1008)huddleReconnect=setTimeout(connectHuddles,2000);});huddleSocket.addEventListener('error',()=>huddleSocket.close());
   }
+  function clearDrafts(){
+    draftMemberGeneration++;
+    for(const form of [view().start,view().reply]){if(!form)continue;form.reset();$$('[data-draft-field]',form).forEach(input=>input.remove());
+      const field=$('textarea',form);if(field){field.value='';closeMentionMenu(field);}
+      const label=$('[data-attachment-name]',form);if(label){label.textContent='No files selected';label.hidden=true;}
+    }
+  }
   function selectTab(type,reload=true){
-    if(!state)return;state.mode='PERSISTENT';state.messageType=!globalScope()&&type==='PRIVATE_NOTE'?'PRIVATE_NOTE':'TEAM_CHAT';
+    if(!state)return;if(state.messageType!==type)clearDrafts();state.mode='PERSISTENT';state.messageType=!globalScope()&&type==='PRIVATE_NOTE'?'PRIVATE_NOTE':'TEAM_CHAT';
     $$('[data-thread-tab]',dialog()).forEach(button=>button.setAttribute('aria-selected',String(button.dataset.threadTab===state.messageType)));
     configureForms();if(!reload)return;if(state.currentReviewId)loadConversation(state.currentReviewId,state.showBack);else if(state.active?.length)loadConversation(state.active[0].id,false);else showNewConversation();
   }
   function showNewConversation(){
-    const elements=view();elements.reply.hidden=true;elements.start.hidden=!state.canCollaborate;elements.list.innerHTML='<div class="conversation-empty"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg><strong>'+(state.messageType==='PRIVATE_NOTE'?'Add a private note':'Start a team conversation')+'</strong><span>'+(state.messageType==='PRIVATE_NOTE'?'Only your signed-in user can read it.':'Keep the discussion attached to this exact record.')+'</span>'+(state.closedCount?'<a class="conversation-history-link" href="'+escape(state.historyUrl)+'">View '+state.closedCount+' closed conversation'+(state.closedCount===1?'':'s')+'</a>':'')+'</div>';configureForms();if(!elements.start.hidden)$('textarea',elements.start).focus();
+    state.currentReview=null;state.currentReviewId=null;state.draftTitle=state.general?'':state.label.slice(0,240);state.draftPeople=[];state.draftDue='';
+    const elements=view();elements.reply.hidden=true;elements.start.hidden=!state.canCollaborate;elements.list.innerHTML='<div class="conversation-empty"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg><strong>'+(state.messageType==='PRIVATE_NOTE'?'Add a private note':'Start a team conversation')+'</strong><span>'+(state.messageType==='PRIVATE_NOTE'?'Only your signed-in user can read it.':'Keep the discussion attached to this exact record.')+'</span>'+(state.closedCount?'<a class="conversation-history-link" href="'+escape(state.historyUrl)+'">View '+state.closedCount+' closed conversation'+(state.closedCount===1?'':'s')+'</a>':'')+'</div>';configureForms();renderDraftManagement();renderSubject(null,true);if(!elements.start.hidden)$('#thread-title-input').focus();
   }
   function showPicker(){
+    clearDrafts();state.currentReview=null;$('[data-thread-edit-title]').hidden=true;
     const elements=view(),all=[...(state.threads||[])].sort((left,right)=>Date.parse(right.createdAt)-Date.parse(left.createdAt));elements.start.hidden=true;elements.reply.hidden=true;state.currentReviewId=null;
     elements.list.innerHTML='<section class="conversation-picker"><header><strong>'+all.length+' conversation'+(all.length===1?'':'s')+' for this record</strong><span>Choose by date, status, and participants.</span></header><div>'+all.map(review=>'<button type="button" data-conversation-id="'+review.id+'"><span class="conversation-picker-icon '+(review.status==='CLOSED'?'closed':'active')+'"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg></span><span><strong>'+escape(formatDate(review.createdAt))+'</strong><small class="conversation-picker-meta"><span class="conversation-picker-status">'+escape(review.status==='CLOSED'?'Closed':'Active')+'</span><span>'+escape(review.participants||review.requester)+'</span><span class="conversation-picker-count">'+review.messageCount+' message'+(review.messageCount===1?'':'s')+'</span></small></span><b aria-hidden="true">›</b></button>').join('')+'</div><footer>'+(state.canCollaborate?'<button type="button" class="conversation-new-button" data-new-conversation>＋ New conversation</button>':'')+'<a class="conversation-history-link" href="'+escape(state.historyUrl)+'">Open filtered history</a></footer></section>';
     $$('[data-conversation-id]',elements.list).forEach(button=>button.addEventListener('click',()=>loadConversation(button.dataset.conversationId,true)));$('[data-new-conversation]',elements.list)?.addEventListener('click',showNewConversation);
   }
   async function loadConversation(reviewId,showBack=false){
+    if(state.currentReviewId!==reviewId)clearDrafts();
     const elements=view();state.currentReviewId=reviewId;state.showBack=showBack;elements.start.hidden=true;elements.reply.hidden=true;elements.list.innerHTML='<div class="conversation-loading">Loading conversation…</div>';
-    const requestedType=state.messageType;
+    const requestedType=state.messageType,requestedState=state;
     document.dispatchEvent(new Event('collaboration-thread-loading'));
     try{
       const response=await fetch(api('/reviews/')+encodeURIComponent(reviewId)+'?messageType='+requestedType,{headers:{Accept:'application/json'},cache:'no-store'});
       if(!response.ok)throw new Error();const conversation=await response.json();
-      if(state.currentReviewId!==reviewId||state.messageType!==requestedType)return;
-      state.currentReview=conversation.review;
+      if(state!==requestedState||state.currentReviewId!==reviewId||state.messageType!==requestedType)return;
+      state.currentReview=conversation.review;renderSubject(conversation.review,false);
       setParentLink(conversation.review.parentUrl,conversation.review.subjectType,conversation.review.subjectKey,conversation.review.subjectLabel);
       elements.list.innerHTML=renderMessages(conversation,showBack);
       if((globalScope()||state.personalContext)&&conversation.review.status==='CLOSED'){const reopen=document.createElement('button');reopen.type='button';reopen.className='secondary-button';reopen.textContent='Reopen conversation';reopen.onclick=()=>sendGlobal(view().reply,{name:'reopen',value:conversation.review.id});elements.list.append(reopen);}
@@ -231,13 +310,14 @@
       $('[data-conversation-back]',elements.list)?.addEventListener('click',showPicker);
       if(!elements.reply.hidden)$('textarea',elements.reply).focus();elements.list.scrollTop=elements.list.scrollHeight;
       document.dispatchEvent(new CustomEvent('collaboration-thread-rendered',{detail:{reviewId,messageType:requestedType,messageIds:conversation.messages.map(message=>message.id),scope:state.type,apiBase:state.personalContext?api(''):null,unreadMentionMessageIds:conversation.unreadMentionMessageIds||[]}}));
-    }catch(_){elements.list.innerHTML='<div class="history-error">This conversation could not be loaded. Please try again.</div>';}
+    }catch(_){if(state!==requestedState||state.currentReviewId!==reviewId)return;elements.list.innerHTML='<div class="history-error">This conversation could not be loaded. Please try again.</div>';}
   }
   async function loadSubject(forcePicker){
-    const elements=view();elements.list.innerHTML='<div class="conversation-loading">Loading conversations…</div>';elements.start.hidden=true;elements.reply.hidden=true;
-    try{const response=await fetch(api('/subject?subjectType=')+encodeURIComponent(state.type)+'&subjectKey='+encodeURIComponent(state.key),{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();const conversations=await response.json(),threads=conversations.map(item=>item.review).filter(review=>globalScope()||review.status==='ACTIVE'),active=threads.filter(review=>review.status==='ACTIVE');Object.assign(state,{threads,active,closedCount:threads.length-active.length,historyUrl:historyUrl(state.type,state.key)});if((globalScope()||forcePicker||threads.length>1)&&threads.length)showPicker();else if(active.length)loadConversation(active[0].id,false);else if(threads.length===1)loadConversation(threads[0].id,false);else showNewConversation();}catch(_){elements.list.innerHTML='<div class="history-error">These conversations could not be loaded. Please try again.</div>';}
+    const elements=view(),requestedState=state;elements.list.innerHTML='<div class="conversation-loading">Loading conversations…</div>';elements.start.hidden=true;elements.reply.hidden=true;
+    try{const response=await fetch(api('/subject?subjectType=')+encodeURIComponent(state.type)+'&subjectKey='+encodeURIComponent(state.key),{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();const conversations=await response.json();if(state!==requestedState)return;const threads=conversations.map(item=>item.review).filter(review=>globalScope()||review.status==='ACTIVE'),active=threads.filter(review=>review.status==='ACTIVE');Object.assign(state,{threads,active,closedCount:threads.length-active.length,historyUrl:historyUrl(state.type,state.key)});if((globalScope()||forcePicker||threads.length>1)&&threads.length)showPicker();else if(active.length)loadConversation(active[0].id,false);else if(threads.length===1)loadConversation(threads[0].id,false);else showNewConversation();}catch(_){if(state!==requestedState)return;elements.list.innerHTML='<div class="history-error">These conversations could not be loaded. Please try again.</div>';}
   }
   function setHeader(button){
+    dialog().dataset.general='false';$('#thread-account-logo').hidden=true;$('#thread-new-account').hidden=true;view().start.querySelector('button[type=submit]').setAttribute('aria-label','Start conversation');
     $('#thread-record-type').textContent=(button.dataset.entityType||button.dataset.type||'Record').replaceAll('_',' ')+' collaboration';$('#thread-record-title').textContent=button.dataset.title||button.dataset.product||'Record conversation';
     const identifier=button.dataset.identifier||'',opaque=/^[0-9a-f]{8}-[0-9a-f-]{27,}(?:\||$)/i.test(identifier),context=[opaque?'':identifier,button.dataset.locationLabel].filter(Boolean).join(' · ');$('#thread-record-context').textContent=context;$('#thread-record-context').hidden=!context;
     const badges=$('#thread-record-badges');badges.innerHTML='';[['expiration',button.dataset.expiration?'Expires '+button.dataset.expiration:null],['status',button.dataset.status],['marketplace',button.dataset.marketplace]].forEach(([kind,text])=>{if(!text)return;const badge=document.createElement('span');badge.className=kind;if(kind==='status')badge.dataset.status=text.toUpperCase();badge.textContent=text;badges.append(badge);});
@@ -263,6 +343,7 @@
     }}
 
   window.openRecordCollaboration=(button,forcePicker=false)=>{
+    clearDrafts();
     const type=(button.dataset.entityType||button.dataset.type||'RECORD').toUpperCase(),key=button.dataset.entityId||button.dataset.key;
     const chooseConversation=forcePicker||Number(button.dataset.totalCount||0)>1;
     state={type,key,label:button.dataset.title||button.dataset.product||button.dataset.identifier||'Record',parentUrl:sourceTableUrl(location.pathname,type,key,button.dataset.identifier||button.dataset.title),snapshot:snapshotFrom(button),canCollaborate:button.dataset.canCollaborate!=='false',messageType:'TEAM_CHAT',mode:'PERSISTENT',currentReviewId:null,currentHuddleId:null};setHeader(button);selectTab('TEAM_CHAT',false);dialog().showModal();loadSubject(chooseConversation);
@@ -270,7 +351,7 @@
   let recordRefreshTimer;
   window.prepareRecordCollaboration=button=>{decorateRecordConversationButton(button);clearTimeout(recordRefreshTimer);recordRefreshTimer=setTimeout(refreshRecordSummaries,100);};
   window.openInventoryConversation=button=>window.openRecordCollaboration(button,false);
-  window.openCollaborationReview=button=>{state={trigger:button,type:button.dataset.subjectType,key:button.dataset.subjectKey,label:button.dataset.subjectLabel,parentUrl:button.dataset.parentUrl||'',snapshot:snapshotFrom(button),personalContext:button.dataset.personalContext||null,canCollaborate:button.dataset.canCollaborate!=='false',messageType:'TEAM_CHAT',mode:'PERSISTENT',currentReviewId:button.dataset.reviewId,currentHuddleId:null};setHeader(button);selectTab(button.dataset.messageType||'TEAM_CHAT',false);dialog().showModal();loadConversation(button.dataset.reviewId,false);};
+  window.openCollaborationReview=button=>{clearDrafts();state={trigger:button,type:button.dataset.subjectType,key:button.dataset.subjectKey,label:button.dataset.subjectLabel,parentUrl:button.dataset.parentUrl||'',snapshot:snapshotFrom(button),personalContext:button.dataset.personalContext||null,canCollaborate:button.dataset.canCollaborate!=='false',messageType:'TEAM_CHAT',mode:'PERSISTENT',currentReviewId:button.dataset.reviewId,currentHuddleId:null};setHeader(button);selectTab(button.dataset.messageType||'TEAM_CHAT',false);dialog().showModal();loadConversation(button.dataset.reviewId,false);};
   window.openGeneralHuddle=()=>window.LiveHuddleUI?.showPeople();
   window.filterCollaborationRows=value=>{const query=(value||'').trim().toLowerCase(),rows=$$('.collaboration-open-row'),visible=rows.reduce((count,row)=>{const show=!query||(row.dataset.search||'').includes(query);row.hidden=!show;return count+(show?1:0);},0),empty=$('.collaboration-search-empty');if(empty)empty.hidden=!query||visible>0;const total=$('.collaboration-card .table-footer span');if(total)total.textContent=query?'Showing '+visible+' matching conversation'+(visible===1?'':'s'):'Showing '+rows.length+' conversation'+(rows.length===1?'':'s');};
   function boot(){
@@ -294,9 +375,9 @@
       added.forEach(button=>window.prepareRecordCollaboration(button));
     }).observe(document.body,{childList:true,subtree:true});
     $$('[data-collaboration-composer]').forEach(field=>{wireComposer(field);wireEnterToSend(field,field.closest('form'));});wireAttachments();$$('[data-thread-tab]').forEach(button=>button.addEventListener('click',()=>selectTab(button.dataset.threadTab)));
-    $$('.collaboration-composer').forEach(form=>form.addEventListener('submit',event=>{const field=$('textarea',form),files=$('input[type=file]',form)?.files;if(!event.submitter?.name&&!field.value.trim()&&!files?.length){event.preventDefault();field.focus();return;}if(globalScope()||state?.personalContext){event.preventDefault();sendGlobal(form,event.submitter);}}));
+    $$('.collaboration-composer').forEach(form=>form.addEventListener('submit',event=>{const field=$('textarea',form),files=$('input[type=file]',form)?.files;if(form===view().start){if(state?.general){event.preventDefault();sendGeneral(form);return;}if(!state.draftTitle?.trim()){event.preventDefault();const error=$('[data-thread-title-error]');error.textContent='Enter a subject.';error.hidden=false;$('#thread-title-input').focus();return;}form.elements.title.value=state.draftTitle;$$('[data-draft-field]',form).forEach(n=>n.remove());for(const [name,value] of [['dueDate',state.draftDue||''],...(state.draftPeople||[]).map(id=>['people',id])]){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;input.dataset.draftField='';form.append(input);}}if(!event.submitter?.name&&!field.value.trim()&&!files?.length){event.preventDefault();field.focus();return;}if(globalScope()||state?.personalContext){event.preventDefault();sendGlobal(form,event.submitter);}}));
     $$('[data-thread-dialog-close]').forEach(button=>button.addEventListener('click',()=>dialog().close()));
-    dialog()?.addEventListener('close',()=>{if(state?.personalContext){const trigger=state.trigger;trigger?.focus({preventScroll:true});window.dispatchEvent(new Event('personal-collaboration-updated'));}});
+    dialog()?.addEventListener('close',()=>{clearDrafts();if(state?.personalContext||state?.general){const trigger=state.trigger;trigger?.focus({preventScroll:true});window.dispatchEvent(new Event('personal-collaboration-updated'));}});
     dialog()?.addEventListener('click',event=>{if(event.target===event.currentTarget)dialog().close();});
     const auto=$('[data-thread-autopen="true"]');if(auto)setTimeout(()=>window.openCollaborationReview(auto),80);
     connectHuddles();

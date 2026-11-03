@@ -107,3 +107,22 @@ html[data-theme=dark] .sidebar-huddle-menu,html[data-theme=dark] .sidebar-huddle
   #contextual-thread-dialog #thread-parent-link{width:43px;height:43px;flex-basis:43px}
   #contextual-thread-dialog #thread-parent-link>img{width:38px;height:38px}
 }
+
+/* CD-approved subject editor shared by initial, platform and existing conversations. */
+#contextual-thread-dialog .thread-subject-heading{display:flex;align-items:center;gap:8px;min-width:0}
+#contextual-thread-dialog .thread-subject-heading h2{flex:1;white-space:normal;word-break:normal;overflow-wrap:break-word}
+#contextual-thread-dialog [data-thread-edit-title]{flex:0 0 30px;width:30px;height:30px;border:0;background:transparent;padding:4px;cursor:pointer}
+#contextual-thread-dialog [data-thread-edit-title] img{width:22px;height:22px;object-fit:contain}
+#contextual-thread-dialog .thread-subject-editor{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+#contextual-thread-dialog .thread-subject-editor input{flex:1;min-width:180px;width:100%;padding:8px 10px;border:1px solid var(--line,#dce4ee);border-radius:8px;background:var(--surface,#fff);color:var(--ink,#17283e);font:inherit;font-weight:700}
+#contextual-thread-dialog .thread-subject-editor button{font:inherit;font-size:.75rem;padding:7px 10px;border:1px solid var(--line,#dce4ee);border-radius:8px;background:var(--surface,#fff);color:var(--blue,#2e6be6);cursor:pointer}
+#contextual-thread-dialog [data-thread-title-error]{color:var(--danger,#c93345);white-space:normal}
+#contextual-thread-dialog [data-thread-draft-date]{display:flex;align-items:center;gap:6px;font-size:.75rem}
+#contextual-thread-dialog[data-general=true] .conversation-empty{display:none}
+#contextual-thread-dialog[data-general=true] .thread-dialog-body{min-height:150px;grid-template-rows:auto}
+#contextual-thread-dialog[data-general=true] .conversation-list{min-height:0;flex:0}
+#contextual-thread-dialog #thread-new-account{font-size:.75rem}
+#contextual-thread-dialog [hidden]{display:none!important}
+
+#contextual-thread-dialog .thread-record{flex:1;min-width:0}
+#contextual-thread-dialog .dialog-close{flex:none}

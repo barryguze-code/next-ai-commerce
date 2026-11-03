@@ -24,7 +24,7 @@ for(const [label,data,asset] of [
  ['direct read',{activeCount:'1',originCount:'1'},'collaboration-blue'],
  ['inherited informative',{activeCount:'1',originCount:'0',relatedCount:'1'},'collaboration-no-message-gray'],
  ['assigned',{activeCount:'1',mineCount:'1'},'collaboration-assigned-red'],
- ['urgent unread mention',{activeCount:'1',urgentUnreadMentionCount:'2'},'collaboration-assigned-red'],
+ ['urgent unread mention without assignment',{activeCount:'1',originCount:'1',urgentUnreadMentionCount:'2'},'collaboration-blue'],
  ['ordinary unread',{activeCount:'1',originCount:'1',unreadCount:'2'},'collaboration-blue']
 ])test(label+' conversation badge uses the shared status palette',()=>{
  const image={getAttribute(){},setAttribute(key,value){this[key]=value;}};

@@ -12,9 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class PersonalCollaborationQueue {
     record Key(String type, UUID id) {}
     record Card(Key key, String title, UUID account, String context, UUID parent, String state, UUID store, String subjectType,
-                @com.fasterxml.jackson.annotation.JsonIgnore UUID alias, @com.fasterxml.jackson.annotation.JsonIgnore Timestamp reopened, @com.fasterxml.jackson.annotation.JsonIgnore Timestamp created,UUID contextAccount,UUID contextStore,boolean sourceRestricted) {
+                @com.fasterxml.jackson.annotation.JsonIgnore UUID alias, @com.fasterxml.jackson.annotation.JsonIgnore Timestamp reopened, @com.fasterxml.jackson.annotation.JsonIgnore Timestamp created,UUID contextAccount,UUID contextStore,boolean sourceRestricted,boolean assignedToMe) {
         Card(Key key,String title,UUID account,String context,UUID parent,String state,UUID store,String subjectType,UUID alias,Timestamp reopened,Timestamp created){
-            this(key,title,account,context,parent,state,store,subjectType,alias,reopened,created,account,store,false);
+            this(key,title,account,context,parent,state,store,subjectType,alias,reopened,created,account,store,false,false);
         }
         boolean closed() { return state.equals("DONE") || state.equals("CLOSED"); }
     }
@@ -162,7 +162,7 @@ public class PersonalCollaborationQueue {
             db.queryForObject("select set_config('app.parent_id',?,true)",String.class,parent.id().toString());
             db.query("""
               select t.id,t.title,t.account_id,t.store_id,t.state,t.source_review_id,t.personal_reopened_at,
-                     t.created_at,coalesce(t.subject_type,'PLATFORM'),origin.display_name from collaboration_tasks t LEFT JOIN tenants origin ON origin.id=t.account_id join collaboration_task_participants p
+                     t.created_at,coalesce(t.subject_type,'PLATFORM'),origin.display_name,p.assigned from collaboration_tasks t LEFT JOIN tenants origin ON origin.id=t.account_id join collaboration_task_participants p
               on p.parent_id=t.parent_id and p.task_id=t.id where t.parent_id=? and p.user_id=? and (p.assigned or ?<>'ASSIGNED')
               and (?::uuid is null or t.id=?)
               order by t.created_at,t.id
@@ -170,12 +170,12 @@ public class PersonalCollaborationQueue {
                 boolean visible=names.containsKey(a)&&(s==null||stores.contains(s));
                 var k=new Key("TASK",r.getObject(1,UUID.class));cards.put(k,new Card(k,r.getString(2),visible?a:null,
                    a==null?parent.name():visible?names.get(a):r.getString(10),parent.id(),r.getString(5),visible?s:null,r.getString(9),
-                   r.getObject(6,UUID.class),r.getTimestamp(7),r.getTimestamp(8),a,s,a!=null&&!visible));},parent.id(),user,view,key==null?null:key.id(),key==null?null:key.id());
+                   r.getObject(6,UUID.class),r.getTimestamp(7),r.getTimestamp(8),a,s,a!=null&&!visible,r.getBoolean(11)));},parent.id(),user,view,key==null?null:key.id(),key==null?null:key.id());
         }
         for(var a:(key!=null&&!key.type().equals("REVIEW"))?List.<WorkspaceAccessRepository.AccountOption>of():accounts){
             db.queryForObject("select set_config('app.tenant_id',?,true)",String.class,a.id().toString());
             db.query("""
-                select review.id,review.title,review.status,review.personal_reopened_at,review.created_at,review.subject_type
+                select review.id,review.title,review.status,review.personal_reopened_at,review.created_at,review.subject_type,coalesce(review.assigned_to=?,false) OR EXISTS(SELECT 1 FROM collaboration_assignments mine WHERE mine.tenant_id=review.tenant_id AND mine.review_id=review.id AND mine.user_id=?)
                 from collaboration_reviews review where review.tenant_id=? and (?::uuid is null or review.id=?)
                 and (?='ALL' or ?='ASSIGNED' or (review.status='CLOSED')=(?='CLOSED')) and (?<>'ASSIGNED' or review.assigned_to=? or exists
                 (select 1 from collaboration_assignments ca where ca.tenant_id=review.tenant_id and ca.review_id=review.id and ca.user_id=?))
@@ -183,7 +183,7 @@ public class PersonalCollaborationQueue {
                     and mine.review_id=review.id and mine.message_type='PRIVATE_NOTE' and lower(mine.author_email)=lower(?)))
                 and (
                 """+CollaborationRepository.VISIBLE_THREAD+")",r->{var k=new Key("REVIEW",r.getObject(1,UUID.class));
-                    cards.put(k,new Card(k,r.getString(2),a.id(),a.name(),null,r.getString(3),null,r.getString(6),null,r.getTimestamp(4),r.getTimestamp(5)));},a.id(),key==null?null:key.id(),key==null?null:key.id(),view,view,view,view,user,user,view,email);
+                    cards.put(k,new Card(k,r.getString(2),a.id(),a.name(),null,r.getString(3),null,r.getString(6),null,r.getTimestamp(4),r.getTimestamp(5),a.id(),null,false,r.getBoolean(7)));},user,user,a.id(),key==null?null:key.id(),key==null?null:key.id(),view,view,view,view,user,user,view,email);
         }
         return cards;
     }

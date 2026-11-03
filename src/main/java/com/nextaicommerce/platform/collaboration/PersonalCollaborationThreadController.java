@@ -58,6 +58,10 @@ class PersonalCollaborationThreadController {
     Object assign(@PathVariable UUID context,@PathVariable UUID id,@RequestParam(required=false) Set<UUID> people,Authentication auth){
         account(context,id,auth);return actions.assign(auth.getName(),staff(auth),id,people==null?Set.of():people);
     }
+    @PostMapping("/reviews/{id}/title") @ResponseBody
+    Object title(@PathVariable UUID context,@PathVariable UUID id,@RequestParam String title,Authentication auth){
+        account(context,id,auth);return actions.title(auth.getName(),staff(auth),id,title);
+    }
     @PostMapping("/reviews/{id}/due-date") @ResponseBody
     Object due(@PathVariable UUID context,@PathVariable UUID id,@RequestParam(required=false) String dueDate,@RequestParam(defaultValue="America/Los_Angeles") String timeZone,Authentication auth){
         account(context,id,auth);return actions.due(auth.getName(),staff(auth),id,dueDate==null||dueDate.isBlank()?null:java.time.LocalDate.parse(dueDate),timeZone);

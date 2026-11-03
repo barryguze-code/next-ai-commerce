@@ -355,6 +355,13 @@ public class CollaborationRepository {
         return posted;
     }
 
+    @Transactional
+    public PostedMessage createStoreTaskWithFiles(UUID tenantId,UUID storeId,String title,String description,String actor,Set<UUID> people,java.time.LocalDate date,String zone,List<AttachmentUpload> files){
+        var posted=createStoreTask(tenantId,storeId,title,description,actor,people,date,zone);
+        saveAttachmentsInternal(tenantId,posted.reviewId(),posted.messageId(),actor,files);
+        return posted;
+    }
+
     public static Instant deadline(java.time.LocalDate date,String zone){return date==null?null:date.plusDays(1).atStartOfDay(java.time.ZoneId.of(zone)).toInstant();}
 
     @Transactional
@@ -375,6 +382,29 @@ public class CollaborationRepository {
         Instant due=deadline(date,zone);
         jdbc.update("UPDATE collaboration_reviews SET due_at=?,due_date=?,due_time_zone=?,updated_at=now() WHERE tenant_id=? AND id=?",due==null?null:java.sql.Timestamp.from(due),date==null?null:java.sql.Date.valueOf(date),date==null?null:zone,tenantId,reviewId);
         return review(tenantId,reviewId,actor);
+    }
+
+    /** The editable discussion title never changes the identity or label of its source record. */
+    @Transactional
+    public Review setTitle(UUID tenantId,UUID reviewId,String actor,String title){
+        if(title==null||title.isBlank()||title.strip().length()>240)throw new IllegalArgumentException("Enter a subject of up to 240 characters.");
+        setContext(tenantId,actor);guardShopifyReview(tenantId,reviewId);
+        var current=review(tenantId,reviewId,actor);
+        if(current==null)throw new IllegalArgumentException("This conversation is no longer available.");
+        if(jdbc.update("UPDATE collaboration_reviews SET title=?,updated_at=now() WHERE tenant_id=? AND id=?",title.strip(),tenantId,reviewId)!=1)
+            throw new IllegalArgumentException("This conversation is no longer available.");
+        return review(tenantId,reviewId,actor);
+    }
+
+    @Transactional
+    public PostedMessage createInitialConversation(UUID tenantId,String subjectType,String subjectKey,String subjectLabel,String marketplace,
+            String actionKind,String title,String message,String messageType,String contextSnapshot,String parentUrl,
+            String actor,Set<UUID> people,java.time.LocalDate date,String zone,List<AttachmentUpload> files){
+        boolean team="TEAM_CHAT".equals(normalizeMessageType(messageType));
+        var posted=createDatedConversation(tenantId,subjectType,subjectKey,subjectLabel,marketplace,actionKind,title,message,messageType,
+            contextSnapshot,parentUrl,actor,null,team?date:null,zone,files);
+        if(team&&!people.isEmpty())assign(tenantId,posted.reviewId(),actor,people,true);
+        return posted;
     }
 
     /** Resolve existing artwork in one query, without fetching Amazon or decoding pictures. */
