@@ -173,6 +173,12 @@ class ReceivingWorkflowDatabaseTest {
             jdbc.update("INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku) VALUES (?,?,'Case-Only')",tenant,caseGlobal);
         });
         for(String sku:List.of("42","Foreign-Only","case-only"))assertThatThrownBy(()->upload.apply(Map.of("SKU",sku,"Description","Source","Quantity","1"))).isInstanceOf(IllegalArgumentException.class);
+        long identifiersBefore=jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers",Long.class);
+        long productsBefore=jdbc.queryForObject("SELECT count(*) FROM global_catalog_products",Long.class);
+        assertThatThrownBy(()->upload.apply(Map.of("SKU","Unknown-ASIN","Description","Source","Quantity","1","UPC / EAN","B09TPK5QQS"))).hasMessageContaining("An ASIN cannot be used as a barcode");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers",Long.class)).isEqualTo(identifiersBefore);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_catalog_products",Long.class)).isEqualTo(productsBefore);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_catalog_offers WHERE tenant_id=?",Integer.class,tenant)).isZero();
         assertThatThrownBy(()->upload.apply(Map.of("Account SKU","Unknown","Description","Source","Quantity","1"))).hasMessageContaining("No active product matches account SKU");
         assertThatThrownBy(()->upload.apply(Map.of("Account SKU","00042","SKU","42","Description","Source","Quantity","1"))).hasMessageContaining("different Account SKU and SKU");
         assertThatThrownBy(()->upload.apply(Map.of("SKU","00042","Description","Source","Quantity","1","UPC / EAN","012345678901"))).hasMessageContaining("Barcode conflicts");

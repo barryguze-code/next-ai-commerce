@@ -867,6 +867,8 @@ public class ReceivingRepository {
             }
             if(vendorCode.isBlank())throw new IllegalArgumentException("No active product matches account SKU "+accountSku+". Review the account catalogue before receiving.");
         }
+        if(!identifier.isBlank()&&!identifier.replaceAll("[\\s-]","").matches("(?:[0-9]{8}|[0-9]{12}|[0-9]{13}|[0-9]{14})"))
+            throw new IllegalArgumentException("A valid UPC, EAN, or GTIN is required for an unmatched product. An ASIN cannot be used as a barcode.");
         if(!vendorCode.isBlank()){
             boolean created=itemId==null;
             itemId=catalog.addImportedVendorProduct(tenantId,actorEmail,vendorId,vendorCode,description,
