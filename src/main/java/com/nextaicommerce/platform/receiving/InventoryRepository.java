@@ -281,8 +281,12 @@ public class InventoryRepository {
     public List<InventoryView> inventory(UUID tenantId,List<UUID> itemIds){
         String filter=itemIds==null?null:"{"+String.join(",",itemIds.stream().map(UUID::toString).toList())+"}";
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        jdbc.execute("SET LOCAL jit='off'");
         return jdbc.query("""
-            WITH positions AS MATERIALIZED (
+            WITH listing_appearance AS MATERIALIZED (
+                SELECT tenant_id,marketplace_connection_id,upper(seller_sku) seller_sku_ci,image_url,asin,last_seen_at
+                FROM amazon_listings WHERE tenant_id=?
+            ), positions AS MATERIALIZED (
                 SELECT ledger.tenant_id,ledger.account_catalog_item_id,ledger.location_id,ledger.expiration_date,
                        sum(ledger.quantity) quantity,
                        CASE WHEN bool_or(ledger.source_type NOT IN ('MANUAL','ADJUSTMENT'))
@@ -391,9 +395,13 @@ public class InventoryRepository {
                 SELECT listing.image_url,coalesce(listing.asin,mapping.asin) asin FROM marketplace_sku_mappings mapping
                 JOIN marketplace_sku_mapping_components component ON component.tenant_id=mapping.tenant_id
                   AND component.marketplace_sku_mapping_id=mapping.id
-                LEFT JOIN amazon_listings listing ON listing.tenant_id=mapping.tenant_id
-                  AND listing.marketplace_connection_id=mapping.marketplace_connection_id
-                  AND upper(listing.seller_sku)=upper(mapping.marketplace_sku)
+                LEFT JOIN LATERAL (
+                    SELECT * FROM listing_appearance appearance
+                    WHERE appearance.tenant_id=mapping.tenant_id
+                      AND appearance.marketplace_connection_id=mapping.marketplace_connection_id
+                      AND appearance.seller_sku_ci=upper(mapping.marketplace_sku)
+                    OFFSET 0
+                ) listing ON true
                 WHERE mapping.tenant_id=item.tenant_id AND mapping.status='ACTIVE'
                   AND component.account_catalog_item_id=item.id
                   AND (SELECT count(*) FROM marketplace_sku_mapping_components all_components
@@ -406,7 +414,7 @@ public class InventoryRepository {
                 rs.getString(11),rs.getString(12),rs.getString(13),rs.getBigDecimal(14),
                 rs.getTimestamp(15)==null?null:rs.getTimestamp(15).toInstant(),rs.getTimestamp(16)==null?null:rs.getTimestamp(16).toInstant(),
                 rs.getObject(17,UUID.class),rs.getString(18),rs.getString(19),rs.getString(20),rs.getString(21),
-                rs.getBigDecimal(22),rs.getBigDecimal(23),rs.getInt(24),rs.getString(25),rs.getString(26),rs.getBigDecimal(27)),tenantId,filter,filter,tenantId,filter,filter,tenantId,filter,filter);
+                rs.getBigDecimal(22),rs.getBigDecimal(23),rs.getInt(24),rs.getString(25),rs.getString(26),rs.getBigDecimal(27)),tenantId,tenantId,filter,filter,tenantId,filter,filter,tenantId,filter,filter);
     }
 
     @Transactional(readOnly=true)

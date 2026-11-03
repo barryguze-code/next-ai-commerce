@@ -3,6 +3,7 @@
   "version": "1.11.0",
   "title": "Personal collaboration and clearer account workspaces",
   "sections": [
+    {"title": "Receipt and inventory responsiveness", "items": ["Saving a receipt briefly waits for concurrent inventory work and retains duplicate-save protection.", "Inventory views reuse a scoped listing projection; background inventory selection avoids repeated query-compilation overhead."]},
     {
       "title": "Receiving upload reliability",
       "items": ["Document uploads briefly wait for another inventory operation instead of failing immediately. Existing products can also match an exact account SKU when no supplier binding exists. Duplicate checks and complete rollback remain in place."]

@@ -12,7 +12,11 @@ public class InventoryPublicationRepository {
  public InventoryPublicationRepository(JdbcTemplate jdbc){this(jdbc,false);}
  @org.springframework.beans.factory.annotation.Autowired
  public InventoryPublicationRepository(JdbcTemplate jdbc,@org.springframework.beans.factory.annotation.Value("${app.inventory.publication-simulation-enabled:false}") boolean sharedSimulation){this.jdbc=jdbc;this.sharedSimulation=sharedSimulation;}
- public void scope(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
+ public void scope(UUID tenant){
+  // Safety selection has high estimated cost but few rows; avoid seconds of per-poll JIT compilation.
+  jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true),set_config('jit','off',true)",
+    (rs,row)->rs.getString(1),tenant.toString());
+ }
  public List<UUID> tenants(){return jdbc.query("SELECT id FROM tenants WHERE status='ACTIVE'",(r,n)->r.getObject(1,UUID.class));}
  public int plan(UUID tenant){
   scope(tenant);

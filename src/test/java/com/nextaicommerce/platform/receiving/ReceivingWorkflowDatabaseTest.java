@@ -1059,6 +1059,43 @@ class ReceivingWorkflowDatabaseTest {
         System.out.println("DOCUMENT_PAGE_2000_ROWS_MS="+times);
         assertThat(Collections.max(times)).isLessThan(1000L);
     }
+    @Test void receiptCommandWaitsForBriefInventoryContentionAndRemainsIdempotent() throws Exception{
+        var f=fixture("INVOICE");var request=UUID.randomUUID();
+        var executor=java.util.concurrent.Executors.newSingleThreadExecutor();
+        try(var blocker=source.getConnection()){
+            blocker.setAutoCommit(false);
+            try(var statement=blocker.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))")){
+                statement.setObject(1,tenant);statement.execute();
+            }
+            var entered=new java.util.concurrent.CountDownLatch(1);
+            var result=executor.submit(()->{entered.countDown();return work.execute(tenant,request,"batches",f.line(),"same",()->receive(f,2));});
+            assertThat(entered.await(2,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Thread.sleep(200);
+            assertThat(result.isDone()).as("first click waits for the existing inventory writer").isFalse();
+            blocker.commit();
+            assertThat(result.get(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(stock(f)).isEqualByComparingTo("2");
+            assertThat(work.execute(tenant,request,"batches",f.line(),"same",()->receive(f,2))).isFalse();
+            assertThat(stock(f)).isEqualByComparingTo("2");
+        }finally{executor.shutdownNow();}
+    }
+    @Test void receiptCommandTimeoutDoesNotMutateAndCanRetryWithSameIdentity() throws Exception{
+        var f=fixture("INVOICE");var request=UUID.randomUUID();
+        try(var blocker=source.getConnection()){
+            blocker.setAutoCommit(false);
+            try(var statement=blocker.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))")){
+                statement.setObject(1,tenant);statement.execute();
+            }
+            assertThatThrownBy(()->work.execute(tenant,request,"batches",f.line(),"same",()->receive(f,2)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Nothing changed");
+            assertThat(stock(f)).isEqualByComparingTo("0");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_commands WHERE tenant_id=? AND request_id=?",Integer.class,tenant,request)).isZero();
+            blocker.rollback();
+        }
+        assertThat(work.execute(tenant,request,"batches",f.line(),"same",()->receive(f,2))).isTrue();
+        assertThat(stock(f)).isEqualByComparingTo("2");
+        tx.executeWithoutResult(s->assertThat(jdbc.queryForObject("SHOW lock_timeout",String.class)).isEqualTo("0"));
+    }
     @Test void concurrentInventoryWriterFailsFastWithoutMutation() throws Exception{
         var f=fixture("INVOICE");
         try(var connection=source.getConnection()){

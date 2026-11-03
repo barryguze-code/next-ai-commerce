@@ -43,6 +43,9 @@ public class InventoryController {
     public InventoryController(InventoryRepository inventory,ObjectProvider<PhysicalCountImportService> physicalCounts,ObjectProvider<CatalogRepository> catalog,
             ObjectProvider<PhysicalCountWorker> physicalCountWorker,ObjectProvider<PhysicalCountProgress> physicalCountProgress,ObjectProvider<CollaborationRepository> collaboration,
             ObjectProvider<OrderRepository> orders){this.inventory=inventory;this.physicalCounts=physicalCounts;this.catalog=catalog;this.physicalCountWorker=physicalCountWorker;this.physicalCountProgress=physicalCountProgress;this.collaboration=collaboration;this.orders=orders;}
+    private com.nextaicommerce.platform.config.PlatformReadCache shelfReads;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureShelfReads(com.nextaicommerce.platform.config.PlatformReadCache cache){this.shelfReads=cache;}
     public record OutOfStockMatch(String id,String name,String brand,String accountSku,String vendorItemCode,String identifier,boolean expirationRequired){}
     @PostMapping("/app/inventory/expiration")
     String changeExpiration(HttpSession session,Authentication auth,@RequestParam UUID itemId,@RequestParam UUID locationId,
@@ -113,7 +116,10 @@ public class InventoryController {
     @GetMapping("/app/inventory") String inventory(Authentication auth,HttpSession session,Model model){
         Object value=session.getAttribute("selectedTenantId");if(!(value instanceof UUID tenantId))return "redirect:/app/select-account";
         PageController.addTenantModel(session,model);PageController.addAccessModel(auth,model);
-        var rows=inventory.inventory(tenantId);var policy=inventory.shelfLifePolicy(tenantId);LocalDate today=LocalDate.now();
+        // Cache only the account-scoped display. Every mutation still reads authoritative stock directly.
+        var rows=shelfReads==null?inventory.inventory(tenantId):shelfReads.get(tenantId,"warehouse-display","shelf",
+            ()->List.copyOf(inventory.inventory(tenantId)));
+        var policy=inventory.shelfLifePolicy(tenantId);LocalDate today=LocalDate.now();
         model.addAttribute("inventory",rows);model.addAttribute("today",today);model.addAttribute("policy",policy);
         var collaborationRepository=collaboration.getIfAvailable();
         model.addAttribute("openReviewsByPosition", collaborationRepository==null?Map.of():collaborationRepository.openSubjectSummaries(tenantId,"INVENTORY",rows.stream().map(row->row.itemId()+"|"+(row.expirationDate()==null?"":row.expirationDate())).toList(),auth.getName()));

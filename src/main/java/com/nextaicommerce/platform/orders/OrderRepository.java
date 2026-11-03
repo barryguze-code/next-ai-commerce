@@ -177,6 +177,8 @@ public class OrderRepository {
     @Transactional
     public ReconciliationResult reconcile(UUID tenantId,UUID connectionId){
         setTenant(tenantId);
+        // Recurring, small-account reconciliation must not compile a new JIT program while holding stock locks.
+        jdbc.execute("SET LOCAL jit='off'");
         jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",rs->{},tenantId);
         jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",rs->{},connectionId);
         return reconcileConnectionInventory(tenantId,connectionId);

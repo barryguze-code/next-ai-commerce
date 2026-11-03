@@ -31,6 +31,20 @@ class InventoryPublicationDatabaseTest {
   jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,1)",tenant,bundle,second);
   mapping("FBA",item,1);jdbc.update("UPDATE amazon_listings SET fulfillment_channel='AFN' WHERE tenant_id=? AND seller_sku='FBA'",tenant);
  });}
+ @Test void publicationScopeDisablesJitOnlyWithinItsTransaction() throws Exception{
+  // Pin one physical connection to prove transaction-local settings cannot leak through the pool.
+  var original=jdbc;
+  try(var connection=Objects.requireNonNull(original.getDataSource()).getConnection()){
+   connection.setAutoCommit(false);
+   var single=new org.springframework.jdbc.datasource.SingleConnectionDataSource(connection,true);
+   var scoped=new JdbcTemplate(single);var localRepo=new InventoryPublicationRepository(scoped);
+   String before=scoped.queryForObject("SHOW jit",String.class);
+   localRepo.scope(tenant);assertThat(scoped.queryForObject("SHOW jit",String.class)).isEqualTo("off");
+   localRepo.plan(tenant);assertThat(localRepo.next(tenant)).isPresent();
+   connection.rollback();assertThat(scoped.queryForObject("SHOW jit",String.class)).isEqualTo(before);
+   connection.rollback();
+  }
+ }
  @Test void onlyExplicitMerchantOrdersCanReserveLocalStock(){tx.executeWithoutResult(s->{
   repo.scope(tenant);var orders=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
   for(String channel:Arrays.asList("AFN","FBA","AMAZON","UNKNOWN","",null,"MFN","FBM","DEFAULT","MERCHANT")){

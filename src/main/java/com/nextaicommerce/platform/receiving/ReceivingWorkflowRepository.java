@@ -420,7 +420,18 @@ public class ReceivingWorkflowRepository {
     @Transactional
     public boolean execute(UUID tenant,UUID request,String operation,UUID target,String fingerprint,Runnable change){
         if(request==null)throw new IllegalArgumentException("This action is missing its safety reference. Reopen the panel and try again.");
-        lock(tenant);
+        // A user command queues behind the existing stock writer; retries keep the same request identity.
+        tenant(tenant);
+        jdbc.execute("SET LOCAL lock_timeout='10s'");
+        try{
+            jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",rs->{},tenant);
+        }catch(org.springframework.dao.DataAccessException failure){
+            for(Throwable cause=failure;cause!=null;cause=cause.getCause())
+                if(cause instanceof java.sql.SQLException sql&&"55P03".equals(sql.getSQLState()))
+                    throw new IllegalArgumentException("Inventory is being updated by another operation. Nothing changed; please try again in a moment.",failure);
+            throw failure;
+        }
+        jdbc.execute("SET LOCAL lock_timeout='750ms'");
         String existing=jdbc.query("SELECT operation||':'||target_id||':'||fingerprint FROM receiving_commands WHERE tenant_id=? AND request_id=?",
             rs->rs.next()?rs.getString(1):null,tenant,request);
         if(existing!=null){

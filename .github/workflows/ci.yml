@@ -112,3 +112,11 @@ jobs:
           name: packing-list-hotfix-package
           path: target/next-ai-commerce-1.11.2.jar
           if-no-files-found: error
+
+      - name: Preserve tested receipt performance hotfix artifact
+        if: github.ref == 'refs/heads/codex/receipt-performance-hotfix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: receipt-performance-hotfix-package
+          path: target/next-ai-commerce-1.11.3.jar
+          if-no-files-found: error

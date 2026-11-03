@@ -36,6 +36,19 @@ class InventoryControllerSafetyTest {
         session=mock(HttpSession.class);when(session.getAttribute("selectedTenantId")).thenReturn(tenantId);
     }
 
+    @Test void shelfDisplayCacheCoalescesReadsSeparatesAccountsAndInvalidates(){
+        var cache=new com.nextaicommerce.platform.config.PlatformReadCache(true,java.time.Duration.ofSeconds(10),32);
+        controller.configureShelfReads(cache);
+        when(inventory.inventory(any(UUID.class))).thenReturn(List.of());
+        var model=new org.springframework.ui.ExtendedModelMap();
+        controller.inventory(authentication,session,model);controller.inventory(authentication,session,model);
+        verify(inventory,org.mockito.Mockito.times(1)).inventory(tenantId);
+        UUID other=UUID.randomUUID();when(session.getAttribute("selectedTenantId")).thenReturn(other);
+        controller.inventory(authentication,session,model);verify(inventory).inventory(other);
+        cache.invalidate();when(session.getAttribute("selectedTenantId")).thenReturn(tenantId);
+        controller.inventory(authentication,session,model);verify(inventory,org.mockito.Mockito.times(2)).inventory(tenantId);
+    }
+
     @Test void explicitShortYearCorrectionPreservesOriginalBatchAndQuantity() {
         UUID item=UUID.randomUUID(),location=UUID.randomUUID();var old=LocalDate.of(2026,7,14);
         controller.changeExpiration(session,authentication,item,location,old,LocalDate.of(27,7,14),new BigDecimal("12"),new RedirectAttributesModelMap());
