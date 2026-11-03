@@ -44,7 +44,7 @@ public class InventoryController {
             ObjectProvider<PhysicalCountWorker> physicalCountWorker,ObjectProvider<PhysicalCountProgress> physicalCountProgress,ObjectProvider<CollaborationRepository> collaboration,
             ObjectProvider<OrderRepository> orders){this.inventory=inventory;this.physicalCounts=physicalCounts;this.catalog=catalog;this.physicalCountWorker=physicalCountWorker;this.physicalCountProgress=physicalCountProgress;this.collaboration=collaboration;this.orders=orders;}
     private com.nextaicommerce.platform.config.PlatformReadCache shelfReads;
-    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
     void configureShelfReads(com.nextaicommerce.platform.config.PlatformReadCache cache){this.shelfReads=cache;}
     public record OutOfStockMatch(String id,String name,String brand,String accountSku,String vendorItemCode,String identifier,boolean expirationRequired){}
     @PostMapping("/app/inventory/expiration")
