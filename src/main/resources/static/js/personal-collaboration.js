@@ -87,7 +87,8 @@
                 if(!expanded[key])continue;
             }
             const tbody=section;
-            const limit=label==='Older'?25+(extent[key]||0):label?rows.length:count;
+            const olderExtra=Math.max(0,Math.floor((Number(extent[key])||0)/25))*25;
+            const limit=label==='Older'?25+olderExtra:label?rows.length:count;
             for(const row of rows.slice(0,limit)) {
                 const closed=['DONE','CLOSED'].includes(row.card.state);
                 const c=row.card, article=element('tr','',tbody);
@@ -198,7 +199,7 @@
             if(label==='Older'&&rows.length>limit){
                 const moreCell=element('td','',element('tr','',section));moreCell.colSpan=ranked?9:8;
                 const more=element('button','Load more',moreCell);more.type='button';more.className='secondary-button';more.onclick=()=>{
-                extent[key]=(extent[key]||0)+25; save();render();
+                extent[key]=olderExtra+25; save();render();
             };
             }
         }

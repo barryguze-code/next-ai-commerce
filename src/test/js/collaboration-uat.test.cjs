@@ -104,7 +104,7 @@ test('only Older pages25 and zero date groups hide',async()=>{
   if(path.startsWith('/js/')||path.startsWith('/css/'))return route.fulfill({path:'src/main/resources/static'+path,contentType:path.startsWith('/js/')?'application/javascript':'text/css'});
   let html=fs.readFileSync('src/main/resources/templates/personal-collaboration.html','utf8').replace(/<aside[\s\S]*?<\/aside>/,'').replace('th:attr="data-user=${personalUser}"','data-user="me@example.test"');return route.fulfill({contentType:'text/html',body:html});
  });
- await page.goto('https://uat.test/');await page.locator('tr[data-card-id]').first().waitFor();
+ await page.goto('https://uat.test/');await page.locator('tr[data-card-id]').first().waitFor();await page.evaluate(()=>sessionStorage.setItem('collaboration.personal.me@example.test',JSON.stringify({extent:{'ASSIGNED|||||Older':5}})));await page.reload();await page.locator('tr[data-card-id]').first().waitFor();
  assert.equal(await page.getByRole('button',{name:/Last week/}).count(),0);
  await page.getByRole('button',{name:/This week/}).click();assert.equal(await page.locator('tr[data-card-id]').count(),12);assert.equal(await page.getByRole('button',{name:'Load more',exact:true}).count(),0);
  await page.getByRole('button',{name:/Older/}).click();assert.equal(await page.locator('tr[data-card-id]').count(),37);
