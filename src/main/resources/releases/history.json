@@ -3,6 +3,7 @@
   "version": "1.11.0",
   "title": "Personal collaboration and clearer account workspaces",
   "sections": [
+    {"title": "Marketplace and cache follow-up", "items": ["Marketplace summary reads avoid repeated query compilation. Picture reads retain display caches, and unchanged order states no longer cause redundant publication work; live order locking remains in place."]},
     {"title": "Receipt and inventory responsiveness", "items": ["Saving a receipt briefly waits for concurrent inventory work and retains duplicate-save protection.", "Inventory views reuse a scoped listing projection; background inventory selection avoids repeated query-compilation overhead."]},
     {
       "title": "Receiving upload reliability",

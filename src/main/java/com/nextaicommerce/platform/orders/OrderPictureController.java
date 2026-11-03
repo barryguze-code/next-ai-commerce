@@ -95,6 +95,7 @@ public class OrderPictureController {
    return ResponseEntity.badRequest().body(Map.of("error","Amazon did not return a main image. Your existing picture was kept."));
   }catch(Exception e){return ResponseEntity.status(502).body(Map.of("error","Amazon image sync is unavailable. Your existing picture was kept."));}
  }
+ @org.springframework.transaction.annotation.Transactional(readOnly=true)
  @GetMapping("/app/orders/items/{item}/picture") @ResponseBody
  public ResponseEntity<byte[]> picture(@PathVariable UUID item,HttpSession session,Authentication auth){
   var c=context(session,item,auth,false);

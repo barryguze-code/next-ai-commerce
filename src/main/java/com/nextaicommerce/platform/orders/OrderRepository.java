@@ -185,22 +185,29 @@ public class OrderRepository {
     }
 
     private ReconciliationResult reconcileConnectionInventory(UUID tenantId,UUID connectionId){
-        jdbc.update("""
-            UPDATE amazon_orders orders SET operational_scope=CASE
-                    WHEN orders.purchase_date>=connection.inventory_activated_at THEN 'LIVE' ELSE 'HISTORICAL' END,
-                fulfillment_state=CASE
+        String desiredScope="""
+CASE
+                    WHEN orders.purchase_date>=connection.inventory_activated_at THEN 'LIVE' ELSE 'HISTORICAL' END
+            """;
+        String desiredState="""
+CASE
                     WHEN orders.purchase_date<connection.inventory_activated_at THEN 'REPORTING_ONLY'
                     WHEN regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g')
                         IN ('CANCELLED','CANCELED') THEN 'CANCELLED'
                     WHEN upper(trim(coalesce(orders.fulfillment_channel,''))) IN ('AFN','FBA','AMAZON') THEN 'AMAZON_FULFILLED'
                     WHEN regexp_replace(upper(coalesce(orders.order_status,'')),'[^A-Z]','','g')
                         IN ('PENDING','UNSHIPPED') THEN 'NEEDS_MAPPING'
-                    ELSE orders.fulfillment_state END,
-                operational_updated_at=now()
+                    ELSE orders.fulfillment_state END
+            """;
+        // Do not rewrite identical states: UPDATE OF operational_scope fires publication triggers even for no-op values.
+        jdbc.update("""
+            UPDATE amazon_orders orders SET operational_scope=%s,
+                fulfillment_state=%s,operational_updated_at=now()
             FROM marketplace_connections connection
             WHERE orders.tenant_id=? AND orders.marketplace_connection_id=?
               AND connection.tenant_id=orders.tenant_id AND connection.id=orders.marketplace_connection_id
-            """,tenantId,connectionId);
+              AND (orders.operational_scope,orders.fulfillment_state) IS DISTINCT FROM (%s,%s)
+            """.formatted(desiredScope,desiredState,desiredScope,desiredState),tenantId,connectionId);
         List<Object[]> candidates=jdbc.query("""
             SELECT orders.amazon_order_id,CASE WHEN regexp_replace(upper(orders.order_status),'[^A-Z]','','g') IN ('CANCELED','CANCELLED') THEN orders.order_status WHEN orders.platform_waiting_for_pickup THEN 'WaitingForPickup' ELSE orders.order_status END,orders.fulfillment_state,
                    EXISTS (SELECT 1 FROM order_inventory_reservations reservation
@@ -213,7 +220,7 @@ public class OrderRepository {
             FROM amazon_orders orders
             WHERE orders.tenant_id=? AND orders.marketplace_connection_id=? AND orders.operational_scope='LIVE'
               AND upper(trim(coalesce(orders.fulfillment_channel,''))) IN ('MFN','FBM','DEFAULT','MERCHANT')
-            ORDER BY orders.purchase_date,orders.created_at
+            ORDER BY orders.purchase_date,orders.created_at FOR UPDATE OF orders
             """,(rs,row)->new Object[]{rs.getString(1),rs.getString(2),rs.getString(3),rs.getBoolean(4),rs.getBoolean(5)},tenantId,connectionId);
         for(Object[] candidate:candidates){
             if((boolean)candidate[4]&&!statusLeavesWarehouse((String)candidate[1]))

@@ -45,6 +45,66 @@ class InventoryPublicationDatabaseTest {
    connection.rollback();
   }
  }
+ @Test void marketplaceSummaryDisablesCompilationOnlyForItsTransaction() throws Exception{
+  try(var connection=jdbc.getDataSource().getConnection()){
+   connection.setAutoCommit(false);var single=new org.springframework.jdbc.datasource.SingleConnectionDataSource(connection,true);
+   var scoped=new JdbcTemplate(single);String before=scoped.queryForObject("SHOW jit",String.class);
+   var summary=new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository(scoped).summary(tenant,this.connection);
+   assertThat(summary.total()).isEqualTo(4);assertThat(scoped.queryForObject("SHOW jit",String.class)).isEqualTo("off");
+   connection.rollback();assertThat(scoped.queryForObject("SHOW jit",String.class)).isEqualTo(before);connection.rollback();
+  }
+ }
+ @Test void unchangedHistoricalReconciliationDoesNotRewriteOrdersOrDirtyPublication(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);order("historical-stable","SINGLE",1);
+  jdbc.update("UPDATE amazon_orders SET purchase_date=now()-interval '90 days',operational_scope='HISTORICAL',fulfillment_state='REPORTING_ONLY',operational_updated_at='2000-01-01T00:00:00Z' WHERE tenant_id=? AND amazon_order_id='historical-stable'",tenant);
+  jdbc.update("DELETE FROM inventory_publication_dirty WHERE tenant_id=?",tenant);
+  var before=jdbc.queryForObject("SELECT operational_updated_at FROM amazon_orders WHERE tenant_id=? AND amazon_order_id='historical-stable'",java.sql.Timestamp.class,tenant);
+  var ledger=jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Long.class,tenant);
+  new com.nextaicommerce.platform.orders.OrderRepository(jdbc).reconcile(tenant,connection);
+  assertThat(jdbc.queryForObject("SELECT operational_updated_at FROM amazon_orders WHERE tenant_id=? AND amazon_order_id='historical-stable'",java.sql.Timestamp.class,tenant)).isEqualTo(before);
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_publication_dirty WHERE tenant_id=?",Long.class,tenant)).isZero();
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Long.class,tenant)).isEqualTo(ledger);
+ });}
+ @Test void reconciliationHoldsCandidateHeaderAgainstConcurrentCancellation() throws Exception{
+  tx.executeWithoutResult(s->{repo.scope(tenant);order("concurrent-live","SINGLE",1);
+   jdbc.update("UPDATE amazon_orders SET fulfillment_state='NEEDS_MAPPING' WHERE tenant_id=? AND amazon_order_id='concurrent-live'",tenant);
+  });
+  var selected=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
+  var paused=new JdbcTemplate(jdbc.getDataSource()){
+   @Override public <T> java.util.List<T> query(String sql,org.springframework.jdbc.core.RowMapper<T> mapper,Object... args){
+    var result=super.query(sql,mapper,args);
+    if(sql.contains("SELECT orders.amazon_order_id,CASE")){
+     selected.countDown();try{if(!release.await(10,java.util.concurrent.TimeUnit.SECONDS))throw new IllegalStateException("fixture pause expired");}
+     catch(InterruptedException e){Thread.currentThread().interrupt();throw new IllegalStateException(e);}
+    }
+    return result;
+   }
+  };
+  try(var executor=java.util.concurrent.Executors.newSingleThreadExecutor()){
+   var running=executor.submit(()->tx.execute(s->new com.nextaicommerce.platform.orders.OrderRepository(paused).reconcile(tenant,connection)));
+   try{
+    assertThat(selected.await(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+    try(var writer=jdbc.getDataSource().getConnection()){
+     writer.setAutoCommit(false);
+     try(var stmt=writer.createStatement()){stmt.execute("SET LOCAL lock_timeout='300ms'");}
+     try(var update=writer.prepareStatement("UPDATE amazon_orders SET order_status='Canceled' WHERE tenant_id=? AND amazon_order_id='concurrent-live'")){
+      update.setObject(1,tenant);
+      assertThatThrownBy(update::executeUpdate).isInstanceOf(java.sql.SQLException.class)
+       .satisfies(e->assertThat(((java.sql.SQLException)e).getSQLState()).isEqualTo("55P03"));
+     }finally{writer.rollback();}
+    }
+   }finally{release.countDown();}
+   running.get(10,java.util.concurrent.TimeUnit.SECONDS);
+  }
+ }
+ @Test void changedHistoricalStateStillInvalidatesPublication(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);order("historical-transition","SINGLE",1);
+  jdbc.update("UPDATE amazon_orders SET purchase_date=now()-interval '90 days',fulfillment_state='NEEDS_MAPPING' WHERE tenant_id=? AND amazon_order_id='historical-transition'",tenant);
+  jdbc.update("DELETE FROM inventory_publication_dirty WHERE tenant_id=?",tenant);
+  new com.nextaicommerce.platform.orders.OrderRepository(jdbc).reconcile(tenant,connection);
+  assertThat(jdbc.queryForObject("SELECT operational_scope FROM amazon_orders WHERE tenant_id=? AND amazon_order_id='historical-transition'",String.class,tenant)).isEqualTo("HISTORICAL");
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_publication_dirty WHERE tenant_id=?",Long.class,tenant)).isPositive();
+ });}
  @Test void onlyExplicitMerchantOrdersCanReserveLocalStock(){tx.executeWithoutResult(s->{
   repo.scope(tenant);var orders=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
   for(String channel:Arrays.asList("AFN","FBA","AMAZON","UNKNOWN","",null,"MFN","FBM","DEFAULT","MERCHANT")){

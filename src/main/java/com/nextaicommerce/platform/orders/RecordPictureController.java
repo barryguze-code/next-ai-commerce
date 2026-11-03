@@ -27,6 +27,7 @@ public class RecordPictureController {
   if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM app_users u WHERE u.id=? AND (EXISTS(SELECT 1 FROM effective_account_memberships m WHERE m.user_id=u.id AND m.tenant_id=?) OR EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)))",Boolean.class,id,tenant)))throw new ResponseStatusException(HttpStatus.NOT_FOUND);
   if(write&&!platform&&Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM platform_administrators WHERE user_id=? AND active)",Boolean.class,id)))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
  }
+ @org.springframework.transaction.annotation.Transactional(readOnly=true)
  @GetMapping("/app/profile/picture") @ResponseBody
  public ResponseEntity<byte[]> ownPicture(HttpSession session,Authentication auth){return get("USER",currentUser(auth),session,auth);}
  @PostMapping("/app/profile/picture") @ResponseBody
@@ -43,6 +44,7 @@ public class RecordPictureController {
   String key="USER".equals(type)?"user_id":"id";
   if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM "+table+" WHERE tenant_id=? AND "+key+"=?)",Boolean.class,tenant,id)))throw new ResponseStatusException(HttpStatus.NOT_FOUND);
  }
+ @org.springframework.transaction.annotation.Transactional(readOnly=true)
  @GetMapping("/app/catalog/record-pictures/{type}/{id}") @ResponseBody
  public ResponseEntity<byte[]> get(@PathVariable String type,@PathVariable UUID id,HttpSession session,Authentication auth){
   if("USER".equals(type))return tx.execute(s->{userScope(id,session,auth,false);return jdbc.query("SELECT content_type,image_bytes FROM user_profile_pictures WHERE user_id=?",rs->rs.next()?ResponseEntity.ok().cacheControl(CacheControl.noCache()).contentType(MediaType.parseMediaType(rs.getString(1))).body(rs.getBytes(2)):ResponseEntity.notFound().build(),id);});

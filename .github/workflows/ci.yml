@@ -118,5 +118,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: receipt-performance-hotfix-package
-          path: target/next-ai-commerce-1.11.3.jar
+          path: target/next-ai-commerce-1.11.4.jar
           if-no-files-found: error

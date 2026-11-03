@@ -599,7 +599,10 @@ public class MarketplaceSkuRepository {
         return new SkuPage(rows,total,page,size);
     }
 
-    private void setTenant(UUID tenantId){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());}
+    private void setTenant(UUID tenantId){
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        jdbc.execute("SET LOCAL jit='off'");
+    }
     private static String normalizeStatus(String value){return List.of("ALL","ACTIVE","OOS","NEVER_SOLD","INACTIVE","AMAZON_PROBLEM","DELETED","UNMAPPED").contains(value)?value:"ALL";}
     private static String orderClause(String sort,String direction){
         String dir="DESC".equalsIgnoreCase(direction)?"DESC":"ASC";

@@ -20,6 +20,7 @@ public class MappingPictureController {
  private final CatalogRepository catalog;
  private final HttpClient images=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NEVER).build();
  public MappingPictureController(OrderPictureController pictures,CatalogRepository catalog){this.pictures=pictures;this.catalog=catalog;}
+ @org.springframework.transaction.annotation.Transactional(readOnly=true)
  @GetMapping("/app/marketplace-skus/mapping-picture") @ResponseBody
  public ResponseEntity<byte[]> picture(@RequestParam String sku,HttpSession session,Authentication auth){return pictures.picture(pictures.skuContext(session,sku,auth,false));}
  @PostMapping("/app/marketplace-skus/mapping-picture") @ResponseBody
