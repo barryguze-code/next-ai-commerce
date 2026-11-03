@@ -13,9 +13,9 @@ import static org.mockito.ArgumentMatchers.*;
 class ReceivingCatalogIdentityTest {
     final UUID tenant=UUID.randomUUID(),vendor=UUID.randomUUID(),a=UUID.randomUUID(),b=UUID.randomUUID();
     Object match(ReceivingRepository repo,String code)throws Throwable{
-        var method=ReceivingRepository.class.getDeclaredMethod("matchOrCreateItem",UUID.class,UUID.class,String.class,String.class,String.class,String.class,String.class,BigDecimal.class,String.class,String.class,String.class);
+        var method=ReceivingRepository.class.getDeclaredMethod("matchOrCreateItem",UUID.class,UUID.class,String.class,String.class,String.class,String.class,String.class,String.class,BigDecimal.class,String.class,String.class,String.class);
         method.setAccessible(true);
-        try{return method.invoke(repo,tenant,vendor,"fixture","Muesli","Ozery",code,"664164101982",BigDecimal.ONE,"USD","INVOICE","fixture");}catch(InvocationTargetException e){throw e.getCause();}
+        try{return method.invoke(repo,tenant,vendor,"fixture","Muesli","Ozery",code,"664164101982","",BigDecimal.ONE,"USD","INVOICE","fixture");}catch(InvocationTargetException e){throw e.getCause();}
     }
     @Test void duplicateVendorBindingsCannotArbitrarilySelectAnInventoryIdentity()throws Throwable{
         var jdbc=mock(JdbcTemplate.class);var catalog=mock(CatalogRepository.class);

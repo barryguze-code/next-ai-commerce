@@ -5,7 +5,7 @@
   "sections": [
     {
       "title": "Receiving upload reliability",
-      "items": ["Document uploads briefly wait for another inventory operation instead of failing immediately. Duplicate checks and complete rollback remain in place."]
+      "items": ["Document uploads briefly wait for another inventory operation instead of failing immediately. Existing products can also match an exact account SKU when no supplier binding exists. Duplicate checks and complete rollback remain in place."]
     },
     {
       "title": "Performance and expiration entry",

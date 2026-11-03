@@ -325,7 +325,9 @@ public class ReceivingRepository {
             String brand=find(row,"brand");
             if(!brand.isBlank()&&!description.toLowerCase().startsWith(brand.toLowerCase())) description=brand+" - "+description;
             String vendorCode=cleanCode(find(row,"vendoritemcode","vendorsku","itemnumber","itemno","sku","shipitem"));
-            String identifier=find(row,"upc","ean","gtin","barcode");
+            String identifier=find(row,"upc","ean","gtin","barcode","upcean");
+            String explicitAccountSku=find(row,"accountsku"),sourceSku=find(row,"sku");
+            String accountSku=explicitAccountSku.isBlank()?sourceSku:explicitAccountSku;
             BigDecimal quantity=number(find(row,"shipquantity","shippedquantity","quantity","qty","orderedquantity","orderqty","shippedqty"));
             BigDecimal invoicePrice=number(find(row,"neteach","unitcost","unitprice","price","cost"));
             String packSize=find(row,"packsize","casepack","unitspercase");
@@ -334,10 +336,12 @@ public class ReceivingRepository {
             boolean casePrice="CASE".equalsIgnoreCase(find(row,"pricebasis"));
             BigDecimal cost=casePrice?invoicePrice.divide(unitsPerCase,4,java.math.RoundingMode.HALF_UP):invoicePrice;
             if(quantity.signum()<=0) continue;
+            if(!explicitAccountSku.isBlank()&&!sourceSku.isBlank()&&!explicitAccountSku.equals(sourceSku))
+                throw new IllegalArgumentException("Row "+sourceRowNumber+" has different Account SKU and SKU values. Review the product identity before uploading.");
             if(!whole(quantity))throw new IllegalArgumentException("Row "+sourceRowNumber+" has a fractional item quantity. Receiving quantities must be whole units.");
             if(description.isBlank()) throw new IllegalArgumentException("Row "+sourceRowNumber+" has shipped quantity but no product description.");
-            if(vendorCode.isBlank()&&identifier.isBlank()) throw new IllegalArgumentException("Row "+sourceRowNumber+" needs a vendor item code or UPC/EAN before it can enter the catalogue.");
-            MatchedItem matched=matchOrCreateItem(tenantId,vendorId,actorEmail,description,brand,vendorCode,identifier,cost,
+            if(vendorCode.isBlank()&&identifier.isBlank()&&accountSku.isBlank()) throw new IllegalArgumentException("Row "+sourceRowNumber+" needs a vendor item code or UPC/EAN before it can enter the catalogue.");
+            MatchedItem matched=matchOrCreateItem(tenantId,vendorId,actorEmail,description,brand,vendorCode,identifier,accountSku,cost,
                 cleanCurrency,documentType,documentNumber);
             if(packSize.isBlank()){
                 BigDecimal savedPack=jdbc.queryForObject("""
@@ -818,7 +822,7 @@ public class ReceivingRepository {
         """,unitsPerCase,expiration!=null,tenantId,target.accountItemId());}
 
     private MatchedItem matchOrCreateItem(UUID tenantId, UUID vendorId, String actorEmail, String description,
-            String brand,String vendorCode,String identifier,BigDecimal cost,String currency,String sourceType,String sourceReference) {
+            String brand,String vendorCode,String identifier,String accountSku,BigDecimal cost,String currency,String sourceType,String sourceReference) {
         UUID itemId = null;
         if (!vendorCode.isBlank()) {
             // Multiple active offers for one item are not multiple product identities.
@@ -838,6 +842,31 @@ public class ReceivingRepository {
         // vendor mapping is authoritative; retain the source barcode on the document
         // line without reparenting products or demanding a catalogue merge.
         if(itemId!=null)return new MatchedItem(itemId,false);
+        if(!accountSku.isBlank()){
+            // Explicit account identity only: exact case and leading zeros are significant.
+            var matches=jdbc.query("""
+                SELECT a.id,a.global_product_id,a.status,p.status
+                FROM account_catalog_items a JOIN global_catalog_products p ON p.id=a.global_product_id
+                WHERE a.tenant_id=? AND a.account_sku=? LIMIT 2
+                """,(rs,n)->new Object[]{rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getString(4)},tenantId,accountSku);
+            if(matches.size()>1)throw new IllegalArgumentException("Account SKU "+accountSku+" matches multiple products. Review the catalogue before receiving.");
+            if(!matches.isEmpty()){
+                var match=matches.getFirst();
+                if(!"ACTIVE".equals(match[2])||!"ACTIVE".equals(match[3]))
+                    throw new IllegalArgumentException("Account SKU "+accountSku+" is inactive. Review the catalogue before receiving.");
+                String barcode=identifier.replaceAll("[\\s-]","");
+                if(barcode.matches("(?:[0-9]{8}|[0-9]{12}|[0-9]{13}|[0-9]{14})")){
+                    Boolean conflict=jdbc.queryForObject("""
+                        SELECT EXISTS(SELECT 1 FROM global_product_identifiers WHERE identity_key=catalog_identifier_key(?,?) AND global_product_id<>?)
+                          OR (EXISTS(SELECT 1 FROM global_product_identifiers WHERE global_product_id=? AND identifier_type IN ('UPC','EAN','GTIN'))
+                            AND NOT EXISTS(SELECT 1 FROM global_product_identifiers WHERE global_product_id=? AND identity_key=catalog_identifier_key(?,?)))
+                        """,Boolean.class,identifierType(barcode),barcode,match[1],match[1],match[1],identifierType(barcode),barcode);
+                    if(Boolean.TRUE.equals(conflict))throw new IllegalArgumentException("Barcode conflicts with account SKU "+accountSku+". Review the source product; no catalogue identity was changed.");
+                }
+                return new MatchedItem((UUID)match[0],false);
+            }
+            if(vendorCode.isBlank())throw new IllegalArgumentException("No active product matches account SKU "+accountSku+". Review the account catalogue before receiving.");
+        }
         if(!vendorCode.isBlank()){
             boolean created=itemId==null;
             itemId=catalog.addImportedVendorProduct(tenantId,actorEmail,vendorId,vendorCode,description,
