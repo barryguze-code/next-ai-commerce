@@ -92,6 +92,66 @@ class ReceivingWorkflowDatabaseTest {
     void outcomes(Fixture f,int good,int damage,int missing,int mispick){
         work.receiveOutcomes(tenant,actor,f.line(),BigDecimal.valueOf(good),BigDecimal.valueOf(damage),BigDecimal.valueOf(missing),BigDecimal.valueOf(mispick),expiry,f.location(),true);
     }
+    @Test void packingListWaitsForBriefTenantInventoryUpdateWithoutReceivingStock() throws Exception {
+        var parser=new com.nextaicommerce.platform.catalog.CatalogImportService(jdbc,new tools.jackson.databind.ObjectMapper(),context.getBean(CatalogRepository.class));
+        String path=System.getProperty("packingListFixture","");
+        byte[] bytes=path.isBlank()?"SKU,Description,Item Code,UPC / EAN,unit cost,Quantity,Default location i,Receiving,Status\nET-SAMPLE,Sample towel,B09SAMPLE01,B09SAMPLE01,5,150,,,\n".getBytes(java.nio.charset.StandardCharsets.UTF_8):java.nio.file.Files.readAllBytes(java.nio.file.Path.of(path));
+        var rows=parser.readFile("packing-list.csv",bytes).rows();
+        // Mirror already-catalogued supplier products; do not invent GTINs from the file's ASIN-shaped values.
+        tx.executeWithoutResult(t->{setTenant();for(var row:rows){
+            String code=row.entrySet().stream().filter(e->e.getKey().replaceAll("[^A-Za-z]","").equalsIgnoreCase("SKU")).findFirst().orElseThrow().getValue();
+            UUID global=UUID.randomUUID(),item=UUID.randomUUID();
+            jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Existing packing product')",global);
+            jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES (?,?,?,?)",item,tenant,global,code);
+            jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,vendor_item_code,list_cost,is_default) VALUES (?,?,?,?,5,true)",tenant,vendor,item,code);
+        }});
+        var doc=new ReceivingIntakeService.IntakeDocument("packing-list.csv","fixture-content-hash",rows);
+        var intake=new ReceivingIntakeService(receiving);
+        var pool=java.util.concurrent.Executors.newSingleThreadExecutor();
+        try(var blocker=source.getConnection()){
+            blocker.setAutoCommit(false);
+            try(var stmt=blocker.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))")){stmt.setObject(1,tenant);stmt.execute();}
+            var started=new java.util.concurrent.CountDownLatch(1);
+            var upload=pool.submit(()->{started.countDown();return tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Packing test",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)));});
+            assertThat(started.await(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Thread.sleep(200);
+            assertThat(upload.isDone()).as("brief contention should wait rather than reject the whole upload").isFalse();
+            blocker.commit();
+            UUID session=upload.get(15,java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_documents WHERE tenant_id=? AND receiving_session_id=?",Integer.class,tenant,session)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_document_lines WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(rows.size());
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
+            assertThat(jdbc.queryForObject("SELECT sum(ordered_quantity) FROM receiving_document_lines WHERE tenant_id=?",BigDecimal.class,tenant)).isEqualByComparingTo(path.isBlank()?"150":"487");
+            assertThatThrownBy(()->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Duplicate",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).hasMessageContaining("already uploaded");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_sessions WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+        }finally{pool.shutdownNow();}
+    }
+
+    @Test void packingListLockTimeoutRollsBackAndDoesNotBlockAnotherAccount() throws Exception {
+        var intake=new ReceivingIntakeService(receiving);
+        var rows=List.of(Map.of("SKU","LOCK-TEST","Description","Lock test product","Quantity","1","unit cost","5","UPC","012345678901"));
+        var doc=new ReceivingIntakeService.IntakeDocument("lock-test.csv","lock-test-hash",rows);
+        UUID other=UUID.randomUUID(),otherVendor=UUID.randomUUID();
+        tx.executeWithoutResult(t->{
+            jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,?)",other,"qa-"+other,"Other account");
+            jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,other.toString());
+            jdbc.update("INSERT INTO vendors(id,tenant_id,name) VALUES (?,?,'Other vendor')",otherVendor,other);
+        });
+        try(var blocker=source.getConnection()){
+            blocker.setAutoCommit(false);
+            try(var stmt=blocker.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))")){stmt.setObject(1,tenant);stmt.execute();}
+            assertThat((UUID)tx.execute(t->intake.start(other,actor,otherVendor,"PACKING_LIST","USD","Other",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).isNotNull();
+            long started=System.nanoTime();
+            assertThatThrownBy(()->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Timeout",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).isInstanceOf(IllegalArgumentException.class).hasMessage("Inventory is being updated. Nothing changed; please try again in a moment.");
+            assertThat(java.time.Duration.ofNanos(System.nanoTime()-started)).isBetween(java.time.Duration.ofSeconds(4),java.time.Duration.ofSeconds(9));
+            for(String table:List.of("receiving_sessions","receiving_documents","receiving_document_lines","account_catalog_items","inventory_ledger_entries"))
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM "+table+" WHERE tenant_id=?",Integer.class,tenant)).as(table+" fully rolled back").isZero();
+            blocker.rollback();
+        }
+        assertThat((UUID)tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Retry",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).isNotNull();
+        tx.executeWithoutResult(t->assertThat(jdbc.queryForObject("SHOW lock_timeout",String.class)).isEqualTo("0"));
+    }
+
     @Test void additiveOutcomesAndIndependentUndoReconcileWithActiveHistory(){
         for(int[] values:List.of(new int[]{12,0,0,0},new int[]{8,0,0,0},new int[]{8,4,0,0},new int[]{8,0,4,0},new int[]{8,0,0,4},new int[]{6,2,2,2},new int[]{14,0,0,0})){
             var f=twelve();outcomes(f,values[0],values[1],values[2],values[3]);

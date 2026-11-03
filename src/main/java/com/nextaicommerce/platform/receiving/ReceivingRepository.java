@@ -287,7 +287,7 @@ public class ReceivingRepository {
     public UUID addDocument(UUID tenantId, UUID sessionId, UUID vendorId, String type, String filename,
             String hash, String currency, List<Map<String,String>> rows, String actorEmail) {
         setTenant(tenantId);
-        lockInventory(tenantId);
+        lockInventoryForImport(tenantId);
         String documentType="PACKING_LIST".equals(type)?"PACKING_LIST":"INVOICE";
         Boolean validVendor=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM vendors WHERE tenant_id=? AND id=? AND status='ACTIVE')",
             Boolean.class,tenantId,vendorId);
@@ -730,6 +730,23 @@ public class ReceivingRepository {
                 tenantId,sessionId,itemId);
         if(target==null)throw new IllegalArgumentException("This document is closed or unavailable. Original receipts are locked; use an inventory adjustment.");return target;
     }
+    private void lockInventoryForImport(UUID tenantId){
+        // Imports may briefly wait behind order reservations; never bypass their tenant lock.
+        jdbc.execute("SET LOCAL lock_timeout='5s'");
+        try{
+            jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",rs->{},tenantId);
+        }catch(org.springframework.dao.DataAccessException failure){
+            Throwable cause=failure;
+            while(cause!=null){
+                if(cause instanceof java.sql.SQLException sql&&"55P03".equals(sql.getSQLState()))
+                    throw new IllegalArgumentException("Inventory is being updated. Nothing changed; please try again in a moment.",failure);
+                cause=cause.getCause();
+            }
+            throw failure;
+        }
+        jdbc.execute("SET LOCAL lock_timeout='750ms'");
+    }
+
     private void lockInventory(UUID tenantId){
         if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT pg_try_advisory_xact_lock(hashtextextended(?::text,0))",Boolean.class,tenantId)))
             throw new IllegalArgumentException("Inventory is being updated. Nothing changed; please try again in a moment.");

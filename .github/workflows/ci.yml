@@ -105,3 +105,10 @@ jobs:
           name: platform-performance-hotfix-package
           path: target/next-ai-commerce-1.11.1.jar
           if-no-files-found: error
+      - name: Preserve tested receiving lock hotfix artifact
+        if: github.ref == 'refs/heads/codex/packing-list-hotfix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packing-list-hotfix-package
+          path: target/next-ai-commerce-1.11.2.jar
+          if-no-files-found: error

@@ -4,6 +4,10 @@
   "title": "Personal collaboration and clearer account workspaces",
   "sections": [
     {
+      "title": "Receiving upload reliability",
+      "items": ["Document uploads briefly wait for another inventory operation instead of failing immediately. Duplicate checks and complete rollback remain in place."]
+    },
+    {
       "title": "Performance and expiration entry",
       "items": [
         "Collaboration views load without repeatedly reconciling personal priorities; task details are fetched together with current access checks.",
