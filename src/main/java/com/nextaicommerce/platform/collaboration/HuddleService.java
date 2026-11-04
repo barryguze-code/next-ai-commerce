@@ -86,9 +86,12 @@ public class HuddleService {
         invited.forEach(person->{if(person!=null&&!person.id().equals(creator.id()))unique.put(person.id(),person);});
         if(unique.isEmpty()||unique.size()>=MAX_PARTICIPANTS)throw new IllegalArgumentException("Invite one or two teammates to a huddle.");
         String safeType=clean(subjectType,40,"RECORD").toUpperCase();String safeKey=clean(subjectKey,240,"GENERAL");
+        var selectedParticipants=new java.util.HashSet<>(unique.keySet());selectedParticipants.add(creator.id());
+        boolean direct=safeType.equals("PLATFORM")&&safeKey.startsWith("DIRECT:");
         for(HuddleState existing:huddles.values())synchronized(existing){
             if(existing.tenantId.equals(tenantId)&&existing.endedAt==null&&existing.subjectType.equals(safeType)
-                    &&existing.subjectKey.equals(safeKey)&&existing.participants.containsKey(creator.id())){
+                    &&existing.subjectKey.equals(safeKey)&&existing.participants.containsKey(creator.id())
+                    &&(!direct||existing.participants.keySet().equals(selectedParticipants))){
                 long additional=unique.keySet().stream().filter(id->!existing.participants.containsKey(id)).count();
                 if(existing.participants.size()+additional>MAX_PARTICIPANTS)throw new IllegalArgumentException("Invite up to two teammates to a huddle.");
                 unique.values().forEach(person->{existing.participants.putIfAbsent(person.id(),person);existing.joinedParticipantIds.add(person.id());});

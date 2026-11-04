@@ -97,6 +97,18 @@ class HuddleServiceTest {
         verify(repository,never()).saveHuddle(any(),any(),any(),any(),any(),any(),any(),any(),any(Boolean.class));
     }
 
+    @Test void directSelectionDoesNotReopenGroupAfterAnotherTeammateWasInvited(){
+        var morgan=person("Morgan","morgan@example.com");
+        String key="DIRECT:"+List.of(barry.id().toString(),alex.id().toString()).stream().sorted().collect(java.util.stream.Collectors.joining(":"));
+        var original=service.create(tenant,barry,"PLATFORM",key,"Team collaboration","/app/collaboration","{}",List.of(alex));
+        service.invite(tenant,original.id(),barry.id(),List.of(morgan));
+        var selected=service.create(tenant,barry,"PLATFORM",key,"Team collaboration","/app/collaboration","{}",List.of(alex));
+        assertThat(selected.id()).isNotEqualTo(original.id());
+        assertThat(selected.participants()).extracting(HuddleService.Participant::id).containsExactlyInAnyOrder(barry.id(),alex.id());
+        assertThat(service.find(tenant,original.id(),barry.id()).participants()).hasSize(3);
+        assertThat(service.create(tenant,barry,"PLATFORM",key,"Team collaboration","/app/collaboration","{}",List.of(alex)).id()).isEqualTo(selected.id());
+    }
+
     @Test void startingTheSameRecordAgainAddsTheCurrentlySelectedTeammate(){
         var morgan=person("Morgan","morgan@example.com");
         var original=service.create(tenant,barry,"INVENTORY","467936|MAIN","Morning Round Cranberry","/app/inventory","{}",List.of(alex));

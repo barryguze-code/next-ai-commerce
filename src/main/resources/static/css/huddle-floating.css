@@ -71,3 +71,8 @@ html[data-theme=dark] .huddle-people-tabs button[aria-pressed=true]{background:#
 
 .huddle-directory-person[aria-pressed=true]{background:var(--blue-soft,#edf4ff);box-shadow:inset 0 0 0 1px #2c68df}.huddle-start-chat{width:100%;margin-top:10px}
 .huddle-directory-person[aria-pressed=true]::after{content:'✓';color:var(--blue,#2c68df);font-weight:700}
+
+.huddle-header-avatars{display:flex;gap:4px;flex:none}.huddle-header-avatars .huddle-person-avatar{width:28px;height:28px;font-size:11px}
+.floating-huddle header .dialog-close,.huddle-people-panel .huddle-people-close{flex:none;display:grid;place-items:center;width:32px;height:32px;padding:7px;border:1px solid var(--line,#dce4ee);border-radius:50%;background:var(--card,#fff);color:var(--muted,#65748a)}
+.huddle-people-close svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.huddle-people-panel .huddle-start-chat{text-align:center;background:var(--blue,#2e6be6);color:#fff}.huddle-start-chat:disabled{opacity:.55;cursor:default}

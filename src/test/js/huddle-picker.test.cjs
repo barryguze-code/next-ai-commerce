@@ -14,7 +14,11 @@ test('teammate picker supports search, presence, filters, keyboard dismissal and
   await page.evaluate(()=>window.LiveHuddleUI.event({type:'WELCOME',self:{id:'me'},canHuddle:true,online:[{id:'one',name:'ibcorellc',email:'one@example.test'}],huddles:[]},()=>true));
   const trigger=page.getByRole('button',{name:'Open huddle and online teammates'});
   await trigger.click();
-  const search=page.getByRole('searchbox',{name:'Search teammates'});
+  assert.equal(await page.getByRole('button',{name:'Select teammate',exact:true}).isDisabled(),true);
+  assert.equal(await page.locator('.huddle-person-avatar').first().textContent(),'IB');
+  await page.getByRole('button',{name:'ibcorellc · Online'}).click();
+  assert.equal(await page.getByRole('button',{name:'Start Collaboration',exact:true}).isEnabled(),true);
+  const search=page.getByRole('searchbox',{name:'Search teammates'});await search.focus();
   assert.equal(await search.evaluate(n=>n===document.activeElement),true);
   assert.equal(await page.getByRole('button',{name:'Online',exact:true}).getAttribute('aria-pressed'),'true');
   assert.equal(await page.getByRole('button',{name:'ibcorellc · Online'}).isEnabled(),true);
