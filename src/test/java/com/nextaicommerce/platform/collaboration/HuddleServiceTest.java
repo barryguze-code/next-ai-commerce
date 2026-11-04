@@ -119,5 +119,19 @@ class HuddleServiceTest {
         assertThat(refreshed.participants()).extracting(HuddleService.Participant::id).containsExactlyInAnyOrder(barry.id(),alex.id(),morgan.id());
     }
 
+    @Test void fivePeopleAreAllowedButSixthIsRejectedWithoutChangingRoom(){
+        var third=person("Third","third@example.com");
+        var fourth=person("Fourth","fourth@example.com");
+        var fifth=person("Fifth","fifth@example.com");
+        var sixth=person("Sixth","sixth@example.com");
+        var room=service.create(tenant,barry,"PLATFORM","DIRECT:five","Team","/app/collaboration","{}",List.of(alex,third,fourth,fifth));
+        assertThat(room.participants()).hasSize(5);
+        assertThatThrownBy(()->service.invite(tenant,room.id(),barry.id(),List.of(sixth)))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("five people");
+        assertThat(service.find(tenant,room.id(),barry.id()).participants()).hasSize(5);
+        assertThatThrownBy(()->service.create(tenant,barry,"PLATFORM","DIRECT:six","Team","/app/collaboration","{}",List.of(alex,third,fourth,fifth,sixth)))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static HuddleService.Participant person(String name,String email){return new HuddleService.Participant(UUID.randomUUID(),name,email);}
 }

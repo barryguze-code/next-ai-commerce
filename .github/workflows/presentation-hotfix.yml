@@ -70,7 +70,7 @@ jobs:
         run: |
           mvn --batch-mode '-Dtest=HuddleServiceTest,HuddleWebSocketHandlerTest,CollaborationQueueDatabaseTest#durableChatRestoresAndConvertsMessagesFilesAndAudienceOnce' test
           npx playwright install --with-deps chromium
-          node --test src/test/js/huddle-finalize.test.cjs src/test/js/huddle-floating.test.cjs src/test/js/huddle-picker.test.cjs
+          node --test src/test/js/huddle-finalize.test.cjs src/test/js/huddle-floating.test.cjs src/test/js/huddle-picker.test.cjs src/test/js/huddle-presence.test.cjs
       - name: Build exact hotfix package
         run: |
           mvn --batch-mode -DskipTests package

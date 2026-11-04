@@ -25,7 +25,7 @@ public class HuddleService {
     private static final Logger log=LoggerFactory.getLogger(HuddleService.class);
     static final Duration IDLE_TTL=Duration.ofMinutes(45);
     static final Duration ENDED_RETENTION=Duration.ofMinutes(5);
-    static final int MAX_PARTICIPANTS=3;
+    static final int MAX_PARTICIPANTS=5;
     static final int MAX_MESSAGES=200;
     static final int MAX_MESSAGE_LENGTH=2_000;
     static final int MAX_ACTIVE_PER_USER=4;
@@ -84,7 +84,7 @@ public class HuddleService {
         if(invited==null||invited.isEmpty())throw new IllegalArgumentException("Choose at least one online teammate.");
         var unique=new LinkedHashMap<UUID,Participant>();
         invited.forEach(person->{if(person!=null&&!person.id().equals(creator.id()))unique.put(person.id(),person);});
-        if(unique.isEmpty()||unique.size()>=MAX_PARTICIPANTS)throw new IllegalArgumentException("Invite one or two teammates to a huddle.");
+        if(unique.isEmpty()||unique.size()>=MAX_PARTICIPANTS)throw new IllegalArgumentException("Invite one to four teammates to a huddle.");
         String safeType=clean(subjectType,40,"RECORD").toUpperCase();String safeKey=clean(subjectKey,240,"GENERAL");
         var selectedParticipants=new java.util.HashSet<>(unique.keySet());selectedParticipants.add(creator.id());
         boolean direct=safeType.equals("PLATFORM")&&safeKey.startsWith("DIRECT:");
@@ -93,7 +93,7 @@ public class HuddleService {
                     &&existing.subjectKey.equals(safeKey)&&existing.participants.containsKey(creator.id())
                     &&(!direct||existing.participants.keySet().equals(selectedParticipants))){
                 long additional=unique.keySet().stream().filter(id->!existing.participants.containsKey(id)).count();
-                if(existing.participants.size()+additional>MAX_PARTICIPANTS)throw new IllegalArgumentException("Invite up to two teammates to a huddle.");
+                if(existing.participants.size()+additional>MAX_PARTICIPANTS)throw new IllegalArgumentException("Invite up to four teammates to a huddle.");
                 unique.values().forEach(person->{existing.participants.putIfAbsent(person.id(),person);existing.joinedParticipantIds.add(person.id());});
                 existing.joinedParticipantIds.add(creator.id());existing.expiresAt=Instant.now().plus(IDLE_TTL);return persist(existing);
             }
@@ -136,7 +136,7 @@ public class HuddleService {
             requireActiveParticipant(state,actor);
             var unique=new LinkedHashMap<UUID,Participant>();people.forEach(p->unique.put(p.id(),p));
             long added=unique.keySet().stream().filter(id->!state.participants.containsKey(id)).count();
-            if(state.participants.size()+added>MAX_PARTICIPANTS)throw new IllegalArgumentException("A huddle supports up to three people.");
+            if(state.participants.size()+added>MAX_PARTICIPANTS)throw new IllegalArgumentException("A huddle supports up to five people.");
             unique.values().forEach(p->{state.participants.putIfAbsent(p.id(),p);state.joinedParticipantIds.add(p.id());});
             state.expiresAt=Instant.now().plus(IDLE_TTL);return persist(state);
         }

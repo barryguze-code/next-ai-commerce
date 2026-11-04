@@ -41,11 +41,11 @@
     launcher.addEventListener('pointerleave',()=>{timer=setTimeout(()=>{if(!launcher.contains(document.activeElement)){menu.hidden=true;trigger.setAttribute('aria-expanded','false');}},250);});
     document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!menu.hidden){e.preventDefault();closePeople(launcher.contains(document.activeElement));}});
     launcher.addEventListener('focusout',()=>setTimeout(()=>{if(!launcher.contains(document.activeElement))closePeople();},0));
-    document.addEventListener('click',e=>{if(!e.composedPath().includes(launcher)){menu.hidden=true;trigger.setAttribute('aria-expanded','false');}});
+    document.addEventListener('click',e=>{for(const panel of windows.values())if(!panel.querySelector('form').contains(e.target))panel.dismissMembers?.();if(!e.composedPath().includes(launcher)){menu.hidden=true;trigger.setAttribute('aria-expanded','false');}});
     tray=node('div',null,'floating-huddle-tray');tray.setAttribute('popover','manual');document.body.append(tray);renderPeople();
   }
   function renderPeople(){
-    if(!menu)return;const focusedPerson=document.activeElement?.dataset.personId;peopleHint.textContent=connected?'Across your shared accounts':'Reconnecting… live status unavailable';
+    if(!menu)return;const focusedPerson=document.activeElement?.dataset.personId;peopleHint.textContent=connected?'Across your shared accounts · Up to 5 people, including you':'Reconnecting… live status unavailable';
     menu.querySelectorAll('[data-people-tab]').forEach(tab=>tab.setAttribute('aria-pressed',String(tab.dataset.peopleTab===peopleTab)));
     peopleList.setAttribute('aria-busy',String(directoryLoading));
     const onlineIds=new Set(people.map(p=>p.id)),all=new Map(directory.map(p=>[p.id,p]));people.forEach(p=>all.set(p.id,p));
@@ -54,8 +54,8 @@
     peopleList.replaceChildren();
     if(!others.length){const empty=node('p',directoryLoading&&peopleTab==='all'?'Loading teammates…':query?'No matching teammates.':peopleTab==='online'?(connected?'No teammates online right now.':'Connecting to live collaboration…'):directoryError?'Teammates could not be loaded.':'No teammates available.','huddle-people-empty');empty.setAttribute('role','status');peopleList.append(empty);if(directoryError&&peopleTab==='all')peopleList.append(button('Try again',()=>{directoryLoadedAt=0;loadDirectory();}));}
     for(const person of others){
-      const online=connected&&onlineIds.has(person.id),name=person.name||person.email,status=online?'Online':connected?'Offline':'Status unavailable',b=button('',()=>{if(selectedPeople.has(person.id))selectedPeople.delete(person.id);else if(selectedPeople.size<2)selectedPeople.add(person.id);renderPeople();[...peopleList.querySelectorAll('[data-person-id]')].find(n=>n.dataset.personId===person.id)?.focus();});
-      b.setAttribute('aria-label',name+' · '+status);b.disabled=(!online&&!selectedPeople.has(person.id))||!allowed;b.className='huddle-directory-person';b.dataset.online=String(online);b.dataset.personId=person.id;b.setAttribute('aria-pressed',String(selectedPeople.has(person.id)));b.disabled=b.disabled||(!selectedPeople.has(person.id)&&selectedPeople.size>=2);
+      const online=connected&&onlineIds.has(person.id),name=person.name||person.email,status=online?'Online':connected?'Offline':'Status unavailable',b=button('',()=>{if(selectedPeople.has(person.id))selectedPeople.delete(person.id);else if(selectedPeople.size<4)selectedPeople.add(person.id);renderPeople();[...peopleList.querySelectorAll('[data-person-id]')].find(n=>n.dataset.personId===person.id)?.focus();});
+      b.setAttribute('aria-label',name+' · '+status);b.disabled=(!online&&!selectedPeople.has(person.id))||!allowed;b.className='huddle-directory-person';b.dataset.online=String(online);b.dataset.personId=person.id;b.setAttribute('aria-pressed',String(selectedPeople.has(person.id)));b.disabled=b.disabled||(!selectedPeople.has(person.id)&&selectedPeople.size>=4);
       const identity=node('span',null,'huddle-person-identity'),avatar=node('span',initials(name),'huddle-person-avatar'),dot=node('span',null,'huddle-presence-dot');
       avatar.setAttribute('aria-hidden','true');avatar.append(dot);identity.append(avatar,node('span',name));b.append(identity,node('small',status));
       b.dataset.tooltip=online?(allowed?(selectedPeople.has(person.id)?'Remove from selection':'Select for collaboration'):'Live collaboration is unavailable for your role'):'Offline follow-up: create a saved task in Collaborate';peopleList.append(b);
@@ -100,20 +100,31 @@
       file.addEventListener('change',async()=>{const selected=file.files[0];if(!selected)return;const error=panel.querySelector('.floating-huddle-error');if(selected.size>2*1024*1024){error.textContent='Choose a file up to 2 MB.';file.value='';return;}attach.disabled=true;
         try{const data=new FormData();data.append('file',selected);document.querySelectorAll('input[type=hidden][name*="csrf"]').forEach(input=>data.set(input.name,input.value));const response=await fetch('/app/huddles/'+room.id+'/files',{method:'POST',body:data});if(!response.ok)throw new Error('File could not be shared. Use PNG, JPEG, PDF, or text, up to 2 MB (8 MB per room).');error.textContent='';}
         catch(failure){error.textContent=failure.message;}finally{attach.disabled=false;file.value='';}});
-      const addPerson=button('',()=>{const picker=panel.querySelector('footer');picker.hidden=!picker.hidden;if(!picker.hidden){send({type:'PEOPLE',huddleId:room.id});picker.querySelector('select').focus();}});icon(addPerson,'Add teammate','M15 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M16 11h6');
-      tools.append(attach,file,addPerson,submit);
-      const mentions=node('div',null,'huddle-mention-options');mentions.hidden=true;mentions.setAttribute('aria-label','Mention a teammate');
-      form.append(mentions,field,tools);
-      field.addEventListener('input',()=>{
-        const match=field.value.slice(0,field.selectionStart).match(/@([^@\n]*)$/);mentions.replaceChildren();mentions.hidden=!match;if(!match)return;
-        const current=rooms.get(room.id),candidates=(current?.onlinePeople||people).filter(p=>p.id!==self?.id&&(p.name||p.email).toLowerCase().includes(match[1].toLowerCase()));
-        candidates.forEach(person=>{const option=button((person.name||person.email)+(current.participants.some(p=>p.id===person.id)?'':' · Add to collaboration'),()=>{const end=field.selectionStart,start=end-match[0].length;field.value=field.value.slice(0,start)+'@'+(person.name||person.email)+' '+field.value.slice(end);mentions.hidden=true;field.focus();if(!current.participants.some(p=>p.id===person.id))send({type:'INVITE',huddleId:room.id,participantIds:[person.id]});});option.disabled=!current.participants.some(p=>p.id===person.id)&&current.participants.length>=3;mentions.append(option);});
-        if(!candidates.length)mentions.append(node('small','No matching online teammate in this account.'));
-      });
+      const mentions=node('div',null,'huddle-mention-options');mentions.hidden=true;mentions.id='huddle-members-'+room.id;mentions.setAttribute('aria-label','Teammates');
+      let adding=false;
+      const addPerson=button('',()=>{adding=mentions.hidden||!adding;renderMembers();send({type:'PEOPLE',huddleId:room.id});if(adding)mentions.querySelector('button')?.focus();});icon(addPerson,'Add teammate','M15 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M16 11h6');
+      addPerson.setAttribute('aria-controls',mentions.id);addPerson.setAttribute('aria-expanded','false');
+      const dismissMembers=()=>{adding=false;mentions.hidden=true;addPerson.setAttribute('aria-expanded','false');};
+      function renderMembers(){
+        const match=field.value.slice(0,field.selectionStart).match(/@([^@\n]*)$/),current=rooms.get(room.id);
+        const focused=document.activeElement?.dataset.memberId,hadFocus=mentions.contains(document.activeElement);mentions.replaceChildren();mentions.hidden=!adding&&!match;addPerson.setAttribute('aria-expanded',String(adding));if(mentions.hidden)return;
+        if(adding)mentions.append(node('small','Up to 5 people, including you'));
+        const roster=new Map((current.onlinePeople||[]).map(p=>[p.id,p]));if(!adding)current.participants.forEach(p=>roster.set(p.id,p));
+        const candidates=[...roster.values()].filter(p=>p.id!==self?.id&&(!adding||!current.participants.some(m=>m.id===p.id))&&(adding||(p.name||p.email).toLowerCase().includes(match[1].toLowerCase())));
+        candidates.forEach(person=>{const member=current.participants.some(p=>p.id===person.id),option=button('',()=>{
+          if(!adding){const end=field.selectionStart,start=end-match[0].length;field.value=field.value.slice(0,start)+'@'+(person.name||person.email)+' '+field.value.slice(end);}
+          if(!member)send({type:'INVITE',huddleId:room.id,participantIds:[person.id]});dismissMembers();field.focus();
+        });option.className='huddle-directory-person';option.dataset.memberId=person.id;const identity=node('span',null,'huddle-person-identity');identity.append(node('span',initials(person.name||person.email),'huddle-person-avatar'),node('span',person.name||person.email));option.append(identity);option.disabled=!connected||(!member&&current.participants.length>=5);if(connected&&!member&&current.participants.length>=5)option.append(node('small','5-person limit reached'));mentions.append(option);});
+        if(!candidates.length)mentions.append(node('small','No additional online teammates in this account.'));if(hadFocus){const next=[...mentions.querySelectorAll('button')].find(b=>b.dataset.memberId===focused&&!b.disabled)||mentions.querySelector('button:not(:disabled)');if(next)next.focus();else addPerson.focus();}
+      }
+      panel.refreshMembers=renderMembers;
+      tools.append(attach,file,addPerson,submit);form.append(mentions,field,tools);
+      field.addEventListener('input',()=>{const wasHidden=mentions.hidden;adding=false;renderMembers();if(wasHidden&&!mentions.hidden)send({type:'PEOPLE',huddleId:room.id});});
+      mentions.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();dismissMembers();addPerson.focus();}});
+      panel.dismissMembers=dismissMembers;
       form.addEventListener('submit',e=>{e.preventDefault();if(field.value.trim()&&send({type:'MESSAGE',huddleId:room.id,body:field.value.trim()})){field.value='';mentions.hidden=true;resize();field.focus();}});
-      field.addEventListener('keydown',e=>{if(e.key==='Escape'){mentions.hidden=true;}if(e.key==='ArrowDown'&&!mentions.hidden){e.preventDefault();mentions.querySelector('button')?.focus();}if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!mentions.hidden&&mentions.querySelector('button'))mentions.querySelector('button').click();else form.requestSubmit();}});
-      const foot=node('footer'),add=node('select');add.setAttribute('aria-label','Add online teammate');add.addEventListener('focus',()=>send({type:'PEOPLE',huddleId:room.id}));add.addEventListener('change',()=>{if(add.value)send({type:'INVITE',huddleId:room.id,participantIds:[add.value]});add.value='';});
-      foot.hidden=true;add.addEventListener('change',()=>{foot.hidden=true;field.focus();});foot.append(add);panel.append(head,node('small','Private collaboration'),messages,form,foot,node('p','', 'floating-huddle-error'));
+      field.addEventListener('keydown',e=>{if(e.key==='Escape'){dismissMembers();}if(e.key==='ArrowDown'&&!mentions.hidden){e.preventDefault();mentions.querySelector('button')?.focus();}if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!mentions.hidden&&mentions.querySelector('button'))mentions.querySelector('button').click();else form.requestSubmit();}});
+      panel.append(head,node('small','Private collaboration · Up to 5 people, including you'),messages,form,node('p','', 'floating-huddle-error'));
       windows.set(room.id,panel);tray.append(panel);send({type:'PEOPLE',huddleId:room.id});
     }
     panel.hidden=false;if(activate){panel.classList.remove('is-minimized');panel.dataset.unread='0';panel.querySelector('.huddle-unread').hidden=true;icon(panel.querySelector('[data-minimize]'),'Minimize collaboration','M5 12h14');if(tray.matches(':popover-open'))tray.hidePopover();if(!finalizing)tray.showPopover();if(panel.style.position==='fixed')panel.style.top=Math.max(8,Math.min(innerHeight-panel.offsetHeight-8,parseFloat(panel.style.top)))+'px';}else if(!finalizing&&!tray.matches(':popover-open'))tray.showPopover();panel.querySelector('header strong').textContent=roomName(room);
@@ -129,13 +140,13 @@
       }catch(error){entry.append(node('small',error.message));openFile.disabled=false;}});entry.append(openFile,node('small','Retained with this collaboration'));}
       else entry.append(node('p',m.body));list.append(entry);});
     if(nearBottom)list.scrollTop=list.scrollHeight;
-    const add=panel.querySelector('select');add.replaceChildren(new Option('＋ Add teammate',''));(room.onlinePeople||[]).filter(p=>!room.participants.some(member=>member.id===p.id)).forEach(p=>add.add(new Option(p.name||p.email,p.id)));add.disabled=room.participants.length>=3||!connected;
+    panel.refreshMembers?.();
     panel.querySelector('textarea').disabled=!connected;panel.querySelector('button[type=submit]').disabled=!connected;if(activate&&focus)requestAnimationFrame(()=>panel.querySelector('textarea').focus({preventScroll:true}));renderPeople();
   }
   function event(e,sender){
     send=sender;mount();
     if(e.type==='WELCOME'){starting=false;self=e.self;allowed=e.canHuddle;people=e.online||[];connected=true;rooms.clear();(e.huddles||[]).forEach(r=>{rooms.set(r.id,r);open(r);});for(const [id,p]of windows)if(!rooms.has(id)){p.remove();windows.delete(id);}renderPeople();}
-    else if(e.type==='PRESENCE'){people=e.online||[];renderPeople();}
+    else if(e.type==='PRESENCE'){people=e.online||[];renderPeople();for(const room of rooms.values())if(room.status==='ACTIVE')send({type:'PEOPLE',huddleId:room.id});}
     else if(e.type==='OFFLINE'){finalizePending.forEach(p=>p.reject(new Error('Connection lost. Your draft is still here.')));finalizePending.clear();starting=false;connected=false;people=[];renderPeople();windows.forEach(p=>{p.querySelector('textarea').disabled=true;p.querySelector('button[type=submit]').disabled=true;});}
     else if(e.type==='ROOM_PEOPLE'){const room=rooms.get(e.huddleId);if(room){room.onlinePeople=e.online||[];open(room,false);}}
     else if(e.type==='HUDDLE_STARTED'||e.type==='HUDDLE_UPDATED'){
