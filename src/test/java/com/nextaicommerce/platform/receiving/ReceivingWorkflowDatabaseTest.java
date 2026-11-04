@@ -818,6 +818,26 @@ class ReceivingWorkflowDatabaseTest {
         tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE order_inventory_reservations SET status='SHIPPED' WHERE tenant_id=? AND id=?",tenant,reservation);});
         assertThatThrownBy(()->work.undo(tenant,actor,f.line(),r,"Sold")).isInstanceOf(IllegalArgumentException.class);
     }
+    @Test void reservationOnAnotherExpirationBatchDoesNotBlockReceiptAdjustment(){
+        var f=fixture("INVOICE");
+        work.receiveBatches(tenant,actor,f.line(),List.of(
+            new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("4"),expiry),
+            new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("6"),expiry.plusDays(1))),
+            BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,BigDecimal.ZERO);
+        reserve(f,3);
+        var receipts=work.receipts(tenant,f.line());
+        var reserved=receipts.stream().filter(r->expiry.equals(r.expiration())).findFirst().orElseThrow();
+        var free=receipts.stream().filter(r->expiry.plusDays(1).equals(r.expiration())).findFirst().orElseThrow();
+        work.adjust(tenant,actor,f.line(),free.id(),new BigDecimal("6"),"DECREASE","COUNT_CORRECTION","Unreserved batch only");
+        assertThat(stock(f)).isEqualByComparingTo("4");
+        assertThatThrownBy(()->work.adjust(tenant,actor,f.line(),reserved.id(),new BigDecimal("2"),"DECREASE","COUNT_CORRECTION","Protect reservations"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("reserved");
+        assertThat(stock(f)).isEqualByComparingTo("4");
+        tx.executeWithoutResult(s->{setTenant();
+            assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM order_inventory_reservations WHERE tenant_id=? AND account_catalog_item_id=? AND status='ACTIVE'",BigDecimal.class,tenant,f.product())).isEqualByComparingTo("3");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_line_receipts WHERE tenant_id=? AND purchase_order_item_id=? AND voided_at IS NULL",Integer.class,tenant,f.line())).isEqualTo(2);
+        });
+    }
     @Test void expiredPhysicalCountWritesDeltaAndLeavesUnlistedBatches(){
         var f=fixture("INVOICE");receive(f,4);LocalDate expired=LocalDate.now().minusDays(4);
         var rows=List.of(new InventoryRepository.PhysicalCountRow(2,"QA-"+f.product(),new BigDecimal("2"),expired,"MAIN"));

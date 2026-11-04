@@ -410,6 +410,48 @@ class InventoryPublicationDatabaseTest {
   orders.reconcileTenantAfterPhysicalCount(tenant);repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(12);
   orders.reconcile(tenant,connection);repo.plan(tenant);assertThat(quantity("SINGLE")).isEqualTo(12);
  });}
+ @Test void publicationFreshnessWorkDoesNotGrowWithListingCount(){tx.executeWithoutResult(status->{
+  repo.plan(tenant);
+  // Exercise the nested-loop plan seen with production's per-store freshness predicates.
+  jdbc.execute("SET LOCAL enable_hashjoin='off'");jdbc.execute("SET LOCAL enable_mergejoin='off'");
+  jdbc.update("INSERT INTO inventory_publications(tenant_id,connection_id,marketplace_id,seller_sku,desired_quantity) SELECT ?,?,'ATVPDKIKX0DER','PERF-'||n,1 FROM generate_series(1,300) n",tenant,connection);
+  UUID run=UUID.randomUUID();
+  jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,status,window_start,window_end) VALUES (?,?,?,'INCREMENTAL','ORDER_CHANGES','COMPLETED',now()-interval '10 minutes',now())",run,tenant,connection);
+  jdbc.update("INSERT INTO marketplace_sync_jobs(tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,status,completed_at) VALUES (?,?,?,'FINAL_RECONCILIATION',1,'COMPLETED',now())",tenant,connection,run);
+  UUID shop=UUID.randomUUID(),shopRun=UUID.randomUUID();
+  jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'SHOPIFY','fixture.myshopify.com','fixture.myshopify.com','fixture','ACTIVE','Fixture','UTC',now())",shop,tenant);
+  jdbc.update("INSERT INTO shopify_order_controls(tenant_id,marketplace_connection_id,inventory_enabled,activated_at,baseline_completed_at) VALUES(?,?,true,now(),now())",tenant,shop);
+  jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,status,window_start,window_end) VALUES (?,?,?,'INCREMENTAL','SHOPIFY_ORDERS','COMPLETED',now()-interval '10 minutes',now())",shopRun,tenant,shop);
+  jdbc.update("INSERT INTO marketplace_sync_jobs(tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,status,completed_at) VALUES (?,?,?,'SHOPIFY_ORDERS',1,'COMPLETED',now())",tenant,shop,shopRun);
+  var captured=new ArrayList<String>();var parameters=new ArrayList<Object[]>();
+  var observed=new JdbcTemplate(Objects.requireNonNull(jdbc.getDataSource())){
+   @Override public <T> List<T> query(String sql,org.springframework.jdbc.core.RowMapper<T> mapper,Object... args){
+    if(sql.contains("SELECT p.*,c.seller_identifier")){captured.add(sql);parameters.add(args);}
+    return super.query(sql,mapper,args);
+   }
+  };
+  assertThat(new InventoryPublicationRepository(observed).next(tenant,java.time.Instant.now().minusSeconds(60))).isPresent();
+  // PostgreSQL reuses a generic plan after repeated prepared calls; that was the production regression.
+  jdbc.execute("SET LOCAL plan_cache_mode='force_generic_plan'");
+  var parameterNumber=new java.util.concurrent.atomic.AtomicInteger();
+  String prepared=java.util.regex.Pattern.compile("\\?").matcher(captured.getFirst())
+    .replaceAll(match->"\\$"+parameterNumber.incrementAndGet());
+  jdbc.execute("PREPARE receipt_freshness_regression AS "+prepared);
+  String values=String.join(",",Arrays.stream(parameters.getFirst()).map(value->value==null?"NULL":"'"+value.toString().replace("'","''")+"'").toList());
+  String plan;
+  try{plan=jdbc.queryForObject("EXPLAIN(ANALYZE,FORMAT JSON) EXECUTE receipt_freshness_regression("+values+")",String.class);}
+  finally{jdbc.execute("DEALLOCATE receipt_freshness_regression");}
+  try{
+   var root=new tools.jackson.databind.ObjectMapper().readTree(plan).get(0).path("Plan");
+   assertThat(maximumScanLoops(root,"marketplace_sync_runs"))
+     .as("freshness scans must be bounded by stores, not repeated for every listing under the stock lock").isLessThanOrEqualTo(2);
+  }catch(Exception e){throw new IllegalStateException(e);}
+ });}
+ private static long maximumScanLoops(tools.jackson.databind.JsonNode node,String table){
+  long max=table.equals(node.path("Relation Name").asText())?node.path("Actual Loops").asLong():0;
+  for(var child:node.path("Plans"))max=Math.max(max,maximumScanLoops(child,table));
+  return max;
+ }
  @Test void livePublishingRequiresFreshCompletedReconciliationAndNoImportInProgress(){tx.executeWithoutResult(s->{
   repo.plan(tenant);var startup=java.time.Instant.now().minusSeconds(1);
   assertThat(repo.next(tenant,startup)).isEmpty();

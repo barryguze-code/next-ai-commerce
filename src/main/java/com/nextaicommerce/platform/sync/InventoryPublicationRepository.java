@@ -98,30 +98,43 @@ public class InventoryPublicationRepository {
  private Optional<Pending> next(UUID tenant,java.time.Instant startup,Set<UUID> allowedConnections,String allowedSkus,String exactSku){
   scope(tenant);
   jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",r->{},tenant);
+  // Evaluate account/store freshness once per locked statement, not once per listing.
   return jdbc.query("""
-   SELECT p.*,c.seller_identifier FROM inventory_publications p JOIN marketplace_connections c ON c.tenant_id=p.tenant_id AND c.id=p.connection_id
-   WHERE p.tenant_id=? AND c.channel='AMAZON' AND c.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM inventory_publication_dirty d WHERE d.tenant_id=p.tenant_id) AND p.status NOT IN ('DISABLED','DRY_RUN') AND p.next_attempt_at<=now()
-     AND (?::uuid[] IS NULL OR p.connection_id=ANY(?::uuid[]))
-     AND (?='' OR p.seller_sku=ANY(string_to_array(?,',')))
-     AND (?::text IS NULL OR p.seller_sku=?)
-     AND (?::timestamptz IS NULL OR (
-       EXISTS(SELECT 1 FROM marketplace_sync_jobs j JOIN marketplace_sync_runs r ON r.tenant_id=j.tenant_id AND r.id=j.sync_run_id
-         WHERE j.tenant_id=p.tenant_id AND j.marketplace_connection_id=p.connection_id
-           AND j.job_type='FINAL_RECONCILIATION' AND j.status='COMPLETED' AND r.status='COMPLETED'
-           AND r.sync_profile IN ('ORDER_CHANGES','STARTUP_ORDERS','RECENT_ORDER_RECONCILIATION','ORDER_LIFECYCLE')
-           AND j.completed_at>=? AND r.window_end>now()-interval '15 minutes')
-       AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs j WHERE j.tenant_id=p.tenant_id
-         AND j.marketplace_connection_id=p.connection_id AND j.job_type IN ('ORDERS_API_DELTA','ORDERS_30_DAY','ORDER_ITEMS_30_DAY','FINAL_RECONCILIATION')
-         AND j.status IN ('QUEUED','RUNNING','WAITING'))
-     ))
-   AND (p.desired_quantity=0 OR (
-     NOT EXISTS(SELECT 1 FROM marketplace_connections shop
+   WITH request AS MATERIALIZED (
+     SELECT ?::uuid tenant_id,?::uuid[] connections,?::text skus,?::text exact_sku,?::timestamptz startup
+   ), eligible_connections AS MATERIALIZED (
+     SELECT c.tenant_id,c.id,c.seller_identifier FROM marketplace_connections c CROSS JOIN request input
+     WHERE c.tenant_id=input.tenant_id AND c.channel='AMAZON' AND c.status='ACTIVE'
+       AND (input.connections IS NULL OR c.id=ANY(input.connections))
+       AND (input.startup IS NULL OR (
+         EXISTS(SELECT 1 FROM marketplace_sync_jobs j JOIN marketplace_sync_runs r ON r.tenant_id=j.tenant_id AND r.id=j.sync_run_id
+           WHERE j.tenant_id=c.tenant_id AND j.marketplace_connection_id=c.id
+             AND j.job_type='FINAL_RECONCILIATION' AND j.status='COMPLETED' AND r.status='COMPLETED'
+             AND r.sync_profile IN ('ORDER_CHANGES','STARTUP_ORDERS','RECENT_ORDER_RECONCILIATION','ORDER_LIFECYCLE')
+             AND j.completed_at>=input.startup AND r.window_end>now()-interval '15 minutes')
+         AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs j WHERE j.tenant_id=c.tenant_id
+           AND j.marketplace_connection_id=c.id AND j.job_type IN ('ORDERS_API_DELTA','ORDERS_30_DAY','ORDER_ITEMS_30_DAY','FINAL_RECONCILIATION')
+           AND j.status IN ('QUEUED','RUNNING','WAITING'))
+       ))
+   ), shopify_freshness AS MATERIALIZED (
+     SELECT NOT EXISTS(SELECT 1 FROM marketplace_connections shop
        JOIN shopify_order_controls control ON control.tenant_id=shop.tenant_id AND control.marketplace_connection_id=shop.id AND control.inventory_enabled
-       WHERE shop.tenant_id=p.tenant_id AND shop.channel='SHOPIFY' AND shop.status='ACTIVE'
+       WHERE shop.tenant_id=input.tenant_id AND shop.channel='SHOPIFY' AND shop.status='ACTIVE'
        AND (NOT EXISTS(SELECT 1 FROM marketplace_sync_runs sr JOIN marketplace_sync_jobs sj ON sj.tenant_id=sr.tenant_id AND sj.marketplace_connection_id=sr.marketplace_connection_id AND sj.sync_run_id=sr.id
          WHERE sr.tenant_id=shop.tenant_id AND sr.marketplace_connection_id=shop.id AND sr.sync_profile='SHOPIFY_ORDERS' AND sr.status='COMPLETED' AND sj.status='COMPLETED'
-          AND sr.window_end>clock_timestamp()-interval '10 minutes' AND (?::timestamptz IS NULL OR sj.completed_at>=?))
-        OR EXISTS(SELECT 1 FROM marketplace_sync_jobs sj WHERE sj.tenant_id=shop.tenant_id AND sj.marketplace_connection_id=shop.id AND sj.job_type='SHOPIFY_ORDERS' AND sj.status IN ('QUEUED','WAITING','RUNNING'))))
+          AND sr.window_end>clock_timestamp()-interval '10 minutes' AND (input.startup IS NULL OR sj.completed_at>=input.startup))
+        OR EXISTS(SELECT 1 FROM marketplace_sync_jobs sj WHERE sj.tenant_id=shop.tenant_id AND sj.marketplace_connection_id=shop.id AND sj.job_type='SHOPIFY_ORDERS' AND sj.status IN ('QUEUED','WAITING','RUNNING')))) safe
+     FROM request input
+   )
+   SELECT p.*,c.seller_identifier FROM inventory_publications p
+   JOIN eligible_connections c ON c.tenant_id=p.tenant_id AND c.id=p.connection_id
+   CROSS JOIN request input CROSS JOIN shopify_freshness freshness
+   WHERE p.tenant_id=input.tenant_id AND NOT EXISTS(SELECT 1 FROM inventory_publication_dirty d WHERE d.tenant_id=input.tenant_id)
+     AND p.status NOT IN ('DISABLED','DRY_RUN') AND p.next_attempt_at<=now()
+     AND (input.skus='' OR p.seller_sku=ANY(string_to_array(input.skus,',')))
+     AND (input.exact_sku IS NULL OR p.seller_sku=input.exact_sku)
+     AND (p.desired_quantity=0 OR (
+       freshness.safe
      AND \s
      """+com.nextaicommerce.platform.shopify.ShopifyPublicationSafety.allowsPositive("p.tenant_id","(SELECT m.id FROM marketplace_sku_mappings m WHERE m.tenant_id=p.tenant_id AND m.marketplace_connection_id=p.connection_id AND m.marketplace_sku=p.seller_sku AND m.status='ACTIVE')")+"""
    ))
@@ -129,7 +142,7 @@ public class InventoryPublicationRepository {
                  WHEN p.next_attempt_at<now()-interval '2 minutes' THEN 0 ELSE 1 END,
      CASE WHEN p.next_attempt_at>=now()-interval '2 minutes' THEN p.desired_quantity=0 ELSE false END DESC,
      p.next_attempt_at,p.seller_sku FOR UPDATE OF p SKIP LOCKED LIMIT 1
-   """,(r,n)->new Pending(tenant,r.getObject("connection_id",UUID.class),r.getString("marketplace_id"),r.getString("seller_sku"),r.getInt("desired_quantity"),r.getLong("revision"),r.getString("status"),r.getInt("attempts"),r.getString("seller_identifier")),tenant,connectionArray(allowedConnections),connectionArray(allowedConnections),allowedSkus,allowedSkus,exactSku,exactSku,startup==null?null:java.sql.Timestamp.from(startup),startup==null?null:java.sql.Timestamp.from(startup),startup==null?null:java.sql.Timestamp.from(startup),startup==null?null:java.sql.Timestamp.from(startup)).stream().findFirst();
+   """,(r,n)->new Pending(tenant,r.getObject("connection_id",UUID.class),r.getString("marketplace_id"),r.getString("seller_sku"),r.getInt("desired_quantity"),r.getLong("revision"),r.getString("status"),r.getInt("attempts"),r.getString("seller_identifier")),tenant,connectionArray(allowedConnections),allowedSkus,exactSku,startup==null?null:java.sql.Timestamp.from(startup)).stream().findFirst();
  }
  private static String connectionArray(Set<UUID> ids){return ids==null?null:"{"+String.join(",",ids.stream().map(UUID::toString).toList())+"}";}
  /** Recheck the exact revision and shared warehouse holds immediately before sending. */

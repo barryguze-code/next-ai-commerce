@@ -310,7 +310,7 @@ function receive(id,overage=false){
   f.addEventListener('invalid',event=>{const section=event.target.closest('[data-exception-fields]');selectTab(section?section.dataset.exceptionFields:'sellable');},true);
   syncCases('quantity','cases');selectTab(draft?.tab||'sellable');
   if(overage)tabs.hidden=true;
-  requestAnimationFrame(()=>{if(f.isConnected&&!sellable.hidden)f.elements.expiration.focus();});
+  requestAnimationFrame(()=>{if(f.isConnected&&!sellable.hidden)(f.elements.expiration.closest('.short-date-control')?.querySelector('.short-date-text')||f.elements.expiration).focus();});
 }
 function quickLocation(receiptForm){
   const modal=document.getElementById('location-dialog'),locationForm=modal.querySelector('form');
