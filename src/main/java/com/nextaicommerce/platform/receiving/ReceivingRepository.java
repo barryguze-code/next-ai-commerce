@@ -823,6 +823,12 @@ public class ReceivingRepository {
 
     private MatchedItem matchOrCreateItem(UUID tenantId, UUID vendorId, String actorEmail, String description,
             String brand,String vendorCode,String identifier,String accountSku,BigDecimal cost,String currency,String sourceType,String sourceReference) {
+        // KEHE exports barcodes as Excel text literals. Unwrap only numeric GTIN
+        // text, preserving leading zeros; source document records remain untouched.
+        identifier = identifier.trim();
+        if (identifier.matches("=\"(?:[0-9]{8}|[0-9]{12}|[0-9]{13}|[0-9]{14})\"")) {
+            identifier = identifier.substring(2, identifier.length() - 1);
+        }
         UUID itemId = null;
         if (!vendorCode.isBlank()) {
             // Multiple active offers for one item are not multiple product identities.

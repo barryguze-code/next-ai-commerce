@@ -17,6 +17,25 @@ class ReceivingCatalogIdentityTest {
         method.setAccessible(true);
         try{return method.invoke(repo,tenant,vendor,"fixture","Muesli","Ozery",code,"664164101982","",BigDecimal.ONE,"USD","INVOICE","fixture");}catch(InvocationTargetException e){throw e.getCause();}
     }
+    @Test void keheQuotedNumericBarcodeIsAcceptedWithoutLosingLeadingZeros()throws Throwable{
+        var jdbc=mock(JdbcTemplate.class);var catalog=mock(CatalogRepository.class);
+        when(catalog.addImportedVendorProduct(eq(tenant),anyString(),eq(vendor),eq("702258"),anyString(),any(),eq("UPC"),eq("093966113105"),isNull(),eq(false))).thenReturn(a);
+        var method=ReceivingRepository.class.getDeclaredMethod("matchOrCreateItem",UUID.class,UUID.class,String.class,String.class,String.class,String.class,String.class,String.class,BigDecimal.class,String.class,String.class,String.class);method.setAccessible(true);
+        try{method.invoke(new ReceivingRepository(jdbc,catalog),tenant,vendor,"fixture","Fixture cheese","Fixture","702258","=\"093966113105\"","",BigDecimal.ONE,"USD","INVOICE","fixture");}catch(InvocationTargetException ex){throw ex.getCause();}
+        verify(catalog).addImportedVendorProduct(eq(tenant),anyString(),eq(vendor),eq("702258"),anyString(),any(),eq("UPC"),eq("093966113105"),isNull(),eq(false));
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"B097YHZ1P5", "=\"B097YHZ1P5\"", "=SUM(1,2)", "=\"093966113105+1\""})
+    void unsafeOrAsinIdentifiersRemainRejected(String identifier)throws Throwable{
+        var jdbc=mock(JdbcTemplate.class);var catalog=mock(CatalogRepository.class);
+        var method=ReceivingRepository.class.getDeclaredMethod("matchOrCreateItem",UUID.class,UUID.class,String.class,String.class,String.class,String.class,String.class,String.class,BigDecimal.class,String.class,String.class,String.class);
+        method.setAccessible(true);
+        assertThatThrownBy(()->{
+            try{method.invoke(new ReceivingRepository(jdbc,catalog),tenant,vendor,"fixture","Fixture","Brand","702258",identifier,"",BigDecimal.ONE,"USD","INVOICE","fixture");}
+            catch(InvocationTargetException ex){throw ex.getCause();}
+        }).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("valid UPC");
+        verifyNoInteractions(catalog);
+    }
     @Test void duplicateVendorBindingsCannotArbitrarilySelectAnInventoryIdentity()throws Throwable{
         var jdbc=mock(JdbcTemplate.class);var catalog=mock(CatalogRepository.class);
         // The old LIMIT 1 extractor returns one identity even when two exist.

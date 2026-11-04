@@ -154,6 +154,15 @@ class ReceivingWorkflowDatabaseTest {
         tx.executeWithoutResult(t->assertThat(jdbc.queryForObject("SHOW lock_timeout",String.class)).isEqualTo("0"));
     }
 
+    @Test void keheNumericTextBarcodePreservesSourceAndCreatesDraftWithoutStock(){
+        var row=Map.of("ShipItem","=\"00702258\"","Upc","=\"093966113105\"","Description","Fixture cheese","Brand","Fixture","ShipQuantity","2","NetEach","5.00","PackSize","6/8 OZ");
+        UUID session=tx.execute(t->new ReceivingIntakeService(receiving).start(tenant,actor,vendor,"INVOICE","USD","KEHE fixture",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(new ReceivingIntakeService.IntakeDocument("fixture.csv","kehe-numeric-text",List.of(row)))));
+        assertThat(session).isNotNull();
+        assertThat(jdbc.queryForObject("SELECT raw_data->>'Upc' FROM receiving_document_lines WHERE tenant_id=?",String.class,tenant)).isEqualTo("=\"093966113105\"");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers WHERE identifier_type='UPC' AND identifier_value='093966113105'",Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
+    }
+
     @Test void packingListAccountSkuFallbackPreservesExactIdentityAndRejectsConflicts() {
         UUID other=UUID.randomUUID(),foreign=UUID.randomUUID(),foreignGlobal=UUID.randomUUID(),own=UUID.randomUUID(),ownGlobal=UUID.randomUUID();
         tx.executeWithoutResult(t->{

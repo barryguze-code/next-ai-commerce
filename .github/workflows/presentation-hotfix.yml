@@ -3,10 +3,10 @@ on:
   workflow_dispatch:
     inputs:
       classification:
-        description: 'Owner-approved scope: presentation only, or client UI with authorized read-only existing-access lookup; no grant-policy, inventory, schema or integration writes'
+        description: 'Owner-approved focused scope: presentation, client read-only access UI, or receiving document parsing; no schema or integration writes'
         required: true
         type: choice
-        options: [PRESENTATION_ONLY, CLIENT_READ_ONLY_ACCESS_UI]
+        options: [PRESENTATION_ONLY, CLIENT_READ_ONLY_ACCESS_UI, RECEIVING_DOCUMENT_IMPORT]
       focused_test:
         description: 'Focused non-browser Node regression test filename under src/test/js'
         required: true
@@ -32,7 +32,7 @@ jobs:
           NODE_TEST: ${{ inputs.focused_test }}
           JAVA_TEST: ${{ inputs.java_test }}
         run: |
-          [[ "$CLASSIFICATION" = PRESENTATION_ONLY || "$CLASSIFICATION" = CLIENT_READ_ONLY_ACCESS_UI ]]
+          [[ "$CLASSIFICATION" = PRESENTATION_ONLY || "$CLASSIFICATION" = CLIENT_READ_ONLY_ACCESS_UI || "$CLASSIFICATION" = RECEIVING_DOCUMENT_IMPORT ]]
           [[ "$NODE_TEST" =~ ^[a-zA-Z0-9_-]+\.test\.cjs$ ]]
           test -f "src/test/js/$NODE_TEST"
           [[ -z "$JAVA_TEST" || "$JAVA_TEST" =~ ^[a-zA-Z0-9_.]+Test$ ]]
@@ -52,6 +52,12 @@ jobs:
           mvn --batch-mode -Dtest=InvitationExistingAccessTest,InvitationServiceTest,HuddleWebSocketHandlerTest,HuddleServiceTest,TemplateRenderingTest,CollaborationBoardTemplateTest test
           npx playwright install --with-deps chromium
           node --test src/test/js/collaboration-invite-hotfix.test.cjs src/test/js/huddle-floating.test.cjs src/test/js/huddle-picker.test.cjs src/test/js/collaboration-uat.test.cjs src/test/js/personal-collaboration-drag.test.cjs src/test/js/collaboration-navigation-composer.test.cjs
+      - name: Focused receiving import regressions
+        if: inputs.classification == 'RECEIVING_DOCUMENT_IMPORT'
+        run: |
+          mvn --batch-mode '-Dtest=ReceivingCatalogIdentityTest,ReceivingInvoiceParserTest,ReceivingControllerTest,ReceivingWorkflowControllerTest,ReceivingWorkflowDatabaseTest#keheNumericTextBarcodePreservesSourceAndCreatesDraftWithoutStock' test
+          npx playwright install --with-deps chromium
+          node --test src/test/js/receiving-upload.test.cjs
       - name: Build exact hotfix package
         run: |
           mvn --batch-mode -DskipTests package
