@@ -20,6 +20,10 @@ class CollaborationBoardTemplateTest {
         UUID parent=UUID.fromString("00000000-0000-0000-0000-000000000001");
         context.setVariables(Map.of("parents",List.of(new ParentTenantRepository.Parent(parent,"Fixture parent")),"selectedParent",parent,"boardUser","fixture@example.test","boardAccounts",List.of(),"boardPeople",List.of(),"canSetupParents",true,"canEditCatalog",true,"canViewOperations",true,"isSuperAdmin",true));
         context.setVariable("personalUser","fixture@example.test");
+        context.setVariable("signedInEmail","fixture@example.test");
+        String shared=engine.process("fragments/sidebar-user",context);
+        assertThat(shared).contains("/js/confirm-dialog.js?v=1.11.8","/css/confirm-dialog.css");
+        Files.createDirectories(Path.of(".local/browser-fixtures"));Files.writeString(Path.of(".local/browser-fixtures/shared-confirm.html"),shared);
         String personal=engine.process("personal-collaboration",context);
         Files.createDirectories(Path.of(".local/browser-fixtures"));Files.writeString(Path.of(".local/browser-fixtures/personal-collaboration.html"),personal);
         assertThat(personal).contains("data-personal-scope=\"ACTIVE\"","data-personal-scope=\"PRIVATE\"",

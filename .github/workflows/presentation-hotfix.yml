@@ -1,12 +1,12 @@
-name: Presentation hotfix
+name: Focused hotfix
 on:
   workflow_dispatch:
     inputs:
       classification:
-        description: 'Owner-approved Tier 1 presentation only; no inventory, schema, authorization, calculation or integration behavior changes'
+        description: 'Owner-approved scope: presentation only, or client UI with authorized read-only existing-access lookup; no grant-policy, inventory, schema or integration writes'
         required: true
         type: choice
-        options: [PRESENTATION_ONLY]
+        options: [PRESENTATION_ONLY, CLIENT_READ_ONLY_ACCESS_UI]
       focused_test:
         description: 'Focused non-browser Node regression test filename under src/test/js'
         required: true
@@ -32,19 +32,26 @@ jobs:
           NODE_TEST: ${{ inputs.focused_test }}
           JAVA_TEST: ${{ inputs.java_test }}
         run: |
-          test "$CLASSIFICATION" = PRESENTATION_ONLY
+          [[ "$CLASSIFICATION" = PRESENTATION_ONLY || "$CLASSIFICATION" = CLIENT_READ_ONLY_ACCESS_UI ]]
           [[ "$NODE_TEST" =~ ^[a-zA-Z0-9_-]+\.test\.cjs$ ]]
           test -f "src/test/js/$NODE_TEST"
           [[ -z "$JAVA_TEST" || "$JAVA_TEST" =~ ^[a-zA-Z0-9_.]+Test$ ]]
       - name: Install unit test dependencies
         run: npm ci --ignore-scripts
       - name: Focused unit regressions
+        if: inputs.classification == 'PRESENTATION_ONLY'
         env:
           NODE_TEST: ${{ inputs.focused_test }}
           JAVA_TEST: ${{ inputs.java_test }}
         run: |
           node --test "src/test/js/$NODE_TEST"
           if [[ -n "$JAVA_TEST" ]]; then mvn --batch-mode -Dtest="$JAVA_TEST" test; fi
+      - name: Focused client access and chat regressions
+        if: inputs.classification == 'CLIENT_READ_ONLY_ACCESS_UI'
+        run: |
+          mvn --batch-mode -Dtest=InvitationExistingAccessTest,InvitationServiceTest,HuddleWebSocketHandlerTest,HuddleServiceTest,TemplateRenderingTest,CollaborationBoardTemplateTest test
+          npx playwright install --with-deps chromium
+          node --test src/test/js/collaboration-invite-hotfix.test.cjs src/test/js/huddle-floating.test.cjs src/test/js/huddle-picker.test.cjs src/test/js/collaboration-uat.test.cjs src/test/js/personal-collaboration-drag.test.cjs src/test/js/collaboration-navigation-composer.test.cjs
       - name: Build exact hotfix package
         run: |
           mvn --batch-mode -DskipTests package
@@ -56,5 +63,6 @@ jobs:
             target/next-ai-commerce-*.jar
             target/hotfix.sha256
           retention-days: 14
-# This manually selected Tier 1 lane does not deploy or replace feature/release CI.
-# Tier 2 inventory, schema, permissions and integration changes must use full CI.
+# Presentation mode retains its existing focused non-browser gate.
+# Client read-only lookup/UI mode is explicitly owner-selected; grant-policy, schema, inventory
+# and integration-write changes remain excluded. Normal feature/release CI is unchanged.

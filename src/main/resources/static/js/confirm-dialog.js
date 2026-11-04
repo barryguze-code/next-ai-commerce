@@ -1,4 +1,5 @@
 (()=>{
+if(window.NextAiConfirm)return;
 let pendingForm=null,pendingResolve=null;
 function finish(accepted){const form=pendingForm,resolve=pendingResolve;pendingForm=null;pendingResolve=null;const dialog=document.getElementById('platform-confirm-dialog');if(dialog?.open)dialog.close();if(accepted&&form){form.dataset.confirmed='true';form.requestSubmit()}if(resolve)resolve(accepted)}
 function build(){
@@ -21,12 +22,14 @@ document.addEventListener('submit',event=>{
   const dialog=document.getElementById('platform-confirm-dialog');
   dialog.querySelector('#platform-confirm-title').textContent=form.dataset.confirmTitle||'Confirm action';
   dialog.querySelector('#platform-confirm-message').textContent=form.dataset.confirmMessage;
+  dialog.querySelector('[data-confirm-cancel]').textContent='Cancel';
   dialog.querySelector('[data-confirm-accept]').textContent=form.dataset.confirmAccept||'Continue';
   dialog.showModal();
 },true);
-window.NextAiConfirm=({title='Confirm action',message='Continue with this action?',accept='Continue'}={})=>new Promise(resolve=>{
+window.NextAiConfirm=({title='Confirm action',message='Continue with this action?',accept='Continue',cancel='Cancel'}={})=>new Promise(resolve=>{
   build();pendingForm=null;pendingResolve=resolve;const dialog=document.getElementById('platform-confirm-dialog');
   dialog.querySelector('#platform-confirm-title').textContent=title;dialog.querySelector('#platform-confirm-message').textContent=message;
+  dialog.querySelector('[data-confirm-cancel]').textContent=cancel;
   dialog.querySelector('[data-confirm-accept]').textContent=accept;dialog.showModal();
 });
 })();

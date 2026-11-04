@@ -487,12 +487,13 @@ class TemplateRenderingTest {
                 new ConnectionView(UUID.fromString("00000000-0000-0000-0000-000000000001"), UUID.randomUUID(), "Ibcore", "Ibcore Amazon",
                     "AMAZON", "seller", "ATVPDKIKX0DER", "Amazon US", "🇺🇸", "ACTIVE", null, false),
                 new ConnectionView(UUID.randomUUID(), UUID.randomUUID(), "Ibcore", "Ibcore Walmart",
-                    "WALMART", "IBCORE-WALMART", "Walmart-US", "Walmart US", "🇺🇸", "PENDING", null, true)))
+                    "WALMART", "IBCORE-WALMART", "Walmart-US", "Walmart US", "🇺🇸", "PENDING", null, true),
+                new ConnectionView(UUID.randomUUID(),UUID.randomUUID(),"Ibcore","Shopify store","SHOPIFY","shop","shop","Shopify","","ACTIVE",null,true)))
         ));
 
         String rendered = engine.process("users", context);
         assertThat(rendered).contains("Users &amp; Access", "Ibcore", "Amazon US", "Walmart US",
-            "/images/channels/amazon-seller.png", "/images/channels/walmart-official.png",
+            "/images/channels/amazon-seller.png", "/images/channels/walmart-official.png", "/images/channels/shopify-bag.png",
             "type=\"button\" aria-label=\"Close invitation\"");
         assertThat(rendered).contains("Granted stores","data-manage-member","data-picture-type=\"USER\"","Revoke account access · all stores","granted-store-list","data-revoke-store","Connection active","/app/profile/picture","global-collaboration-link");
         assertThat(rendered).doesNotContain("class=\"avatar\"",">Access active<");

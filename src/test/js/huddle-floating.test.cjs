@@ -35,6 +35,7 @@ test('header presence opens a floating huddle, protects text, pins, minimizes, a
   assert.equal(await page.locator('.huddle-presence-dot').first().evaluate(el=>getComputedStyle(el).width),'9px');
   assert.equal(await page.locator('.huddle-person-identity').first().evaluate(el=>getComputedStyle(el).display),'flex');
   await page.getByRole('button',{name:'Jack · Online',exact:true}).click();
+  await page.getByRole('button',{name:'Start chat (1)',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>sent[0].participantIds),['jack']);
   await page.evaluate(()=>{window.room={id:'room',status:'ACTIVE',startedBy:people[0],participants:people.slice(0,2),messages:[{senderId:'jack',senderName:'Jack',body:'<img src=x onerror=alert(1)>'}]};LiveHuddleUI.event({type:'HUDDLE_STARTED',huddle:room},sender);});
   assert.equal(await page.locator('.floating-huddle').count(),1);

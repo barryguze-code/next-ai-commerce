@@ -27,6 +27,20 @@ public class InvitationController {
         this.workflow = workflow; this.accounts=accounts;
     }
 
+    @GetMapping("/app/users/invitations/existing-access")
+    @org.springframework.web.bind.annotation.ResponseBody
+    org.springframework.http.ResponseEntity<java.util.Map<String,List<UUID>>> existingAccess(
+            @RequestParam UUID account,@RequestParam String email,Authentication authentication) {
+        String actor=authentication.getName();
+        if(!accounts.canAdministerAccount(account,actor,accounts.isCurrentPlatformAdmin(actor)))
+            throw new org.springframework.security.access.AccessDeniedException("Account administration required.");
+        var granted=accounts.listMembers(account).stream()
+            .filter(member->"ACTIVE".equals(member.status())&&member.email().equalsIgnoreCase(email.trim()))
+            .findFirst().map(WorkspaceAccessRepository.MemberView::storeIds).orElse(List.of());
+        return org.springframework.http.ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+            .body(java.util.Map.of("storeIds",granted));
+    }
+
     @PostMapping("/app/users/invitations")
     String invite(@RequestParam String email, @RequestParam InvitationRole role,
             @RequestParam(required = false) List<UUID> storeIds,@RequestParam(defaultValue="ACCOUNT") String accessKind,

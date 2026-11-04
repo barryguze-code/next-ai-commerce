@@ -68,3 +68,6 @@ html body.app-page .huddle-people-panel input[type=search]{height:36px;min-heigh
 html[data-theme=dark] .huddle-people-tabs button[aria-pressed=true]{background:#263b55;color:#e2e9f3}
 
 .huddle-top-icon>img{display:block;width:34px;height:34px;object-fit:contain;margin:auto}
+
+.huddle-directory-person[aria-pressed=true]{background:var(--blue-soft,#edf4ff);box-shadow:inset 0 0 0 1px #2c68df}.huddle-start-chat{width:100%;margin-top:10px}
+.huddle-directory-person[aria-pressed=true]::after{content:'✓';color:var(--blue,#2c68df);font-weight:700}

@@ -16,6 +16,21 @@
     filter.onchange=()=>{url.searchParams.set('account',filter.value);url.searchParams.delete('invite');location.assign(url);};
     if(filter.dataset.invite==='true')document.getElementById('invite-dialog').showModal();
   }
+  const invite=document.querySelector('#invite-dialog form');
+  if(invite){
+    const email=invite.elements.email,submit=invite.querySelector('[type=submit]'),boxes=[...invite.querySelectorAll('[name=storeIds]')];
+    const hint=document.createElement('small');hint.setAttribute('role','status');email.parentElement.append(hint);let generation=0,timer,ready=false;
+    const update=()=>{submit.disabled=!ready||(boxes.length>0&&!boxes.some(b=>!b.disabled&&b.checked));};
+    async function lookup(){
+      const current=++generation;ready=false;submit.disabled=true;boxes.forEach(b=>{b.disabled=false;b.checked=true;b.closest('label')?.querySelector('[data-existing-access]')?.remove();});
+      if(!email.value.trim()||!email.checkValidity()){hint.textContent='Enter an email address to check existing access.';return;}
+      hint.textContent='Checking existing access…';
+      try{const response=await fetch('/app/users/invitations/existing-access?'+new URLSearchParams({account:invite.elements.account.value,email:email.value.trim()}),{headers:{Accept:'application/json'},cache:'no-store'});if(!response.ok)throw Error();const data=await response.json();if(current!==generation)return;if(!Array.isArray(data.storeIds)||data.storeIds.some(id=>typeof id!=='string'))throw Error();const granted=new Set(data.storeIds);boxes.forEach(b=>{if(!granted.has(b.value))return;b.disabled=true;const label=document.createElement('small');label.dataset.existingAccess='';label.textContent='Already has access';b.closest('label').append(label);});ready=true;hint.textContent=boxes.length&&boxes.every(b=>b.disabled)?'Already has access to all stores.':granted.size?'Select additional stores to invite this person.':'';update();}
+      catch(_){if(current===generation){hint.textContent='Existing access could not be checked. Check the email or try again.';ready=false;update();}}
+    }
+    email.addEventListener('input',()=>{generation++;ready=false;submit.disabled=true;clearTimeout(timer);timer=setTimeout(lookup,250);});email.addEventListener('change',()=>{clearTimeout(timer);lookup();});boxes.forEach(b=>b.addEventListener('change',update));
+    invite.addEventListener('submit',e=>{if(!ready||submit.disabled){e.preventDefault();lookup();}});lookup();
+  }
   if(!dialog||!form||!revoke)return;
   let trigger;
   document.querySelectorAll('[data-revoke-store]').forEach(storeForm=>storeForm.addEventListener('submit',event=>{

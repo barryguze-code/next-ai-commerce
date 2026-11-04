@@ -40,7 +40,7 @@
     menu.innerHTML=choices.map(member=>'<button type="button" role="option" data-handle="'+escape(member.handle)+'"><span>'+escape((member.name||'?').trim().charAt(0).toUpperCase())+'</span><div><strong>'+escape(member.name)+'</strong><small><b>@'+escape(member.handle)+'</b> · '+escape(member.email)+'</small></div></button>').join('');menu.hidden=false;positionMentionMenu(field,menu);
     $$('button',menu).forEach(button=>button.addEventListener('mousedown',event=>{event.preventDefault();const match=mentionState(field);if(!match)return;field.setRangeText('@'+button.dataset.handle+' ',match.start,match.end,'end');menu.hidden=true;field.focus();if(field.form===view().start)updateDraftAudience();}));
   }
-  function wireComposer(field){if(field.dataset.mentionReady)return;field.dataset.mentionReady='true';field.addEventListener('input',()=>{showMentions(field);if(field.form===view().start)updateDraftAudience();});field.addEventListener('click',()=>showMentions(field));field.addEventListener('scroll',()=>showMentions(field));field.addEventListener('keydown',event=>{const menu=composerFor(field)?.querySelector('.mention-menu'),buttons=menu&&!menu.hidden?$$('button',menu):[];if(event.key==='Escape')closeMentionMenu(field);if(!buttons.length||!['ArrowDown','ArrowUp','Enter'].includes(event.key))return;event.preventDefault();let index=buttons.findIndex(button=>button.classList.contains('is-highlighted'));if(event.key==='Enter'&&index>=0){buttons[index].dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));return;}index=event.key==='ArrowUp'?(index<=0?buttons.length-1:index-1):(index+1)%buttons.length;buttons.forEach((button,i)=>button.classList.toggle('is-highlighted',i===index));});field.addEventListener('blur',()=>setTimeout(()=>closeMentionMenu(field),120));}
+  function wireComposer(field){if(field.dataset.mentionReady)return;field.dataset.mentionReady='true';field.addEventListener('input',()=>{showMentions(field);if(field.form===view().start)updateDraftAudience();});field.addEventListener('click',()=>showMentions(field));field.addEventListener('scroll',()=>showMentions(field));field.addEventListener('keydown',event=>{const menu=composerFor(field)?.querySelector('.mention-menu'),buttons=menu&&!menu.hidden?$$('button',menu):[];if(event.key==='Escape'&&menu&&!menu.hidden){event.preventDefault();event.stopPropagation();closeMentionMenu(field);}if(!buttons.length||!['ArrowDown','ArrowUp','Enter'].includes(event.key))return;event.preventDefault();let index=buttons.findIndex(button=>button.classList.contains('is-highlighted'));if(event.key==='Enter'&&index>=0){buttons[index].dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));return;}index=event.key==='ArrowUp'?(index<=0?buttons.length-1:index-1):(index+1)%buttons.length;buttons.forEach((button,i)=>button.classList.toggle('is-highlighted',i===index));});field.addEventListener('blur',()=>setTimeout(()=>closeMentionMenu(field),120));}
   function wireEnterToSend(field,form){if(field.dataset.enterSendReady)return;field.dataset.enterSendReady='true';field.addEventListener('keydown',event=>{if(event.defaultPrevented||event.isComposing||event.key!=='Enter'||event.shiftKey)return;event.preventDefault();const submit=$('.primary-button[type="submit"]',form)||$('button[type="submit"]',form);form.requestSubmit(submit);});}
   function wireAttachments(root=document){$$('.thread-attachment-button input',root).forEach(input=>{if(input.dataset.fileReady)return;input.dataset.fileReady='true';input.addEventListener('change',()=>{const label=input.closest('.thread-compose-tools').querySelector('[data-attachment-name]');label.textContent=input.files.length?input.files.length===1?input.files[0].name:input.files.length+' files selected':'No files selected';});});}
   function snapshotFrom(button){
@@ -284,6 +284,20 @@
     if(!('WebSocket'in window)||huddleSocket?.readyState===WebSocket.OPEN||huddleSocket?.readyState===WebSocket.CONNECTING)return;clearTimeout(huddleReconnect);const protocol=location.protocol==='https:'?'wss:':'ws:';huddleSocket=new WebSocket(protocol+'//'+location.host+'/ws/huddles');
     huddleSocket.addEventListener('open',()=>{lastPong=Date.now();});huddleSocket.addEventListener('message',message=>{try{handleHuddleEvent(JSON.parse(message.data))}catch(error){console.warn('A live huddle update could not be displayed.',error);}});huddleSocket.addEventListener('close',event=>{window.LiveHuddleUI?.event({type:'OFFLINE'},sendHuddle);if(event.code!==1003&&event.code!==1008)huddleReconnect=setTimeout(connectHuddles,2000);});huddleSocket.addEventListener('error',()=>huddleSocket.close());
   }
+  let closingDraft=false;
+  function hasUnsentDraft(){
+    if(!state)return false;
+    if([view().start,view().reply].some(form=>form&&($('textarea',form)?.value.trim()||$('input[type=file]',form)?.files.length)))return true;
+    const editor=$('#thread-title-input');
+    if(editor&&!editor.closest('[hidden]')&&editor.value!==(state.currentReview?subjectText(state.currentReview):(state.general?'':state.label.slice(0,240))))return true;
+    return !state.currentReview&&!!(state.draftDue||state.draftExplicit);
+  }
+  async function requestThreadClose(){
+    if(closingDraft||[view().start,view().reply].some(form=>form?.dataset.saving))return;
+    if(!hasUnsentDraft()){dialog().close();return;}
+    closingDraft=true;const focus=document.activeElement;
+    try{const discard=await window.NextAiConfirm({title:'Discard unsent changes?',message:'Your message and changes haven’t been saved.',accept:'Discard draft',cancel:'Keep editing'});if(discard)dialog().close();else focus?.focus({preventScroll:true});}finally{closingDraft=false;}
+  }
   function clearDrafts(){
     draftMemberGeneration++;
     for(const form of [view().start,view().reply]){if(!form)continue;form.reset();$$('[data-draft-field]',form).forEach(input=>input.remove());
@@ -390,9 +404,10 @@
     }).observe(document.body,{childList:true,subtree:true});
     $$('[data-collaboration-composer]').forEach(field=>{wireComposer(field);wireEnterToSend(field,field.closest('form'));});wireAttachments();$$('[data-thread-tab]').forEach(button=>button.addEventListener('click',()=>selectTab(button.dataset.threadTab)));
     $$('.collaboration-composer').forEach(form=>form.addEventListener('submit',event=>{const field=$('textarea',form),files=$('input[type=file]',form)?.files;if(form===view().start){if(state?.general){event.preventDefault();sendGeneral(form);return;}if(!state.draftTitle?.trim()){event.preventDefault();const error=$('[data-thread-title-error]');error.textContent='Enter a subject.';error.hidden=false;$('#thread-title-input').focus();return;}form.elements.title.value=state.draftTitle;$$('[data-draft-field]',form).forEach(n=>n.remove());for(const [name,value] of [['dueDate',state.draftDue||''],...(state.draftPeople||[]).map(id=>['people',id])]){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;input.dataset.draftField='';form.append(input);}}if(!event.submitter?.name&&!field.value.trim()&&!files?.length){event.preventDefault();field.focus();return;}if(globalScope()||state?.personalContext||form===view().reply){event.preventDefault();sendGlobal(form,event.submitter);}}));
-    $$('[data-thread-dialog-close]').forEach(button=>button.addEventListener('click',()=>dialog().close()));
+    $$('[data-thread-dialog-close]').forEach(button=>button.addEventListener('click',requestThreadClose));
+    dialog()?.addEventListener('cancel',event=>{event.preventDefault();requestThreadClose();});
     dialog()?.addEventListener('close',()=>{clearDrafts();if(state?.personalContext||state?.general){const trigger=state.trigger;trigger?.focus({preventScroll:true});window.dispatchEvent(new Event('personal-collaboration-updated'));}});
-    dialog()?.addEventListener('click',event=>{if(event.target===event.currentTarget)dialog().close();});
+    dialog()?.addEventListener('click',event=>{if(event.target===event.currentTarget)requestThreadClose();});
     const auto=$('[data-thread-autopen="true"]');if(auto)setTimeout(()=>window.openCollaborationReview(auto),80);
     connectHuddles();
     setInterval(()=>{if(socketOpen()&&Date.now()-lastPong>75000)huddleSocket.close();else sendHuddle({type:'PING'});},25000);
