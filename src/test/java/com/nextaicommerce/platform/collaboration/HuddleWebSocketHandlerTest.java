@@ -23,6 +23,28 @@ import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.ObjectMapper;
 
 class HuddleWebSocketHandlerTest {
+    @Test void roomPeopleUsesCurrentAccessBeforeTheOtherBrowsersNextHeartbeat() throws Exception {
+        UUID karaca=UUID.randomUUID(),ibcore=UUID.randomUUID(),ownerId=UUID.randomUUID(),peerId=UUID.randomUUID();
+        var repository=mock(CollaborationRepository.class);var json=new ObjectMapper();
+        var service=new HuddleService(repository,mock(CollaborationNotificationWorker.class),json);
+        var handler=new HuddleWebSocketHandler(service,repository,json);
+        var owner=session("owner-fresh",ibcore,"owner@example.test");var peer=session("peer-fresh",karaca,"peer@example.test");
+        when(repository.huddleTenants("owner@example.test")).thenReturn(java.util.Set.of(karaca,ibcore));
+        when(repository.huddleTenants("peer@example.test")).thenReturn(java.util.Set.of(karaca));
+        when(repository.currentMember(ibcore,"owner@example.test")).thenReturn(new CollaborationRepository.Member(ownerId,"Owner","owner@example.test","owner"));
+        when(repository.currentMember(karaca,"peer@example.test")).thenReturn(new CollaborationRepository.Member(peerId,"Peer","peer@example.test","peer"));
+        handler.afterConnectionEstablished(owner);handler.afterConnectionEstablished(peer);
+        var room=service.create(ibcore,new HuddleService.Participant(ownerId,"Owner","owner@example.test"),"PLATFORM","DIRECT:test","Team","/app/collaboration","{}",List.of(new HuddleService.Participant(UUID.randomUUID(),"Existing","existing@example.test")));
+        when(repository.huddleTenants("peer@example.test")).thenReturn(java.util.Set.of(karaca,ibcore));clearInvocations(owner);
+        handler.handleTextMessage(owner,new TextMessage("{\"type\":\"PEOPLE\",\"huddleId\":\""+room.id()+"\"}"));
+        var sent=ArgumentCaptor.forClass(TextMessage.class);verify(owner).sendMessage(sent.capture());assertThat(sent.getValue().getPayload()).contains("ROOM_PEOPLE",peerId.toString());
+        handler.handleTextMessage(owner,new TextMessage("{\"type\":\"INVITE\",\"huddleId\":\""+room.id()+"\",\"participantIds\":[\""+peerId+"\"]}"));
+        assertThat(service.find(ibcore,room.id(),ownerId).participants()).extracting(HuddleService.Participant::id).contains(peerId);
+
+        when(repository.huddleTenants("peer@example.test")).thenReturn(java.util.Set.of(karaca));clearInvocations(owner);
+        handler.handleTextMessage(owner,new TextMessage("{\"type\":\"PEOPLE\",\"huddleId\":\""+room.id()+"\"}"));
+        var revoked=ArgumentCaptor.forClass(TextMessage.class);verify(owner).sendMessage(revoked.capture());assertThat(revoked.getValue().getPayload()).doesNotContain(peerId.toString());
+    }
     @Test void commonAccountPresenceIsSymmetricAndDirectHuddleUsesSharedAccount() throws Exception {
         UUID pantry=UUID.randomUUID(),ibcore=UUID.randomUUID(),barryId=UUID.randomUUID(),memberId=UUID.randomUUID();
         var repository=mock(CollaborationRepository.class);var json=new ObjectMapper();

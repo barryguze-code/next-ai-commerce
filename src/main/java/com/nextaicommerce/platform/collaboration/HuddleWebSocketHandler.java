@@ -72,7 +72,7 @@ public class HuddleWebSocketHandler extends TextWebSocketHandler {
             Client actor=new Client(scope,client.person(),client.canHuddle(),client.session());
             if(!client.canHuddle())throw new IllegalArgumentException("Your role can view collaboration but cannot start a live huddle.");
             switch(type){
-                case "PEOPLE"->send(client,Map.of("type","ROOM_PEOPLE","huddleId",message.huddleId(),"online",online(scope)));
+                case "PEOPLE"->send(client,Map.of("type","ROOM_PEOPLE","huddleId",message.huddleId(),"online",currentRoomPeople(scope)));
                 case "CREATE"->create(actor,message);
                 case "INVITE"->{var people=availablePeople(actor,message);broadcast(scope,"HUDDLE_UPDATED",huddles.invite(scope,message.huddleId(),actor.person().id(),people));}
                 case "JOIN"->broadcast(scope,"HUDDLE_UPDATED",huddles.join(scope,message.huddleId(),client.person().id()));
@@ -89,7 +89,7 @@ public class HuddleWebSocketHandler extends TextWebSocketHandler {
 
     private List<HuddleService.Participant> availablePeople(Client client,ClientMessage request){
         List<UUID> requested=request.participantIds()==null?List.of():request.participantIds().stream().filter(java.util.Objects::nonNull).distinct().toList();
-        Map<UUID,HuddleService.Participant> available=new LinkedHashMap<>();online(client.tenantId()).forEach(person->available.put(person.id(),person));
+        Map<UUID,HuddleService.Participant> available=new LinkedHashMap<>();currentRoomPeople(client.tenantId()).forEach(person->available.put(person.id(),person));
         var invited=new ArrayList<HuddleService.Participant>();
         for(UUID id:requested){var person=available.get(id);if(person==null||!collaboration.huddleTenants(person.email()).contains(client.tenantId()))throw new IllegalArgumentException("One selected teammate is no longer online.");invited.add(person);}
         return invited;
@@ -136,11 +136,13 @@ public class HuddleWebSocketHandler extends TextWebSocketHandler {
         clients.values().stream().filter(c->!fresh(c)).toList().forEach(c->{try{c.session().close(CloseStatus.SESSION_NOT_RELIABLE);}catch(IOException ignored){}afterConnectionClosed(c.session(),CloseStatus.SESSION_NOT_RELIABLE);});
         huddles.expire(Instant.now()).forEach(expired->broadcast(expired.tenantId(),"HUDDLE_ENDED",expired.huddle(),Map.of("reason","This huddle expired after 45 minutes without activity.")));}
 
-    private List<HuddleService.Participant> online(UUID tenantId){
-        Map<UUID,HuddleService.Participant> unique=new LinkedHashMap<>();clients.values().stream()
-            .filter(client->access.getOrDefault(client.session().getId(),Set.of()).contains(tenantId)&&client.canHuddle()&&fresh(client))
-            .sorted((left,right)->left.person().name().compareToIgnoreCase(right.person().name()))
-            .forEach(client->unique.putIfAbsent(client.person().id(),client.person()));return List.copyOf(unique.values());
+    // Explicit roster reads and invitations must observe grants/revocations immediately,
+    // rather than waiting for each other browser's heartbeat to refresh its access cache.
+    private List<HuddleService.Participant> currentRoomPeople(UUID tenantId){
+        Map<UUID,Client> unique=new LinkedHashMap<>();
+        clients.values().stream().filter(c->c.canHuddle()&&fresh(c)).forEach(c->unique.putIfAbsent(c.person().id(),c));
+        return unique.values().stream().filter(c->collaboration.huddleTenants(c.person().email()).contains(tenantId))
+            .map(Client::person).sorted((a,b)->a.name().compareToIgnoreCase(b.name())).toList();
     }
     private boolean fresh(Client client){return client.session().isOpen()&&heartbeat.getOrDefault(client.session().getId(),Instant.MIN).plusSeconds(90).isAfter(Instant.now());}
     private List<HuddleService.Participant> onlineFor(Client viewer){

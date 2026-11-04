@@ -22,6 +22,11 @@ test('room teammate list refreshes after presence changes and opens directly',as
  await page.evaluate(()=>LiveHuddleUI.event({type:'ROOM_PEOPLE',huddleId:'room',online:[{id:'new',name:'New teammate'}]},sender));
  await page.getByRole('button',{name:'Add teammate',exact:true}).click();
  assert.equal(await page.locator('.floating-huddle select').count(),0);
+ const firstRequests=await page.evaluate(()=>sent.filter(e=>e.type==='PEOPLE').length);
+ await page.getByRole('button',{name:'Add teammate',exact:true}).click();
+ assert.ok(await page.evaluate(()=>sent.filter(e=>e.type==='PEOPLE').length)>firstRequests);
+ assert.equal(await page.locator('.huddle-mention-options').isVisible(),true);
+
  await page.getByRole('button',{name:/New teammate/}).focus();
  await page.evaluate(()=>LiveHuddleUI.event({type:'ROOM_PEOPLE',huddleId:'room',online:[{id:'new',name:'New teammate'}]},sender));
  assert.equal(await page.getByRole('button',{name:/New teammate/}).evaluate(n=>n===document.activeElement),true);

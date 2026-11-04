@@ -91,6 +91,9 @@ class HuddleServiceTest {
         assertThat(service.forParticipant(tenant,barry.id())).hasSize(1);
         assertThatThrownBy(()->service.end(tenant,huddle.id(),alex.id())).isInstanceOf(IllegalArgumentException.class);
         service.leave(tenant,huddle.id(),alex.id());
+        assertThat(service.forParticipant(tenant,alex.id())).isEmpty();
+        assertThat(service.forParticipant(tenant,barry.id())).hasSize(1);
+        assertThat(service.find(tenant,huddle.id(),barry.id()).joinedParticipantIds()).containsExactly(barry.id());
         assertThat(service.find(tenant,huddle.id(),barry.id()).status()).isEqualTo("ACTIVE");
         service.end(tenant,huddle.id(),barry.id());
         assertThat(service.forParticipant(tenant,barry.id())).isEmpty();

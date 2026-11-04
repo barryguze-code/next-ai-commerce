@@ -1,7 +1,7 @@
 (()=>{
   if(window.LiveHuddleUI)return;
   const rooms=new Map(),windows=new Map();let self,people=[],connected=false,allowed=false,send=()=>false,menu,launcher,tray;
-  const finalizeDrafts=new Map(),finalizePending=new Map();let finalizing=false;
+  const finalizeDrafts=new Map(),finalizePending=new Map(),leavePending=new Map();let finalizing=false;
   const selectedPeople=new Set();let startChat,starting=false;let directory=[],directoryLoadedAt=0,directoryLoading=false,directoryError=false,peopleTab='online',peopleQuery='',peopleList,peopleHint;
   async function loadDirectory(){
     if(directoryLoading||Date.now()-directoryLoadedAt<60000)return;
@@ -75,10 +75,11 @@
   function closeChoice(room,panel){
     if(!window.openHuddleTask){panel.querySelector('.floating-huddle-error').textContent='Task controls are not ready. Refresh and try again.';return;}
     finalizing=true;if(tray.matches(':popover-open'))tray.hidePopover();
-    window.openHuddleTask({id:room.id,canSave:room.startedBy?.id===self?.id,trigger:panel.querySelector('.dialog-close'),people:room.participants,
+    window.openHuddleTask({id:room.id,canSave:room.startedBy?.id===self?.id,trigger:panel.querySelector('.dialog-close'),people:room.participants,history:room.messages,
       draft:finalizeDrafts.get(room.id)||{title:room.subjectKey?.startsWith('DIRECT:')?'':room.subjectLabel||'',people:[self.id],due:''},
       remember:draft=>finalizeDrafts.set(room.id,draft),
       returnToRoom:()=>{finalizing=false;const current=rooms.get(room.id);if(current?.status==='ACTIVE')open(current);else if(windows.size&&!tray.matches(':popover-open'))tray.showPopover();},
+      leave:()=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{leavePending.delete(room.id);reject(new Error('Leaving was not confirmed. Reconnect to check its status.'));},20000);leavePending.set(room.id,{resolve:()=>{clearTimeout(timer);resolve();},reject:error=>{clearTimeout(timer);reject(error);}});if(!send({type:'LEAVE',huddleId:room.id})){leavePending.get(room.id)?.reject(new Error('Connection unavailable. Your collaboration is still here.'));leavePending.delete(room.id);}}),
       save:draft=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{finalizePending.delete(room.id);reject(new Error('Save confirmation timed out. Your draft is still here; retry safely.'));},20000);finalizePending.set(room.id,{resolve:()=>{clearTimeout(timer);resolve();},reject:error=>{clearTimeout(timer);reject(error);}});if(!send({type:'SAVE',huddleId:room.id,closeConversation:false,title:draft.title,assigneeIds:draft.people,dueDate:draft.due,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'America/Los_Angeles'})){finalizePending.get(room.id)?.reject(new Error('Connection unavailable. Your draft is still here.'));finalizePending.delete(room.id);}})
     });
   }
@@ -102,7 +103,7 @@
         catch(failure){error.textContent=failure.message;}finally{attach.disabled=false;file.value='';}});
       const mentions=node('div',null,'huddle-mention-options');mentions.hidden=true;mentions.id='huddle-members-'+room.id;mentions.setAttribute('aria-label','Teammates');
       let adding=false;
-      const addPerson=button('',()=>{adding=mentions.hidden||!adding;renderMembers();send({type:'PEOPLE',huddleId:room.id});if(adding)mentions.querySelector('button')?.focus();});icon(addPerson,'Add teammate','M15 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M16 11h6');
+      const addPerson=button('',()=>{adding=true;renderMembers();send({type:'PEOPLE',huddleId:room.id});if(adding)mentions.querySelector('button')?.focus();});icon(addPerson,'Add teammate','M15 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M16 11h6');
       addPerson.setAttribute('aria-controls',mentions.id);addPerson.setAttribute('aria-expanded','false');
       const dismissMembers=()=>{adding=false;mentions.hidden=true;addPerson.setAttribute('aria-expanded','false');};
       function renderMembers(){
@@ -147,18 +148,18 @@
     send=sender;mount();
     if(e.type==='WELCOME'){starting=false;self=e.self;allowed=e.canHuddle;people=e.online||[];connected=true;rooms.clear();(e.huddles||[]).forEach(r=>{rooms.set(r.id,r);open(r);});for(const [id,p]of windows)if(!rooms.has(id)){p.remove();windows.delete(id);}renderPeople();}
     else if(e.type==='PRESENCE'){people=e.online||[];renderPeople();for(const room of rooms.values())if(room.status==='ACTIVE')send({type:'PEOPLE',huddleId:room.id});}
-    else if(e.type==='OFFLINE'){finalizePending.forEach(p=>p.reject(new Error('Connection lost. Your draft is still here.')));finalizePending.clear();starting=false;connected=false;people=[];renderPeople();windows.forEach(p=>{p.querySelector('textarea').disabled=true;p.querySelector('button[type=submit]').disabled=true;});}
+    else if(e.type==='OFFLINE'){leavePending.forEach(p=>p.reject(new Error('Connection lost. Leaving was not confirmed.')));leavePending.clear();finalizePending.forEach(p=>p.reject(new Error('Connection lost. Your draft is still here.')));finalizePending.clear();starting=false;connected=false;people=[];renderPeople();windows.forEach(p=>{p.querySelector('textarea').disabled=true;p.querySelector('button[type=submit]').disabled=true;});}
     else if(e.type==='ROOM_PEOPLE'){const room=rooms.get(e.huddleId);if(room){room.onlinePeople=e.online||[];open(room,false);}}
     else if(e.type==='HUDDLE_STARTED'||e.type==='HUDDLE_UPDATED'){
-      if(!e.huddle.participants.some(p=>p.id===self?.id)||(Array.isArray(e.huddle.joinedParticipantIds)&&!e.huddle.joinedParticipantIds.includes(self?.id))){rooms.delete(e.huddle.id);windows.get(e.huddle.id)?.remove();windows.delete(e.huddle.id);renderPeople();return;}
+      if(!e.huddle.participants.some(p=>p.id===self?.id)||(Array.isArray(e.huddle.joinedParticipantIds)&&!e.huddle.joinedParticipantIds.includes(self?.id))){leavePending.get(e.huddle.id)?.resolve();leavePending.delete(e.huddle.id);rooms.delete(e.huddle.id);windows.get(e.huddle.id)?.remove();windows.delete(e.huddle.id);renderPeople();return;}
       if(e.type==='HUDDLE_STARTED'&&e.huddle.startedBy?.id===self?.id){starting=false;selectedPeople.clear();}
       const previous=rooms.get(e.huddle.id),incoming=e.huddle.messages.length>(previous?.messages.length||0)&&e.huddle.messages.at(-1)?.senderId!==self?.id;
       const panel=windows.get(e.huddle.id),quiet=false;
       if(incoming&&quiet){const count=Number(panel.dataset.unread||0)+1;panel.dataset.unread=String(count);const badge=panel.querySelector('.huddle-unread');badge.textContent=String(count);badge.setAttribute('aria-label',count+' unread messages');badge.hidden=false;}
       e.huddle.onlinePeople=previous?.onlinePeople;open(e.huddle,!quiet&&(e.type==='HUDDLE_STARTED'||incoming),e.type==='HUDDLE_STARTED'&&e.huddle.participants[0]?.id===self?.id);
     }
-    else if(e.type==='HUDDLE_ENDED'||e.type==='HUDDLE_SAVED'){if(e.type==='HUDDLE_SAVED')finalizePending.get(e.huddle.id)?.resolve();else finalizePending.get(e.huddle.id)?.reject(new Error('The collaboration ended before saving was confirmed. Your draft is still here.'));finalizePending.delete(e.huddle.id);rooms.delete(e.huddle.id);windows.get(e.huddle.id)?.remove();windows.delete(e.huddle.id);renderPeople();if(e.type==='HUDDLE_SAVED'){const notice=node('div',null,'huddle-saved-notice');notice.setAttribute('role','status');const link=node('a','Messages saved · Open Collaboration');link.href='/app/collaboration/board';notice.append(link,button('×',()=>notice.remove()));document.body.append(notice);}}
-    else if(e.type==='ERROR'){if(e.action==='SAVE'&&e.huddleId){finalizePending.get(e.huddleId)?.reject(new Error(e.message));finalizePending.delete(e.huddleId);}starting=false;renderPeople();peopleHint.textContent=e.message;peopleHint.setAttribute('role','alert');windows.forEach(p=>{p.querySelector('.floating-huddle-error').textContent=e.message;});}
+    else if(e.type==='HUDDLE_ENDED'||e.type==='HUDDLE_SAVED'){leavePending.get(e.huddle.id)?.resolve();leavePending.delete(e.huddle.id);if(e.type==='HUDDLE_SAVED')finalizePending.get(e.huddle.id)?.resolve();else finalizePending.get(e.huddle.id)?.reject(new Error('The collaboration ended before saving was confirmed. Your draft is still here.'));finalizePending.delete(e.huddle.id);rooms.delete(e.huddle.id);windows.get(e.huddle.id)?.remove();windows.delete(e.huddle.id);renderPeople();if(e.type==='HUDDLE_SAVED'){const notice=node('div',null,'huddle-saved-notice');notice.setAttribute('role','status');const link=node('a','Messages saved · Open Collaboration');link.href='/app/collaboration/board';notice.append(link,button('×',()=>notice.remove()));document.body.append(notice);}}
+    else if(e.type==='ERROR'){if(e.action==='LEAVE'&&e.huddleId){leavePending.get(e.huddleId)?.reject(new Error(e.message));leavePending.delete(e.huddleId);}if(e.action==='SAVE'&&e.huddleId){finalizePending.get(e.huddleId)?.reject(new Error(e.message));finalizePending.delete(e.huddleId);}starting=false;renderPeople();peopleHint.textContent=e.message;peopleHint.setAttribute('role','alert');windows.forEach(p=>{p.querySelector('.floating-huddle-error').textContent=e.message;});}
   }
   window.LiveHuddleUI={event,open,start,showPeople:()=>{mount();menu.hidden=false;launcher.querySelector('button').setAttribute('aria-expanded','true');loadDirectory();}};document.readyState==='loading'?document.addEventListener('DOMContentLoaded',mount):mount();
   // Only an explicit minimize action collapses a chat; incoming messages stay visible.

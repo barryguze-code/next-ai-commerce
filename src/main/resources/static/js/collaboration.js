@@ -100,9 +100,20 @@
       catch(ex){if(state===current&&state.currentReviewId===reviewId&&state.messageType===mode){error.textContent=ex.message;error.hidden=false;}}finally{button.disabled=false;}
     };
   }
+  function prepareAssignmentOverlay(root){
+    const details=$('.thread-assignment',root),panel=$('.thread-assignment-popover',root),summary=$('summary',details);
+    if(details.dataset.overlayReady)return;details.dataset.overlayReady='true';panel.setAttribute('popover','auto');
+    const position=()=>{if(!panel.matches(':popover-open'))return;const anchor=summary.getBoundingClientRect(),gap=8,margin=12,below=innerHeight-anchor.bottom-gap-margin,above=anchor.top-gap-margin;
+      panel.style.maxHeight=Math.min(Math.max(0,innerHeight-2*margin),Math.max(80,Math.max(below,above)))+'px';panel.style.maxWidth=Math.max(0,innerWidth-2*margin)+'px';
+      const box=panel.getBoundingClientRect();panel.style.left=Math.max(margin,Math.min(anchor.left,innerWidth-box.width-margin))+'px';const top=below>=box.height||below>=above?anchor.bottom+gap:anchor.top-gap-box.height;panel.style.top=Math.max(margin,Math.min(top,innerHeight-box.height-margin))+'px';};
+    details.addEventListener('toggle',()=>{if(details.open&&dialog().open){if(!panel.matches(':popover-open'))panel.showPopover();position();}else if(panel.matches(':popover-open'))panel.hidePopover();});
+    panel.addEventListener('toggle',()=>{if(!panel.matches(':popover-open'))details.open=false;});
+    panel.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();details.open=false;panel.hidePopover();summary.focus();}});
+    window.addEventListener('resize',position);dialog().addEventListener('scroll',position,true);dialog().addEventListener('close',()=>{details.open=false;if(panel.matches(':popover-open'))panel.hidePopover();});
+  }
   async function renderDraftManagement(){
     const current=state,memberUrl=state.generalMembersUrl||api('/members'),generation=++draftMemberGeneration,root=$('#thread-management');if(!root)return;
-    $('.conversation-close-button',root).hidden=true;
+    prepareAssignmentOverlay(root);$('.conversation-close-button',root).hidden=true;
     const options=$('[data-thread-assignment-options]',root),label=$('[data-thread-assignees]',root),error=$('[data-thread-management-error]',root);
     const refresh=()=>{const names=$$('input:checked',options).map(input=>input.nextElementSibling.textContent);current.draftPeople=$$('input:checked',options).map(input=>input.value);current.draftExplicit=current.draftPeople.length>0;updateDraftAudience();label.textContent=names.join(', ')||'You';};
     options.replaceChildren();label.textContent='Unassigned';error.textContent='';
@@ -167,17 +178,22 @@
     const display=()=>{current.draftTitle=input.value;heading.textContent=input.value||'Enter a collaboration title';heading.hidden=false;editor.hidden=true;pen.hidden=false;};
     pen.onclick=()=>{heading.hidden=true;editor.hidden=false;pen.hidden=true;input.focus();input.select();};input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();display();pen.focus();}};input.onblur=display;
     renderDraftManagement();
+    const history=config.history||[];view().list.innerHTML=renderMessages({review:{createdAt:history[0]?.createdAt,requester:config.people.find(p=>p.id===history[0]?.senderId)?.name||'',participants:config.people.map(p=>p.name||p.email).join(', ')},messages:history},false);
     const footer=$('.dialog-actions',root),cancel=$('[data-thread-dialog-close]',footer);cancel.textContent='Cancel';
-    const save=document.createElement('button');save.type='button';save.className='primary-button';save.textContent='Save as a task';save.disabled=!config.canSave;footer.append(save);
+    const save=document.createElement('button');save.type='button';save.className='primary-button';save.textContent='Save as a task';save.disabled=!config.canSave;save.dataset.huddleSave='';$('.thread-dialog-header',root).insertBefore(save,$('.dialog-close',root));
+    const leave=document.createElement('button');leave.type='button';leave.className='secondary-button';leave.textContent='Leave without saving';leave.dataset.huddleLeave='';
+    const leaveGroup=document.createElement('div');leaveGroup.className='huddle-leave-actions';const explanation=document.createElement('small');explanation.textContent='Leave without creating a task. Others can continue.';leaveGroup.append(leave,explanation);footer.prepend(leaveGroup);
+    leave.onclick=async()=>{if(leave.disabled)return;const error=$('[data-thread-title-error]');leave.disabled=true;save.disabled=true;current.huddleBusy=true;view().start.dataset.saving='true';error.hidden=true;
+      try{await config.leave();root.close();}catch(ex){error.textContent=ex.message;error.hidden=false;}finally{leave.disabled=false;save.disabled=!config.canSave;current.huddleBusy=false;delete view().start.dataset.saving;}};
     save.onclick=async()=>{
       if(save.disabled)return;const error=$('[data-thread-title-error]');current.draftTitle=input.value.trim();
       if(!current.draftTitle){error.textContent='Enter a collaboration title.';error.hidden=false;pen.click();return;}
-      save.disabled=true;view().start.dataset.saving='true';error.hidden=true;
+      save.disabled=true;leave.disabled=true;view().start.dataset.saving='true';error.hidden=true;
       try{await config.save({title:current.draftTitle,people:current.draftPeople,due:current.draftDue||''});root.close();}
       catch(ex){error.textContent=ex.message;error.hidden=false;}
-      finally{save.disabled=false;delete view().start.dataset.saving;}
+      finally{save.disabled=false;leave.disabled=false;delete view().start.dataset.saving;}
     };
-    root.addEventListener('close',()=>{config.remember({title:input.value,people:current.draftPeople,due:current.draftDue});delete root.dataset.huddleFinalize;save.remove();cancel.textContent='Done';input.onblur=null;current.huddleFinalize=null;config.returnToRoom();},{once:true});
+    root.addEventListener('close',()=>{config.remember({title:input.value,people:current.draftPeople,due:current.draftDue});delete root.dataset.huddleFinalize;save.remove();leaveGroup.remove();cancel.textContent='Done';input.onblur=null;current.huddleFinalize=null;config.returnToRoom();},{once:true});
     input.focus();input.select();
   };
   function handleHuddleEvent(event){lastPong=Date.now();window.LiveHuddleUI?.event(event,sendHuddle);}
@@ -212,7 +228,7 @@
     }catch(error){alert(error.message);}finally{button.disabled=false;}
   };
   async function renderManagement(review){
-    const root=$('#thread-management');if(!root)return;updateAssignment(review);
+    const root=$('#thread-management');if(!root)return;prepareAssignmentOverlay(root);updateAssignment(review);
     $('[data-thread-draft-date]',root).hidden=true;
     const close=$('.conversation-close-button',root);if(close)close.hidden=false;
     if(close){
