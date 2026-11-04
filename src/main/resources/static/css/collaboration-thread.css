@@ -110,9 +110,9 @@ html[data-theme=dark] .sidebar-huddle-menu,html[data-theme=dark] .sidebar-huddle
 
 /* CD-approved subject editor shared by initial, platform and existing conversations. */
 #contextual-thread-dialog .thread-subject-heading{display:flex;align-items:center;gap:8px;min-width:0}
-#contextual-thread-dialog .thread-subject-heading h2{flex:1;white-space:normal;word-break:normal;overflow-wrap:break-word}
-#contextual-thread-dialog [data-thread-edit-title]{flex:0 0 30px;width:30px;height:30px;border:0;background:transparent;padding:4px;cursor:pointer}
-#contextual-thread-dialog [data-thread-edit-title] img{width:22px;height:22px;object-fit:contain}
+#contextual-thread-dialog .thread-subject-heading h2{flex:0 1 auto;white-space:normal;word-break:normal;overflow-wrap:break-word}
+#contextual-thread-dialog [data-thread-edit-title]{flex:0 0 36px;width:36px;height:36px;border:0;background:transparent;padding:4px;cursor:pointer}
+#contextual-thread-dialog [data-thread-edit-title] img{width:28px;height:28px;object-fit:contain}
 #contextual-thread-dialog .thread-subject-editor{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
 #contextual-thread-dialog .thread-subject-editor input{flex:1;min-width:180px;width:100%;padding:8px 10px;border:1px solid var(--line,#dce4ee);border-radius:8px;background:var(--surface,#fff);color:var(--ink,#17283e);font:inherit;font-weight:700}
 #contextual-thread-dialog .thread-subject-editor button{font:inherit;font-size:.75rem;padding:7px 10px;border:1px solid var(--line,#dce4ee);border-radius:8px;background:var(--surface,#fff);color:var(--blue,#2e6be6);cursor:pointer}

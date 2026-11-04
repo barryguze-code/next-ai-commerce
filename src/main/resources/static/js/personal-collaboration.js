@@ -11,6 +11,8 @@
     account.value=filters.account||'';
     const type=root.querySelector('#personal-type');type.value=filters.type||'';
     let store=filters.store||'';
+    const workspaceKey=(root.dataset.workspaceAccount||'')+'|'+(root.dataset.workspaceStore||'');
+    if(root.dataset.workspaceAccount&&filters.workspace!==workspaceKey){account.value=root.dataset.workspaceAccount;store=root.dataset.workspaceStore||'';}
     const viewport=window.NextAiCollaborationBoardState.create(root,root.dataset.user,'personal');
     window.addEventListener('pagehide',()=>{
         const {focused,...anchor}=viewport.capture();
@@ -21,7 +23,7 @@
     const extent = filters.extent || {};
     const expanded=filters.expanded||{};
     function save() {
-        sessionStorage.setItem(storage, JSON.stringify({account:account.value, search:search.value, size:size.value, extent, expanded, scope, store, type:type.value}));
+        sessionStorage.setItem(storage, JSON.stringify({workspace:workspaceKey,account:account.value, search:search.value, size:size.value, extent, expanded, scope, store, type:type.value}));
     }
     function element(tag, text, parent) {
         const node = document.createElement(tag);
@@ -367,6 +369,7 @@
     document.addEventListener('pointerdown',event=>{if(scopePicker?.open&&!scopePicker.contains(event.target))scopePicker.open=false;});
     function filteredRows(){
         return page.rows.filter(({card})=>(!account.value||account.value===(card.contextAccount||card.account))&&
+            (!store||store===(card.contextStore||card.store||page.reviews?.[card.key.id]?.storeId))&&
             (!type.value||(card.subjectType||page.reviews?.[card.key.id]?.subjectType)===type.value))
             .sort((a,b)=>{
                 if(scope==='ASSIGNED')return (a.position??Number.MAX_SAFE_INTEGER)-(b.position??Number.MAX_SAFE_INTEGER);

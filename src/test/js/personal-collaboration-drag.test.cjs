@@ -34,7 +34,7 @@ test('foundation retains one table across tabs with five initial rows and disjoi
             const file=/^\/(js|css)\//.test(path)?'src/main/resources/static'+path:'src/main/resources/templates/personal-collaboration.html';
             const body=fs.readFileSync(file,'utf8')
                 .replace('th:action="@{/app/collaboration/personal/position}"','action="/app/collaboration/personal/position"')
-                .replace('th:attr="data-user=${personalUser}"','data-user="test"')
+                .replace(/th:attr="data-user=\$\{personalUser\}[^"]*"/,'data-user="test"')
                 .replace(/<aside[\s\S]*?<\/aside>/,'').replace('<body ','<body style="display:block" ')
                 .replace('<main ','<main style="margin:0;width:100%" ');
             return route.fulfill({contentType:path.startsWith('/js/')?'application/javascript':path.startsWith('/css/')?'text/css':'text/html',body});
@@ -154,7 +154,7 @@ test('task artwork and the shared detail popup work in every tab without navigat
             if(path.startsWith('/js/')||path.startsWith('/css/'))return route.fulfill({path:'src/main/resources/static'+path,contentType:path.startsWith('/js/')?'application/javascript':'text/css'});
             if(path.endsWith('/personal/data')){
                 const closed=url.searchParams.get('scope')==='CLOSED';
-                return route.fulfill({json:{rows:[{position:1,card:{key:{type:'TASK',id:'task1'},parent:'parent1',account:restricted?null:'account1',contextAccount:'account1',sourceRestricted:restricted,title:'Product task',context:'Account',state:closed?'DONE':'OPEN'}}],revision:1,
+                return route.fulfill({json:{rows:[{position:1,card:{key:{type:'TASK',id:'task1'},parent:'parent1',account:restricted?null:'account1',contextAccount:'account1',contextStore:'other-store',sourceRestricted:restricted,title:'Product task',context:'Account',state:closed?'DONE':'OPEN'}}],revision:1,
                     reviews:restricted?{}:{task1:{...detail,status:closed?'CLOSED':'ACTIVE'}},pictures:withoutPicture?{}:{task1:'https://details.test/images/product.png'},dates:{TASKtask1:'2026-10-15T00:00:00Z'},editableAccounts:['account1'],windows:[]}});
             }
             if(path==='/app/collaboration/personal/context/review1/reviews/review1'){

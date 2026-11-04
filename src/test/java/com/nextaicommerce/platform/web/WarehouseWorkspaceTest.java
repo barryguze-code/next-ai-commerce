@@ -13,10 +13,10 @@ import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 class WarehouseWorkspaceTest {
-    @Test void warehousePickerUsesSeparateAccountsAndNeverStoreChoices() {
+    @Test void warehousePickerRetainsSelectedStoreIdentityWithoutChangingInventoryOwnership() {
         UUID account=UUID.randomUUID(),store=UUID.randomUUID();
         var connection=new WorkspaceAccessRepository.ConnectionView(store,account,"Ibcore Amazon","Amazon US","AMAZON","seller","ATVPDKIKX0DER","Amazon US","🇺🇸","ACTIVE",null,true);
-        var option=new WorkspaceAccessRepository.AccountOption(account,"Ibcore","IB",null,List.of(connection));
+        var option=new WorkspaceAccessRepository.AccountOption(account,"Ibcore","IB","/images/account-fixture.png",List.of(connection));
         var repository=mock(WorkspaceAccessRepository.class);when(repository.listAccountOptions("fixture@example.test",false)).thenReturn(List.of(option));
         var auth=new UsernamePasswordAuthenticationToken("fixture@example.test","unused",List.of());
         var servlet=new MockServletContext();var request=new MockHttpServletRequest(servlet);var response=new MockHttpServletResponse();
@@ -34,8 +34,9 @@ class WarehouseWorkspaceTest {
             var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);
             var context=new WebContext(JakartaServletWebApplication.buildApplication(servlet).buildExchange(request,response));context.setVariables(model.asMap());
             String html=engine.process("fragments/context-switcher",context);
-            assertThat(html).contains("Business accounts","Warehouse inventory","next-ai-mark-transparent.png","name=\"returnTo\"");
-            assertThat(html).doesNotContain("action=\"/app/select-store\"","Ibcore Amazon","All stores — Ibcore");
+            assertThat(html).contains("Choose workspace","/images/account-fixture.png","name=\"returnTo\"","Amazon US","action=\"/app/select-store\"");
+            String summary=html.substring(html.indexOf("<summary"),html.indexOf("</summary>"));assertThat(summary).doesNotContain("next-ai-mark-transparent.png","Warehouse inventory");
+            assertThat(request.getSession().getAttribute(AccountSelectionController.TENANT_ID)).isEqualTo(account);
         }
         request.setRequestURI("/app/inventory/fba-shipments");var model=new ConcurrentModel();advice.accountSwitcher(auth,request.getSession(),request,model);
         assertThat(model.getAttribute("warehouseWorkspace")).isEqualTo(false);
@@ -53,5 +54,17 @@ class WarehouseWorkspaceTest {
         assertThat(controller.choose(account,"Ibcore",auth,session,new MockHttpServletResponse(),"https://example.test/")).isEqualTo("redirect:/app");
         assertThatThrownBy(()->controller.choose(UUID.randomUUID(),"Denied",auth,session,new MockHttpServletResponse(),"/app/inventory")).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
         assertThat(session.getAttribute(AccountSelectionController.TENANT_ID)).isEqualTo(account);
+    }
+    @Test void onlyExplicitStoreSelectionChangesWorkspaceAndCollaborationReturnIsLocal(){
+        var repository=mock(WorkspaceAccessRepository.class);var auth=new UsernamePasswordAuthenticationToken("fixture@example.test","unused",List.of());
+        UUID account=UUID.randomUUID(),store=UUID.randomUUID(),old=UUID.randomUUID();
+        var connection=new WorkspaceAccessRepository.ConnectionView(store,account,"Seller","Store one","AMAZON","seller","ATVPDKIKX0DER","Amazon US","🇺🇸","ACTIVE",null,true);
+        when(repository.listAccountOptions(auth.getName(),false)).thenReturn(List.of(new WorkspaceAccessRepository.AccountOption(account,"Account","AC",null,List.of(connection))));when(repository.canAccessAccount(account,auth.getName(),false)).thenReturn(true);
+        var session=new MockHttpSession();session.setAttribute(AccountSelectionController.STORE_ID,old);
+        var controller=new AccountSelectionController(repository);
+        assertThatThrownBy(()->controller.chooseStore(account,"Account",UUID.randomUUID(),"Denied","/app/collaboration",auth,session,new MockHttpServletResponse())).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThat(session.getAttribute(AccountSelectionController.STORE_ID)).isEqualTo(old);
+        assertThat(controller.chooseStore(account,"Account",store,"Store one","/app/collaboration",auth,session,new MockHttpServletResponse())).isEqualTo("redirect:/app/collaboration");
+        assertThat(session.getAttribute(AccountSelectionController.STORE_ID)).isEqualTo(store);
     }
 }
