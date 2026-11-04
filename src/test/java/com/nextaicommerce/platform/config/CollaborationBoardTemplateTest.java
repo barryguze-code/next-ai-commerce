@@ -26,6 +26,8 @@ class CollaborationBoardTemplateTest {
             "data-personal-scope=\"CLOSED\"","data-personal-scope=\"ASSIGNED\"","All accessible accounts");
         assertThat(personal.split("id=\"collaboration-due-editor\"",-1)).hasSize(2);
         assertThat(personal.split("id=\"contextual-thread-dialog\"",-1)).hasSize(2);
+        context.setVariable("selectedAccountId",parent);context.setVariable("selectedStoreId",parent);
+        assertThat(engine.process("personal-collaboration",context)).contains("data-workspace-account=\""+parent+"\"","data-workspace-store=\""+parent+"\"");
         String html=engine.process("collaboration-board",context);
         assertThat(html).contains("All accounts","All marketplaces","@Me","In progress","This month","data-state=\"DONE\"","Fixture parent");
         Path fixture=Path.of(".local/browser-fixtures/collaboration-board.html");Files.createDirectories(fixture.getParent());Files.writeString(fixture,html);
