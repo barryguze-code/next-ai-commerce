@@ -451,7 +451,10 @@ class CollaborationQueueDatabaseTest {
         assertThatThrownBy(()->restarted.end(account,room.id(),stranger)).isInstanceOf(IllegalArgumentException.class);
         tx.executeWithoutResult(s->restarted.leave(account,room.id(),stranger));
         assertThat(tx.execute(s->restarted.find(account,room.id(),user)).status()).isEqualTo("ACTIVE");
-        var saved=tx.execute(s->restarted.save(account,room.id(),user,false,"Follow up",java.time.LocalDate.of(2026,12,1),"America/Los_Angeles"));
+        assertThatThrownBy(()->tx.execute(s->restarted.save(account,room.id(),user,false,"Follow up",null,"America/Los_Angeles",Set.of(UUID.randomUUID())))).hasMessageContaining("participants");
+        assertThat(tx.execute(s->restarted.find(account,room.id(),user)).status()).isEqualTo("ACTIVE");
+        var saved=tx.execute(s->restarted.save(account,room.id(),user,false,"Follow up",java.time.LocalDate.of(2026,12,1),"America/Los_Angeles",Set.of(stranger)));
+        assertThat(jdbc.queryForList("SELECT user_id FROM collaboration_task_participants WHERE task_id=? AND assigned",UUID.class,saved.reviewId())).containsExactly(stranger);
         assertThat(tx.execute(s->restarted.save(account,room.id(),user,false)).reviewId()).isEqualTo(saved.reviewId());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM collaboration_tasks WHERE parent_id=?",Integer.class,tenant)).isEqualTo(1);
         var board=new CollaborationBoardRepository(jdbc,queue);

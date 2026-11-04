@@ -108,3 +108,10 @@ html body .collaboration-row-button>.collaboration-indirect-count{background:#e2
 #contextual-thread-dialog .conversation-close-button>img{width:24px;height:24px;object-fit:contain;flex-shrink:0}
 
 #contextual-thread-dialog .conversation-close-button{display:inline-flex;align-items:center;gap:6px}
+
+#contextual-thread-dialog[data-huddle-finalize] .thread-mode-switch,#contextual-thread-dialog[data-huddle-finalize] .conversation-list,#contextual-thread-dialog[data-huddle-finalize] .collaboration-composer,#contextual-thread-dialog[data-huddle-finalize] [data-draft-audience]{display:none!important}
+#contextual-thread-dialog[data-huddle-finalize] .thread-content{min-height:0} #contextual-thread-dialog[data-huddle-finalize] .thread-management{padding-top:16px}
+
+#contextual-thread-dialog[data-huddle-finalize] #thread-persistent-panel{display:none!important}
+
+#contextual-thread-dialog[data-huddle-finalize] [data-thread-draft-date]{white-space:nowrap}

@@ -68,20 +68,7 @@ test('header presence opens a floating huddle, protects text, minimizes, and sen
   await page.getByRole('button',{name:'Restore collaboration',exact:true}).click();
   await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='Huddle message');
   assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).evaluate(el=>el===document.activeElement),true);
-  await page.getByRole('button',{name:'Close collaboration',exact:true}).click();
-  assert.equal(await page.getByRole('button',{name:'Save as a task',exact:true}).isVisible(),true);
-  assert.deepEqual(await page.locator('.huddle-close-dialog footer button').allTextContents(),['Close without saving','Save as a task']);
-  assert.equal(await page.getByRole('button',{name:'Done',exact:true}).count(),0);
-  const sentBefore=await page.evaluate(()=>sent.length);
-  await page.getByRole('button',{name:'Close confirmation',exact:true}).click();
-  assert.equal(await page.evaluate(()=>sent.length),sentBefore,'X returns to chat without saving or leaving');
-  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='Huddle message');
-  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).evaluate(el=>el===document.activeElement),true);
-  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).evaluate(el=>getComputedStyle(el).outlineWidth),'0px');
-  assert.equal(await page.locator('.floating-huddle form').evaluate(el=>getComputedStyle(el).outlineWidth),'2px');
-  await page.getByRole('button',{name:'Close collaboration',exact:true}).click();
-  await page.getByRole('button',{name:'Save as a task',exact:true}).click();
-  assert.equal(await page.evaluate(()=>sent.at(-1).type),'SAVE');
+  assert.equal(await page.getByRole('button',{name:'Close collaboration',exact:true}).isEnabled(),true);
   await page.evaluate(()=>LiveHuddleUI.event({type:'OFFLINE'},sender));
   assert.equal(await page.getByRole('button',{name:'Send',exact:true}).isDisabled(),true);
  }finally{await browser.close();}

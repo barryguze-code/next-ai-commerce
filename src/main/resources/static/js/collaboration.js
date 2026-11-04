@@ -17,7 +17,7 @@
   const historyUrl=(type,key)=>type==='GLOBAL_PRODUCT'?'/app/platform/catalog':'/app/collaboration?view=ALL&entityType='+encodeURIComponent(type)+'&subjectKey='+encodeURIComponent(key);
   const socketOpen=()=>huddleSocket?.readyState===WebSocket.OPEN;
   const sendHuddle=payload=>{if(!socketOpen())return false;huddleSocket.send(JSON.stringify(payload));return true;};
-  async function members(){const url=state?.general?state.generalMembersUrl:api('/members');if(!url)return [];if(!memberRequests.has(url))memberRequests.set(url,fetch(url,{headers:{Accept:'application/json'}}).then(response=>response.ok?response.json():[]).catch(()=>[]));return memberRequests.get(url);}
+  async function members(){if(state?.huddleFinalize)return state.huddleFinalize.people;const url=state?.general?state.generalMembersUrl:api('/members');if(!url)return [];if(!memberRequests.has(url))memberRequests.set(url,fetch(url,{headers:{Accept:'application/json'}}).then(response=>response.ok?response.json():[]).catch(()=>[]));return memberRequests.get(url);}
   function mentionState(field){const before=field.value.slice(0,field.selectionStart??field.value.length),match=before.match(/(^|\s)@([A-Za-z0-9._-]*)$/);return match?{query:match[2].toLowerCase(),start:before.length-match[2].length-1,end:before.length}:null;}
   const composerFor=field=>field.closest('.collaboration-composer,.huddle-composer');
   function closeMentionMenu(field){const menu=composerFor(field)?.querySelector('.mention-menu');if(menu)menu.hidden=true;}
@@ -108,13 +108,13 @@
     options.replaceChildren();label.textContent='Unassigned';error.textContent='';
     $('[data-thread-save-assignment]',root).onclick=()=>{refresh();$('details',root).open=false;};
     $('[data-thread-assign-self]',root).onclick=()=>{const me=(root.dataset.currentEmail||'').toLowerCase();const person=$$('input',options).find(input=>input.dataset.email===me);if(person){person.checked=true;refresh();}else error.textContent='Choose an account with your membership before assigning.';};
-    const due=$('[data-thread-due]',root),date=$('[data-thread-draft-date]',root);delete due.dataset.reviewId;delete due.dataset.dueUrl;date.hidden=true;date.querySelector('input').value='';
-    due.querySelector('span').textContent='Add due date';due.onclick=()=>{date.hidden=!date.hidden;date.querySelector('input').focus();};date.querySelector('input').onchange=event=>{current.draftDue=event.target.value;due.querySelector('span').textContent=current.draftDue?'Due '+current.draftDue:'Add due date';};
+    const due=$('[data-thread-due]',root),date=$('[data-thread-draft-date]',root);delete due.dataset.reviewId;delete due.dataset.dueUrl;date.hidden=true;date.querySelector('input').value=current.draftDue||'';
+    due.querySelector('span').textContent=current.draftDue?'Due '+current.draftDue:'Add due date';due.onclick=()=>{date.hidden=!date.hidden;date.querySelector('input').focus();};date.querySelector('input').onchange=event=>{current.draftDue=event.target.value;due.querySelector('span').textContent=current.draftDue?'Due '+current.draftDue:'Add due date';if(current.huddleFinalize){date.hidden=true;due.setAttribute('aria-expanded','false');}};
     const team=await members();if(state!==current||state.currentReview||generation!==draftMemberGeneration||memberUrl!==(state.generalMembersUrl||api('/members')))return;
-    for(const person of team){const row=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');input.type='checkbox';input.value=person.id;input.dataset.email=(person.email||'').toLowerCase();name.textContent=person.name||person.email;row.append(input,name);options.append(row);input.onchange=refresh;}updateDraftAudience();
+    for(const person of team){const row=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');input.type='checkbox';input.value=person.id;input.dataset.email=(person.email||'').toLowerCase();name.textContent=person.name||person.email;row.append(input,name);options.append(row);input.onchange=refresh;if(current.huddleFinalize)input.checked=(current.draftPeople||[]).includes(person.id);}if(current.huddleFinalize)refresh();updateDraftAudience();
   }
   async function updateDraftAudience(){
-    const current=state;if(!current||current.currentReview||current.messageType==='PRIVATE_NOTE'||globalScope()){$('[data-draft-audience]')?.setAttribute('hidden','');return;}
+    const current=state;if(!current||current.huddleFinalize||current.currentReview||current.messageType==='PRIVATE_NOTE'||globalScope()){$('[data-draft-audience]')?.setAttribute('hidden','');return;}
     const requestedUrl=current.general?current.generalMembersUrl:api('/members'),team=await members();if(state!==current||current.currentReview||requestedUrl!==(state.general?state.generalMembersUrl:api('/members')))return;
     const root=$('#thread-management'),field=$('textarea',view().start),actor=(root.dataset.currentEmail||'').toLowerCase();
     const handles=[...field.value.matchAll(/(?:^|\s)@([A-Za-z0-9._-]+)/g)].map(m=>m[1].toLowerCase());
@@ -156,6 +156,29 @@
     picker.hidden=!personal||Boolean(account);if(personal)$$('[data-collaboration-account]:not([data-collaboration-store])',personal).filter(b=>b.dataset.collaborationAccount).forEach(b=>select.append(new Option(b.dataset.name,b.dataset.collaborationAccount)));
     select.value=account;select.onchange=()=>{clearDrafts();state.draftDue='';state.generalAccount=select.value;state.generalStore='';state.draftPeople=[];state.draftExplicit=false;updateAccount();};
     dialog().dataset.general='true';updateAccount();view().start.reset();showNewConversation();$('button[type=submit]',view().start).setAttribute('aria-label','Create task');dialog().showModal();$('#thread-title-input').focus();
+  };
+  window.openHuddleTask=config=>{
+    window.openGeneralTask(config.trigger);
+    const current=state;current.huddleFinalize=config;current.generalPersonal=false;current.generalMembersUrl='huddle:'+config.id;
+    current.draftTitle=config.draft.title;current.draftPeople=config.draft.people;current.draftDue=config.draft.due||'';current.draftExplicit=true;
+    const root=dialog();root.dataset.huddleFinalize='true';$('#thread-new-account').hidden=true;$('#thread-record-type').textContent='Collaboration';$('#thread-account-logo').src='/images/platform/table/collaboration-online.png';$('#thread-record-context').textContent='Save this collaboration as a task';
+    const input=$('#thread-title-input'),heading=$('#thread-record-title'),editor=$('.thread-subject-editor'),pen=$('[data-thread-edit-title]');
+    input.value=current.draftTitle||'';input.placeholder='Enter a collaboration title';input.oninput=()=>current.draftTitle=input.value;
+    const display=()=>{current.draftTitle=input.value;heading.textContent=input.value||'Enter a collaboration title';heading.hidden=false;editor.hidden=true;pen.hidden=false;};
+    pen.onclick=()=>{heading.hidden=true;editor.hidden=false;pen.hidden=true;input.focus();input.select();};input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();display();pen.focus();}};input.onblur=display;
+    renderDraftManagement();
+    const footer=$('.dialog-actions',root),cancel=$('[data-thread-dialog-close]',footer);cancel.textContent='Cancel';
+    const save=document.createElement('button');save.type='button';save.className='primary-button';save.textContent='Save as a task';save.disabled=!config.canSave;footer.append(save);
+    save.onclick=async()=>{
+      if(save.disabled)return;const error=$('[data-thread-title-error]');current.draftTitle=input.value.trim();
+      if(!current.draftTitle){error.textContent='Enter a collaboration title.';error.hidden=false;pen.click();return;}
+      save.disabled=true;view().start.dataset.saving='true';error.hidden=true;
+      try{await config.save({title:current.draftTitle,people:current.draftPeople,due:current.draftDue||''});root.close();}
+      catch(ex){error.textContent=ex.message;error.hidden=false;}
+      finally{save.disabled=false;delete view().start.dataset.saving;}
+    };
+    root.addEventListener('close',()=>{config.remember({title:input.value,people:current.draftPeople,due:current.draftDue});delete root.dataset.huddleFinalize;save.remove();cancel.textContent='Done';input.onblur=null;current.huddleFinalize=null;config.returnToRoom();},{once:true});
+    input.focus();input.select();
   };
   function handleHuddleEvent(event){lastPong=Date.now();window.LiveHuddleUI?.event(event,sendHuddle);}
   function updateAssignment(review){
@@ -294,6 +317,7 @@
   }
   async function requestThreadClose(){
     if(closingDraft||[view().start,view().reply].some(form=>form?.dataset.saving))return;
+    if(state?.huddleFinalize){state.huddleFinalize.remember({title:$('#thread-title-input').value,people:state.draftPeople,due:state.draftDue});dialog().close();return;}
     if(!hasUnsentDraft()){dialog().close();return;}
     closingDraft=true;const focus=document.activeElement;
     try{const discard=await window.NextAiConfirm({title:'Discard unsent changes?',message:'Your message and changes haven’t been saved.',accept:'Discard draft',cancel:'Keep editing'});if(discard)dialog().close();else focus?.focus({preventScroll:true});}finally{closingDraft=false;}

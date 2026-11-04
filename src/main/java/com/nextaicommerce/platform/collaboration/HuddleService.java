@@ -159,15 +159,19 @@ public class HuddleService {
         return save(tenantId,huddleId,participantId,closeConversation,"Saved chat",null,"America/Los_Angeles");
     }
     public SaveResult save(UUID tenantId,UUID huddleId,UUID participantId,boolean closeConversation,String title,java.time.LocalDate dueDate,String zone){
+        return save(tenantId,huddleId,participantId,closeConversation,title,dueDate,zone,null);
+    }
+    public SaveResult save(UUID tenantId,UUID huddleId,UUID participantId,boolean closeConversation,String title,java.time.LocalDate dueDate,String zone,Set<UUID> assignees){
         HuddleState state=required(tenantId,huddleId);
         synchronized(state){
             if(!state.participants.containsKey(participantId))throw new IllegalArgumentException("This huddle is not available to your user.");
             if(state.savedReviewId!=null)return new SaveResult(view(state),state.savedReviewId);
             if(!state.startedBy.id().equals(participantId))throw new IllegalArgumentException("Only the chat creator can save and end it for everyone.");
             if(persistence!=null){
-                UUID task=persistence.convert(tenantId,view(state),participantId,title,dueDate,zone);
+                UUID task=persistence.convert(tenantId,view(state),participantId,title,dueDate,zone,assignees);
                 state.savedReviewId=task;state.endedAt=Instant.now();return new SaveResult(persist(state),task);
             }
+            if(assignees!=null&&!assignees.equals(Set.of(participantId)))throw new IllegalArgumentException("Task assignment is unavailable for this collaboration. Your draft is still here.");
             if(state.saving)throw new IllegalArgumentException("This huddle is already being saved.");
             state.saving=true;
             try{

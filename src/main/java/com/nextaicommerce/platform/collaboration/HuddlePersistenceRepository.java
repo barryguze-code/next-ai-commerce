@@ -44,6 +44,10 @@ public class HuddlePersistenceRepository {
     }
     @Transactional
     public UUID convert(UUID account,HuddleService.HuddleView room,UUID actor,String title,java.time.LocalDate dueDate,String zone){
+        return convert(account,room,actor,title,dueDate,zone,null);
+    }
+    @Transactional
+    public UUID convert(UUID account,HuddleService.HuddleView room,UUID actor,String title,java.time.LocalDate dueDate,String zone,Set<UUID> assigneeIds){
         if(title==null||title.isBlank()||title.length()>240)throw new IllegalArgumentException("Enter a task title of up to 240 characters.");
         java.time.ZoneId.of(zone);
         context(account);
@@ -61,7 +65,9 @@ public class HuddlePersistenceRepository {
         if(!room.startedBy().id().equals(actor))throw new IllegalArgumentException("Only the chat creator can save and end it for everyone.");
         // Validate the whole audience before inserting any shared task content.
         for(UUID member:audience)if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM parent_tenant_memberships WHERE parent_id=? AND user_id=? AND active)",Boolean.class,selected,member)))throw new IllegalArgumentException("Invite the chat participants to this parent tenant first. Your chat remains saved.");
-        var task=queue.create(selected,account,null,title,"",person.email(),Set.of(actor));
+        Set<UUID> assigned=assigneeIds==null?Set.of(actor):Set.copyOf(assigneeIds);
+        if(!audience.containsAll(assigned))throw new IllegalArgumentException("Choose assignees from this collaboration's participants.");
+        var task=queue.create(selected,account,null,title,"",person.email(),assigned);
         jdbc.update("UPDATE collaboration_tasks SET due_date=?,due_time_zone=? WHERE parent_id=? AND id=?",dueDate,zone,selected,task.reviewId());
         for(UUID member:audience)jdbc.update("INSERT INTO collaboration_task_participants(parent_id,task_id,user_id,added_by) VALUES (?,?,?,?) ON CONFLICT DO NOTHING",selected,task.reviewId(),member,actor);
         for(var message:room.messages())jdbc.update("INSERT INTO collaboration_task_messages(id,parent_id,task_id,author_id,body,created_at) VALUES (?,?,?,?,?,?)",message.id(),selected,task.reviewId(),message.senderId(),message.body().replaceAll("/app/huddles/"+room.id()+"/files/([a-f0-9-]{36})","/app/collaboration/board/tasks/"+task.reviewId()+"/files/$1?parent="+selected),java.sql.Timestamp.from(message.createdAt()));

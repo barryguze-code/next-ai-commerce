@@ -27,7 +27,7 @@ public class HuddleWebSocketHandler extends TextWebSocketHandler {
     private static final Logger log=LoggerFactory.getLogger(HuddleWebSocketHandler.class);
     private static final Set<String> CHAT_ROLES=Set.of("ROLE_PLATFORM_ADMIN","ROLE_OWNER","ROLE_ADMIN","ROLE_OPERATOR","ROLE_VIEWER");
     private record ClientMessage(String type,UUID huddleId,List<UUID> participantIds,String subjectType,String subjectKey,
-            String subjectLabel,String parentUrl,String contextSnapshot,String body,Boolean closeConversation,String title,String dueDate,String timeZone) {}
+            String subjectLabel,String parentUrl,String contextSnapshot,String body,Boolean closeConversation,String title,String dueDate,String timeZone,List<UUID> assigneeIds) {}
     private record Client(UUID tenantId,HuddleService.Participant person,boolean canHuddle,WebSocketSession session) {}
 
     private final Map<String,Client> clients=new ConcurrentHashMap<>();
@@ -60,8 +60,9 @@ public class HuddleWebSocketHandler extends TextWebSocketHandler {
 
     @Override protected void handleTextMessage(WebSocketSession session,TextMessage text){
         Client client=clients.get(session.getId());if(client==null)return;
+        ClientMessage message=null;
         try{
-            ClientMessage message=json.readValue(text.getPayload(),ClientMessage.class);String type=message.type()==null?"":message.type().toUpperCase(Locale.ROOT);
+            message=json.readValue(text.getPayload(),ClientMessage.class);String type=message.type()==null?"":message.type().toUpperCase(Locale.ROOT);
             heartbeat.put(session.getId(),Instant.now());
             access.put(session.getId(),collaboration.huddleTenants(client.person().email()));
             if(!access.get(session.getId()).contains(client.tenantId())){session.close(CloseStatus.POLICY_VIOLATION);return;}
@@ -78,12 +79,12 @@ public class HuddleWebSocketHandler extends TextWebSocketHandler {
                 case "MESSAGE"->broadcast(scope,"HUDDLE_UPDATED",huddles.message(scope,message.huddleId(),client.person().id(),message.body()));
                 case "LEAVE"->leave(actor,message.huddleId());
                 case "END"->broadcast(scope,"HUDDLE_ENDED",huddles.end(scope,message.huddleId(),client.person().id()));
-                case "SAVE"->{var saved=huddles.save(scope,message.huddleId(),client.person().id(),Boolean.TRUE.equals(message.closeConversation()),message.title()==null?"Saved chat":message.title(),message.dueDate()==null||message.dueDate().isBlank()?null:java.time.LocalDate.parse(message.dueDate()),message.timeZone()==null?"America/Los_Angeles":message.timeZone());
+                case "SAVE"->{var saved=huddles.save(scope,message.huddleId(),client.person().id(),Boolean.TRUE.equals(message.closeConversation()),message.title()==null?"Saved chat":message.title(),message.dueDate()==null||message.dueDate().isBlank()?null:java.time.LocalDate.parse(message.dueDate()),message.timeZone()==null?"America/Los_Angeles":message.timeZone(),message.assigneeIds()==null?null:new java.util.LinkedHashSet<>(message.assigneeIds()));
                     broadcast(scope,"HUDDLE_SAVED",saved.huddle(),Map.of("reviewId",saved.reviewId(),"closeConversation",Boolean.TRUE.equals(message.closeConversation())));}
                 default->throw new IllegalArgumentException("That huddle action is not supported.");
             }
-        }catch(IllegalArgumentException ex){sendError(client,ex.getMessage());}
-        catch(Exception ex){log.warn("Quick huddle message failed for {}: {}",client.person().email(),ex.getMessage());sendError(client,"The live huddle could not complete that action.");}
+        }catch(IllegalArgumentException ex){sendError(client,ex.getMessage(),message);}
+        catch(Exception ex){log.warn("Quick huddle message failed for {}: {}",client.person().email(),ex.getMessage());sendError(client,"The live huddle could not complete that action.",message);}
     }
 
     private List<HuddleService.Participant> availablePeople(Client client,ClientMessage request){
@@ -168,6 +169,10 @@ public class HuddleWebSocketHandler extends TextWebSocketHandler {
         var recipients=clients.values().stream().filter(client->participantIds.contains(client.person().id())&&fresh(client)
             &&permissions.computeIfAbsent(client.person().email(),collaboration::huddleTenants).contains(tenantId)).toList();
         recipients.forEach(client->send(client,event));return recipients.size();
+    }
+    private void sendError(Client client,String message,ClientMessage request){
+        var error=new java.util.LinkedHashMap<String,Object>();error.put("type","ERROR");error.put("message",message==null?"The collaboration action could not be completed.":message);
+        if(request!=null){if(request.type()!=null)error.put("action",request.type().toUpperCase(Locale.ROOT));if(request.huddleId()!=null)error.put("huddleId",request.huddleId());}send(client,error);
     }
     private void sendError(Client client,String message){send(client,Map.of("type","ERROR","message",message==null?"The huddle action could not be completed.":message));}
     private void send(Client client,Object payload){

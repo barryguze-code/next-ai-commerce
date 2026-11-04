@@ -1,6 +1,7 @@
 (()=>{
   if(window.LiveHuddleUI)return;
   const rooms=new Map(),windows=new Map();let self,people=[],connected=false,allowed=false,send=()=>false,menu,launcher,tray;
+  const finalizeDrafts=new Map(),finalizePending=new Map();let finalizing=false;
   const selectedPeople=new Set();let startChat,starting=false;let directory=[],directoryLoadedAt=0,directoryLoading=false,directoryError=false,peopleTab='online',peopleQuery='',peopleList,peopleHint;
   async function loadDirectory(){
     if(directoryLoading||Date.now()-directoryLoadedAt<60000)return;
@@ -27,7 +28,7 @@
     trigger.className='huddle-top-icon';trigger.dataset.tooltip='Collaborate · online teammates';trigger.setAttribute('aria-label','Open huddle and online teammates');trigger.setAttribute('aria-expanded','false');trigger.setAttribute('aria-controls','huddle-teammates');
     menu=node('section',null,'huddle-people-panel');menu.id='huddle-teammates';menu.hidden=true;menu.setAttribute('aria-labelledby','huddle-people-title');
     const heading=node('header',null,'huddle-people-heading'),title=node('strong','Collaborate');title.id='huddle-people-title';
-    const close=button('',()=>closePeople(true));close.className='huddle-people-close dialog-close';icon(close,'Close teammate picker','M6 6l12 12M18 6 6 18');close.removeAttribute('title');heading.append(title,close);
+    const close=button('',()=>closePeople(true));close.className='huddle-people-close dialog-close';close.textContent='×';close.setAttribute('aria-label','Close teammate picker');heading.append(title,close);
     peopleHint=node('small');const tabs=node('div',null,'huddle-people-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Teammate status');
     for(const [value,label] of [['online','Online'],['all','All teammates']]){const tab=button(label,()=>{peopleTab=value;renderPeople();loadDirectory();});tab.dataset.peopleTab=value;tabs.append(tab);}
     const search=node('input');search.type='search';search.placeholder='Search teammates';search.setAttribute('aria-label','Search teammates');search.addEventListener('input',()=>{peopleQuery=search.value;renderPeople();});
@@ -72,15 +73,14 @@
     const ids=[...selectedPeople];if(send({type:'CREATE',participantIds:ids,subjectType:'PLATFORM',subjectKey:'DIRECT:'+ [self.id,...ids].sort().join(':'),subjectLabel:'Team huddle',parentUrl:'/app/collaboration',contextSnapshot:'{}'})){starting=true;renderPeople();}
   }
   function closeChoice(room,panel){
-    const dialog=node('dialog',null,'huddle-close-dialog'),title=node('h2','Keep this conversation?'),description=node('p','Save messages and files as a task, or leave this collaboration. ');
-    title.id='huddle-close-title';dialog.setAttribute('aria-labelledby',title.id);
-    const header=node('header'),close=button('',()=>dialog.close()),actions=node('footer',null,'huddle-close-actions');
-    close.className='dialog-close';icon(close,'Close confirmation','M6 6l12 12M18 6 6 18');header.append(title,close);
-    const taskTitle=node('input'),due=node('input');taskTitle.value='Follow up with '+roomName(room);taskTitle.maxLength=240;taskTitle.setAttribute('aria-label','Task title');due.type='date';due.setAttribute('aria-label','Due date (optional)');
-    const save=button('Save as a task',()=>{if(send({type:'SAVE',huddleId:room.id,closeConversation:false,title:taskTitle.value,dueDate:due.value,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'America/Los_Angeles'})){dialog.close();}});
-    save.disabled=room.startedBy?.id!==self?.id;
-    actions.append(button('Close without saving',()=>{if(send({type:'LEAVE',huddleId:room.id})){dialog.close();panel.remove();windows.delete(room.id);rooms.delete(room.id);renderPeople();}}),save);
-    dialog.append(header,description,taskTitle,due,actions);dialog.addEventListener('close',()=>{dialog.remove();if(panel.isConnected&&!panel.classList.contains('is-minimized'))panel.querySelector('textarea')?.focus();});document.body.append(dialog);dialog.showModal();close.focus();
+    if(!window.openHuddleTask){panel.querySelector('.floating-huddle-error').textContent='Task controls are not ready. Refresh and try again.';return;}
+    finalizing=true;if(tray.matches(':popover-open'))tray.hidePopover();
+    window.openHuddleTask({id:room.id,canSave:room.startedBy?.id===self?.id,trigger:panel.querySelector('.dialog-close'),people:room.participants,
+      draft:finalizeDrafts.get(room.id)||{title:room.subjectKey?.startsWith('DIRECT:')?'':room.subjectLabel||'',people:[self.id],due:''},
+      remember:draft=>finalizeDrafts.set(room.id,draft),
+      returnToRoom:()=>{finalizing=false;const current=rooms.get(room.id);if(current?.status==='ACTIVE')open(current);else if(windows.size&&!tray.matches(':popover-open'))tray.showPopover();},
+      save:draft=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{finalizePending.delete(room.id);reject(new Error('Save confirmation timed out. Your draft is still here; retry safely.'));},20000);finalizePending.set(room.id,{resolve:()=>{clearTimeout(timer);resolve();},reject:error=>{clearTimeout(timer);reject(error);}});if(!send({type:'SAVE',huddleId:room.id,closeConversation:false,title:draft.title,assigneeIds:draft.people,dueDate:draft.due,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'America/Los_Angeles'})){finalizePending.get(room.id)?.reject(new Error('Connection unavailable. Your draft is still here.'));finalizePending.delete(room.id);}})
+    });
   }
   function open(room,activate=true,focus=true){
     mount();if(!tray)return;rooms.set(room.id,room);let panel=windows.get(room.id);
@@ -88,7 +88,7 @@
       panel=node('section',null,'floating-huddle');panel.dataset.huddleId=room.id;panel.setAttribute('aria-label','Huddle with '+roomName(room));
       const head=node('header'),avatars=node('span',null,'huddle-header-avatars'),title=node('strong',roomName(room));
       const minimize=button('',()=>{if(panel.classList.contains('is-minimized'))open(rooms.get(room.id));else{panel.classList.add('is-minimized');icon(minimize,'Restore collaboration','M5 15 12 8l7 7');}});
-      minimize.dataset.minimize='';const close=button('',()=>closeChoice(rooms.get(room.id),panel));close.className='dialog-close';icon(close,'Close collaboration','M6 6l12 12M18 6 6 18');
+      minimize.dataset.minimize='';const close=button('',()=>closeChoice(rooms.get(room.id),panel));close.className='dialog-close';close.textContent='×';close.setAttribute('aria-label','Close collaboration');
       icon(minimize,'Minimize collaboration','M5 12h14');const unread=node('span',null,'huddle-unread');unread.hidden=true;head.append(avatars,title,unread,minimize,close);draggable(panel,head);
       const messages=node('div',null,'floating-huddle-messages');messages.setAttribute('role','log');messages.setAttribute('aria-live','polite');
       const form=node('form'),field=node('textarea');field.rows=1;field.maxLength=2000;field.placeholder='Message…';field.setAttribute('aria-label','Huddle message');field.title='Enter to send · Shift+Enter for a new line · @ to add a teammate';
@@ -116,7 +116,7 @@
       foot.hidden=true;add.addEventListener('change',()=>{foot.hidden=true;field.focus();});foot.append(add);panel.append(head,node('small','Private collaboration'),messages,form,foot,node('p','', 'floating-huddle-error'));
       windows.set(room.id,panel);tray.append(panel);send({type:'PEOPLE',huddleId:room.id});
     }
-    panel.hidden=false;if(activate){panel.classList.remove('is-minimized');panel.dataset.unread='0';panel.querySelector('.huddle-unread').hidden=true;icon(panel.querySelector('[data-minimize]'),'Minimize collaboration','M5 12h14');if(tray.matches(':popover-open'))tray.hidePopover();tray.showPopover();if(panel.style.position==='fixed')panel.style.top=Math.max(8,Math.min(innerHeight-panel.offsetHeight-8,parseFloat(panel.style.top)))+'px';}else if(!tray.matches(':popover-open'))tray.showPopover();panel.querySelector('header strong').textContent=roomName(room);
+    panel.hidden=false;if(activate){panel.classList.remove('is-minimized');panel.dataset.unread='0';panel.querySelector('.huddle-unread').hidden=true;icon(panel.querySelector('[data-minimize]'),'Minimize collaboration','M5 12h14');if(tray.matches(':popover-open'))tray.hidePopover();if(!finalizing)tray.showPopover();if(panel.style.position==='fixed')panel.style.top=Math.max(8,Math.min(innerHeight-panel.offsetHeight-8,parseFloat(panel.style.top)))+'px';}else if(!finalizing&&!tray.matches(':popover-open'))tray.showPopover();panel.querySelector('header strong').textContent=roomName(room);
     const avatars=panel.querySelector('.huddle-header-avatars');avatars.replaceChildren();room.participants.filter(p=>p.id!==self?.id).forEach(p=>{const avatar=node('span',initials(p.name||p.email),'huddle-person-avatar');avatar.setAttribute('aria-hidden','true');avatars.append(avatar);});
     const list=panel.querySelector('.floating-huddle-messages'),nearBottom=list.scrollHeight-list.scrollTop-list.clientHeight<50;list.replaceChildren();
     if(!room.messages.length)list.append(node('p','You can message now. No answer step needed.'));
@@ -136,7 +136,7 @@
     send=sender;mount();
     if(e.type==='WELCOME'){starting=false;self=e.self;allowed=e.canHuddle;people=e.online||[];connected=true;rooms.clear();(e.huddles||[]).forEach(r=>{rooms.set(r.id,r);open(r);});for(const [id,p]of windows)if(!rooms.has(id)){p.remove();windows.delete(id);}renderPeople();}
     else if(e.type==='PRESENCE'){people=e.online||[];renderPeople();}
-    else if(e.type==='OFFLINE'){starting=false;connected=false;people=[];renderPeople();windows.forEach(p=>{p.querySelector('textarea').disabled=true;p.querySelector('button[type=submit]').disabled=true;});}
+    else if(e.type==='OFFLINE'){finalizePending.forEach(p=>p.reject(new Error('Connection lost. Your draft is still here.')));finalizePending.clear();starting=false;connected=false;people=[];renderPeople();windows.forEach(p=>{p.querySelector('textarea').disabled=true;p.querySelector('button[type=submit]').disabled=true;});}
     else if(e.type==='ROOM_PEOPLE'){const room=rooms.get(e.huddleId);if(room){room.onlinePeople=e.online||[];open(room,false);}}
     else if(e.type==='HUDDLE_STARTED'||e.type==='HUDDLE_UPDATED'){
       if(!e.huddle.participants.some(p=>p.id===self?.id)||(Array.isArray(e.huddle.joinedParticipantIds)&&!e.huddle.joinedParticipantIds.includes(self?.id))){rooms.delete(e.huddle.id);windows.get(e.huddle.id)?.remove();windows.delete(e.huddle.id);renderPeople();return;}
@@ -146,8 +146,8 @@
       if(incoming&&quiet){const count=Number(panel.dataset.unread||0)+1;panel.dataset.unread=String(count);const badge=panel.querySelector('.huddle-unread');badge.textContent=String(count);badge.setAttribute('aria-label',count+' unread messages');badge.hidden=false;}
       e.huddle.onlinePeople=previous?.onlinePeople;open(e.huddle,!quiet&&(e.type==='HUDDLE_STARTED'||incoming),e.type==='HUDDLE_STARTED'&&e.huddle.participants[0]?.id===self?.id);
     }
-    else if(e.type==='HUDDLE_ENDED'||e.type==='HUDDLE_SAVED'){rooms.delete(e.huddle.id);windows.get(e.huddle.id)?.remove();windows.delete(e.huddle.id);renderPeople();if(e.type==='HUDDLE_SAVED'){const notice=node('div',null,'huddle-saved-notice');notice.setAttribute('role','status');const link=node('a','Messages saved · Open Collaboration');link.href='/app/collaboration/board';notice.append(link,button('×',()=>notice.remove()));document.body.append(notice);}}
-    else if(e.type==='ERROR'){starting=false;renderPeople();peopleHint.textContent=e.message;peopleHint.setAttribute('role','alert');windows.forEach(p=>{p.querySelector('.floating-huddle-error').textContent=e.message;});}
+    else if(e.type==='HUDDLE_ENDED'||e.type==='HUDDLE_SAVED'){if(e.type==='HUDDLE_SAVED')finalizePending.get(e.huddle.id)?.resolve();else finalizePending.get(e.huddle.id)?.reject(new Error('The collaboration ended before saving was confirmed. Your draft is still here.'));finalizePending.delete(e.huddle.id);rooms.delete(e.huddle.id);windows.get(e.huddle.id)?.remove();windows.delete(e.huddle.id);renderPeople();if(e.type==='HUDDLE_SAVED'){const notice=node('div',null,'huddle-saved-notice');notice.setAttribute('role','status');const link=node('a','Messages saved · Open Collaboration');link.href='/app/collaboration/board';notice.append(link,button('×',()=>notice.remove()));document.body.append(notice);}}
+    else if(e.type==='ERROR'){if(e.action==='SAVE'&&e.huddleId){finalizePending.get(e.huddleId)?.reject(new Error(e.message));finalizePending.delete(e.huddleId);}starting=false;renderPeople();peopleHint.textContent=e.message;peopleHint.setAttribute('role','alert');windows.forEach(p=>{p.querySelector('.floating-huddle-error').textContent=e.message;});}
   }
   window.LiveHuddleUI={event,open,start,showPeople:()=>{mount();menu.hidden=false;launcher.querySelector('button').setAttribute('aria-expanded','true');loadDirectory();}};document.readyState==='loading'?document.addEventListener('DOMContentLoaded',mount):mount();
   // Only an explicit minimize action collapses a chat; incoming messages stay visible.
