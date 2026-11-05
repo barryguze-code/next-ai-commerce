@@ -433,6 +433,10 @@ class TemplateRenderingTest {
         assertThat(completed).contains("Last Shopify SKU check · 10/27/26 · 05:00 UTC","Sync now","aria-current=\"step\"").doesNotContain("Sync again","shopify-setup-next","Products &amp; variants");
         assertThat(completed).containsPattern("(?s)<article class=\"completed\"[^>]*>(?:(?!</article>).)*2\\. SKU sync").containsPattern("(?s)<article aria-current=\"step\" class=\"current\">(?:(?!</article>).)*3\\. Mapping");
         assertThat(renderEvidence("marketplace-skus",webContext())).contains("/js/order-smart-filters.js");
+        var itemId=new UUID(0,42);
+        context.setVariable("shopifyComponents",Map.of(id,List.of(new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.MappingComponentView(itemId,"Product","42","42",BigDecimal.ONE,null))));
+        assertThat(renderEvidence("marketplace-skus",context)).containsPattern("(?s)<a[^>]*class=\"sku-approved-title\"[^>]*href=\"/app/inventory/ledger[?]itemId="+itemId+"\"[^>]*>Long Shopify product</a>");
+
     }
 
     @Test void shopifyWorkspaceRendersInitializationWithoutAmazonEmptyCopy(){

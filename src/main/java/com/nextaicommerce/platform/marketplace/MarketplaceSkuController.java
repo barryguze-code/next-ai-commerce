@@ -7,6 +7,7 @@ import com.nextaicommerce.platform.web.WorkspaceAccessRepository;
 import jakarta.servlet.http.HttpSession;
 import java.util.UUID;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -97,7 +98,8 @@ public class MarketplaceSkuController {
                 model.addAttribute("shopifyStatuses",java.util.List.of("ALL","ACTIVE","DRAFT","ARCHIVED","UNLISTED","UNMAPPED"));model.addAttribute("shopifyCatalogEnabled",true);model.addAttribute("shopifyJob",shopifyJobs.status(tenantId,connectionId));
                 model.addAttribute("selectedStatus",nativeStatus);model.addAttribute("selectedSort",nativeSort);
                 var shopifyPage=shopifySkus.list(tenantId,connectionId,q,nativeStatus,nativeSort,direction,goToPage==null?page:Math.max(0,goToPage-1),com.nextaicommerce.platform.web.TablePaging.size(size));
-                model.addAttribute("shopifyPage",shopifyPage);model.addAttribute("shopifyComponents",shopifySkus.componentBatch(tenantId,connectionId,shopifyPage.rows().stream().map(ShopifySkuRepository.Row::id).toList()));
+                var parts=shopifySkus.componentBatch(tenantId,connectionId,shopifyPage.rows().stream().map(ShopifySkuRepository.Row::id).toList());
+                model.addAttribute("shopifyPage",shopifyPage);model.addAttribute("shopifyComponents",parts);model.addAttribute("shopifyAvailability",shopifySkus.availabilityBatch(tenantId,connectionId,shopifyPage.rows().stream().map(ShopifySkuRepository.Row::id).toList()));
                 boolean orderReads=shopifyOrders!=null&&shopifyOrders.enabled();
                 model.addAttribute("shopifyOrdersEnabled",orderReads);model.addAttribute("shopifyInitializationComplete",orderReads&&shopifyOrders.initialized(tenantId,connectionId));
                 model.addAttribute("shopifyOrderJob",orderReads?shopifyOrders.status(tenantId,connectionId):null);
@@ -181,8 +183,16 @@ public class MarketplaceSkuController {
             .filter(a->a.id().equals(tenant)).flatMap(a->a.stores().stream()).anyMatch(s->s.id().equals(connection));
     }
 
+    @GetMapping("/app/marketplace-skus/mappings/asin-preview") @ResponseBody
+    MarketplaceSkuRepository.AsinMappingPreview asinPreview(@RequestParam String sku,HttpSession session,Authentication actor){
+        var tenant=requiredTenant(session);var connection=requiredAmazonConnection(tenant,session);
+        if(!maySync(tenant,connection,actor))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+        return skus.asinMappingPreview(tenant,connection,sku);
+    }
+
     @PostMapping("/app/marketplace-skus/mappings")
-    String saveMapping(@RequestParam String sellerSku,
+    String saveMapping(@RequestParam String sellerSku,@RequestParam Map<String,String> origin,
+            @RequestParam(defaultValue="false") boolean replaceAsinMappings,@RequestParam(defaultValue="") String asinMappingRevision,
             @RequestParam(name="productId") List<String> productIds,
             @RequestParam(name="quantity") List<String> quantities,
             @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="ALL") String status,
@@ -190,10 +200,11 @@ public class MarketplaceSkuController {
             @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String returnTo,
             HttpSession session,RedirectAttributes redirect,Authentication authentication){
         UUID tenantId=requiredTenant(session);UUID connectionId=requiredAmazonConnection(tenantId,session);
+        verifyMappingWorkspace(origin,tenantId,connectionId);
         if(!maySync(tenantId,connectionId,authentication))
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
         try{
-            skus.saveMapping(tenantId,connectionId,sellerSku,productIds,quantities);
+            skus.saveMapping(tenantId,connectionId,sellerSku,productIds,quantities,replaceAsinMappings,asinMappingRevision);
             redirect.addFlashAttribute("mappingSuccess","Marketplace SKU mapping saved.");
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("mappingError",e.getMessage());}
         catch(Exception e){log.error("Marketplace SKU mapping failed sellerSku={}",sellerSku,e);
@@ -239,12 +250,13 @@ public class MarketplaceSkuController {
             String accountSku,String imageUrl,boolean expirationRequired){}
 
     @PostMapping("/app/marketplace-skus/mappings/clear")
-    String clearMapping(@RequestParam String sellerSku,
+    String clearMapping(@RequestParam String sellerSku,@RequestParam Map<String,String> origin,
             @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="ALL") String status,
             @RequestParam(defaultValue="status") String sort,@RequestParam(defaultValue="asc") String direction,
             @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="") String returnTo,HttpSession session,RedirectAttributes redirect){
         try{
             UUID tenantId=requiredTenant(session);UUID connectionId=requiredAmazonConnection(tenantId,session);
+            verifyMappingWorkspace(origin,tenantId,connectionId);
             skus.clearMapping(tenantId,connectionId,sellerSku);
             redirect.addFlashAttribute("mappingSuccess","Mapping cleared. Automatic matching is paused for this SKU.");
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("mappingError",e.getMessage());}
@@ -284,6 +296,12 @@ public class MarketplaceSkuController {
             .queryParam("page",Math.max(0,page)).build().encode().toUriString();
         return "redirect:"+target;
     }
+    static void verifyMappingWorkspace(Map<String,String> origin,UUID tenant,UUID connection){
+        if(!"true".equals(origin.get("_mappingInline")))return;
+        if(!tenant.toString().equals(origin.get("originAccount"))||!connection.toString().equals(origin.get("originStore")))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,"Workspace changed. Refresh before saving the mapping.");
+    }
+
     private static String safeReturn(String returnTo,String fallback){
         return returnTo!=null && returnTo.matches("/app/(?:orders|marketplace-skus)(?:\\?[^\\r\\n]*)?") ? "redirect:"+returnTo : fallback;
     }

@@ -76,6 +76,23 @@ public class ShopifySkuRepository {
         LEFT JOIN LATERAL(SELECT vendor_item_code FROM vendor_catalog_offers o WHERE o.tenant_id=i.tenant_id AND o.account_catalog_item_id=i.id AND o.effective_to IS NULL ORDER BY o.is_default DESC,o.updated_at DESC LIMIT 1)o ON true
         WHERE m.tenant_id=? AND m.marketplace_connection_id=? AND m.status='ACTIVE' AND m.shopify_variant_id IN (
         """+String.join(",",Collections.nCopies(variants.size(),"?"))+") ORDER BY m.shopify_variant_id,c.sort_order,c.id",r->{result.computeIfAbsent(r.getObject(1,UUID.class),key->new ArrayList<>()).add(new MarketplaceSkuRepository.MappingComponentView(r.getObject(2,UUID.class),r.getString(3),r.getString(4),r.getString(5),r.getBigDecimal(6),r.getString(7)));},args.toArray());return result;}
+    /** Read-only page projection; shows account warehouse eligibility independently of publication setup, never publishes. */
+    @Transactional(readOnly=true)
+    public Map<UUID,BigDecimal> availabilityBatch(UUID tenant,UUID connection,List<UUID> variants){
+        if(variants.isEmpty())return Map.of();tenant(tenant);
+        var args=new ArrayList<Object>();args.add(tenant);args.add(connection);args.addAll(variants);
+        var result=new HashMap<UUID,BigDecimal>();
+        jdbc.query("SELECT v.id,max(greatest(0,coalesce(local_inventory.available,0))) available " + """
+          FROM shopify_variants v
+          JOIN marketplace_connections connection ON connection.tenant_id=v.tenant_id AND connection.id=v.marketplace_connection_id AND connection.channel='SHOPIFY' AND connection.status='ACTIVE'
+          JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=v.tenant_id AND mapping.marketplace_connection_id=v.marketplace_connection_id AND mapping.shopify_variant_id=v.id AND mapping.status='ACTIVE' AND mapping.shopify_mapping_hash=v.mapping_hash
+          """+MarketplaceSkuRepository.localMappingAvailability(false)+"""
+          WHERE v.tenant_id=? AND v.marketplace_connection_id=? AND v.id IN (
+          """+String.join(",",Collections.nCopies(variants.size(),"?"))+"""
+          )
+          GROUP BY v.id HAVING count(*)=1
+          """,r->{result.put(r.getObject(1,UUID.class),r.getBigDecimal(2));},args.toArray());return result;
+    }
     @Transactional
     public void save(UUID tenant,UUID connection,UUID variant,String revision,List<String> products,List<String> quantities,Runnable authorize){
         authorize.run();tenant(tenant);var current=jdbc.queryForList("SELECT observation_hash FROM shopify_variants WHERE tenant_id=? AND marketplace_connection_id=? AND id=? FOR UPDATE",String.class,tenant,connection,variant);

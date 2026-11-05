@@ -91,3 +91,8 @@ html body.app-page [data-ui-product]:hover{text-decoration:underline;color:var(-
 .shipping-record-menu{position:fixed;inset:auto;margin:0;width:300px;padding:16px;border:1px solid var(--line);border-radius:18px;background:var(--white);color:var(--ink);box-shadow:0 16px 45px #10243c33}.shipping-record-menu>strong{display:block;font-size:16px;margin-bottom:14px}.shipping-record-menu>a{width:100%}
 @media(max-width:640px){html body.app-page dialog.invite-dialog :is(.dialog-header,.dialog-body:not(.thread-dialog-body),.dialog-actions){padding:16px}.ui-record-facts{grid-template-columns:1fr}.ui-product-picture{display:none}.workspace-header .header-actions{flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){body.app-page :is(dialog,.table-widget,.primary-button,.secondary-button){animation:none!important;transition:none!important}}
+
+/* Native file selection keeps browser accessibility and the shared secondary action. */
+html body.app-page input[type=file]::file-selector-button{font:inherit;font-size:var(--ui-label);font-weight:650;line-height:20px;min-height:var(--ui-control-height);padding:8px 13px;margin-inline-end:12px;border:1px solid var(--ui-action-line);border-radius:var(--ui-radius);background:var(--ui-action-soft);color:var(--ui-action-text);box-shadow:none;cursor:pointer}
+html body.app-page input[type=file]:hover:not(:disabled)::file-selector-button{border-color:var(--ui-action)}
+html body.app-page input[type=file]:disabled::file-selector-button{opacity:.45;cursor:not-allowed}

@@ -55,16 +55,31 @@ function shell(){
  dialog=node('dialog','mapping-widget');dialog.setAttribute('aria-labelledby','mapping-widget-title');
  dialog.innerHTML='<form method="post" action="/app/marketplace-skus/mappings"><header><div><span class="mw-eyebrow">Catalogue mapping</span><h2 id="mapping-widget-title"></h2><p data-title></p></div><button type="button" class="mw-close" aria-label="Close mapping">×</button></header><section class="mw-body"><div class="mw-intro"><span class="mw-product-image"></span><div><strong>What does one marketplace unit contain?</strong><small>Choose one product, or add products for a bundle.</small></div></div><p class="mw-feedback" role="status"></p><div class="mw-lines"></div><button type="button" class="mw-add"><span>＋</span> Add another product</button><div class="mw-help"><strong>Single product or bundle</strong><small>The quantity is how many eaches are included in one sold marketplace SKU.</small></div></section><footer><button type="submit" class="mw-clear" formaction="/app/marketplace-skus/mappings/clear" formnovalidate>Clear mapping</button><button type="button" class="secondary-button mw-cancel">Cancel</button><button type="submit" class="primary-button mw-save">Save mapping</button></footer></form>';
  document.body.append(dialog);
- const close=()=>{dialog.close();opener?.focus()};
+ dialog.addEventListener('cancel',event=>{if(dialog.querySelector('form').dataset.saving)event.preventDefault()});
+ const close=()=>{if(dialog.querySelector('form').dataset.saving)return;dialog.close();opener?.focus({preventScroll:true})};
+ async function persist(form,submitter){if(!window.NextAiTableContinuity?.saveMapping){form.dataset.asinConfirmed='true';form.requestSubmit(submitter);delete form.dataset.asinConfirmed;return;}const restore=window.NextAiTableContinuity.capture();const controls=[...dialog.querySelectorAll('button')].map(button=>[button,button.disabled]);form.dataset.saving='true';controls.forEach(([button])=>button.disabled=true);try{const message=await window.NextAiTableContinuity.saveMapping(form,submitter);delete form.dataset.saving;close();restore();requestAnimationFrame(restore);if(window.NextAiToast)window.NextAiToast(message);}catch(error){dialog.querySelector('.mw-feedback').textContent=error.message;}finally{delete form.dataset.saving;controls.forEach(([button,disabled])=>button.disabled=disabled);update();}}
  dialog.querySelector('.mw-close').onclick=close;dialog.querySelector('.mw-cancel').onclick=close;
  dialog.addEventListener('click',e=>{if(e.target===dialog)close()});
  dialog.querySelector('.mw-add').onclick=()=>{if(valid()){line().querySelector('input[type=search]').focus();update()}};
- dialog.querySelector('form').onsubmit=e=>{if(e.submitter?.classList.contains('mw-clear'))return;if(!valid()){e.preventDefault();dialog.querySelector('input[type=search]')?.focus()}};
+ dialog.querySelector('form').onsubmit=async e=>{
+  const form=e.currentTarget;if(form.dataset.saving){e.preventDefault();return;}if(e.submitter?.classList.contains('mw-clear')){if(window.NextAiTableContinuity?.saveMapping){e.preventDefault();await persist(form,e.submitter);}return;}
+  if(!valid()){e.preventDefault();dialog.querySelector('input[type=search]')?.focus();return;}
+  if(form.dataset.asinConfirmed==='true'){delete form.dataset.asinConfirmed;return;}if(form.action.includes('/shopify/')){if(window.NextAiTableContinuity?.saveMapping){e.preventDefault();await persist(form,e.submitter);}return;}
+  e.preventDefault();if(form.dataset.asinPending)return;form.dataset.asinPending='true';const version=requestNumber;const save=dialog.querySelector('.mw-save');save.disabled=true;
+  try{const response=await fetch('/app/marketplace-skus/mappings/asin-preview?sku='+encodeURIComponent(form.elements.sellerSku.value));if(!response.ok)throw Error();const preview=await response.json();
+   if(version!==requestNumber||!dialog.open)return;
+   let replace=false;if(preview.existingMappings>0){if(!window.NextAiConfirm)throw Error();replace=await NextAiConfirm({title:'Replace related Amazon mappings?',message:preview.existingMappings+' same-ASIN SKU(s) already have mappings. Replace them with this complete mapping? Different explicit pack sizes are kept. Cancel saves nothing.',accept:'Replace mappings',cancel:'Cancel save'});if(!replace)return;}
+   if(version!==requestNumber||!dialog.open)return;
+   for(const [name,value]of Object.entries({replaceAsinMappings:String(replace),asinMappingRevision:preview.revision})){let field=form.querySelector('[name="'+name+'"]');if(!field){field=node('input');field.type='hidden';field.name=name;form.append(field);}field.value=value;}
+   save.disabled=false;await persist(form,save);
+  }catch{dialog.querySelector('.mw-feedback').textContent='Related mappings could not be checked. Nothing saved; please retry.';}
+  finally{delete form.dataset.asinPending;update();}
+ };
  dialog.addEventListener('input',update);
  return dialog;
 }
 function valid(){return [...dialog.querySelectorAll('.mw-line')].length>0&&[...dialog.querySelectorAll('.mw-line')].every(l=>l.querySelector('[name=productId]').value&&l.querySelector('[name=quantity]').checkValidity())}
-function update(){const disabled=dialog.dataset.canEdit!=='true'||!valid();dialog.querySelector('.mw-add').disabled=disabled;dialog.querySelector('.mw-save').disabled=disabled}
+function update(){const disabled=dialog.dataset.canEdit!=='true'||Boolean(dialog.querySelector('form').dataset.saving)||!valid();dialog.querySelector('.mw-add').disabled=disabled;dialog.querySelector('.mw-save').disabled=disabled}
 function line(product,defaultQuantity=1,itemCode=null){
  const row=node('div','mw-line');row.dataset.itemCode=itemCode||'';row.innerHTML='<div class="mw-picker"><label><span>Product</span><input type="search" placeholder="Search product, UPC, or vendor item code" autocomplete="off" required><input type="hidden" name="productId"><small class="mw-selection-status" role="status"></small></label><div class="mw-results"></div><button type="button" class="mw-create-product">Add to catalogue</button></div><label><span>Quantity</span><input type="number" name="quantity" min="1" max="10000" step="1" value="1" required></label><button type="button" class="mw-remove" aria-label="Remove product">−</button>';
  dialog.querySelector('.mw-lines').append(row);
@@ -90,6 +105,7 @@ function line(product,defaultQuantity=1,itemCode=null){
 function draftQuantity(suggestion){const quantity=Number(suggestion?.quantity);return Number.isInteger(quantity)&&quantity>=1&&quantity<=10000?quantity:1;}
 
 async function open(trigger){
+ if(dialog?.querySelector('form').dataset.saving)return;
  opener=trigger;const d=shell(),version=++requestNumber;
  const record=trigger.dataset.target?document.getElementById(trigger.dataset.target):trigger;
  const stage=trigger.closest('.order-item')?.querySelector('[data-picture-actions]');

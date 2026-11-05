@@ -164,3 +164,16 @@ html[data-theme="dark"] #inventory-history-dialog.inventory-ledger-preview .hist
 .inventory-expiration-date[data-expiry-status="ACT_SOON"]{color:#a96616}
 [data-theme="dark"] .inventory-expiration-date:is([data-expiry-status="EXPIRED"],[data-expiry-status="CANNOT_SELL"]){color:#df888f}
 [data-theme="dark"] .inventory-expiration-date[data-expiry-status="ACT_SOON"]{color:#d8a85e}
+
+/* The selected batch owns its editor; retain one desktop row. */
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate-source.selected{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);align-items:center;gap:16px}
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate-source.selected>.ledger-position-choose{display:none}
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate-source.selected>.location-editor{grid-column:2;grid-row:1;margin:0;width:auto;min-width:0}
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-editor form{grid-template-columns:90px minmax(100px,1fr) auto auto;align-items:end;margin:0}
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate-cancel{align-self:end}
+@media(max-width:760px){#inventory-history-dialog.inventory-ledger-preview .ledger-relocate-source.selected{grid-template-columns:minmax(0,1fr)}#inventory-history-dialog.inventory-ledger-preview .ledger-relocate-source.selected>.location-editor{grid-column:1;grid-row:2}#inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-editor form{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#inventory-history-dialog.inventory-ledger-preview .ledger-relocate #location-submit{grid-column:1;justify-self:stretch}}
+
+/* CD-approved transfer action follows Available, shared by every ledger entry point. */
+#inventory-history-dialog.inventory-ledger-preview .ledger-position-stock>.ledger-position-choose{display:inline-flex;align-items:center;justify-content:center;flex:0 0 36px;width:36px;height:36px;min-height:36px;padding:3px!important;margin-inline-start:6px;align-self:center}
+#inventory-history-dialog.inventory-ledger-preview .ledger-transfer-icon{width:28px;height:28px;object-fit:contain}
+#inventory-history-dialog.inventory-ledger-preview .ledger-relocate-source.selected .ledger-position-choose{display:none}

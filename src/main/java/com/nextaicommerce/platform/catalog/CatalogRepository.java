@@ -190,31 +190,17 @@ public class CatalogRepository {
     void configureWarehouseInventory(com.nextaicommerce.platform.shopify.ShopifyOrderInventory inventory){this.warehouseInventory=inventory;}
     private record RelatedMapping(UUID mappingId,MarketplaceSkuRef row) {}
     private List<MarketplaceSkuRef> relatedWarehouseAvailability(UUID tenant,List<RelatedMapping> related){
-        var ids=related.stream().filter(r->"SHOPIFY".equals(r.row().channel())).map(RelatedMapping::mappingId).distinct().toList();
-        if(ids.isEmpty()||warehouseInventory==null)return related.stream().map(RelatedMapping::row).toList();
+        var ids=related.stream().map(RelatedMapping::mappingId).distinct().toList();
+        if(ids.isEmpty())return List.of();
         var args=new java.util.ArrayList<Object>();args.add(tenant);args.addAll(ids);
-        var components=new java.util.LinkedHashMap<UUID,Map<UUID,BigDecimal>>();
-        jdbc.query("""
-            SELECT m.id,p.account_catalog_item_id,p.quantity FROM marketplace_sku_mappings m
-            JOIN shopify_variants v ON v.tenant_id=m.tenant_id AND v.marketplace_connection_id=m.marketplace_connection_id
-              AND v.id=m.shopify_variant_id AND v.mapping_hash=m.shopify_mapping_hash
-            JOIN LATERAL (
-              SELECT account_catalog_item_id,quantity FROM marketplace_sku_mapping_components c
-              WHERE c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id
-              UNION ALL SELECT m.account_catalog_item_id,greatest(m.quantity_per_marketplace_unit,1)
-              WHERE m.account_catalog_item_id IS NOT NULL AND NOT EXISTS (
-                SELECT 1 FROM marketplace_sku_mapping_components c WHERE c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id)
-            ) p ON true
-            WHERE m.tenant_id=? AND m.status='ACTIVE' AND m.id IN (
-            """+String.join(",",java.util.Collections.nCopies(ids.size(),"?"))+")",rs->{
-                var parts=components.computeIfAbsent(rs.getObject(1,UUID.class),k->new java.util.LinkedHashMap<>());
-                UUID item=rs.getObject(2,UUID.class);BigDecimal quantity=rs.getBigDecimal(3);
-                addWarehousePart(parts,item,quantity);
-            },args.toArray());
-        var available=warehouseInventory.availability(tenant,components.values().stream().flatMap(m->m.keySet().stream()).filter(java.util.Objects::nonNull).distinct().toList());
-        return related.stream().map(ref->{var r=ref.row();BigDecimal units=null;
-            if("SHOPIFY".equals(r.channel()))units=mappedWarehouseUnits(components.get(ref.mappingId()),available);
-            return new MarketplaceSkuRef(r.itemId(),r.sku(),r.quantity(),r.status(),r.channel(),r.marketplaceQuantity(),r.fulfillment(),r.asin(),r.price(),r.currency(),r.amazonDomain(),r.connectionId(),r.buyBoxPrice(),r.itemCode(),r.shopifyAdmin(),r.shopifyStorefront(),units,r.shopifyVariantId());
+        var available=new java.util.HashMap<UUID,BigDecimal>();
+        jdbc.query("SELECT mapping.id,local_inventory.available FROM marketplace_sku_mappings mapping "
+            +com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.localMappingAvailability(false)
+            +" WHERE mapping.tenant_id=? AND mapping.status='ACTIVE' AND mapping.id IN ("
+            +String.join(",",java.util.Collections.nCopies(ids.size(),"?"))+")",
+            rs->{available.put(rs.getObject(1,UUID.class),rs.getBigDecimal(2));},args.toArray());
+        return related.stream().map(ref->{var r=ref.row();
+            return new MarketplaceSkuRef(r.itemId(),r.sku(),r.quantity(),r.status(),r.channel(),r.marketplaceQuantity(),r.fulfillment(),r.asin(),r.price(),r.currency(),r.amazonDomain(),r.connectionId(),r.buyBoxPrice(),r.itemCode(),r.shopifyAdmin(),r.shopifyStorefront(),available.get(ref.mappingId()),r.shopifyVariantId());
         }).toList();
     }
     static void addWarehousePart(Map<UUID,BigDecimal> parts,UUID item,BigDecimal quantity){parts.merge(item,quantity==null?BigDecimal.ZERO:quantity,(left,right)->left.signum()<=0||right.signum()<=0?BigDecimal.ZERO:left.add(right));}

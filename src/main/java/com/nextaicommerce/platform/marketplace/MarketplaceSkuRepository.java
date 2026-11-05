@@ -305,36 +305,25 @@ public class MarketplaceSkuRepository {
 
     @Transactional
     public void saveMapping(UUID tenantId,UUID connectionId,String sellerSku,
-            List<String> productIds,List<String> quantities){
-        setTenant(tenantId);
+            List<String> productIds,List<String> quantities){saveMapping(tenantId,connectionId,sellerSku,productIds,quantities,false,"");}
+
+    @Transactional
+    public void saveMapping(UUID tenantId,UUID connectionId,String sellerSku,List<String> productIds,List<String> quantities,boolean replaceAsinMappings,String asinMappingRevision){
+        setTenant(tenantId);com.nextaicommerce.platform.catalog.CatalogIdentity.lock(jdbc);
+        var approvedPeers=new java.util.HashMap<String,UUID>();
+        if(replaceAsinMappings){
+            String familyAsin=resolveMappingAsin(tenantId,connectionId,sellerSku);
+            jdbc.query("SELECT seller_sku FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=? AND (asin=? OR seller_sku=?) ORDER BY seller_sku FOR UPDATE",rs->{},tenantId,connectionId,familyAsin,sellerSku);
+            jdbc.query("SELECT id FROM marketplace_sku_mappings WHERE tenant_id=? AND marketplace_connection_id=? AND (marketplace_sku=? OR marketplace_sku IN (SELECT seller_sku FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=? AND asin=?)) ORDER BY id FOR UPDATE",rs->{},tenantId,connectionId,sellerSku,tenantId,connectionId,familyAsin);
+            var snapshot=asinMappingSnapshot(tenantId,connectionId,sellerSku);var preview=snapshot.preview();
+            if(preview.existingMappings()==0||!preview.revision().equals(asinMappingRevision))throw new IllegalArgumentException("Related mappings changed. Reopen the mapping and confirm replacement again.");
+            approvedPeers.putAll(snapshot.approved());
+        }
+
         if(sellerSku==null||sellerSku.isBlank())throw new IllegalArgumentException("Marketplace SKU is required.");
         if(relationshipPolicy(tenantId,connectionId).parents().contains(sellerSku))
             throw new IllegalArgumentException("Verified Amazon variation parents do not require product mapping.");
-        String asin=jdbc.query("""
-            SELECT asin FROM amazon_listings
-            WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?
-            """,rs->rs.next()?rs.getString(1):null,tenantId,connectionId,sellerSku);
-        if(asin==null){
-            Boolean listingExists=jdbc.queryForObject("""
-                SELECT EXISTS(SELECT 1 FROM amazon_listings
-                  WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?)
-                """,Boolean.class,tenantId,connectionId,sellerSku);
-            if(!Boolean.TRUE.equals(listingExists)){
-                // Orders retain legitimate seller SKUs after Amazon removes their live listing.
-                // Identity remains exact and store-scoped; an ASIN conflict requires review.
-                List<String> orderAsins=jdbc.query("""
-                    SELECT DISTINCT nullif(btrim(asin),'') FROM amazon_order_items
-                    WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?
-                    LIMIT 3
-                    """,(rs,row)->rs.getString(1),tenantId,connectionId,sellerSku);
-                if(orderAsins.isEmpty())throw new IllegalArgumentException("This marketplace SKU is not available in the selected store's listings or order history.");
-                var knownAsins=orderAsins.stream().filter(java.util.Objects::nonNull).toList();
-                if(knownAsins.size()>1)throw new IllegalArgumentException("This seller SKU has conflicting ASINs in order history. Review it before mapping.");
-                if(knownAsins.isEmpty()||orderAsins.contains(null))
-                    throw new IllegalArgumentException("Order history does not establish a complete ASIN for this seller SKU. Review it before mapping.");
-                asin=knownAsins.getFirst();
-            }
-        }
+        String asin=resolveMappingAsin(tenantId,connectionId,sellerSku);
         if(productIds==null||quantities==null||productIds.size()!=quantities.size()||productIds.isEmpty())
             throw new IllegalArgumentException("Choose at least one catalogue product and quantity.");
         if(productIds.size()>20)throw new IllegalArgumentException("A bundle can contain up to 20 catalogue products.");
@@ -376,11 +365,92 @@ public class MarketplaceSkuRepository {
                 (tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity,sort_order)
             VALUES (?,?,?,?,?)
             """,componentWrites);
+        copyMappingToUnmappedAsinPeers(tenantId,connectionId,sellerSku,asin,components,replaceAsinMappings,approvedPeers);
+    }
+
+    private String resolveMappingAsin(UUID tenantId,UUID connectionId,String sellerSku){
+        String asin=jdbc.query("""
+            SELECT asin FROM amazon_listings
+            WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?
+            """,rs->rs.next()?rs.getString(1):null,tenantId,connectionId,sellerSku);
+        if(asin==null){
+            Boolean listingExists=jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM amazon_listings
+                  WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?)
+                """,Boolean.class,tenantId,connectionId,sellerSku);
+            if(!Boolean.TRUE.equals(listingExists)){
+                // Orders retain legitimate seller SKUs after Amazon removes their live listing.
+                // Identity remains exact and store-scoped; an ASIN conflict requires review.
+                List<String> orderAsins=jdbc.query("""
+                    SELECT DISTINCT nullif(btrim(asin),'') FROM amazon_order_items
+                    WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?
+                    LIMIT 3
+                    """,(rs,row)->rs.getString(1),tenantId,connectionId,sellerSku);
+                if(orderAsins.isEmpty())throw new IllegalArgumentException("This marketplace SKU is not available in the selected store's listings or order history.");
+                var knownAsins=orderAsins.stream().filter(java.util.Objects::nonNull).toList();
+                if(knownAsins.size()>1)throw new IllegalArgumentException("This seller SKU has conflicting ASINs in order history. Review it before mapping.");
+                if(knownAsins.isEmpty()||orderAsins.contains(null))
+                    throw new IllegalArgumentException("Order history does not establish a complete ASIN for this seller SKU. Review it before mapping.");
+                asin=knownAsins.getFirst();
+            }
+        }
+        return asin;
+    }
+
+    public record AsinMappingPreview(int existingMappings,String revision){}
+    private record AsinMappingSnapshot(AsinMappingPreview preview,Map<String,UUID> approved){}
+    @Transactional(readOnly=true)
+    public AsinMappingPreview asinMappingPreview(UUID tenant,UUID connection,String sku){setTenant(tenant);return asinMappingSnapshot(tenant,connection,sku).preview();}
+    private AsinMappingSnapshot asinMappingSnapshot(UUID tenant,UUID connection,String sku){
+        var parents=relationshipPolicy(tenant,connection).parents();
+        String asin=resolveMappingAsin(tenant,connection,sku);
+        var entries=jdbc.query("""
+          SELECT peer.seller_sku,m.id::text,m.updated_at::text,peer.asin,to_jsonb(m)::text,coalesce((SELECT jsonb_agg(to_jsonb(part) ORDER BY part.id)::text FROM marketplace_sku_mapping_components part WHERE part.tenant_id=m.tenant_id AND part.marketplace_sku_mapping_id=m.id),'[]')
+          FROM amazon_listings peer
+          JOIN marketplace_sku_mappings m ON m.tenant_id=peer.tenant_id AND m.marketplace_connection_id=peer.marketplace_connection_id AND m.marketplace_sku=peer.seller_sku
+          WHERE peer.tenant_id=? AND peer.marketplace_connection_id=? AND peer.seller_sku<>? AND peer.asin=?
+          ORDER BY peer.seller_sku
+          """,(rs,row)->List.of(rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4),rs.getString(5),rs.getString(6)),tenant,connection,sku,asin);
+        var approved=new java.util.HashMap<String,UUID>();int count=0;var evidence=new StringBuilder(tenant+"/"+connection+"/"+sku);
+        for(var entry:entries){try{var a=MarketplaceSkuAutoMapper.parse(sku);var b=MarketplaceSkuAutoMapper.parse(entry.getFirst());if(parents.contains(entry.getFirst())||a.explicitBundle()||b.explicitBundle()||a.quantityPerMarketplaceUnit()!=b.quantityPerMarketplaceUnit())continue;}catch(IllegalArgumentException invalid){continue;}
+          count++;approved.put(entry.getFirst(),UUID.fromString(entry.get(1)));evidence.append(entry.toString());}
+        try{return new AsinMappingSnapshot(new AsinMappingPreview(count,java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(evidence.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)))),Map.copyOf(approved));}catch(java.security.NoSuchAlgorithmException impossible){throw new IllegalStateException(impossible);}
+    }
+
+    private void copyMappingToUnmappedAsinPeers(UUID tenant,UUID connection,String sourceSku,String asin,Map<UUID,BigDecimal> components,boolean replace,Map<String,UUID> approvedPeers){
+        if(asin==null||asin.isBlank())return;
+        var parents=relationshipPolicy(tenant,connection).parents();
+        MarketplaceSkuAutoMapper.ParsedSku source;
+        try{source=MarketplaceSkuAutoMapper.parse(sourceSku);}catch(IllegalArgumentException invalid){return;}
+        if(source.explicitBundle())return;
+        var peers=jdbc.query("""
+            SELECT listing.seller_sku FROM amazon_listings listing
+            WHERE listing.tenant_id=? AND listing.marketplace_connection_id=? AND listing.asin=? AND listing.seller_sku<>?
+              AND (? OR NOT EXISTS(SELECT 1 FROM marketplace_sku_mappings existing WHERE existing.tenant_id=listing.tenant_id AND existing.marketplace_connection_id=listing.marketplace_connection_id AND existing.marketplace_sku=listing.seller_sku))
+            ORDER BY listing.seller_sku
+            """,(rs,row)->rs.getString(1),tenant,connection,asin,sourceSku,replace);
+        var first=components.entrySet().iterator().next();
+        for(String peer:peers){
+            if(parents.contains(peer))continue;
+            MarketplaceSkuAutoMapper.ParsedSku parsed;
+            try{parsed=MarketplaceSkuAutoMapper.parse(peer);}catch(IllegalArgumentException invalid){continue;}
+            if(parsed.explicitBundle()||parsed.quantityPerMarketplaceUnit()!=source.quantityPerMarketplaceUnit())continue;
+            var ids=jdbc.query("""
+                INSERT INTO marketplace_sku_mappings(tenant_id,marketplace_connection_id,marketplace_sku,asin,account_catalog_item_id,quantity_per_marketplace_unit,status,mapping_source,auto_map_blocked)
+                VALUES(?,?,?,?,?,?,'ACTIVE','AUTO',false)
+                ON CONFLICT(tenant_id,marketplace_connection_id,marketplace_sku) DO UPDATE SET
+                  account_catalog_item_id=EXCLUDED.account_catalog_item_id,quantity_per_marketplace_unit=EXCLUDED.quantity_per_marketplace_unit,
+                  asin=EXCLUDED.asin,status='ACTIVE',mapping_source='MANUAL',auto_map_blocked=false,updated_at=now() WHERE ? AND marketplace_sku_mappings.id=? RETURNING id
+                """,(rs,row)->rs.getObject(1,UUID.class),tenant,connection,peer,asin,first.getKey(),first.getValue(),replace,approvedPeers.get(peer));
+            if(ids.isEmpty())continue;var mapping=ids.getFirst();jdbc.update("DELETE FROM marketplace_sku_mapping_components WHERE tenant_id=? AND marketplace_sku_mapping_id=?",tenant,mapping);var writes=new ArrayList<Object[]>();int index=0;
+            for(var part:components.entrySet())writes.add(new Object[]{tenant,mapping,part.getKey(),part.getValue(),index++});
+            jdbc.batchUpdate("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity,sort_order) VALUES(?,?,?,?,?)",writes);
+        }
     }
 
     @Transactional
     public void clearMapping(UUID tenantId,UUID connectionId,String sellerSku){
-        setTenant(tenantId);
+        setTenant(tenantId);com.nextaicommerce.platform.catalog.CatalogIdentity.lock(jdbc);
         if(relationshipPolicy(tenantId,connectionId).parents().contains(sellerSku))
             throw new IllegalArgumentException("Verified Amazon variation parents do not require product mapping.");
         int updated=jdbc.update("""

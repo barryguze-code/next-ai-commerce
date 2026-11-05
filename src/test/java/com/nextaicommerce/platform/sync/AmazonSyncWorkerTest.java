@@ -39,6 +39,15 @@ class AmazonSyncWorkerTest {
             job.marketplaceId(),end.minus(Duration.ofHours(73)),end);
     }
 
+    @Test void sameAsinMatchingRunsOnlyAfterCompletedListingImport(){
+        var store=mock(AmazonSyncStore.class);var amazon=mock(AmazonSpApiClient.class);var mapper=mock(MarketplaceSkuAutoMapper.class);var normalizer=mock(AmazonReportNormalizer.class);
+        UUID tenant=UUID.randomUUID(),connection=UUID.randomUUID();var job=new AmazonSyncStore.Job(UUID.randomUUID(),tenant,UUID.randomUUID(),connection,"LISTINGS_SNAPSHOT","FULL","US",Instant.now().minusSeconds(30),Instant.now(),"report",0,0,false,Instant.now());
+        when(store.claim(anyString())).thenReturn(job);var json=new ObjectMapper();String raw="{\"processingStatus\":\"DONE\",\"reportDocumentId\":\"document\"}";
+        when(amazon.get(tenant,connection,"/reports/2021-06-30/reports/report")).thenReturn(new AmazonSpApiClient.ApiResponse(200,"fixture",json.readTree(raw),raw));when(amazon.downloadDocument(tenant,connection,"document")).thenReturn("fixture");
+        new AmazonSyncWorker(store,amazon,normalizer,mapper,mock(OrderRepository.class),true).processNext();
+        var ordered=org.mockito.Mockito.inOrder(store,mapper);ordered.verify(store).saveDocumentAndComplete(org.mockito.ArgumentMatchers.eq(job),org.mockito.ArgumentMatchers.eq("document"),org.mockito.ArgumentMatchers.eq("fixture"),org.mockito.ArgumentMatchers.eq("fixture"),org.mockito.ArgumentMatchers.any());ordered.verify(mapper).mapSameAsinAfterImport(tenant,connection);
+    }
+
     @Test
     void readsMarketplaceIdFromSellersApiPayloadArray() throws Exception {
         var response = json.readTree("""

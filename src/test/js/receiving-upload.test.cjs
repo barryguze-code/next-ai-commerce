@@ -9,7 +9,7 @@ test('upload uses shared choice lists and preserves vendor currency and file con
   const page=await browser.newPage({viewport:{width:1280,height:800}});
   const source=fs.readFileSync(root+'templates/receiving.html','utf8');
   let dialog=source.slice(source.indexOf('<dialog id="session-dialog"'),source.indexOf('<dialog id="inline-vendor-dialog"'));
-  dialog=dialog.replace(/<option th:each="v:[\s\S]*?<\/option>/,'<option value="kehe" data-freight="12.50" data-currency="CAD">KEHE</option>');
+  dialog=dialog.replace(/<option th:each="v:[\s\S]*?<\/option>/,'<option value="kehe" data-freight="12.5000" data-currency="CAD">KEHE</option>');
   await page.setContent('<body class="app-page">'+dialog+'</body>');
   for(const file of ['app.css','brand.css','access.css','platform-controls.css','receiving.css'])await page.addStyleTag({path:root+'static/css/'+file});
   await page.addScriptTag({content:source.slice(source.indexOf('function prefillVendorDefaults'),source.indexOf('</script>',source.indexOf('function prefillVendorDefaults')))});

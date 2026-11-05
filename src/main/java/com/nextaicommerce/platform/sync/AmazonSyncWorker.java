@@ -151,6 +151,7 @@ public class AmazonSyncWorker {
         Instant importStarted=Instant.now();
         store.saveDocumentAndComplete(job,documentId,document,report.requestId(),
             source->normalizer.normalize(job,document,source));
+        if("LISTINGS_SNAPSHOT".equals(job.type())){try{skuMapper.mapSameAsinAfterImport(job.tenantId(),job.connectionId());}catch(RuntimeException deferred){log.warn("{} same-ASIN matching deferred; imported listings retained",runLabel(job),deferred);}}
         if("ORDERS_30_DAY".equals(job.type())&&recipients!=null)recipients.enqueueWindow(job.tenantId(),job.connectionId(),job.windowStart(),job.windowEnd());
         log.info("{} local report import complete in {} second(s).",runLabel(job),
             Duration.between(importStarted,Instant.now()).toSeconds());

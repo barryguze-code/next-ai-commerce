@@ -2,6 +2,7 @@
  if(window.NextAiIcons)return;
  // Semantic names are the single source for shared action artwork.
  const assets={mapping:'sku-mapped',unmapped:'sku-not-mapped',inventory:'adjust-inventory',price:'sku-set-price',sale:'sku-sale-price',amazon:'amazon.com-logo',collaboration:'collaboration-blue',actions:'actions-ai-human',alert:'actions-ai-human-alert',print:'print-packing-slip-simple',printClicked:'print-packing-clicked',undoShipped:'mark-as-shipped-undo'};
+ assets['inventory-transfer']='inventory-transfer';
  assets['sku-mapping']='sku-mapped';
  assets['collaboration-assigned-red']='collaboration-assigned-dots';
  for(const name of ['actions','alert','actions-ai-human','actions-ai-human-alert'])assets[name]='actionable-items';

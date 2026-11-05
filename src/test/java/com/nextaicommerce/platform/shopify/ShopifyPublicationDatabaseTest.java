@@ -60,6 +60,75 @@ class ShopifyPublicationDatabaseTest {
   });
  }
  void stock(UUID location,int units){UUID id=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,unit_cost,currency,source_type,source_id,idempotency_key,occurred_at) VALUES(?,?,?,?,'RECEIPT',?,current_date+80,2,'USD','MANUAL',?,?,now())",id,tenant,item,location,units,id,id.toString());}
+ @Test void manualAmazonMappingCopiesOnlyExactAsinUnmappedSamePackWithinStore(){tx.executeWithoutResult(s->{scope();
+   UUID amazon=UUID.randomUUID(),second=UUID.randomUUID();
+   for(UUID c:List.of(amazon,second))jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone,inventory_activated_at) VALUES(?,?,'AMAZON',?,'US','ACTIVE','Amazon fixture','fixture','UTC',now())",c,tenant,c.toString());
+   for(String sku:List.of("SOURCE-EAx3","PEER-EAx3","OTHER-EAx12","EXISTING-EAx3","BLOCKED-EAx3"))jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US',?,'B000TEST01','Fixture')",tenant,amazon,sku);
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','PEER-EAx3','B000TEST01','Fixture')",tenant,second);
+   var mappings=new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository(jdbc);
+   mappings.saveMapping(tenant,amazon,"EXISTING-EAx3",List.of(item.toString()),List.of("2"));
+   // Recreate the unmapped cases after the earlier manual save's propagation.
+   jdbc.update("DELETE FROM marketplace_sku_mappings WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_sku<>'EXISTING-EAx3'",tenant,amazon);
+   mappings.saveMapping(tenant,amazon,"BLOCKED-EAx3",List.of(item.toString()),List.of("3"));mappings.clearMapping(tenant,amazon,"BLOCKED-EAx3");
+   jdbc.update("DELETE FROM marketplace_sku_mappings WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_sku IN ('SOURCE-EAx3','PEER-EAx3')",tenant,amazon);
+   mappings.saveMapping(tenant,amazon,"SOURCE-EAx3",List.of(item.toString()),List.of("3"));
+   var saved=mappings.mappingComponents(tenant,amazon,List.of("SOURCE-EAx3","PEER-EAx3","OTHER-EAx12","EXISTING-EAx3","BLOCKED-EAx3"));
+   assertThat(saved.get("PEER-EAx3").getFirst().quantity()).isEqualByComparingTo("3");
+   assertThat(saved.get("EXISTING-EAx3").getFirst().quantity()).isEqualByComparingTo("2");assertThat(saved).doesNotContainKeys("OTHER-EAx12","BLOCKED-EAx3");
+   assertThat(mappings.mappingComponents(tenant,second,List.of("PEER-EAx3"))).isEmpty();
+   var ledgerRefs=new com.nextaicommerce.platform.catalog.CatalogRepository(jdbc).listMarketplaceSkus(tenant,List.of(item));
+   assertThat(ledgerRefs.stream().filter(r->r.sku().equals("SOURCE-EAx3")).findFirst().orElseThrow().warehouseAvailable()).isEqualByComparingTo("104");
+   var preview=mappings.asinMappingPreview(tenant,amazon,"SOURCE-EAx3");assertThat(preview.existingMappings()).isEqualTo(3);
+   mappings.saveMapping(tenant,amazon,"SOURCE-EAx3",List.of(item.toString()),List.of("3"),true,preview.revision());
+   assertThat(mappings.mappingComponents(tenant,amazon,List.of("EXISTING-EAx3")).get("EXISTING-EAx3").getFirst().quantity()).isEqualByComparingTo("3");
+   var stale=mappings.asinMappingPreview(tenant,amazon,"SOURCE-EAx3");jdbc.update("UPDATE marketplace_sku_mappings SET quantity_per_marketplace_unit=7 WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_sku='EXISTING-EAx3'",tenant,amazon);
+   assertThatThrownBy(()->mappings.saveMapping(tenant,amazon,"SOURCE-EAx3",List.of(item.toString()),List.of("9"),true,stale.revision())).isInstanceOf(IllegalArgumentException.class);
+   assertThat(mappings.mappingComponents(tenant,amazon,List.of("SOURCE-EAx3")).get("SOURCE-EAx3").getFirst().quantity()).isEqualByComparingTo("3");
+
+ });}
+ @Test void completedImportMapsOnlyUnmappedConsistentSameAsinPacks(){tx.executeWithoutResult(s->{scope();
+   UUID amazon=UUID.randomUUID(),second=UUID.randomUUID();for(UUID c:List.of(amazon,second))jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone,inventory_activated_at) VALUES(?,?,'AMAZON',?,'US','ACTIVE','Fixture','fixture','UTC',now())",c,tenant,c.toString());
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','SOURCE-EAx3','B000TEST01','Fixture')",tenant,amazon);
+   var manual=new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository(jdbc);manual.saveMapping(tenant,amazon,"SOURCE-EAx3",List.of(item.toString()),List.of("3"));
+   for(String sku:List.of("NEW-EAx3","DIFFERENT-EAx12","CLEARED-EAx3","REMOVED-EAx3","123-456-EAx3"))jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US',?,'B000TEST01','Fixture')",tenant,amazon,sku);
+   jdbc.update("INSERT INTO marketplace_sku_mappings(tenant_id,marketplace_connection_id,marketplace_sku,asin,status,auto_map_blocked,account_catalog_item_id) VALUES(?,?,'CLEARED-EAx3','B000TEST01','INACTIVE',true,?)",tenant,amazon,item);
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','FOREIGN-EAx3','B000TEST01','Fixture')",tenant,second);
+   jdbc.update("UPDATE amazon_listings SET platform_status='REMOVED',amazon_removed_at=now() WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku='REMOVED-EAx3'",tenant,amazon);
+   var mapper=new com.nextaicommerce.platform.marketplace.MarketplaceSkuAutoMapper(jdbc,tx);
+   assertThat(mapper.mapSameAsinAfterImport(tenant,amazon)).isEqualTo(1);assertThat(mapper.mapSameAsinAfterImport(tenant,amazon)).isZero();
+   assertThat(manual.mappingComponents(tenant,amazon,List.of("NEW-EAx3")).get("NEW-EAx3").getFirst().quantity()).isEqualByComparingTo("3");
+   assertThat(manual.mappingComponents(tenant,amazon,List.of("DIFFERENT-EAx12","CLEARED-EAx3","REMOVED-EAx3","123-456-EAx3"))).isEmpty();assertThat(manual.mappingComponents(tenant,second,List.of("FOREIGN-EAx3"))).isEmpty();
+   jdbc.update("UPDATE marketplace_sku_mapping_components SET quantity=2 WHERE tenant_id=? AND marketplace_sku_mapping_id=(SELECT id FROM marketplace_sku_mappings WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_sku='NEW-EAx3')",tenant,tenant,amazon);
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','CONFLICT-TARGET-EAx3','B000TEST01','Fixture')",tenant,amazon);
+   assertThat(mapper.mapSameAsinAfterImport(tenant,amazon)).isZero();assertThat(manual.mappingComponents(tenant,amazon,List.of("CONFLICT-TARGET-EAx3"))).isEmpty();
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','REMOVED-SOURCE-EAx1','B000TEST02','Fixture')",tenant,amazon);
+   manual.saveMapping(tenant,amazon,"REMOVED-SOURCE-EAx1",List.of(item.toString()),List.of("1"));
+   jdbc.update("UPDATE amazon_listings SET platform_status='REMOVED',amazon_removed_at=now() WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku='REMOVED-SOURCE-EAx1'",tenant,amazon);
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','LIVE-TARGET-EAx1','B000TEST02','Fixture')",tenant,amazon);
+   assertThat(mapper.mapSameAsinAfterImport(tenant,amazon)).isZero();assertThat(manual.mappingComponents(tenant,amazon,List.of("LIVE-TARGET-EAx1"))).isEmpty();
+ });}
+ @Test void skuDisplayUsesSelectedLocationsCurrentMappingAndPersistsEdits(){tx.executeWithoutResult(s->{scope();
+   var skus=new ShopifySkuRepository(jdbc,true);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("104"));
+   stock(other,12);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("108"));
+   stock(main,17);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("113"));
+   assertThat(skus.availabilityBatch(tenant,UUID.randomUUID(),List.of(variant))).isEmpty();
+   jdbc.update("UPDATE marketplace_sku_mappings SET shopify_mapping_hash='stale' WHERE tenant_id=? AND shopify_variant_id=?",tenant,variant);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).isEmpty();
+   var row=skus.find(tenant,connection,variant);skus.save(tenant,connection,variant,row.revision(),List.of(item.toString()),List.of("2"),()->{});
+   assertThat(skus.components(tenant,connection,variant).getFirst().quantity()).isEqualByComparingTo("2");
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("170"));
+   jdbc.update("UPDATE shopify_inventory_bindings SET enabled=false WHERE tenant_id=? AND id=?",tenant,binding);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("170"));
+   jdbc.update("DELETE FROM shopify_inventory_binding_sources WHERE tenant_id=?",tenant);
+   jdbc.update("DELETE FROM shopify_inventory_bindings WHERE tenant_id=?",tenant);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("170"));
+   var related=new com.nextaicommerce.platform.catalog.CatalogRepository(jdbc).listMarketplaceSkus(tenant,List.of(item));
+   assertThat(related).hasSize(1);
+   assertThat(related.getFirst().warehouseAvailable()).isEqualByComparingTo("170");
+ });}
  @Test void sourceSubsetDuplicatePreventionAndNoInventoryMutation(){
   String before=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant);
   assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);

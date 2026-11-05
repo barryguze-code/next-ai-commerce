@@ -18,6 +18,7 @@
    document.body.append(modal);modal.showModal();
   });
  }
+ window.NextAiInventoryPositionContext={accept(row){request?.abort();request=null;positions=[{...row.dataset}];components=[];designPreview=true;source=document.createElement('a');source.href='/app/inventory/ledger?itemId='+encodeURIComponent(row.dataset.item);select.replaceChildren(new Option((row.dataset.locationCode||'Location')+' · '+(row.dataset.expiration||'No expiration'),'0'));select.value='0';}};
  const itemPicker=document.createElement('label'),itemSelect=document.createElement('select');
  itemPicker.className='history-item-picker';itemPicker.hidden=true;itemPicker.append('Mapped item ',itemSelect);picker.before(itemPicker);
  itemSelect.setAttribute('aria-label','Mapped inventory item');itemSelect.dataset.standardChoice='';
@@ -39,6 +40,7 @@
   finally{if(request===active){if(sidebar)sidebar.inert=false;itemSelect.removeAttribute('aria-busy');}}
  });
  function openPosition(index){
+  if(!positions[index]?.item)return;
   const sidebar=drawer.querySelector('.position-sidebar');if(sidebar)sidebar.inert=false;
   drawer.querySelectorAll('.history-error').forEach(message=>message.remove());
   const row=document.createElement('div');

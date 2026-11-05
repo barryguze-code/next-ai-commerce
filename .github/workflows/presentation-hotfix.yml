@@ -86,9 +86,9 @@ jobs:
       - name: Focused frontend performance and workspace regressions
         if: inputs.classification == 'FRONTEND_STANDARDIZATION'
         run: |
-          mvn --batch-mode -Dtest=ProtectedImageCacheAdviceTest,VersionedAssetCacheFilterTest,TemplateRenderingTest,InventoryControllerSafetyTest,CatalogGlobalChoiceMvcTest test
+          mvn --batch-mode -Dtest=ProtectedImageCacheAdviceTest,VersionedAssetCacheFilterTest,TemplateRenderingTest,InventoryControllerSafetyTest,CatalogGlobalChoiceMvcTest,MappingWorkspaceGuardTest,AmazonSyncWorkerTest,ShopifyPublicationDatabaseTest test
           npx playwright install --with-deps chromium
-          node --test src/test/js/frontend-standardization.test.cjs src/test/js/stock-editor.test.cjs src/test/js/table-widget.test.cjs src/test/js/receiving-inventory-usability.test.cjs src/test/js/receiving-delivery.test.cjs src/test/js/product-thumbnails.test.cjs src/test/js/inventory-tabs.test.cjs src/test/js/stock-zero-columns.test.cjs src/test/js/bundle-ledger-choice.test.cjs
+          node --test src/test/js/receiving-focus.test.cjs src/test/js/mapping-table-continuity.test.cjs src/test/js/shopify-mapping-standard.test.cjs src/test/js/ledger-relocation-entry.test.cjs src/test/js/huddle-close-restart.test.cjs src/test/js/frontend-standardization.test.cjs src/test/js/stock-editor.test.cjs src/test/js/table-widget.test.cjs src/test/js/receiving-inventory-usability.test.cjs src/test/js/receiving-delivery.test.cjs src/test/js/product-thumbnails.test.cjs src/test/js/inventory-tabs.test.cjs src/test/js/stock-zero-columns.test.cjs src/test/js/bundle-ledger-choice.test.cjs
       - name: Build exact hotfix package
         run: |
           mvn --batch-mode -DskipTests package

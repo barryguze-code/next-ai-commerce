@@ -5,13 +5,14 @@ const {chromium}=require('playwright');
 const root='src/main/resources/';
 const template=fs.readFileSync(root+'templates/receiving-work.html','utf8');
 const dialogs=template.slice(template.indexOf('<dialog'),template.indexOf('<script th:inline'));
-test('receipt opens with the visible expiration input focused',async()=>{
- const browser=await chromium.launch({headless:true});try{const page=await browser.newPage();
+test('receipt focuses expiration and saves split dates even when the optional preview fails',async()=>{
+ const browser=await chromium.launch({headless:true});try{const page=await browser.newPage();let submitted,posts=0;
   const state={documents:[{id:'doc',type:'INVOICE',number:'QA'}],lines:[{id:'line',documentId:'doc',productId:'item',product:'QA Yogurt',code:'381005',remaining:12,received:0,receipts:0,unitsPerCase:6,depositFee:0,otherFee:0,locationId:'main',unitCost:2,currency:'USD',requiresExpiration:true}],locations:[{id:'main',code:'MAIN',name:'Main storage',status:'ACTIVE'}],details:[],policy:{minimumSellableDays:4,warningDays:18}};
   await page.route('**/*',route=>{
    const path=new URL(route.request().url()).pathname;
    if(path.endsWith('/identity'))return route.fulfill({json:{imageUrl:''}});
-   if(path.endsWith('/expiration-status'))return route.fulfill({json:{tone:'success',message:'Expiration OK'}});
+   if(path.endsWith('/expiration-status'))return route.fulfill({status:503,json:{message:'Preview temporarily unavailable'}});
+   if(path.includes('/batches/')){posts++;submitted=route.request().postDataJSON();return route.fulfill({json:{message:'Receipt saved.'}});}
    if(path.endsWith('/state'))return route.fulfill({json:state});
    return route.fulfill({contentType:'text/html',body:'<main class="receive-work" data-can-edit="true" data-can-add-location="false"><div id="rw-lines-card"><label class="table-standard-search"><input type="search" aria-label="Search table"></label></div><button data-receive="line">Receive</button><table class="rw-table"></table><p id="rw-feedback"></p></main>'+dialogs});
   });
@@ -21,5 +22,16 @@ test('receipt opens with the visible expiration input focused',async()=>{
   for(const file of ['platform-controls.js','short-date-input.js','receiving-work.js'])await page.addScriptTag({path:root+'static/js/'+file});
   await page.getByRole('button',{name:'Receive',exact:true}).click();
  await page.waitForFunction(()=>document.activeElement?.classList.contains('short-date-text'),{},{timeout:2000});
+ await page.getByRole('spinbutton',{name:'Cases',exact:true}).fill('1');
+ await page.getByRole('textbox',{name:'Expiration date (MM/DD/YY)',exact:true}).fill('01/01/26');
+ await page.getByRole('textbox',{name:'Expiration date (MM/DD/YY)',exact:true}).press('Tab');
+ await page.getByText('Preview unavailable. Shelf-life rules will be checked when saving.',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'+ Add quantity / expiration date',exact:true}).click();
+ await page.getByRole('spinbutton',{name:'Cases',exact:true}).nth(1).fill('1');
+ await page.getByRole('textbox',{name:'Expiration date (MM/DD/YY)',exact:true}).nth(1).fill('01/01/24');
+ await page.getByRole('button',{name:'Save receipt',exact:true}).click();
+ await page.waitForFunction(()=>!document.querySelector('#rw-receipt-form')?.closest('dialog')?.open);
+ assert.equal(posts,1);
+ assert.deepEqual(submitted.batches,[{quantity:6,expiration:'2026-01-01'},{quantity:6,expiration:'2024-01-01'}]);
  }finally{await browser.close();}
 });

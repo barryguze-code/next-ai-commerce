@@ -16,3 +16,5 @@ The SVGs under `src/main/resources/static/images/platform/` are the supplied pla
 Orders uses `order-design.js` and `order-design.css` for the six-column default layout. Extra stock, mapping, shipping and sales-history columns remain available through the shared Columns control. The table layout revision resets old column preferences once; subsequent preferences persist. Decorations are idempotent because live order refresh replaces row DOM. Preserve existing action handlers, tenant-scoped endpoints, and the table widget's numeric-column mapping when changing the layout.
 
 Item sales excludes shipping; a separate `+ currency amount Shipping` line is shown only for positive customer shipping charges. Lock controls change the existing `q` filter; copying an identifier is a separate action.
+
+- `table/inventory-transfer.png` (`inventory-transfer`): owner-supplied relocation artwork. Shared ledger position rows show it at 28px inside a 36px action immediately after Available units; keep the accessible relocation label, disabled state and inline Save/Cancel editor.

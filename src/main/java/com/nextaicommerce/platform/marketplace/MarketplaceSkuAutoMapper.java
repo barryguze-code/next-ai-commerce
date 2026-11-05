@@ -176,6 +176,46 @@ public class MarketplaceSkuAutoMapper {
         return mapped+repaired;
     }
 
+    /** Runs only after a completed listings import; no API calls or inventory writes. */
+    @Transactional
+    public int mapSameAsinAfterImport(UUID tenant,UUID connection){
+        setTenant(tenant);com.nextaicommerce.platform.catalog.CatalogIdentity.lock(jdbc);
+        Set<String> parents=relationships==null?Set.of():relationships.load(tenant,connection).parents();
+        record Source(String sku,String asin,UUID mapping,String status,String mappedAsin,UUID item,BigDecimal quantity,boolean active){}
+        var rows=jdbc.query("""
+            SELECT l.seller_sku,l.asin,m.id,m.status,m.asin,p.account_catalog_item_id,p.quantity,i.status='ACTIVE'
+            FROM amazon_listings l
+            JOIN marketplace_connections c ON c.tenant_id=l.tenant_id AND c.id=l.marketplace_connection_id AND c.channel='AMAZON' AND c.status='ACTIVE'
+            LEFT JOIN marketplace_sku_mappings m ON m.tenant_id=l.tenant_id AND m.marketplace_connection_id=l.marketplace_connection_id AND m.marketplace_sku=l.seller_sku
+            LEFT JOIN LATERAL (
+              SELECT account_catalog_item_id,quantity FROM marketplace_sku_mapping_components part
+              WHERE part.tenant_id=m.tenant_id AND part.marketplace_sku_mapping_id=m.id
+              UNION ALL SELECT m.account_catalog_item_id,m.quantity_per_marketplace_unit
+              WHERE m.account_catalog_item_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM marketplace_sku_mapping_components part WHERE part.tenant_id=m.tenant_id AND part.marketplace_sku_mapping_id=m.id)
+            ) p ON true
+            LEFT JOIN account_catalog_items i ON i.tenant_id=l.tenant_id AND i.id=p.account_catalog_item_id
+            WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.platform_status NOT IN ('DELETED','REMOVED') AND l.amazon_removed_at IS NULL AND nullif(trim(l.asin),'') IS NOT NULL
+            ORDER BY l.seller_sku,p.account_catalog_item_id FOR SHARE OF l
+            """,(rs,row)->new Source(rs.getString(1),rs.getString(2),rs.getObject(3,UUID.class),rs.getString(4),rs.getString(5),rs.getObject(6,UUID.class),rs.getBigDecimal(7),rs.getBoolean(8)),tenant,connection);
+        var bySku=new LinkedHashMap<String,List<Source>>();rows.forEach(r->bySku.computeIfAbsent(r.sku(),k->new ArrayList<>()).add(r));
+        var evidence=new HashMap<String,MappingComponent>();var conflicts=new HashSet<String>();var targets=new ArrayList<Source>();
+        for(var family:bySku.values()){
+            Source r=family.getFirst();if(parents.contains(r.sku()))continue;ParsedSku parsed;
+            try{parsed=parse(r.sku());}catch(IllegalArgumentException invalid){continue;}
+            if(parsed.explicitBundle()||!parsed.bundleComponents().isEmpty())continue;String key=r.asin()+"|"+parsed.quantityPerMarketplaceUnit();
+            if(r.mapping()==null){targets.add(r);continue;}if(!"ACTIVE".equals(r.status()))continue;
+            if(family.size()!=1||!r.asin().equals(r.mappedAsin())||!r.active()||r.item()==null||r.quantity()==null||r.quantity().compareTo(BigDecimal.valueOf(parsed.quantityPerMarketplaceUnit()))!=0){conflicts.add(key);continue;}
+            var component=new MappingComponent(r.item(),r.quantity().stripTrailingZeros());var prior=evidence.putIfAbsent(key,component);if(prior!=null&&!prior.equals(component))conflicts.add(key);
+        }
+        var candidates=new ArrayList<MappingCandidate>();
+        for(Source r:targets){var parsed=parse(r.sku());String key=r.asin()+"|"+parsed.quantityPerMarketplaceUnit();var part=evidence.get(key);if(part==null||conflicts.contains(key))continue;
+            candidates.add(new MappingCandidate(part.itemId(),r.sku(),r.asin(),part.quantity(),List.of(part)));
+        }
+        int mapped=writeMappings(tenant,connection,candidates,false);
+        if(mapped>0||!conflicts.isEmpty())log.info("Amazon same-ASIN import matching tenantId={} connectionId={} mapped={} unresolvedFamilies={}",tenant,connection,mapped,conflicts.size());
+        return mapped;
+    }
+
     private List<MappingCandidate> barcodeCandidates(UUID tenant,UUID connection,Set<String> codeMatched){
         var catalogue=jdbc.queryForList("""
             SELECT item.id,coalesce(item.display_name,product.canonical_name) title,identifier.identifier_value
@@ -248,7 +288,8 @@ public class MarketplaceSkuAutoMapper {
     }
 
     /** Writes hundreds of mappings in the same database round trips previously used for one mapping. */
-    private int writeMappings(UUID tenantId,UUID connectionId,List<MappingCandidate> candidates){
+    private int writeMappings(UUID tenantId,UUID connectionId,List<MappingCandidate> candidates){return writeMappings(tenantId,connectionId,candidates,true);}
+    private int writeMappings(UUID tenantId,UUID connectionId,List<MappingCandidate> candidates,boolean reactivate){
         int mapped=0;
         for(int start=0;start<candidates.size();start+=500){
             List<MappingCandidate> chunk=candidates.subList(start,Math.min(start+500,candidates.size()));
@@ -262,6 +303,7 @@ public class MarketplaceSkuAutoMapper {
                 arguments.add(candidate.itemId());arguments.add(candidate.sku());
                 arguments.add(candidate.asin());arguments.add(candidate.quantity());
             }
+            arguments.add(reactivate);
             List<WrittenMapping> written=jdbc.query("""
                 INSERT INTO marketplace_sku_mappings
                     (tenant_id,marketplace_connection_id,account_catalog_item_id,marketplace_sku,asin,
@@ -272,7 +314,7 @@ public class MarketplaceSkuAutoMapper {
                     account_catalog_item_id=EXCLUDED.account_catalog_item_id,asin=EXCLUDED.asin,
                     quantity_per_marketplace_unit=EXCLUDED.quantity_per_marketplace_unit,status='ACTIVE',
                     mapping_source='AUTO',updated_at=now()
-                WHERE marketplace_sku_mappings.status='INACTIVE'
+                WHERE ? AND marketplace_sku_mappings.status='INACTIVE'
                   AND marketplace_sku_mappings.auto_map_blocked=false
                 RETURNING id,marketplace_sku
                 """.formatted(values),(rs,row)->new WrittenMapping(rs.getObject(1,UUID.class),rs.getString(2)),arguments.toArray());

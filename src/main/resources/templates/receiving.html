@@ -105,7 +105,7 @@
 </form></dialog>
 
 <script>
-function prefillVendorDefaults(select){const option=select.options[select.selectedIndex];document.getElementById('session-freight').value=option.dataset.freight||'0';const currency=option.dataset.currency||'USD';document.getElementById('session-currency').value=currency;document.querySelectorAll('[data-receiving-currency]').forEach(el=>{el.textContent=new Intl.NumberFormat('en-US',{style:'currency',currency}).formatToParts(0).find(p=>p.type==='currency').value;el.setAttribute('aria-label',currency)})}
+function prefillVendorDefaults(select){const option=select.options[select.selectedIndex];document.getElementById('session-freight').value=Number(option.dataset.freight||0).toFixed(2);const currency=option.dataset.currency||'USD';document.getElementById('session-currency').value=currency;document.querySelectorAll('[data-receiving-currency]').forEach(el=>{el.textContent=new Intl.NumberFormat('en-US',{style:'currency',currency}).formatToParts(0).find(p=>p.type==='currency').value;el.setAttribute('aria-label',currency)})}
 function showSelectedFiles(input){const summary=input.parentElement.querySelector('.selected-file-summary');const count=input.files.length;summary.textContent=count===0?'Choose at least one document.':count===1?input.files[0].name:count+' documents selected · one receiving workspace'}
 </script>
 <script th:if="${vendorCreated}">window.addEventListener('DOMContentLoaded',()=>document.getElementById('session-dialog').showModal())</script>
