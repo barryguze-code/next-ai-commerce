@@ -11,7 +11,7 @@ function update(){
   document.querySelector('.rw-selection-bar').classList.toggle('has-selection',selected.size>0);
   count.textContent=selected.size?selected.size+' document'+(selected.size===1?'':'s')+' selected across pages · ready to count outstanding quantities':'Select open documents to receive together';
   document.querySelectorAll('[data-source-select]').forEach(input=>input.closest('tr').classList.toggle('is-selected',input.checked));
-  document.querySelectorAll('[data-open-selection]').forEach(action=>{action.hidden=selected.size===1;action.disabled=false;action.dataset.actionDescription=selected.size?'Open your checked documents in one workspace':'Open every unclosed document with quantities remaining';const label=action.querySelector('strong');if(label){label.textContent=button.textContent;const help=action.querySelector('small');if(help)help.textContent=action.dataset.actionDescription;}else action.textContent=button.textContent;});
+  document.querySelectorAll('[data-open-selection]').forEach(action=>{action.hidden=false;action.disabled=false;action.dataset.actionDescription=selected.size?'Open your checked documents in one workspace':'Open every unclosed document with quantities remaining';const label=action.querySelector('strong');if(label){label.textContent=button.textContent;const help=action.querySelector('small');if(help)help.textContent=action.dataset.actionDescription;}else action.textContent=button.textContent;});
   document.querySelectorAll('[data-single-selection-hint]').forEach(hint=>hint.hidden=!selected.size);
   try{sessionStorage.setItem(key,JSON.stringify([...selected]));}catch(_){}
 }
@@ -24,5 +24,6 @@ document.addEventListener('change',event=>{
   update();
 });
 button.onclick=()=>window.location.assign(selected.size?'/app/receiving/work?'+new URLSearchParams({documents:[...selected].join(',')}):'/app/receiving/work/all');
-document.addEventListener('click',event=>{if(event.target.closest('[data-open-selection]'))button.click();});
+// These controls move into a shared menu that stops event bubbling. Keep their handlers attached.
+document.querySelectorAll('[data-open-selection]').forEach(action=>action.addEventListener('click',()=>button.click()));
 })();

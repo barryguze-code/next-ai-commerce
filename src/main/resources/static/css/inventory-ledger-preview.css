@@ -157,3 +157,10 @@ html[data-theme="dark"] #inventory-history-dialog.inventory-ledger-preview .hist
 @media(max-width:540px){#inventory-history-dialog.inventory-ledger-preview .ledger-relocate .location-editor form{grid-template-columns:minmax(80px,1fr) minmax(100px,2fr)}}
 
 .ledger-relocation-unavailable{grid-column:1/-1;flex-basis:100%;color:var(--muted);font-size:12px}
+
+/* Shared drawer expiration identity: status comes from the account shelf-life policy. */
+.inventory-expiration-date{font-weight:700;color:var(--text)}
+.inventory-expiration-date:is([data-expiry-status="EXPIRED"],[data-expiry-status="CANNOT_SELL"]){color:#b83f3f}
+.inventory-expiration-date[data-expiry-status="ACT_SOON"]{color:#a96616}
+[data-theme="dark"] .inventory-expiration-date:is([data-expiry-status="EXPIRED"],[data-expiry-status="CANNOT_SELL"]){color:#df888f}
+[data-theme="dark"] .inventory-expiration-date[data-expiry-status="ACT_SOON"]{color:#d8a85e}

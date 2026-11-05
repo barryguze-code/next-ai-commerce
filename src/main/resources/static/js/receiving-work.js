@@ -138,7 +138,7 @@ async function refresh(){
     card.querySelector('.rw-progress').textContent=progress(d);
     card.dataset.receivingStatus=d.closed?'closed':Number(d.outstanding)===0?'complete':Number(d.received)>0||Number(d.outstanding)<Number(d.expected)?'partial':'open';
   });
-  document.querySelector('.rw-table').dispatchEvent(new CustomEvent('table:filter',{bubbles:true}));
+  document.querySelector('.rw-table').dispatchEvent(new CustomEvent('table:refresh',{bubbles:true}));
 }
 async function run(operation,target,data,el,after){
   const buttons=[...drawer.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);busy=true;
@@ -163,6 +163,10 @@ function receive(id,overage=false){
   if(receiptDrafts.has(id)&&Boolean(receiptDrafts.get(id).overage)!==overage){message('Finish or close the existing receipt draft before switching receiving mode.');return;}
   if(!l.productId)return addCatalogue(id);
   if(overage&&Number(l.remaining)>0){open('Receive overshipped items',l.product,label(doc(l.documentId)));body.innerHTML=note('Account for expected units first','Receive or resolve the remaining '+number(l.remaining)+' expected units before recording a separate zero-cost overage. Normal receiving also separates confirmed extra units at zero cost.');body.append(button('Receive expected units',()=>receive(id),'primary-button'));return;}
+  const positions=[];let parent=document.querySelector('[data-line="'+CSS.escape(id)+'"]')?.parentElement;
+  while(parent){positions.push([parent,parent.scrollTop,parent.scrollLeft]);parent=parent.parentElement;}
+  const viewport={x:window.scrollX,y:window.scrollY};
+  const restorePosition=()=>{document.querySelector('#rw-lines-card .table-standard-search input')?.focus({preventScroll:true});for(const [element,top,left] of positions)if(element.isConnected){element.scrollTop=top;element.scrollLeft=left;}window.scrollTo(viewport.x,viewport.y);};
   const d=doc(l.documentId);open(overage?'Receive overshipped items':'Receive stock',l.product,label(d));
   const identity=document.getElementById('rw-drawer-subtitle');identity.className='rw-product-identity';
   identity.innerHTML='<span class="rw-product-picture table-overview-picture" data-standard-picture-url="/app/catalog/products/'+escape(l.productId)+'/image"><b>'+escape((l.product||'?').slice(0,1))+'</b><button type="button" class="standard-picture-edit" aria-label="Edit product picture" title="Edit product picture"><svg viewBox="0 0 24 24"><path d="m5 16-1 4 4-1L20 7l-3-3Z M14 7l3 3"/></svg></button></span><span><small>'+escape(l.code||'')+'</small>'+escape(l.product)+'</span>';
@@ -190,7 +194,7 @@ function receive(id,overage=false){
       const batches=[{quantity:Number(f.elements.quantity.value),expiration:f.elements.expiration.value||null},...extraBatches.map(row=>({quantity:Number(row.querySelector('[data-batch-quantity]').value),expiration:row.querySelector('[data-batch-date]').value||null}))];
       const extra=Math.max(0,batches.reduce((sum,b)=>sum+b.quantity,0)+amount('damaged')+amount('wrongItem')-Number(l.remaining));
       if(extra&&!await confirmReceiving('Receive extra units?',number(extra)+' units exceed the remaining expected quantity. These extra units will be added to inventory as overage with zero item acquisition cost.','Receive with overage'))return;
-      run(overage?'overage':'batches',id,{requestId,batches,confirmedOverage:extra,expirationRequired:f.elements.requiresExpiration.checked,location:f.elements.locationId.value,...Object.fromEntries(exceptions.map(([key])=>[key,amount(key)]))},f,()=>{receiptDrafts.delete(id);drawer.close();requestAnimationFrame(()=>document.querySelector('#rw-lines-card .table-standard-search input')?.focus());});
+      run(overage?'overage':'batches',id,{requestId,batches,confirmedOverage:extra,expirationRequired:f.elements.requiresExpiration.checked,location:f.elements.locationId.value,...Object.fromEntries(exceptions.map(([key])=>[key,amount(key)]))},f,()=>{receiptDrafts.delete(id);drawer.close();requestAnimationFrame(restorePosition);});
     },receiptDrafts.get(id)?.requestId);
   // Dock the real submit control without changing validation or request identity.
   f.id='rw-receipt-form';

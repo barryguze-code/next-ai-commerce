@@ -7,7 +7,7 @@
 if(window.NextAiTableDataTools)return;
 const states=new Map();
 const normalize=value=>String(value??'').replace(/\s+/g,' ').trim();
-const csvCell=value=>{let text=normalize(value);if(/^[=+\-@\t\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"'};
+const csvCell=(value,numeric=false)=>{let text=normalize(value);if(!(numeric&&/^-?\d+(?:\.\d+)?$/.test(text))&&/^[=+\-@\t\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"'};
 // Orders and opted-in server tables share one live-search contract.
 function bindServerSearch(input){
  if(input.dataset.liveSearch)return;input.dataset.liveSearch='true';let timer,composing=false;
@@ -57,9 +57,17 @@ async function prepareExport(root,cols){
   for(const row of items){const view=views[row.dataset.exportOrder];if(!view||!view.totals||/cancel/i.test(row.dataset.exportStatus||''))continue;const sku=row.dataset.exportSku,fees=orderSkuFees(view,sku);row.dataset.exportProfit=orderSkuProfit(view,sku)??'Pending';for(const [key,value]of Object.entries(fees))row.dataset['exportFee'+key]=value??'Pending';}
  }
 }
-function exportColumns(root,cols){return cols.filter(col=>!['Record','Actions','Select'].includes(normalize(col.title))).flatMap(col=>(root.dataset.tableWidget==='orders'&&orderExportSchema(root)[col.id]||[col.title]).map((title,field)=>({...col,title,field})));}
+const inventoryExportFields={product:['Product','Brand','Account SKU','Vendor item code','UPC / EAN / identifier','ASIN'],location:['Location code','Location name'],'on-hand':['On hand quantity'],reserved:['Reserved quantity'],'physical-available':['Available quantity'],expiration:['Expiration date'],'shelf-life':['Shelf-life status'],'unit-cost':['Unit cost','Currency']};
+function exportColumns(root,cols){
+ if(root.dataset.tableWidget==='available-inventory')return cols.filter(col=>!['record-context','actions'].includes(col.id)).flatMap(col=>(inventoryExportFields[col.id]||[col.title]).map((title,field)=>({...col,title,field,numeric:['on-hand','reserved','physical-available'].includes(col.id)||(col.id==='unit-cost'&&field===0)})));
+ return cols.filter(col=>!['Record','Actions','Select'].includes(normalize(col.title))).flatMap(col=>(root.dataset.tableWidget==='orders'&&orderExportSchema(root)[col.id]||[col.title]).map((title,field)=>({...col,title,field})));}
 function exportValues(root,row,cols){
  const data=row.dataset;
+ if(root.dataset.tableWidget==='available-inventory'){
+  const fields={product:[data.product,data.exportBrand,data.exportAccountSku,data.exportVendorCode,data.exportIdentifier,data.exportAsin],location:[data.locationCode,data.exportLocationName],'on-hand':[data.exportOnHand],reserved:[data.exportReserved],'physical-available':[data.exportAvailable],expiration:[data.expiration],'shelf-life':[data.status],'unit-cost':[data.exportUnitCost,data.exportCurrency]};
+  return cols.map(col=>inventoryExportFields[col.id]?(fields[col.id][col.field]??''):textOf(columnCell(root,row,col)));
+ }
+
  const weekly=String(row.querySelector('.item-weekly-sales')?.dataset.exportWeeks||row.querySelector('.weekly-sales')?.textContent||'').split('|').map(normalize);
  if(root.dataset.provider==='SHOPIFY'){
   const fields={product:[data.exportProduct,data.exportSku,data.exportMapping],order:[data.exportOrder,data.exportDate,data.exportPayment,data.exportStatus,data.exportCancelled,data.exportReadiness],quantity:[data.exportQuantity,data.exportOpen],sales:[data.exportSales,data.exportCurrency],available:[data.exportAvailable],profit:['','Fees unavailable'],'four-week-sales':Array.from({length:4},(_,i)=>weekly[i]||'')};
@@ -345,7 +353,7 @@ function init(root){
           progress?.update(status.textContent);
         }
       }else{await prepareExport(root,selected);data=rows(root).filter(row=>domainVisible(row)&&matches(row)).map(row=>exportValues(root,row,exported));}
-      const csv='\uFEFF'+[exported.map(col=>col.title),...data].map(row=>row.map(csvCell).join(',')).join('\r\n');
+      const csv='\uFEFF'+[exported.map(col=>col.title),...data].map(row=>row.map((value,index)=>csvCell(value,exported[index]?.numeric===true)).join(',')).join('\r\n');
       const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=root.dataset.tableWidget+'-'+new Date().toISOString().slice(0,10)+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
       status.textContent='Exported '+data.length+' '+(data.length===1?'row.':'rows.');
       progress?.complete(status.textContent);
@@ -361,6 +369,7 @@ function init(root){
   for(const event of ['input','change'])root.addEventListener(event,e=>{invalidate(e.target);scheduleRender();});
   search.addEventListener('input',()=>{if(!isServer&&root.hasAttribute('data-table-client-sort'))saved.query=search.value;saved.page=1;updateActiveFilterState();scheduleRender()});
   root.addEventListener('table:filter',()=>{saved.page=1;render()});
+  root.addEventListener('table:refresh',()=>render());
   root.addEventListener('table:reset-filters',()=>{saved.filters={};saved.query='';saved.page=1;panel.querySelectorAll('input').forEach(input=>input.value='');render()});
   const sourceQuery=new URL(location.href).searchParams.get('q');
   if(!isServer&&sourceQuery){saved.query=sourceQuery;search.value=sourceQuery;search.dispatchEvent(new Event('input',{bubbles:true}));}

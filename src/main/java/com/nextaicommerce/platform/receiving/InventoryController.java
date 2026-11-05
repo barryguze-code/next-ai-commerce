@@ -71,8 +71,10 @@ public class InventoryController {
         var product=products.getFirst();
         var lastReceipts=inventory.lastSuccessfulReceiptDates(tenantId,itemId);
         var rows=inventory.inventory(tenantId,List.of(itemId));var positions=new java.util.ArrayList<Map<String,String>>();
+        var policy=inventory.shelfLifePolicy(tenantId);var today=LocalDate.now();
         for(var row:rows){
             var data=new LinkedHashMap<String,String>();
+            data.put("status",row.shelfStatus(today,policy.minimumSellableDays(),policy.warningDays()));
             data.put("item",itemId.toString());data.put("product",row.productName());
             data.put("sku",row.accountSku()!=null?row.accountSku():row.vendorItemCode()!=null?row.vendorItemCode():"");
             data.put("image","/app/catalog/products/"+itemId+"/image");data.put("location",row.locationId().toString());

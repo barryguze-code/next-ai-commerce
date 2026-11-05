@@ -285,6 +285,16 @@ class TemplateRenderingTest {
             "IB-GJETOST","012345678905",java.time.LocalDate.of(2026,9,1),new BigDecimal("24"),BigDecimal.ZERO,
             new BigDecimal("5.85"),"USD","FEFO","DISCOUNT","Move to promotion","PROVISIONAL",new BigDecimal("24"),
             Instant.parse("2026-08-26T16:15:00Z"),Instant.parse("2026-08-28T16:15:00Z"))));
+        var fractional=new InventoryView(UUID.randomUUID(),"Fractional stock","0000123","0012345678905",null,
+            new BigDecimal("12.5"),new BigDecimal("3.25"),new BigDecimal("2.50"),"USD","FIFO",null,null,null,
+            new BigDecimal("12.5"),null,null);
+        inventory.setVariable("inventory",List.of(fractional));
+        assertThat(templateEngine().process("inventory",inventory)).contains("data-export-on-hand=\"12.5\"",
+            "data-export-reserved=\"3.25\"","data-export-available=\"9.25\"","data-export-account-sku=\"0000123\"");
+        inventory.setVariable("inventory",List.of(new InventoryView(UUID.randomUUID(),"Ski Queen Gjetost",
+            "IB-GJETOST","012345678905",java.time.LocalDate.of(2026,9,1),new BigDecimal("24"),BigDecimal.ZERO,
+            new BigDecimal("5.85"),"USD","FEFO","DISCOUNT","Move to promotion","PROVISIONAL",new BigDecimal("24"),
+            Instant.parse("2026-08-26T16:15:00Z"),Instant.parse("2026-08-28T16:15:00Z"))));
         assertThat(templateEngine().process("inventory",inventory)).contains("Available Inventory","Inventory on hand",
             "All inventory","Available","Marketplace sellable quantity: 0",
             "data-overview-ready=\"true\"","table-overview-layout","data-column=\"record-context\"",
