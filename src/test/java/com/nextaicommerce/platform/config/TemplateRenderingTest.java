@@ -61,8 +61,10 @@ class TemplateRenderingTest {
     @Test void globalCatalogueRendersBoundedServerControls() throws Exception{
         var context=webContext();context.setVariable("products",List.of());context.setVariable("globalPage",new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductPage(List.of(),32412,0,25));
         context.setVariable("query","339807");context.setVariable("globalSort","product");context.setVariable("globalDirection","asc");
+        context.setVariable("buildVersion","1.11.16");
         String html=templateEngine().process("global-catalog",context);
-        assertThat(html).contains("/css/global-catalog.css?v=1.9.1","data-table-live-search=\"true\"","data-server-sort","name=\"q\"","339807","table-pagination","data-page-max=\"1297\"","/js/table-widget.js").doesNotContain("class=\"callout\"");
+        assertThat(html).contains("/css/global-catalog.css?v=1.11.16");
+        assertThat(html).contains("/css/global-catalog.css","data-table-live-search=\"true\"","data-server-sort","name=\"q\"","339807","table-pagination","data-page-max=\"1297\"","/js/table-widget.js").doesNotContain("class=\"callout\"");
         var rows=java.util.stream.IntStream.range(0,25).mapToObj(i->new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductView(new UUID(0,i+1),"Synthetic product "+i,"Test brand",null,"CODE-"+i,"UPC","000000000000","EA",false,"ACTIVE")).toList();
         context.setVariable("products",rows);context.setVariable("globalPage",new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductPage(rows,50,0,25));
         context.setVariable("query","");context.setVariable("globalDirection","desc");
@@ -123,7 +125,7 @@ class TemplateRenderingTest {
             Map.entry("selectedAccountName","QA only"),Map.entry("signedInEmail","qa@example.test"),Map.entry("roleLabel","Owner"),
             Map.entry("workDocuments",List.of(d)),Map.entry("workLines",List.of(l)),Map.entry("locations",List.of())));
         c.setVariable("workImages",Map.of(l.productId(),"/app/catalog/products/"+l.productId()+"/image"));
-        assertThat(templateEngine().process("receiving-work",c)).contains("Receive together","INV-101","Partially received","data-picture-item=","data-image=","Receive overshipped items",
+        assertThat(renderEvidence("receiving-work",c)).contains("Receive together","INV-101","Partially received","data-picture-item=","data-image=","Receive overshipped items",
             "Yogurt &amp; cream","Review receipts","receiving-drawer","Back to checklist","data-table-widget=\"receiving-work\"")
             .doesNotContain("Reopen invoice line");
         // Exercise the populated parent page too: empty-list fixtures never evaluate d.statusTone().
@@ -164,7 +166,7 @@ class TemplateRenderingTest {
             Map.entry("orderTime",java.time.format.DateTimeFormatter.ofPattern("MMM d · h:mm a").withZone(java.time.ZoneId.of("America/Los_Angeles"))),
             Map.entry("orderStreamKey","test-key")
         ));
-        assertThat(templateEngine().process("orders",context)).contains("Today’s orders","Today’s sales","Sales · 30 days","Live",
+        assertThat(renderEvidence("orders",context)).contains("Today’s orders","Today’s sales","Sales · 30 days","Live",
             "113-1234567-1234567","Unshipped","/js/mapping-widget.js","/css/mapping-widget.css","Today’s estimated profit",
             "https://images.example.test/product.jpg","sellercentral.amazon.com/orders-v3/order/","Available",
             "Item Sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
@@ -172,13 +174,13 @@ class TemplateRenderingTest {
             "New Amazon orders just arrived","Open this order in Seller Central","Open the Amazon product page",
             "aria-label=\"Subject\"","amazon.com/dp/B012345678","Orders/Units","Unmapped",
             "data-copy-sku=","has-issues","aria-current=\"page\"","12 orders / 15 units","status=UNSHIPPED").doesNotContain("order-day",">Historical<","Reporting only","status=PENDING","Stock readiness","data-fedex-shipping","openFedExShipping(this)","Buy shipping label");
-        assertThat(templateEngine().process("orders",context)).doesNotContain("status=WAITING_FOR_PICKUP");
+        assertThat(renderEvidence("orders",context)).doesNotContain("status=WAITING_FOR_PICKUP");
         context.setVariable("orderTabs",List.of(new com.nextaicommerce.platform.orders.OrderRepository.OrderTab("WAITING_FOR_PICKUP","Waiting for pickup",false,1,1)));
         context.setVariable("selectedStatus","WAITING_FOR_PICKUP");
         context.setVariable("pickupOverrides",java.util.Set.of(order.amazonOrderId()));
         context.setVariable("pickupEligibleOrders",java.util.Set.of(order.amazonOrderId()));
-        assertThat(templateEngine().process("orders",context)).contains("Waiting for pickup","Platform only","Undo platform pickup mark","/pickup-override");
-        assertThat(templateEngine().process("orders",context)).contains("aria-current=\"page\"").doesNotContain("order-pickup-note");
+        assertThat(renderEvidence("orders",context)).contains("Waiting for pickup","Platform only","Undo platform pickup mark","/pickup-override");
+        assertThat(renderEvidence("orders",context)).contains("aria-current=\"page\"").doesNotContain("order-pickup-note");
         context.setVariable("orders",List.of());
         context.setVariable("orderPage",new OrderPage(List.of(),0,0,25));
         context.setVariable("selectedStatus","ALL");
@@ -186,15 +188,15 @@ class TemplateRenderingTest {
         context.setVariable("feeVarianceEnabled",true);
         context.setVariable("feeVarianceOrders",0);
         context.setVariable("feeVarianceFiltered",true);
-        assertThat(templateEngine().process("orders",context))
+        assertThat(renderEvidence("orders",context))
             .contains("All: 6 orders, 12 units","Clear Fee Variance filter","No comparable fee differences",
                 "Orders appear here when comparable fee evidence shows a difference. Missing evidence remains unavailable.","View all orders")
             .doesNotContain("Your orders will appear here","New orders will show up here automatically.");
         context.setVariable("feeVarianceFiltered",false);
-        assertThat(templateEngine().process("orders",context)).contains("Your orders will appear here","New orders will show up here automatically.")
+        assertThat(renderEvidence("orders",context)).contains("Your orders will appear here","New orders will show up here automatically.")
             .doesNotContain("No comparable fee differences");
         context.setVariable("query","not-found");
-        assertThat(templateEngine().process("orders",context)).contains("No orders found","Try a different search or view all your orders.")
+        assertThat(renderEvidence("orders",context)).contains("No orders found","Try a different search or view all your orders.")
             .doesNotContain("No comparable fee differences","Your orders will appear here");
     }
 
@@ -289,13 +291,13 @@ class TemplateRenderingTest {
             new BigDecimal("12.5"),new BigDecimal("3.25"),new BigDecimal("2.50"),"USD","FIFO",null,null,null,
             new BigDecimal("12.5"),null,null);
         inventory.setVariable("inventory",List.of(fractional));
-        assertThat(templateEngine().process("inventory",inventory)).contains("data-export-on-hand=\"12.5\"",
+        assertThat(renderEvidence("inventory",inventory)).contains("data-export-on-hand=\"12.5\"",
             "data-export-reserved=\"3.25\"","data-export-available=\"9.25\"","data-export-account-sku=\"0000123\"");
         inventory.setVariable("inventory",List.of(new InventoryView(UUID.randomUUID(),"Ski Queen Gjetost",
             "IB-GJETOST","012345678905",java.time.LocalDate.of(2026,9,1),new BigDecimal("24"),BigDecimal.ZERO,
             new BigDecimal("5.85"),"USD","FEFO","DISCOUNT","Move to promotion","PROVISIONAL",new BigDecimal("24"),
             Instant.parse("2026-08-26T16:15:00Z"),Instant.parse("2026-08-28T16:15:00Z"))));
-        assertThat(templateEngine().process("inventory",inventory)).contains("Available Inventory","Inventory on hand",
+        assertThat(renderEvidence("inventory",inventory)).contains("Available Inventory","Inventory on hand",
             "All inventory","Available","Marketplace sellable quantity: 0",
             "data-overview-ready=\"true\"","table-overview-layout","data-column=\"record-context\"",
             "Inventory Ledger","Search product, brand, ASIN, Item Code, or UPC","Shelf-life rules","Cannot sell","Act soon",
@@ -365,17 +367,17 @@ class TemplateRenderingTest {
                 new BigDecimal("9.42"),"USD",null,null,null,null,"ATVPDKIKX0DER",
                 Instant.parse("2026-08-29T12:00:00Z"),"Standard shipping",new BigDecimal("12.00"))),1,0,100))
         ));
-        String rendered=templateEngine().process("marketplace-skus",context);
+        String rendered=renderEvidence("marketplace-skus",context);
         UUID ledgerItem=UUID.randomUUID(),secondItem=UUID.randomUUID();
         var component=new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.MappingComponentView(ledgerItem,"Mapped product","CODE","ACCOUNT",BigDecimal.ONE);
         context.setVariable("mappingComponents",Map.of("IB-TEST-SKU",List.of(component)));
-        assertThat(templateEngine().process("marketplace-skus",context)).contains("href=\"/app/inventory/ledger?itemId="+ledgerItem+"\"");
+        assertThat(renderEvidence("marketplace-skus",context)).contains("href=\"/app/inventory/ledger?itemId="+ledgerItem+"\"");
         context.setVariable("mappingComponents",Map.of("IB-TEST-SKU",List.of(component,new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.MappingComponentView(secondItem,"Second product","OTHER","OTHER",BigDecimal.ONE))));
-        assertThat(templateEngine().process("marketplace-skus",context)).contains("Inventory Ledgers:","itemId="+ledgerItem,"itemId="+secondItem);
+        assertThat(renderEvidence("marketplace-skus",context)).contains("Inventory Ledgers:","itemId="+ledgerItem,"itemId="+secondItem);
         context.setVariable("mappingComponents",Map.of());
 
         context.setVariable("listingSync",new com.nextaicommerce.platform.sync.AmazonManualListingSync.Availability(false,"Already running",true,Instant.parse("2026-10-18T12:00:00Z")));
-        String syncing=templateEngine().process("marketplace-skus",context);
+        String syncing=renderEvidence("marketplace-skus",context);
         assertThat(syncing).contains("sku-sync-button","Syncing…","Refreshing","Last Amazon SKU check")
             .doesNotContain("Sync Amazon SKUs");
         assertThat(rendered).contains("Marketplace SKUs","Marketplace listings","IB-TEST-SKU","B012345678",
@@ -390,7 +392,7 @@ class TemplateRenderingTest {
         tabs=tabs.substring(0,tabs.indexOf("</nav>"));
         assertThat(tabs).contains("sku-alert-tab","Unmapped").doesNotContain("Amazon problems","Out of stock");
         context.setVariable("summary",new SkuSummary(4,1,0,0,0,0,0,1,3));
-        rendered=templateEngine().process("marketplace-skus",context);
+        rendered=renderEvidence("marketplace-skus",context);
         tabs=rendered.substring(rendered.indexOf("<nav class=\"sku-filter-bar\""));
         tabs=tabs.substring(0,tabs.indexOf("</nav>"));
         assertThat(tabs).contains("Never sold","sku-info-tab","NEVER_SOLD")
@@ -400,12 +402,12 @@ class TemplateRenderingTest {
         context.setVariable("feeVarianceEnabled",true);
         context.setVariable("feeVarianceSkus",0);
         context.setVariable("feeVarianceFiltered",true);
-        assertThat(templateEngine().process("marketplace-skus",context))
+        assertThat(renderEvidence("marketplace-skus",context))
             .contains("Clear Fee Variance filter","No comparable fee differences",
                 "Listings appear here when comparable fee evidence shows a difference. Missing evidence remains unavailable.")
             .doesNotContain("Amazon has not supplied listings for this filter yet.");
         context.setVariable("feeVarianceFiltered",false);
-        assertThat(templateEngine().process("marketplace-skus",context)).contains("No marketplace SKUs match this view","Amazon has not supplied listings for this filter yet.")
+        assertThat(renderEvidence("marketplace-skus",context)).contains("No marketplace SKUs match this view","Amazon has not supplied listings for this filter yet.")
             .doesNotContain("No comparable fee differences");
     }
 
@@ -422,21 +424,21 @@ class TemplateRenderingTest {
         var row=new com.nextaicommerce.platform.marketplace.ShopifySkuRepository.Row(id,"gid://shopify/ProductVariant/2","gid://shopify/Product/1","gid://shopify/InventoryItem/3",null,"Long Shopify product","Blue","[{\"name\":\"Color\",\"value\":\"Blue\"}]","[]","ACTIVE",new BigDecimal("19.99"),"USD",null,null,"unit.myshopify.com","hash",java.time.Instant.EPOCH,false,false);
         context.setVariable("shopifySetup",new com.nextaicommerce.platform.web.ShopifyConnectionService.SetupState(true,true));context.setVariable("shopifyCatalogEnabled",true);context.setVariable("shopifyStatuses",List.of("ALL","ACTIVE","DRAFT","ARCHIVED","UNLISTED","UNMAPPED"));context.setVariable("canSyncShopify",true);
         context.setVariable("shopifyPage",new com.nextaicommerce.platform.marketplace.ShopifySkuRepository.Page(List.of(row),1,0,25));context.setVariable("shopifyComponents",Map.of());context.setVariable("shopifyThreads",Map.of());context.setVariable("shopifyCounts",Map.of("ALL",1L,"ACTIVE",1L,"MAPPED",0L,"UNMAPPED",1L));context.setVariable("selectedStatus","ALL");context.setVariable("selectedSort","listing");context.setVariable("sortDirection","asc");context.setVariable("query","");
-        String html=templateEngine().process("marketplace-skus",context);
+        String html=renderEvidence("marketplace-skus",context);
         assertThat(html).contains("data-table-widget=\"shopify-marketplace-skus\"","id=\"marketplace-listings-table\"","Color: Blue","No SKU","Not imported","SHOPIFY:"+id,"data-context-menu","data-page-max=\"1\"")
           .doesNotContain("Buy Box price match","Fulfillment","Never sold","gid://shopify/InventoryItem/3",">Draft<",">Start SKU sync</button>","/js/order-smart-filters.js","Shopify identifiers","shopify-identifiers");
         assertThat(html).contains("table-footer table-pagination sku-footer","sku-mapping-icon","sku-not-mapped.png","sku-alert-tab shopify-exception-tab");
         context.setVariable("shopifyJob",new com.nextaicommerce.platform.shopify.ShopifyCatalogJobs.Status(id,"COMPLETED","SKU sync complete",1,java.time.Instant.EPOCH,java.time.Instant.parse("2026-10-27T05:00:00Z")));
-        String completed=templateEngine().process("marketplace-skus",context);
+        String completed=renderEvidence("marketplace-skus",context);
         assertThat(completed).contains("Last Shopify SKU check · 10/27/26 · 05:00 UTC","Sync now","aria-current=\"step\"").doesNotContain("Sync again","shopify-setup-next","Products &amp; variants");
         assertThat(completed).containsPattern("(?s)<article class=\"completed\"[^>]*>(?:(?!</article>).)*2\\. SKU sync").containsPattern("(?s)<article aria-current=\"step\" class=\"current\">(?:(?!</article>).)*3\\. Mapping");
-        assertThat(templateEngine().process("marketplace-skus",webContext())).contains("/js/order-smart-filters.js");
+        assertThat(renderEvidence("marketplace-skus",webContext())).contains("/js/order-smart-filters.js");
     }
 
     @Test void shopifyWorkspaceRendersInitializationWithoutAmazonEmptyCopy(){
         var context=webContext();context.setVariable("shopifySetup",new com.nextaicommerce.platform.web.ShopifyConnectionService.SetupState(true,false));
         context.setVariable("selectedStoreName","Unit Shopify");context.setVariable("selectedAccountName","Unit account");
-        String html=templateEngine().process("marketplace-skus",context);
+        String html=renderEvidence("marketplace-skus",context);
         assertThat(html).contains("Shopify setup · design preview","Unit Shopify","Awaiting product permission","Start SKU sync","Not enabled · coming next")
             .doesNotContain("Switch to an Amazon store","Your Walmart assortment","Buy Box price match");
     }
@@ -636,6 +638,13 @@ class TemplateRenderingTest {
         resolver.setTemplateMode(TemplateMode.HTML); resolver.setCacheable(false);
         SpringTemplateEngine engine = new SpringTemplateEngine(); engine.setTemplateResolver(resolver);
         return engine;
+    }
+
+    private static int evidenceSequence;
+    private String renderEvidence(String name,WebContext context){
+        String html=templateEngine().process(name,context);String directory=System.getProperty("frontend.evidence");
+        if(directory!=null)try{var root=java.nio.file.Path.of(directory);java.nio.file.Files.createDirectories(root);java.nio.file.Files.writeString(root.resolve(name+"-"+(++evidenceSequence)+".html"),html);}catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
+        return html;
     }
 
     private static WebContext webContext() {

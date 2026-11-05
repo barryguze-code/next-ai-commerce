@@ -1,6 +1,6 @@
 <!DOCTYPE html><html xmlns:th="http://www.thymeleaf.org"><body>
 <th:block th:fragment="editor" th:if="${canEditCatalog}">
-<link rel="stylesheet" href="/css/stock-editor.css?v=20261001-7">
+<link rel="stylesheet" href="/css/stock-editor.css?v=20261001-7" th:href="@{/css/stock-editor.css(v=${buildVersion})}">
 <dialog id="stock-editor" class="invite-dialog" aria-labelledby="stock-editor-title">
   <form class="dialog-shell" method="post" th:action="@{/app/inventory/adjustments/inline}">
     <div class="dialog-header"><img data-stock-picture alt="" hidden><div><span class="eyebrow dark">Adjust inventory</span><h2 id="stock-editor-title">Adjust Inventory</h2><p data-stock-selected-detail></p></div><button type="button" class="dialog-close" aria-label="Close inventory editor" data-stock-close>×</button></div>
@@ -10,9 +10,9 @@
       <fieldset data-stock-fields disabled>
         <label data-stock-item-choice>Item<select name="itemId" required></select></label>
         <p data-stock-unit-note>Quantities are individual item units, not marketplace packs.</p>
-        <label>Storage location<select name="locationId" required></select></label>
+        <div class="stock-context"><label>Storage location<select name="locationId" required></select></label>
         <label>Expiration date<input type="date" name="expirationDate"><small data-stock-expiration-help></small></label>
-        <p data-stock-balance></p>
+        </div><p data-stock-balance></p>
         <label data-stock-direction-label>Change<select name="direction"><option value="1">Increase</option><option value="-1">Decrease</option></select></label>
         <label>Quantity · eaches<input type="number" name="amount" min="1" step="1" required inputmode="numeric"></label>
         <label data-stock-reason-label>Reason<select name="reason"><option value="COUNT_CORRECTION">Count correction</option><option value="DAMAGE">Damaged</option><option value="LOSS">Lost or missing</option><option value="RETURN_TO_VENDOR">Returned to vendor</option><option value="OTHER">Other</option></select></label>
@@ -24,5 +24,5 @@
     <div class="dialog-actions"><button type="button" class="secondary-button" data-stock-close>Cancel</button><button type="submit" class="primary-button" data-stock-save disabled>Save adjustment</button></div>
   </form>
 </dialog>
-<script src="/js/stock-editor.js?v=20261002-2"></script>
+<script src="/js/stock-editor.js?v=20261002-2" th:src="@{/js/stock-editor.js(v=${buildVersion})}"></script>
 </th:block></body></html>

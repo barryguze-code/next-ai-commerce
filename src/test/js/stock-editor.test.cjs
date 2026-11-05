@@ -19,6 +19,7 @@ test('shared editor supports zero stock, explicit expiration, component selectio
     });
     await page.goto('http://stock.test/');
     await page.locator('#stock-editor form').evaluate(form=>{const input=document.createElement('input');input.type='hidden';input.name='_csrf';input.value='fixture-token';form.append(input)});
+    await page.evaluate(()=>window.NextAiInventoryTable={refresh:async()=>{window.inventoryRefreshed=true}});
     await page.addScriptTag({path:path.join(root,'static/js/stock-editor.js')});
     await page.evaluate(()=>openSharedInventoryAdjustment({dataset:{item:'item-a'}}));
     await page.getByRole('button',{name:'Save adjustment',exact:true}).waitFor();
@@ -26,10 +27,11 @@ test('shared editor supports zero stock, explicit expiration, component selectio
     await page.locator('[name=expirationDate]').fill('2027-01-16');
     assert.match(await page.locator('[data-stock-balance]').textContent(),/0 on hand/);
     await page.getByRole('button',{name:'Save adjustment',exact:true}).click();
-    await page.getByText('Saved',{exact:true}).waitFor();
+    await page.waitForFunction(()=>!document.getElementById('stock-editor').open);
+    assert.equal(await page.evaluate(()=>window.inventoryRefreshed),true);
     assert.equal(submitted.get('itemId'),'item-a');assert.equal(submitted.get('quantityChange'),'6');
     assert.equal(submitted.get('expirationDate'),'2027-01-16');assert.equal(submitted.get('_csrf'),'fixture-token');
-    assert.equal(await page.getByRole('button',{name:'Save adjustment',exact:true}).isDisabled(),true);
+    assert.equal(await page.locator('#stock-editor').evaluate(d=>d.open),false);
   }finally{await browser.close()}
 });
 
@@ -45,13 +47,14 @@ test('manual receiving uses catalogue search and requires an explanation',async(
       if(url.pathname==='/app/inventory/receipts/inline'){submitted=new URLSearchParams(route.request().postData());return route.fulfill({json:{message:'Received'}})}
       return route.fulfill({contentType:'text/html',body:fragment});
     });
-    await page.goto('http://stock.test/');await page.addScriptTag({path:path.join(root,'static/js/stock-editor.js')});
+    await page.goto('http://stock.test/');await page.evaluate(()=>window.NextAiInventoryTable={refresh:async()=>{window.inventoryRefreshed=true}});
+    await page.addScriptTag({path:path.join(root,'static/js/stock-editor.js')});
     await page.evaluate(()=>openSharedInventoryReceipt());await page.locator('[data-stock-search]').fill('381005');
     await page.getByRole('button',{name:'Ginger 381005'}).click();
     await page.locator('[name=amount]').fill('24');await page.locator('[name=expirationDate]').fill('2027-01-16');
     assert.equal(await page.locator('[name=notes]').getAttribute('required'),'');
     await page.locator('[name=notes]').fill('Unexpected delivery');await page.getByRole('button',{name:'Receive item',exact:true}).click();
-    await page.getByText('Received',{exact:true}).waitFor();assert.equal(submitted.get('quantity'),'24');assert.equal(submitted.get('notes'),'Unexpected delivery');
+    await page.waitForFunction(()=>!document.getElementById('stock-editor').open);assert.equal(submitted.get('quantity'),'24');assert.equal(submitted.get('notes'),'Unexpected delivery');
   }finally{await browser.close()}
 });
 
@@ -65,6 +68,7 @@ test('zero-stock catalogue result opens item movement history from its title',as
       return route.fulfill({contentType:'text/html',body:fragment+'<input id="inventory-search"><table class="available-inventory-table"><thead><tr>'+Array(8).fill('<th></th>').join('')+'</tr></thead><tbody></tbody></table>'});
     });
     await page.goto('http://stock.test/');
+    await page.evaluate(()=>window.NextAiInventoryTable={refresh:async()=>{window.inventoryRefreshed=true}});
     await page.addScriptTag({path:path.join(root,'static/js/stock-editor.js')});
     await page.evaluate(()=>{window.openInventoryHistory=row=>window.__openedItem=row.dataset.item});
     await page.addScriptTag({path:path.join(root,'static/js/stock-entry-points.js')});

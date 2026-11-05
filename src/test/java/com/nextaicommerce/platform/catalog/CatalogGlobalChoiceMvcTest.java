@@ -15,6 +15,15 @@ class CatalogGlobalChoiceMvcTest {
  org.springframework.security.core.Authentication auth(String role){return UsernamePasswordAuthenticationToken.authenticated("test@example.test","unused",List.of(new SimpleGrantedAuthority("ROLE_"+role)));}
  MockHttpSession session(UUID tenant){var s=new MockHttpSession();s.setAttribute("selectedTenantId",tenant);return s;}
  CatalogController controller(CatalogRepository repo){var c=new CatalogController(repo,null);var access=mock(com.nextaicommerce.platform.web.WorkspaceAccessRepository.class);when(access.canOperateAccount(any(),any())).thenReturn(true);org.springframework.test.util.ReflectionTestUtils.setField(c,"workspaceAccess",access);return c;}
+ @Test void inlineEditingKeepsExistingAccountAuthorizationAndReportsValidation()throws Exception{
+  UUID tenant=UUID.randomUUID(),item=UUID.randomUUID();var repo=mock(CatalogRepository.class);var mvc=MockMvcBuilders.standaloneSetup(controller(repo)).build();
+  mvc.perform(post("/app/catalog/products/"+item).accept("application/json").session(session(tenant)).principal(auth("VIEWER"))).andExpect(status().isForbidden());verifyNoInteractions(repo);
+  mvc.perform(post("/app/catalog/products/"+item).accept("application/json").session(session(tenant)).principal(auth("OWNER")).param("displayName","Updated").param("accountSku","000123").param("tenantId",UUID.randomUUID().toString())).andExpect(status().isOk()).andExpect(jsonPath("$.message").value("Account product details updated."));
+  mvc.perform(post("/app/catalog/products/"+item).accept("text/html").session(session(tenant)).principal(auth("OWNER")).param("displayName","Form edit")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/app/catalog"));
+  verify(repo).updateAccountProductVendor(eq(tenant),eq(item),eq("Updated"),eq("000123"),eq("ACTIVE"),isNull(),isNull(),isNull(),eq("test@example.test"));
+  doThrow(new IllegalArgumentException("Invalid cost.")).when(repo).updateAccountProductVendor(eq(tenant),eq(item),any(),any(),any(),any(),any(),any(),any());
+  mvc.perform(post("/app/catalog/products/"+item).accept("application/json").session(session(tenant)).principal(auth("OWNER"))).andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Invalid cost."));
+ }
  @Test void globalLookupRequiresAnEditorAndUsesOnlySessionTenant()throws Exception{
   UUID tenant=UUID.randomUUID();var repo=mock(CatalogRepository.class);when(repo.searchGlobalProducts(tenant,"Cheese")).thenReturn(List.of());
   var mvc=MockMvcBuilders.standaloneSetup(controller(repo)).build();

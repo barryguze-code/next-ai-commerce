@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Global Catalogue | Next AI Commerce</title>
 <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
-<link rel="stylesheet" href="/css/app.css">
-<link rel="stylesheet" href="/css/brand.css?v=20260909-1">
-<link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/table-widget.css?v=1.9.0"><script defer src="/js/table-preferences.js?v=20261002-perf1"></script><script defer src="/js/table-widget.js?v=1.11.0"></script>
-<script defer src="/js/theme.js?v=20260905-1">
+<link rel="stylesheet" href="/css/app.css" th:href="@{/css/app.css(v=${buildVersion})}">
+<link rel="stylesheet" href="/css/brand.css?v=20260909-1" th:href="@{/css/brand.css(v=${buildVersion})}">
+<link rel="stylesheet" href="/css/access.css" th:href="@{/css/access.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/table-widget.css?v=1.9.0" th:href="@{/css/table-widget.css(v=${buildVersion})}"><script defer src="/js/table-preferences.js?v=20261002-perf1" th:src="@{/js/table-preferences.js(v=${buildVersion})}"></script><script defer src="/js/table-widget.js?v=1.11.0" th:src="@{/js/table-widget.js(v=${buildVersion})}"></script>
+<script defer src="/js/theme.js?v=20260905-1" th:src="@{/js/theme.js(v=${buildVersion})}">
 </script>
-<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><script defer src="/js/platform-ui.js?v=1.8.1"></script><link rel="stylesheet" href="/css/standard-record-tables.css?v=1.9.1"><script defer src="/js/standard-record-tables.js?v=1.9.1"></script><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31"><link rel="stylesheet" href="/css/global-catalog.css?v=1.9.1"></head>
+<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5" th:href="@{/css/platform-ui.css(v=${buildVersion})}"><script defer src="/js/platform-ui.js?v=1.8.1" th:src="@{/js/platform-ui.js(v=${buildVersion})}"></script><link rel="stylesheet" href="/css/standard-record-tables.css?v=1.9.1" th:href="@{/css/standard-record-tables.css(v=${buildVersion})}"><script defer src="/js/standard-record-tables.js?v=1.9.1" th:src="@{/js/standard-record-tables.js(v=${buildVersion})}"></script><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31" th:href="@{/css/order-pictures.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/global-catalog.css?v=1.9.1" th:href="@{/css/global-catalog.css(v=${buildVersion})}"></head>
 <body class="app-page platform-standard-tables">
 <aside class="sidebar">
 <a class="brand brand-lockup" href="/app">

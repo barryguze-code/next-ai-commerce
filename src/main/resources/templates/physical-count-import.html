@@ -4,10 +4,10 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Review Physical Count | Next AI Commerce</title>
   <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
-  <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1"><link rel="stylesheet" href="/css/access.css">
-  <link rel="stylesheet" href="/css/catalog-import.css"><link rel="stylesheet" href="/css/physical-count-import.css?v=20260914-3"><link rel="stylesheet" href="/css/confirm-dialog.css">
-  <script defer src="/js/theme.js?v=20260905-1"></script><script defer src="/js/confirm-dialog.js?v=1.11.8"></script>
-<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><script defer src="/js/platform-ui.js?v=1.6.6"></script></head>
+  <link rel="stylesheet" href="/css/app.css" th:href="@{/css/app.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/brand.css?v=20260909-1" th:href="@{/css/brand.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/access.css" th:href="@{/css/access.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/catalog-import.css" th:href="@{/css/catalog-import.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/physical-count-import.css?v=20260914-3" th:href="@{/css/physical-count-import.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/confirm-dialog.css" th:href="@{/css/confirm-dialog.css(v=${buildVersion})}">
+  <script defer src="/js/theme.js?v=20260905-1" th:src="@{/js/theme.js(v=${buildVersion})}"></script><script defer src="/js/confirm-dialog.js?v=1.11.8" th:src="@{/js/confirm-dialog.js(v=${buildVersion})}"></script>
+<th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5" th:href="@{/css/platform-ui.css(v=${buildVersion})}"><script defer src="/js/platform-ui.js?v=1.6.6" th:src="@{/js/platform-ui.js(v=${buildVersion})}"></script></head>
 <body class="app-page">
 <aside class="sidebar"><a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a><div th:replace="~{fragments/sidebar-nav :: nav('inventory')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
 <main class="workspace">
@@ -86,7 +86,7 @@
     </form>
   </dialog>
 </main>
-<script src="/js/physical-count-repair.js?v=20260904-1"></script>
+<script src="/js/physical-count-repair.js?v=20260904-1" th:src="@{/js/physical-count-repair.js(v=${buildVersion})}"></script>
 <script th:inline="javascript">window.addEventListener('DOMContentLoaded',()=>{const dialog=document.getElementById('physical-count-review');if(dialog&&!dialog.open)dialog.showModal();const state=/*[[${physicalCountProgress == null ? null : physicalCountProgress.state}]]*/ null;const id=/*[[${physicalCount.id}]]*/ null;if(state==='QUEUED'||state==='PROCESSING'){const poll=async()=>{try{const response=await fetch('/app/inventory/physical-counts/'+id+'/progress',{headers:{Accept:'application/json'}});if(!response.ok){if(response.status===409)location.href='/app/select-account';return}const job=await response.json();const percent=document.querySelector('[data-count-progress-percent]'),phase=document.querySelector('[data-count-progress-phase]'),bar=document.querySelector('[data-count-progress-bar]'),orbit=document.querySelector('[data-count-progress-orbit]');if(percent)percent.textContent=job.percent+'%';if(phase)phase.textContent=job.phase;if(bar)bar.style.width=job.percent+'%';if(orbit)orbit.style.setProperty('--progress',job.percent+'%');if(job.state==='COMPLETED'||job.state==='FAILED'){location.reload();return}setTimeout(poll,700)}catch(_){setTimeout(poll,1800)}};setTimeout(poll,500)}})</script>
 <th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block></body>
 </html>

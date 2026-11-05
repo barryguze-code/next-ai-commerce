@@ -84,11 +84,11 @@
     if(!data.get('expirationDate'))data.delete('expirationDate');save.disabled=true;feedback.hidden=true;
     try{
       const response=await fetch(mode==='receive'?'/app/inventory/receipts/inline':'/app/inventory/adjustments/inline',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:data});
-      const result=await response.json();if(!response.ok)throw new Error(result.message||'Nothing could be saved. Please try again.');
-      changed=true;fields.disabled=true;search.disabled=true;feedback.className='';feedback.textContent=result.message;feedback.hidden=false;
+      const result=await response.json();if(!response.ok||response.redirected||!result.message)throw new Error(result.message||'Nothing could be saved. Please try again.');
+      changed=false;dialog.close();if(window.NextAiInventoryTable?.afterSave)await window.NextAiInventoryTable.afterSave(result.message);else if(window.NextAiInventoryTable)await window.NextAiInventoryTable.refresh();else window.NextAiTableContinuity.reload();
       form.querySelectorAll('[data-stock-close]').forEach(b=>{if(!b.classList.contains('dialog-close'))b.textContent='Done'});
     }catch(error){feedback.className='error';feedback.textContent=error.message;feedback.hidden=false;save.disabled=false}
   });
   form.querySelectorAll('[data-stock-close]').forEach(b=>b.onclick=()=>dialog.close());
-  dialog.addEventListener('close',()=>{revision++;searchController?.abort();if(changed)location.reload()});
+  dialog.addEventListener('close',()=>{revision++;searchController?.abort();if(changed)window.NextAiTableContinuity.reload()});
 })();

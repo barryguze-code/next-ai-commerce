@@ -1,0 +1,10 @@
+/* Restore only the same view after an existing action requires a document reload. */
+(()=>{'use strict';
+ const key='nextai.table.return',view=()=>location.pathname+location.search;
+ function capture(){const positions=[...document.querySelectorAll('main,.main-content,.table-wrap')].map(e=>[e,e.scrollTop,e.scrollLeft]),x=scrollX,y=scrollY;return()=>{positions.forEach(([e,t,l])=>{if(e.isConnected){e.scrollTop=t;e.scrollLeft=l}});window.scrollTo(x,y)}}
+ function remember(){try{sessionStorage.setItem(key,JSON.stringify({view:view(),account:document.querySelector('#general-task-context')?.dataset.account,queries:[...document.querySelectorAll('.table-standard-search input')].map(e=>e.value),x:scrollX,y:scrollY,page:document.querySelector('[aria-label="Page number"]')?.value,positions:[...document.querySelectorAll('main,.main-content,.table-wrap')].map(e=>[e.scrollTop,e.scrollLeft])}));}catch{}}
+ function reload(){remember();location.reload()}
+ function restore(){let saved;try{saved=JSON.parse(sessionStorage.getItem(key)||'null');sessionStorage.removeItem(key)}catch{}if(!saved||saved.view!==view()||saved.account!==document.querySelector('#general-task-context')?.dataset.account)return;requestAnimationFrame(()=>{[...document.querySelectorAll('.table-standard-search input')].forEach((e,i)=>{if(saved.queries?.[i]!=null){e.value=saved.queries[i];e.dispatchEvent(new Event('input',{bubbles:true}))}});const page=document.querySelector('[aria-label="Page number"]');if(page&&saved.page){page.value=saved.page;page.dispatchEvent(new Event('change',{bubbles:true}))}requestAnimationFrame(()=>{[...document.querySelectorAll('main,.main-content,.table-wrap')].forEach((e,i)=>{if(saved.positions[i]){e.scrollTop=saved.positions[i][0];e.scrollLeft=saved.positions[i][1]}});window.scrollTo(saved.x,saved.y)})})}
+ document.addEventListener('submit',event=>{if(event.target.method?.toLowerCase()==='post')queueMicrotask(()=>{if(!event.defaultPrevented)remember()})});
+ window.NextAiTableContinuity={capture,reload};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',restore);else restore();
+})();

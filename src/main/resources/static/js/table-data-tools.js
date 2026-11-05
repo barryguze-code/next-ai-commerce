@@ -299,7 +299,7 @@ function init(root){
   }
   function domainVisible(row){return !row.hidden&&row.style.display!=='none'&&!row.closest('[hidden]');}
   function render(){
-    if(root.dataset.gridRow){const current=headers(root);rows(root).forEach(row=>[...row.children].forEach((cell,index)=>{const col=cols.find(c=>c.index===index);if(!col)return;cell.dataset.column=col.id;const header=current.find(c=>c.id===col.id)?.el,hidden=!!header?.hidden,order=header?.style.order||String(index);if(cell.hidden!==hidden)cell.hidden=hidden;if(cell.style.order!==order)cell.style.order=order}))}
+    if(root.dataset.gridRow){const current=new Map(headers(root).map(c=>[c.id,c.el])),byIndex=new Map(cols.map(c=>[c.index,c]));rows(root).forEach(row=>[...row.children].forEach((cell,index)=>{const col=byIndex.get(index);if(!col)return;if(cell.dataset.column!==col.id)cell.dataset.column=col.id;const header=current.get(col.id),hidden=!!header?.hidden,order=header?.style.order||String(index);if(cell.hidden!==hidden)cell.hidden=hidden;if(cell.style.order!==order)cell.style.order=order}))}
     const all=rows(root),filtered=all.filter(row=>domainVisible(row)&&matches(row));
     const pages=Math.max(1,Math.ceil(filtered.length/saved.size));saved.page=Math.min(pages,Math.max(1,saved.page));
     const shown=new Set(footer?filtered.slice((saved.page-1)*saved.size,saved.page*saved.size):filtered);

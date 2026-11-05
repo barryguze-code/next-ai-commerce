@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Receive documents | Next AI Commerce</title>
-  <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1">
-  <link rel="stylesheet" href="/css/access.css"><link rel="stylesheet" href="/css/locations.css"><link rel="stylesheet" href="/css/receiving-work.css?v=1.7.0">
-  <link rel="stylesheet" href="/css/standard-record-tables.css?v=1.9.1"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31">
-  <script defer src="/js/location-manager.js?v=account-context-2"></script><script defer src="/js/receiving-work.js?v=20261104-receiving-export"></script><script defer src="/js/standard-record-tables.js?v=1.9.1"></script>
+  <link rel="stylesheet" href="/css/app.css" th:href="@{/css/app.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/brand.css?v=20260909-1" th:href="@{/css/brand.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/access.css" th:href="@{/css/access.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/locations.css" th:href="@{/css/locations.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/receiving-work.css?v=1.7.0" th:href="@{/css/receiving-work.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/standard-record-tables.css?v=1.9.1" th:href="@{/css/standard-record-tables.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31" th:href="@{/css/order-pictures.css(v=${buildVersion})}">
+  <script defer src="/js/location-manager.js?v=account-context-2" th:src="@{/js/location-manager.js(v=${buildVersion})}"></script><script defer src="/js/receiving-work.js?v=20261104-receiving-export" th:src="@{/js/receiving-work.js(v=${buildVersion})}"></script><script defer src="/js/standard-record-tables.js?v=1.9.1" th:src="@{/js/standard-record-tables.js(v=${buildVersion})}"></script>
   <th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block>
-<link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><script defer src="/js/platform-ui.js?v=1.6.6"></script></head>
+<link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5" th:href="@{/css/platform-ui.css(v=${buildVersion})}"><script defer src="/js/platform-ui.js?v=1.6.6" th:src="@{/js/platform-ui.js(v=${buildVersion})}"></script></head>
 <body class="app-page platform-standard-tables">
 <aside class="sidebar">
   <a class="brand brand-lockup" href="/app"><img src="/images/next-ai-mark-transparent.png" alt=""><span class="brand-wordmark"><strong><span>Next</span><b>AI</b></strong><small>COMMERCE</small></span></a>
@@ -31,8 +31,8 @@
     <div class="table-wrap"><table data-table-widget="receiving-work" class="rw-table">
       <thead><tr><th data-column="product" data-column-required="true" data-column-weight="2.5">Product</th><th data-column="source">Source document</th><th data-column="expected">Expected</th><th data-column="received">Received</th><th data-column="remaining">Remaining</th><th data-column="expiration">Expiration</th><th data-column="condition">Status</th><th data-column="actions">Actions</th></tr></thead>
       <tbody>
-        <tr th:each="l:${workLines}" th:attr="data-line=${l.id},data-document=${l.documentId},data-picture-item=${l.productId},data-image=${l.productId != null and workImages != null ? workImages[l.productId] : ''},data-can-edit-picture=${canEditCatalog}">
-          <td data-column="product"><strong th:text="${l.product}">Product</strong><small th:text="${l.code}">Code</small><div data-context-menu th:attr="data-title=${l.product}" th:if="${canEditCatalog and l.productId != null}"><button type="button" th:attr="data-adjust-line=${l.id}" data-action-description="Choose a received batch and correct its stock">Adjust stock</button><button type="button" th:attr="data-overage-line=${l.id}" data-action-description="Receive extra units at zero acquisition cost">Receive overshipped items</button></div></td>
+        <tr th:each="l:${workLines}" th:attr="data-line=${l.id},data-document=${l.documentId},data-item=${l.productId},data-picture-item=${l.productId},data-image=${l.productId != null and workImages != null ? workImages[l.productId] : ''},data-can-edit-picture=${canEditCatalog}">
+          <td data-column="product"><div class="product-cell"><div><a th:if="${l.productId != null}" class="inventory-product-detail-link" th:href="@{/app/inventory/ledger(itemId=${l.productId})}" th:text="${l.product}">Product</a><strong th:unless="${l.productId != null}" th:text="${l.product}">Product</strong><small class="inventory-code-line"><span th:text="${l.code}">Code</span><button type="button" class="product-detail-copy" th:attr="data-ui-copy=${l.code}" aria-label="Copy item code"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg></button></small></div></div><div data-context-menu th:attr="data-title=${l.product}" th:if="${canEditCatalog and l.productId != null}"><button type="button" th:attr="data-edit-catalog-item=${l.productId},data-catalog-query=${l.code ?: l.product}" onclick="event.stopPropagation();NextAiInventoryTable.editCatalogue(this)">Edit catalogue item</button><button type="button" th:attr="data-adjust-line=${l.id}" data-action-description="Choose a received batch and correct its stock">Adjust stock</button><button type="button" th:attr="data-overage-line=${l.id}" data-action-description="Receive extra units at zero acquisition cost">Receive overshipped items</button></div></td>
           <td data-column="source"><span th:each="d:${workDocuments}" th:if="${d.id==l.documentId}" th:text="${d.label()}">Invoice</span></td>
           <td data-column="expected" th:text="${#numbers.formatDecimal(l.expected,1,0)+' each'}"></td>
           <td data-column="received" th:text="${#numbers.formatDecimal(l.received,1,0)+' each'}"></td>
@@ -72,5 +72,5 @@
 window.receivingWork = {documents:/*[[${workDocuments}]]*/[],lines:/*[[${workLines}]]*/[],locations:/*[[${locations}]]*/[],details:/*[[${lineDetails}]]*/[],policy:/*[[${shelfPolicy}]]*/null,unshipped:/*[[${unshippedInformation}]]*/[]};
 </script>
 <th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block>
-</body>
+<th:block th:replace="~{fragments/inventory-history-panel :: panel}"></th:block><link rel="stylesheet" th:href="@{/css/inventory-ledger-preview.css(v=${buildVersion})}"><script th:src="@{/js/inventory-history-panel.js(v=${buildVersion})}"></script><script th:src="@{/js/inventory-related-skus.js(v=${buildVersion})}"></script><script th:src="@{/js/replenishment-inventory-history.js(v=${buildVersion})}"></script><script th:src="@{/js/inventory-ledger-preview.js(v=${buildVersion})}"></script><script th:src="@{/js/inventory-table-refresh.js(v=${buildVersion})}"></script><script th:src="@{/js/catalog-product-editor.js(v=${buildVersion})}"></script></body>
 </html>

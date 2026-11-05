@@ -1,12 +1,12 @@
 <!doctype html>
 <html xmlns:th="http://www.thymeleaf.org"><head>
 <th:block th:fragment="head">
-  <link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7">
-  <link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2">
-  <link rel="stylesheet" href="/css/collaboration-thread.css?v=1.11.7">
-  <link rel="stylesheet" href="/css/collaboration-accessibility.css?v=20261008-1">
-  <script defer src="/js/collaboration.js?v=1.11.13"></script>
-  <script defer src="/js/collaboration-read-receipts.js?v=personal27"></script>
+  <link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7" th:href="@{/css/collaboration-chat.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2" th:href="@{/css/collaboration-smart.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/collaboration-thread.css?v=1.11.7" th:href="@{/css/collaboration-thread.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/collaboration-accessibility.css?v=20261008-1" th:href="@{/css/collaboration-accessibility.css(v=${buildVersion})}">
+  <script defer src="/js/collaboration.js?v=1.11.13" th:src="@{/js/collaboration.js(v=${buildVersion})}"></script>
+  <script defer src="/js/collaboration-read-receipts.js?v=personal27" th:src="@{/js/collaboration-read-receipts.js(v=${buildVersion})}"></script>
 </th:block>
 </head><body>
 <th:block th:fragment="body">

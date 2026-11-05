@@ -4,8 +4,8 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Something needs attention | Next AI Commerce</title>
   <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
-  <link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css?v=20260909-1">
-  <link rel="stylesheet" href="/css/error-page.css">
+  <link rel="stylesheet" href="/css/app.css" th:href="@{/css/app.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/brand.css?v=20260909-1" th:href="@{/css/brand.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/error-page.css" th:href="@{/css/error-page.css(v=${buildVersion})}">
 </head>
 <body class="friendly-error-page">
   <main class="friendly-error-card">

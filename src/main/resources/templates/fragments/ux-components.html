@@ -1,9 +1,9 @@
 <!doctype html>
 <html xmlns:th="http://www.thymeleaf.org"><body>
 <th:block th:fragment="runtime">
-  <link rel="stylesheet" href="/css/ux-components.css?v=20261008-1">
-  <script defer src="/js/ux-components.js?v=20261008-1"></script>
-  <script defer src="/js/metric-drilldown.js?v=20261007-1"></script>
-  <script defer src="/js/platform-tooltips.js?v=1.7.3"></script>
+  <link rel="stylesheet" href="/css/ux-components.css?v=20261008-1" th:href="@{/css/ux-components.css(v=${buildVersion})}">
+  <script defer src="/js/ux-components.js?v=20261008-1" th:src="@{/js/ux-components.js(v=${buildVersion})}"></script>
+  <script defer src="/js/metric-drilldown.js?v=20261007-1" th:src="@{/js/metric-drilldown.js(v=${buildVersion})}"></script>
+  <script defer src="/js/platform-tooltips.js?v=1.7.3" th:src="@{/js/platform-tooltips.js(v=${buildVersion})}"></script>
 </th:block>
 </body></html>

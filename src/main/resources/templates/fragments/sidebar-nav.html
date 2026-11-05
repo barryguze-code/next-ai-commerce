@@ -2,8 +2,8 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <body>
 <th:block th:fragment="nav(active)">
-<link rel="stylesheet" href="/css/action-suggestions.css?v=20261002-standards3">
-<script defer src="/js/action-suggestions.js?v=20261002-standards3"></script>
+<link rel="stylesheet" href="/css/action-suggestions.css?v=20261002-standards3" th:href="@{/css/action-suggestions.css(v=${buildVersion})}">
+<script defer src="/js/action-suggestions.js?v=20261002-standards3" th:src="@{/js/action-suggestions.js(v=${buildVersion})}"></script>
 <dialog id="action-suggestion-dialog" aria-labelledby="action-suggestion-title">
   <form th:action="@{/app/action-suggestions}" method="post">
     <header><div><span class="eyebrow dark">Help improve the platform</span><h2 id="action-suggestion-title">Suggest an action</h2></div><button type="button" data-suggestion-close aria-label="Close suggestion">×</button></header>
@@ -15,10 +15,10 @@
     <footer><button type="button" class="secondary-button" data-suggestion-close>Cancel</button><button type="submit" class="primary-button">Send suggestion</button></footer>
   </form>
 </dialog>
-<link rel="stylesheet" href="/css/platform-controls.css?v=1.7.1">
+<link rel="stylesheet" href="/css/platform-controls.css?v=1.7.1" th:href="@{/css/platform-controls.css(v=${buildVersion})}">
 <script defer src="/js/platform-controls.js?v=1.7.1" th:src="${active == 'marketplace-skus' ? '/js/platform-controls.js?v=1.7.1' : '/js/platform-controls.js?v=1.7.1'}"></script>
-<link rel="stylesheet" href="/css/mobile-navigation.css?v=20261018-2">
-<script defer src="/js/mobile-navigation.js?v=20261018-2"></script>
+<link rel="stylesheet" href="/css/mobile-navigation.css?v=20261018-2" th:href="@{/css/mobile-navigation.css(v=${buildVersion})}">
+<script defer src="/js/mobile-navigation.js?v=20261018-2" th:src="@{/js/mobile-navigation.js(v=${buildVersion})}"></script>
 <nav class="product-nav" aria-label="Platform navigation">
   <a class="nav-overview" th:classappend="${active == 'overview' ? 'active' : ''}" href="/app"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/></svg>Overview</a>
 

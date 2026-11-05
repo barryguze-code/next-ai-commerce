@@ -5,19 +5,19 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Account Catalogue | Next AI Commerce</title>
 <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
-<link rel="stylesheet" href="/css/app.css">
-<link rel="stylesheet" href="/css/brand.css?v=20260909-1">
-<link rel="stylesheet" href="/css/access.css">
+<link rel="stylesheet" href="/css/app.css" th:href="@{/css/app.css(v=${buildVersion})}">
+<link rel="stylesheet" href="/css/brand.css?v=20260909-1" th:href="@{/css/brand.css(v=${buildVersion})}">
+<link rel="stylesheet" href="/css/access.css" th:href="@{/css/access.css(v=${buildVersion})}">
 
-<link rel="stylesheet" href="/css/locations.css">
-<link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7"><link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2"><link rel="stylesheet" href="/css/collaboration-thread.css?v=1.11.7">
-<script defer src="/js/theme.js?v=20260905-1">
+<link rel="stylesheet" href="/css/locations.css" th:href="@{/css/locations.css(v=${buildVersion})}">
+<link rel="stylesheet" href="/css/collaboration-chat.css?v=20260909-7" th:href="@{/css/collaboration-chat.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/collaboration-smart.css?v=20260909-2" th:href="@{/css/collaboration-smart.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/collaboration-thread.css?v=1.11.7" th:href="@{/css/collaboration-thread.css(v=${buildVersion})}">
+<script defer src="/js/theme.js?v=20260905-1" th:src="@{/js/theme.js(v=${buildVersion})}">
 </script>
-<script defer src="/js/table-preferences.js?v=20261002-perf1"></script>
+<script defer src="/js/table-preferences.js?v=20261002-perf1" th:src="@{/js/table-preferences.js(v=${buildVersion})}"></script>
 
-<script defer src="/js/collaboration.js?v=1.11.8"></script>
-<link rel="stylesheet" href="/css/catalog-inventory-controls.css?v=1.2.0">
-<link rel="stylesheet" href="/css/standard-record-tables.css?v=1.9.1"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31"><script defer src="/js/standard-record-tables.js?v=1.9.1"></script><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><script defer src="/js/platform-ui.js?v=1.8.1"></script><link rel="stylesheet" href="/css/account-catalog.css?v=1.9.1"></head>
+<script defer src="/js/collaboration.js?v=1.11.8" th:src="@{/js/collaboration.js(v=${buildVersion})}"></script>
+<link rel="stylesheet" href="/css/catalog-inventory-controls.css?v=1.2.0" th:href="@{/css/catalog-inventory-controls.css(v=${buildVersion})}">
+<link rel="stylesheet" href="/css/standard-record-tables.css?v=1.9.1" th:href="@{/css/standard-record-tables.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-31" th:href="@{/css/order-pictures.css(v=${buildVersion})}"><script defer src="/js/standard-record-tables.js?v=1.9.1" th:src="@{/js/standard-record-tables.js(v=${buildVersion})}"></script><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5" th:href="@{/css/platform-ui.css(v=${buildVersion})}"><script defer src="/js/platform-ui.js?v=1.8.1" th:src="@{/js/platform-ui.js(v=${buildVersion})}"></script><link rel="stylesheet" href="/css/account-catalog.css?v=1.9.1" th:href="@{/css/account-catalog.css(v=${buildVersion})}"></head>
 <body class="app-page platform-standard-tables">
 <aside class="sidebar">
 <a class="brand brand-lockup" href="/app">
@@ -375,12 +375,12 @@
 </div>
 </form>
 </dialog>
-<script src="/js/location-manager.js?v=account-context-2"></script>
+<script src="/js/location-manager.js?v=account-context-2" th:src="@{/js/location-manager.js(v=${buildVersion})}"></script>
 <script>function openCost(button){document.getElementById('cost-item-id').value=button.dataset.itemId;document.getElementById('cost-product-name').textContent=button.dataset.itemName;document.getElementById('cost-dialog').showModal();}</script>
 <script th:if="${openPanel == 'locations'}">window.addEventListener('DOMContentLoaded',()=>document.getElementById('location-dialog')?.showModal())</script>
-<link rel="stylesheet" href="/css/catalog-add-product.css?v=1.9.3">
-<script src="/js/catalog-global-picker.js?v=1.9.3"></script>
+<link rel="stylesheet" href="/css/catalog-add-product.css?v=1.9.3" th:href="@{/css/catalog-add-product.css(v=${buildVersion})}">
+<script src="/js/catalog-global-picker.js?v=1.9.3" th:src="@{/js/catalog-global-picker.js(v=${buildVersion})}"></script>
 <div th:replace="~{fragments/stock-editor :: editor}"></div>
-<script src="/js/stock-entry-points.js?v=20261002-2"></script>
-<script src="/js/catalog-product-editor.js?v=1.9.1"></script></body>
+<script src="/js/stock-entry-points.js?v=20261002-2" th:src="@{/js/stock-entry-points.js(v=${buildVersion})}"></script>
+<script src="/js/catalog-product-editor.js?v=1.9.1" th:src="@{/js/catalog-product-editor.js(v=${buildVersion})}"></script></body>
 </html>

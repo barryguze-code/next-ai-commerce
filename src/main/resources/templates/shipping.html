@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Buy Shipping | Next AI Commerce</title>
-<link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css"><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5"><link rel="stylesheet" href="/css/carrier-connections.css">
-<script defer src="/js/theme.js"></script><script defer src="/js/platform-ui.js?v=1.6.6"></script><th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block>
+<link rel="stylesheet" href="/css/app.css" th:href="@{/css/app.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/brand.css" th:href="@{/css/brand.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5" th:href="@{/css/platform-ui.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/carrier-connections.css" th:href="@{/css/carrier-connections.css(v=${buildVersion})}">
+<script defer src="/js/theme.js" th:src="@{/js/theme.js(v=${buildVersion})}"></script><script defer src="/js/platform-ui.js?v=1.6.6" th:src="@{/js/platform-ui.js(v=${buildVersion})}"></script><th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block>
 </head><body class="app-page"><aside class="sidebar"><a class="brand" href="/app">Next AI Commerce</a><div th:replace="~{fragments/sidebar-nav :: nav('shipping')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
 <main class="workspace"><header class="workspace-header"><div><h1>Buy Shipping</h1><p>Review merchant-fulfilled orders and shipping settings.</p></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
 <section class="data-card"><div class="dialog-body"><h2>Merchant-fulfilled orders</h2><p>Review merchant-fulfilled orders. Shipping-label purchase is not available from the Orders table.</p>

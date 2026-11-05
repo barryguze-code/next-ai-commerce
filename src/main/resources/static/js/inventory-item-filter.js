@@ -16,5 +16,6 @@
     if(selected){const all=document.querySelector('.inventory-filter-bar [data-filter="ALL"]');if(all)window.setInventoryStatus?.(all);}
     window.applyInventoryFilters?.();refresh();table.dispatchEvent(new Event('table:filter'));
   },true);
+  document.addEventListener('inventory:refreshed',refresh);
   refresh();
 })();

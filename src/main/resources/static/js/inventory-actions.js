@@ -346,6 +346,8 @@
     document.getElementById('adjustment-item').value = form.elements.itemId.value;
     document.getElementById('adjustment-expiration').value = form.elements.expirationDate.value;
     document.getElementById('adjustment-location').value = document.getElementById('quick-action-location').value;
+    document.querySelector('[data-adjustment-location-label]').value = menuContext.locationCode || document.getElementById('quick-action-location-code').value;
+    document.querySelector('[data-adjustment-expiration-label]').value = form.elements.expirationDate.value ? window.NextAiShortDates.display(form.elements.expirationDate.value) : 'No expiration';
     const balance = document.getElementById('adjustment-position');
     balance.replaceChildren(...[
       ['On hand', menuContext.onHand + ' each'],
@@ -384,21 +386,10 @@
     submit.disabled = true; submit.textContent = 'Saving…'; feedback.hidden = true;
     try {
       const response = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { Accept: 'application/json' } });
-      const result = await response.json().catch(() => ({ message: 'The inventory adjustment could not be saved.' }));
-      if (!response.ok) throw new Error(result.message);
-      const change = Number(document.getElementById('adjustment-change').value);
-      const row = [...document.querySelectorAll('.available-inventory-table .inventory-row')].find(candidate =>
-        candidate.dataset.item === menuContext.item && candidate.dataset.location === menuContext.location && candidate.dataset.expiration === menuContext.expiration);
-      if (row) {
-        const onHand = Number(row.dataset.onHand || 0) + change;
-        const available = Math.max(0, Number(row.dataset.available || 0) + change);
-        row.dataset.onHand = String(onHand); row.dataset.available = String(available);
-        row.cells[2]?.querySelector('strong')?.replaceChildren(document.createTextNode(onHand + ' each'));
-        row.cells[4]?.querySelector('strong')?.replaceChildren(document.createTextNode(available + ' each'));
-        const action = row.querySelector('.plan-action-button');
-        if (action) { action.dataset.onHand = String(onHand); action.dataset.available = String(available); }
-      }
+      const result = await response.json().catch(() => null);
+      if (!response.ok || response.redirected || !response.headers.get('content-type')?.includes('application/json') || typeof result?.message !== 'string') throw new Error('The save could not be confirmed. Refresh this view before retrying.');
       document.getElementById('inventory-adjustment-dialog').close();
+      await window.NextAiInventoryTable.afterSave(result.message);
       showInventoryActionFeedback(result.message, false);
     } catch (error) {
       feedback.textContent = error.message; feedback.hidden = false; feedback.classList.add('error');

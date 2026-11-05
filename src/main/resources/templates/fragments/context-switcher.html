@@ -33,7 +33,7 @@
     <footer class="context-footer"><button type="button" class="secondary-button" onclick="closeWorkspacePicker(this)">Done</button></footer>
   </section>
   <dialog id="account-brand-dialog" class="invite-dialog"><form method="post" enctype="multipart/form-data" th:action="@{/app/platform/accounts/{id}/logo(id=${selectedAccountId})}" class="dialog-shell"><div class="dialog-header"><div><span class="eyebrow dark">Company identity</span><h2>Update company logo</h2><p>This logo appears in the workspace picker and selected-store control.</p></div><button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button></div><div class="dialog-body operation-form"><label>Company logo<input name="logo" type="file" accept="image/png,image/jpeg,image/webp" required><small>PNG, JPEG, or WebP up to 2 MB.</small></label></div><div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button" type="submit">Save logo</button></div></form></dialog>
-<script defer src="/js/workspace-picker.js?v=1.11.7"></script>
+<script defer src="/js/workspace-picker.js?v=1.11.7" th:src="@{/js/workspace-picker.js(v=${buildVersion})}"></script>
 </details>
 <details class="context-menu" data-collaboration-scope th:fragment="collaborationFilter">
   <summary class="context-switcher" aria-label="Filter collaboration by account or store">
@@ -60,6 +60,6 @@
     </div>
     <footer class="context-footer"><button type="button" class="secondary-button" onclick="closeWorkspacePicker(this)">Done</button></footer>
   </section>
-<script defer src="/js/workspace-picker.js?v=1.11.7"></script>
+<script defer src="/js/workspace-picker.js?v=1.11.7" th:src="@{/js/workspace-picker.js(v=${buildVersion})}"></script>
 </details>
 </body></html>

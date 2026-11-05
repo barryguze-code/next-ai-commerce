@@ -1,8 +1,8 @@
 <!doctype html>
 <html xmlns:th="http://www.thymeleaf.org"><body>
 <th:block th:fragment="notice" th:if="${releaseNotice != null}">
-  <link rel="stylesheet" href="/css/release-notice.css?v=20261023-hotfix1">
-  <script defer src="/js/release-notice.js?v=20261023-hotfix1"></script>
+  <link rel="stylesheet" href="/css/release-notice.css?v=20261023-hotfix1" th:href="@{/css/release-notice.css(v=${buildVersion})}">
+  <script defer src="/js/release-notice.js?v=20261023-hotfix1" th:src="@{/js/release-notice.js(v=${buildVersion})}"></script>
   <section class="release-notice" data-release-notice th:attr="data-notice-version=${releaseNotice.version()},data-valid-until=${releaseNotice.validUntil()}" role="region" aria-labelledby="release-notice-title" hidden>
     <div class="release-notice-copy" id="release-notice-details">
       <h2 id="release-notice-title" tabindex="-1">An update is being prepared.</h2>

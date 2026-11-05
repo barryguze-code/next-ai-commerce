@@ -231,6 +231,17 @@ public class CatalogController {
         return "redirect:/app/platform/catalog";
     }
 
+    @PostMapping(value="/app/catalog/products/{itemId}",produces="application/json") @ResponseBody
+    ResponseEntity<?> updateAccountProductInline(@PathVariable UUID itemId,HttpSession session,Authentication authentication,
+            @RequestParam(required=false) String displayName,@RequestParam(required=false) String accountSku,
+            @RequestParam(defaultValue="ACTIVE") String status,@RequestParam(required=false) BigDecimal itemCost,
+            @RequestParam(required=false) UUID costVendorId,@RequestParam(required=false) String vendorItemCode){
+        requireAccountEditor(authentication,session);
+        try{catalog.updateAccountProductVendor(requiredTenantId(session),itemId,displayName,accountSku,status,itemCost,costVendorId,vendorItemCode,authentication.getName());
+            return ResponseEntity.ok(java.util.Map.of("message","Account product details updated."));
+        }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(java.util.Map.of("message",e.getMessage()));}
+    }
+
     @PostMapping("/app/catalog/products/{itemId}")
     String updateAccountProduct(@PathVariable UUID itemId,HttpSession session,Authentication authentication,
             @RequestParam(required=false) String displayName,@RequestParam(required=false) String accountSku,

@@ -6,7 +6,7 @@ on:
         description: 'Owner-approved focused scope: presentation, client read-only access UI, or receiving document parsing; no schema or integration writes'
         required: true
         type: choice
-        options: [PRESENTATION_ONLY, CLIENT_READ_ONLY_ACCESS_UI, RECEIVING_DOCUMENT_IMPORT, HUDDLE_SELECTION, HUDDLE_FINALIZATION, RECEIPT_TRANSACTION_PERFORMANCE, RECEIVING_INVENTORY_USABILITY]
+        options: [PRESENTATION_ONLY, CLIENT_READ_ONLY_ACCESS_UI, RECEIVING_DOCUMENT_IMPORT, HUDDLE_SELECTION, HUDDLE_FINALIZATION, RECEIPT_TRANSACTION_PERFORMANCE, RECEIVING_INVENTORY_USABILITY, FRONTEND_STANDARDIZATION]
       focused_test:
         description: 'Focused non-browser Node regression test filename under src/test/js'
         required: true
@@ -32,7 +32,7 @@ jobs:
           NODE_TEST: ${{ inputs.focused_test }}
           JAVA_TEST: ${{ inputs.java_test }}
         run: |
-          [[ "$CLASSIFICATION" = PRESENTATION_ONLY || "$CLASSIFICATION" = CLIENT_READ_ONLY_ACCESS_UI || "$CLASSIFICATION" = RECEIVING_DOCUMENT_IMPORT || "$CLASSIFICATION" = HUDDLE_SELECTION || "$CLASSIFICATION" = HUDDLE_FINALIZATION || "$CLASSIFICATION" = RECEIPT_TRANSACTION_PERFORMANCE || "$CLASSIFICATION" = RECEIVING_INVENTORY_USABILITY ]]
+          [[ "$CLASSIFICATION" = PRESENTATION_ONLY || "$CLASSIFICATION" = CLIENT_READ_ONLY_ACCESS_UI || "$CLASSIFICATION" = RECEIVING_DOCUMENT_IMPORT || "$CLASSIFICATION" = HUDDLE_SELECTION || "$CLASSIFICATION" = HUDDLE_FINALIZATION || "$CLASSIFICATION" = RECEIPT_TRANSACTION_PERFORMANCE || "$CLASSIFICATION" = RECEIVING_INVENTORY_USABILITY || "$CLASSIFICATION" = FRONTEND_STANDARDIZATION ]]
           [[ "$NODE_TEST" =~ ^[a-zA-Z0-9_-]+\.test\.cjs$ ]]
           test -f "src/test/js/$NODE_TEST"
           [[ -z "$JAVA_TEST" || "$JAVA_TEST" =~ ^[a-zA-Z0-9_.]+Test$ ]]
@@ -83,6 +83,12 @@ jobs:
           mvn --batch-mode -Dtest=InventoryControllerSafetyTest,InventoryShelfLifeTest,TemplateRenderingTest test
           npx playwright install --with-deps chromium
           node --test src/test/js/receiving-inventory-usability.test.cjs src/test/js/receiving-delivery.test.cjs src/test/js/receiving-focus.test.cjs src/test/js/table-widget.test.cjs src/test/js/inventory-ledger-preview.test.cjs src/test/js/bundle-ledger-choice.test.cjs
+      - name: Focused frontend performance and workspace regressions
+        if: inputs.classification == 'FRONTEND_STANDARDIZATION'
+        run: |
+          mvn --batch-mode -Dtest=ProtectedImageCacheAdviceTest,VersionedAssetCacheFilterTest,TemplateRenderingTest,InventoryControllerSafetyTest,CatalogGlobalChoiceMvcTest test
+          npx playwright install --with-deps chromium
+          node --test src/test/js/frontend-standardization.test.cjs src/test/js/stock-editor.test.cjs src/test/js/table-widget.test.cjs src/test/js/receiving-inventory-usability.test.cjs src/test/js/receiving-delivery.test.cjs src/test/js/product-thumbnails.test.cjs src/test/js/inventory-tabs.test.cjs src/test/js/stock-zero-columns.test.cjs src/test/js/bundle-ledger-choice.test.cjs
       - name: Build exact hotfix package
         run: |
           mvn --batch-mode -DskipTests package

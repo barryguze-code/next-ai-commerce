@@ -11,7 +11,12 @@ table.querySelectorAll('.sku-filter-lock').forEach(button=>{
  button.querySelector('img').src='/images/platform/'+(active?'06-locked':'05-unlocked')+'.svg';
  button.onclick=()=>{const url=new URL(location.href);if(active)url.searchParams.delete(key);else url.searchParams.set(key,value);url.searchParams.delete('page');url.searchParams.delete('goToPage');location.assign(url)};
 });
-table.querySelectorAll('[data-copy-value]').forEach(button=>{button.title='Copy '+button.dataset.copyValue;button.onclick=async()=>{try{await navigator.clipboard.writeText(button.dataset.copyValue);button.title='Copied'}catch{button.title='Copy unavailable'}}});
+table.querySelectorAll('.sku-identifier-line').forEach(line=>{
+ const value=line.querySelector(':scope > [data-copy-value]');if(!value||value.dataset.identityReady)return;value.dataset.identityReady='true';const code=value.dataset.copyValue;
+ const copy=document.createElement('button');copy.type='button';copy.className='sku-identifier-copy';copy.setAttribute('aria-label','Copy '+code);copy.title='Copy '+code;copy.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>';copy.onclick=async e=>{e.stopPropagation();try{await navigator.clipboard.writeText(code);copy.title='Copied'}catch{copy.title='Copy unavailable'}};if(code)line.append(copy);
+ if(line.closest('.sku-mapping-values')){value.removeAttribute('data-copy-value');value.title='View SKU mapping';value.onclick=()=>{const source=line.closest('tr').querySelector('[data-mapping-dialog]');if(source)window.NextAiMappingWidget.open(document.getElementById(source.dataset.mappingDialog));};}
+ else{value.removeAttribute('data-copy-value');value.onclick=null;value.style.cursor='text';}
+});
 table.querySelectorAll('.customer-shipping-note').forEach(note=>{const img=window.NextAiIcons.create('shipping-truck');note.prepend(img)});
 table.querySelectorAll('.sku-open-actions').forEach(trigger=>{
  if(trigger.dataset.skuActionsReady)return;trigger.dataset.skuActionsReady='true';

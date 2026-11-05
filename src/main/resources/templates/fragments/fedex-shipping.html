@@ -1,5 +1,5 @@
 <!doctype html><html xmlns:th="http://www.thymeleaf.org"><body><th:block th:fragment="dialog">
-<link rel="stylesheet" href="/css/fedex-shipping.css?v=ups-estimate-1"><script defer src="/js/shipping-label-print.js?v=2"></script><script defer src="/js/fedex-shipping.js?v=ups-estimate-1"></script>
+<link rel="stylesheet" href="/css/fedex-shipping.css?v=ups-estimate-1" th:href="@{/css/fedex-shipping.css(v=${buildVersion})}"><script defer src="/js/shipping-label-print.js?v=2" th:src="@{/js/shipping-label-print.js(v=${buildVersion})}"></script><script defer src="/js/fedex-shipping.js?v=ups-estimate-1" th:src="@{/js/fedex-shipping.js(v=${buildVersion})}"></script>
 <dialog id="fedex-shipping" aria-labelledby="fedex-title"><form class="dialog-shell" id="fedex-form">
 <header class="dialog-header"><div><h2 id="fedex-title">Buy shipping</h2><p data-fedex-order></p></div><button type="button" class="dialog-close" data-fedex-close aria-label="Close shipping">×</button></header>
 <div class="dialog-body"><p role="status" aria-live="polite" data-fedex-message hidden></p>

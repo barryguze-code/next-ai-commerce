@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amazon relationship trial | Next AI Commerce</title>
-<link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/brand.css"><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5">
-<script defer src="/js/platform-ui.js?v=1.6.6"></script><link rel="stylesheet" href="/css/variation-trial-operator.css?v=20261021-1"><script defer src="/js/variation-trial-operator.js?v=20261021-1"></script><th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block></head>
+<link rel="stylesheet" href="/css/app.css" th:href="@{/css/app.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/brand.css" th:href="@{/css/brand.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5" th:href="@{/css/platform-ui.css(v=${buildVersion})}">
+<script defer src="/js/platform-ui.js?v=1.6.6" th:src="@{/js/platform-ui.js(v=${buildVersion})}"></script><link rel="stylesheet" href="/css/variation-trial-operator.css?v=20261021-1" th:href="@{/css/variation-trial-operator.css(v=${buildVersion})}"><script defer src="/js/variation-trial-operator.js?v=20261021-1" th:src="@{/js/variation-trial-operator.js(v=${buildVersion})}"></script><th:block th:replace="~{fragments/collaboration-runtime :: head}"></th:block></head>
 <body class="app-page"><aside class="sidebar"><a class="brand" href="/app">Next AI Commerce</a><div th:replace="~{fragments/sidebar-nav :: nav('marketplace-skus')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div></aside>
 <main class="workspace variation-trial" data-variation-trial>
 <header class="workspace-header"><div><span class="eyebrow dark">Local operator trial</span><h1>Amazon relationship trial</h1><p>One bounded collection of variation relationships. Amazon writes and inventory enforcement remain off.</p></div></header>

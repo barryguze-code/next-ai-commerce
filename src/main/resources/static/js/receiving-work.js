@@ -131,6 +131,7 @@ async function refresh(){
     row.querySelector('[data-column="remaining"]').textContent=l.closed?'Closed':quantity(l.remaining,l);
     const actionCell=row.querySelector('[data-column="actions"]'),chat=actionCell.querySelector('.collaboration-row-button');
     actionCell.replaceChildren(rowActions(l));if(chat)actionCell.prepend(chat);
+    const title=row.querySelector('.product-cell a,.product-cell strong'),code=row.querySelector('.inventory-code-line span');if(title)title.textContent=l.product;if(code)code.textContent=l.code||'';
     renderLine(row,l);
   });
   document.querySelectorAll('.rw-document').forEach(card=>{
@@ -140,6 +141,7 @@ async function refresh(){
   });
   document.querySelector('.rw-table').dispatchEvent(new CustomEvent('table:refresh',{bubbles:true}));
 }
+window.NextAiReceivingWork={refresh:async()=>{const restore=window.NextAiTableContinuity.capture();await refresh();requestAnimationFrame(restore);}};
 async function run(operation,target,data,el,after){
   const buttons=[...drawer.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);busy=true;
   let saved=false;

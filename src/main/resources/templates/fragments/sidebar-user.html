@@ -4,36 +4,37 @@
 <div class="sidebar-user" th:fragment="user">
   <th:block th:replace="~{fragments/release-notice :: notice}"></th:block>
   <th:block th:replace="~{fragments/ux-components :: runtime}"></th:block>
-  <link rel="stylesheet" href="/css/confirm-dialog.css"><script defer src="/js/confirm-dialog.js?v=1.11.8"></script>
-  <link rel="stylesheet" href="/css/product-thumbnails.css?v=1.7.2">
-  <link rel="stylesheet" href="/css/short-date-input.css?v=20261002-1">
-  <script defer src="/js/short-date-input.js?v=1.11.1-expiry-entry"></script>
-  <link rel="stylesheet" href="/css/huddle-floating.css?v=1.11.12">
-  <script src="/js/huddle-floating.js?v=1.11.13"></script>
-  <link rel="stylesheet" href="/css/chat-composer.css?v=1.11.13">
-  <link rel="stylesheet" href="/css/collaboration-accessibility.css?v=20261008-1">
-  <script defer src="/js/chat-composer.js?v=1.6.6"></script>
-  <link rel="stylesheet" href="/css/general-task.css?v=20261002-5">
-  <script defer src="/js/general-task.js?v=1.11.5"></script>
-  <link rel="stylesheet" href="/css/collaboration-task-dates.css?v=1.6.6">
-  <script defer src="/js/collaboration-task-dates.js?v=20261102-scope1"></script>
+  <link rel="stylesheet" href="/css/confirm-dialog.css" th:href="@{/css/confirm-dialog.css(v=${buildVersion})}"><script defer src="/js/confirm-dialog.js" th:src="@{/js/confirm-dialog.js(v=${buildVersion})}"></script>
+  <script src="/js/table-continuity.js" th:src="@{/js/table-continuity.js(v=${buildVersion})}"></script><link rel="stylesheet" href="/css/product-details-standard.css" th:href="@{/css/product-details-standard.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/product-thumbnails.css" th:href="@{/css/product-thumbnails.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/short-date-input.css" th:href="@{/css/short-date-input.css(v=${buildVersion})}">
+  <script defer src="/js/short-date-input.js" th:src="@{/js/short-date-input.js(v=${buildVersion})}"></script>
+  <link rel="stylesheet" href="/css/huddle-floating.css" th:href="@{/css/huddle-floating.css(v=${buildVersion})}">
+  <script src="/js/huddle-floating.js" th:src="@{/js/huddle-floating.js(v=${buildVersion})}"></script>
+  <link rel="stylesheet" href="/css/chat-composer.css" th:href="@{/css/chat-composer.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/collaboration-accessibility.css" th:href="@{/css/collaboration-accessibility.css(v=${buildVersion})}">
+  <script defer src="/js/chat-composer.js" th:src="@{/js/chat-composer.js(v=${buildVersion})}"></script>
+  <link rel="stylesheet" href="/css/general-task.css" th:href="@{/css/general-task.css(v=${buildVersion})}">
+  <script defer src="/js/general-task.js" th:src="@{/js/general-task.js(v=${buildVersion})}"></script>
+  <link rel="stylesheet" href="/css/collaboration-task-dates.css" th:href="@{/css/collaboration-task-dates.css(v=${buildVersion})}">
+  <script defer src="/js/collaboration-task-dates.js" th:src="@{/js/collaboration-task-dates.js(v=${buildVersion})}"></script>
   <span id="general-task-context" hidden th:attr="data-account=${selectedAccountId},data-account-name=${selectedAccountName},data-store=${selectedStoreId},data-store-name=${selectedStoreName},data-logo=${selectedAccountLogoUrl}"></span>
-  <script defer src="/js/collaboration.js?v=1.11.13"></script>
-  <script defer src="/js/collaboration-read-receipts.js?v=personal27"></script>
-  <script src="/js/theme.js?v=20260905-1"></script>
-  <script src="/js/platform-icons.js?v=20261031-local"></script>
-  <link rel="stylesheet" href="/css/table-widget.css?v=1.9.0">
-  <script defer src="/js/table-preferences.js?v=20261002-perf1"></script>
-  <script defer src="/js/table-widget.js?v=1.11.0"></script>
-  <script defer src="/js/table-data-tools.js?v=20261104-receiving-export"></script>
-  <link rel="stylesheet" href="/css/background-jobs.css?v=1.7.1">
-  <script defer src="/js/background-jobs.js?v=1.7.1"></script>
-  <link rel="stylesheet" href="/css/profile-picture.css">
-  <script defer src="/js/profile-picture.js"></script>
+  <script defer src="/js/collaboration.js" th:src="@{/js/collaboration.js(v=${buildVersion})}"></script>
+  <script defer src="/js/collaboration-read-receipts.js" th:src="@{/js/collaboration-read-receipts.js(v=${buildVersion})}"></script>
+  <script src="/js/theme.js" th:src="@{/js/theme.js(v=${buildVersion})}"></script>
+  <script src="/js/platform-icons.js" th:src="@{/js/platform-icons.js(v=${buildVersion})}"></script>
+  <link rel="stylesheet" href="/css/table-widget.css" th:href="@{/css/table-widget.css(v=${buildVersion})}">
+  <script defer src="/js/table-preferences.js" th:src="@{/js/table-preferences.js(v=${buildVersion})}"></script>
+  <script defer src="/js/table-widget.js" th:src="@{/js/table-widget.js(v=${buildVersion})}"></script>
+  <script defer src="/js/table-data-tools.js" th:src="@{/js/table-data-tools.js(v=${buildVersion})}"></script>
+  <link rel="stylesheet" href="/css/background-jobs.css" th:href="@{/css/background-jobs.css(v=${buildVersion})}">
+  <script defer src="/js/background-jobs.js" th:src="@{/js/background-jobs.js(v=${buildVersion})}"></script>
+  <link rel="stylesheet" href="/css/profile-picture.css" th:href="@{/css/profile-picture.css(v=${buildVersion})}">
+  <script defer src="/js/profile-picture.js" th:src="@{/js/profile-picture.js(v=${buildVersion})}"></script>
   <button type="button" class="sidebar-user-avatar profile-picture-trigger" title="Edit your profile picture" aria-label="Edit your profile picture"><span th:text="${#strings.toUpperCase(#strings.substring(signedInEmail,0,1))}">B</span><img src="/app/profile/picture" alt="Your profile picture"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 16-1 4 4-1L20 7l-3-3Z M14 7l3 3"/></svg></button>
   <span class="sidebar-user-copy"><strong th:text="${signedInEmail}" th:title="${signedInEmail}">Signed-in user</strong></span>
-  <link rel="stylesheet" href="/css/release-panel.css?v=1.0.3">
-  <script defer src="/js/release-panel.js?v=1.0.3"></script>
+  <link rel="stylesheet" href="/css/release-panel.css" th:href="@{/css/release-panel.css(v=${buildVersion})}">
+  <script defer src="/js/release-panel.js" th:src="@{/js/release-panel.js(v=${buildVersion})}"></script>
   <a class="sidebar-build-info release-trigger" href="/app/releases" aria-haspopup="dialog" th:attr="data-release-version=${buildVersion},data-release-user=${signedInEmail},data-release-notification=${#strings.isEmpty(buildBranch)}" th:title="${'What’s new · Running '+buildVersion}"><span style="display:flex;flex-direction:column;gap:3px;min-width:0;white-space:normal;overflow-wrap:anywhere"><span th:text="${#strings.isEmpty(buildBranch) ? 'v'+displayVersion : 'v'+buildVersion}">Version</span><small th:unless="${#strings.isEmpty(buildBranch)}" th:text="${buildBranch}">Branch</small></span><span class="release-unread-dot" hidden aria-label="New release notes"></span><span aria-hidden="true">›</span></a>
   <div class="text-size-control">
     <button class="text-size-trigger" data-text-size-toggle type="button" aria-label="Adjust text size" title="Adjust text size" aria-expanded="false" onclick="toggleTextSizeMenu(this,event)">Aa</button>
