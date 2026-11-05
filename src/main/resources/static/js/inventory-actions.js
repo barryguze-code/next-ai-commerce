@@ -387,7 +387,8 @@
     try {
       const response = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { Accept: 'application/json' } });
       const result = await response.json().catch(() => null);
-      if (!response.ok || response.redirected || !response.headers.get('content-type')?.includes('application/json') || typeof result?.message !== 'string') throw new Error('The save could not be confirmed. Refresh this view before retrying.');
+      if (!response.ok) throw new Error(typeof result?.message === 'string' ? result.message : 'Nothing changed. Please try again.');
+      if (response.redirected || !response.headers.get('content-type')?.includes('application/json') || typeof result?.message !== 'string') throw new Error('The save could not be confirmed. Refresh this view before retrying.');
       document.getElementById('inventory-adjustment-dialog').close();
       await window.NextAiInventoryTable.afterSave(result.message);
       showInventoryActionFeedback(result.message, false);
