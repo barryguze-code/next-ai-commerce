@@ -16,7 +16,7 @@
   </form>
 </dialog>
 <link rel="stylesheet" href="/css/platform-controls.css?v=1.7.1" th:href="@{/css/platform-controls.css(v=${buildVersion})}">
-<script defer src="/js/platform-controls.js?v=1.7.1" th:src="${active == 'marketplace-skus' ? '/js/platform-controls.js?v=1.7.1' : '/js/platform-controls.js?v=1.7.1'}"></script>
+<script defer src="/js/platform-controls.js?v=1.7.1" th:src="@{/js/platform-controls.js(v=${buildVersion})}"></script>
 <link rel="stylesheet" href="/css/mobile-navigation.css?v=20261018-2" th:href="@{/css/mobile-navigation.css(v=${buildVersion})}">
 <script defer src="/js/mobile-navigation.js?v=20261018-2" th:src="@{/js/mobile-navigation.js(v=${buildVersion})}"></script>
 <nav class="product-nav" aria-label="Platform navigation">

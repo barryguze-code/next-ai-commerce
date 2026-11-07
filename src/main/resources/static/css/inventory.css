@@ -630,3 +630,33 @@ html[data-theme="dark"] .reservation-sku{color:#d9e5f3}
 .ledger-source-label{display:inline-flex;align-items:center;gap:6px}.ledger-source-label>img{display:inline-block;flex:0 0 18px;width:18px;height:18px;object-fit:contain}
 
 .inventory-ledger-card [data-column="source"]{min-width:240px;width:240px;word-break:normal;overflow-wrap:normal}.ledger-source{min-width:220px}.ledger-source-label>span{white-space:nowrap}.ledger-source a{overflow-wrap:anywhere}.ledger-source small{line-height:1.4;word-break:normal;overflow-wrap:normal}
+
+/* CD-reviewed compact warehouse choice; reuse shared listbox and focus behavior. */
+.inventory-warehouse-filter{flex:0 1 180px;min-width:0;max-width:240px;margin-left:0}
+.inventory-warehouse-filter .standard-choice-trigger{height:38px;min-height:38px;padding:8px 12px;border-radius:10px;font-family:inherit;font-size:13px;font-weight:650;line-height:1.3;background:var(--ui-action-soft,#edf4ff);border-color:var(--ui-action-line,#c3d6ff);color:var(--ui-action-text,#285fae);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
+
+.inventory-warehouse-filter .warehouse-choice-label{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.inventory-warehouse-filter .standard-choice-trigger:after{flex:0 0 auto;color:inherit}
+
+.inventory-warehouse-filter .sku-choice-chevron{flex:0 0 auto;margin-left:auto;color:inherit}
+.inventory-warehouse-filter[hidden]{display:none!important}
+@media(min-width:761px){.table-standard-toolbar>.table-widget-tools:has(>.inventory-warehouse-filter){flex:0 0 auto;flex-wrap:nowrap;width:max-content}.table-standard-toolbar>.table-widget-tools .inventory-warehouse-filter{flex:0 1 180px;width:180px}}
+.warehouse-contact-row{display:flex;gap:10px;align-items:end;margin:10px 0}.warehouse-contact-row>.form-pair{flex:1;min-width:0}.warehouse-contact-row>button{margin-bottom:0}
+@media(max-width:600px){.warehouse-contact-row{display:block}.warehouse-contact-row>.form-pair{grid-template-columns:1fr}.warehouse-contact-row>button{margin-top:8px}}
+/* CD warehouse editor: full-width directory above fields, never a half-empty split. */
+#warehouse-dialog .dialog-body.catalog-form{display:block}
+#warehouse-dialog .location-directory{margin-bottom:18px}
+#warehouse-dialog .location-directory-list{max-height:180px}
+#warehouse-dialog .location-create-panel{width:100%;box-sizing:border-box}
+#warehouse-dialog .form-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+@media(max-width:600px){#warehouse-dialog .form-pair{grid-template-columns:minmax(0,1fr)}}
+#warehouse-directory>article{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px}
+#warehouse-directory>article>div:first-child{grid-column:1;min-width:0}
+#warehouse-directory>article>div:first-child strong{max-width:none;white-space:normal;overflow:visible;text-overflow:clip}
+#warehouse-directory>article>.location-status{grid-column:2;grid-row:1;width:max-content;justify-self:end}
+#warehouse-directory>article>.location-actions{grid-column:3;grid-row:1;justify-self:end}
+
+/* CD-reviewed removal/status states; preserve contrast in both themes. */
+#warehouse-directory .location-actions button:disabled{opacity:.45;cursor:not-allowed;color:var(--muted)}
+#warehouse-directory .location-status.inactive{background:var(--surface-muted,var(--surface));color:var(--muted);border:1px solid var(--line)}

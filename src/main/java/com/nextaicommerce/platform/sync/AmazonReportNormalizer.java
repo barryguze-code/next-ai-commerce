@@ -60,8 +60,20 @@ public class AmazonReportNormalizer {
     }
 
     /** Shipment-scoped Finances API response, using the same idempotent transaction store. */
+    public JsonNode scopedShipmentFinances(AmazonSyncStore.Job job,JsonNode root){
+        var filtered=json.createObjectNode();var rows=filtered.putObject("payload").putArray("transactions");
+        for(JsonNode row:root.path("payload").path("transactions")){
+            if(!java.util.Set.of("ServiceFee","ServiceFee - Reversal").contains(row.path("transactionType").asText("")) ||
+               !java.util.Set.of("FBAPostInboundTransportation","FBAInboundConvenience").contains(row.path("description").asText("")))continue;
+            String marketplace=row.path("marketplaceDetails").path("marketplaceId").asText("");
+            if(marketplace.isBlank())marketplace=row.path("sellingPartnerMetadata").path("marketplaceId").asText("");
+            if(marketplace.isBlank())throw new IllegalStateException("Amazon FBA fee marketplace attribution is missing; existing charges retained.");
+            if(job.marketplaceId().equals(marketplace))rows.add(row);
+        }
+        return filtered;
+    }
     public long normalizeShipmentFinances(AmazonSyncStore.Job job,JsonNode root,UUID sourceDocument){
-        return transactions.execute(status->{setTenant(job.tenantId());return finances(job,root,sourceDocument);});
+        return transactions.execute(status->{setTenant(job.tenantId());return finances(job,scopedShipmentFinances(job,root),sourceDocument);});
     }
 
     public long normalizeOrderItems(AmazonSyncStore.Job job,String orderId,JsonNode root,UUID sourceDocument){
@@ -533,7 +545,7 @@ public class AmazonReportNormalizer {
                     seller_sku=coalesce(EXCLUDED.seller_sku,amazon_financial_transactions.seller_sku),
                     source_document_id=EXCLUDED.source_document_id,updated_at=now()
                 """,job.tenantId(),job.connectionId(),key,type,posted.instant(),posted.marketplaceDate(),
-                related(transaction,"ORDER_ID","orderId"),related(transaction,"SHIPMENT_ID","shipmentId"),
+                ("FBA_INBOUND".equals(job.type())&&blank(related(transaction,"ORDER_ID","orderId"))?related(transaction,"SHIPMENT_ID","shipmentId"):related(transaction,"ORDER_ID","orderId")),related(transaction,"SHIPMENT_ID","shipmentId"),
                 text(transaction,"sellerSku","sku"),text(transaction,"description"),
                 integer(text(transaction,"quantity")),amount,currency,job.marketplaceId(),transaction.toString(),
                 transaction.toString(),source);

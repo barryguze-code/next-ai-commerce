@@ -74,7 +74,9 @@ public class FbaReadRepository {
     }
 
     public record Shipment(String id,String name,String status,String destination,String shipFrom,
-            Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState) {
+            Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs,Long shippedCases,Long looseUnits,boolean itemsComplete) {
+        public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,shipFromState,costs,null,null,true);}
+        public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,shipFromState,new ShipmentCosts(null,null,null,shipped));}
         public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,null);}
         public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,null);}
         public String createdDisplay(){
@@ -88,34 +90,57 @@ public class FbaReadRepository {
             }catch(java.time.format.DateTimeParseException ignored){ }
             return "Not supplied";
         }
+        public String createdPrimaryDisplay(){String value=createdDisplay();return value.equals("Not supplied")?value:value.split(" ",2)[0];}
+        public boolean createdFromName(){return createdAt==null&&createdDisplay().contains("shipment name");}
         public String updatedDisplay(){return display(updatedAt);}
     }
     public record ShipmentItem(String sku,String fnsku,String title,int shipped,int received,String imageUrl){}
     public record ShipmentCosts(BigDecimal transportation,BigDecimal placement,String currency,long shippedUnits){
-        public BigDecimal getPerUnit(){return transportation==null||placement==null||shippedUnits<=0?null:
-            transportation.add(placement).divide(BigDecimal.valueOf(shippedUnits),4,java.math.RoundingMode.HALF_UP);}
+        /** Display rounding only; source amounts and per-unit calculations retain their precision. */
+        public String displayAmount(BigDecimal amount){
+            if(amount==null || currency==null || currency.isBlank()) return "—";
+            try{
+                var formatter=java.text.NumberFormat.getCurrencyInstance(Locale.US);
+                formatter.setCurrency(java.util.Currency.getInstance(currency));
+                formatter.setMinimumFractionDigits(2);formatter.setMaximumFractionDigits(2);
+                formatter.setRoundingMode(java.math.RoundingMode.HALF_UP);
+                return formatter.format(amount);
+            }catch(IllegalArgumentException invalidCurrency){return "—";}
+        }
+
+        public BigDecimal getTotal(){return transportation==null||placement==null||currency==null?null:transportation.add(placement);}
+        public BigDecimal getPerUnit(){return getTotal()==null||shippedUnits<=0?null:
+            getTotal().divide(BigDecimal.valueOf(shippedUnits),4,java.math.RoundingMode.HALF_UP);}
     }
     public record ShipmentItems(List<ShipmentItem> rows,long total,int page,int size,ShipmentCosts costs){}
     /** Posted transaction totals are counted once, never again through nested breakdown rollups.
      * Amazon's inbound service-fee records use ORDER_ID for the exact FBA shipment reference.
      * Absent fee categories stay unknown; credit/reversal signs reduce the net cost.
      */
-    private ShipmentCosts shipmentCosts(UUID tenant,UUID connection,String shipment){
-        return jdbc.queryForObject("""
+    private static final String CHARGE_TOTALS="""
             SELECT CASE WHEN count(DISTINCT currency)=1 AND bool_and(amount IS NOT NULL AND currency IS NOT NULL) THEN sum(-amount) FILTER
                      (WHERE description='FBAPostInboundTransportation') END transportation,
                    CASE WHEN count(DISTINCT currency)=1 AND bool_and(amount IS NOT NULL AND currency IS NOT NULL) THEN sum(-amount) FILTER
                      (WHERE description='FBAInboundConvenience') END placement,
-                   CASE WHEN count(DISTINCT currency)=1 THEN min(currency) END currency,
-                   (SELECT coalesce(sum(quantity_shipped),0) FROM amazon_fba_shipment_items
-                     WHERE tenant_id=? AND marketplace_connection_id=? AND shipment_id=?) shipped_units
+                   CASE WHEN count(DISTINCT currency)=1 THEN min(currency) END currency
             FROM amazon_financial_transactions
-            WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?
+            WHERE tenant_id=s.tenant_id AND marketplace_connection_id=s.marketplace_connection_id AND amazon_order_id=s.shipment_id
               AND transaction_type IN ('ServiceFee','ServiceFee - Reversal')
               AND description IN ('FBAPostInboundTransportation','FBAInboundConvenience')
               AND raw_payload->>'transactionStatus' IN ('RELEASED','DEFERRED_RELEASED')
-            """,(rs,n)->new ShipmentCosts(rs.getBigDecimal("transportation"),rs.getBigDecimal("placement"),rs.getString("currency"),rs.getLong("shipped_units")),tenant,connection,shipment,tenant,connection,shipment);
+            """;
+    private ShipmentCosts shipmentCosts(UUID tenant,UUID connection,String shipment){
+        return jdbc.queryForObject("""
+            SELECT charges.*,totals.shipped_units
+            FROM (SELECT ?::uuid tenant_id,?::uuid marketplace_connection_id,?::text shipment_id) s
+            LEFT JOIN LATERAL (
+            """+CHARGE_TOTALS+"""
+            ) charges ON true
+            LEFT JOIN LATERAL (SELECT coalesce(sum(quantity_shipped),0) shipped_units FROM amazon_fba_shipment_items
+                WHERE tenant_id=s.tenant_id AND marketplace_connection_id=s.marketplace_connection_id AND shipment_id=s.shipment_id) totals ON true
+            """,(rs,n)->new ShipmentCosts(rs.getBigDecimal("transportation"),rs.getBigDecimal("placement"),rs.getString("currency"),rs.getLong("shipped_units")),tenant,connection,shipment);
     }
+
     @Transactional(readOnly=true)
     public ShipmentItems items(UUID tenant,UUID connection,String shipment,String search,int requestedPage){
         scope(tenant);
@@ -168,21 +193,27 @@ public class FbaReadRepository {
             WITH selected AS (SELECT s.*
             """+where+"""
                 ORDER BY coalesce(s.created_date,CASE WHEN s.raw_payload->>'LastUpdatedDate' IS NOT NULL THEN s.updated_date END) DESC NULLS LAST,s.shipment_id DESC LIMIT ? OFFSET ?)
-            SELECT s.*,coalesce(s.created_date,CASE WHEN s.raw_payload->>'LastUpdatedDate' IS NOT NULL THEN s.updated_date END) display_date,totals.skus,totals.shipped,totals.received,
+            SELECT s.*,jsonb_exists(s.raw_payload,'itemsCheckedAt') items_complete,coalesce(s.created_date,CASE WHEN s.raw_payload->>'LastUpdatedDate' IS NOT NULL THEN s.updated_date END) display_date,totals.skus,totals.shipped,totals.received,totals.shipped_cases,totals.loose_units,charges.transportation,charges.placement,charges.currency,
                 nullif(s.raw_payload#>>'{ShipFromAddress,StateOrProvinceCode}','') ship_from_state,
                 nullif(concat_ws(', ',nullif(s.raw_payload#>>'{ShipFromAddress,City}',''),
-                    nullif(s.raw_payload#>>'{ShipFromAddress,StateOrProvinceCode}',''),
+                    nullif(concat_ws(' ',nullif(s.raw_payload#>>'{ShipFromAddress,StateOrProvinceCode}',''),
+                        nullif(s.raw_payload#>>'{ShipFromAddress,PostalCode}','')),''),
                     nullif(s.raw_payload#>>'{ShipFromAddress,CountryCode}','')),'') ship_from
             FROM selected s LEFT JOIN LATERAL (
                 SELECT count(*) skus,coalesce(sum(quantity_shipped),0) shipped,
-                    coalesce(sum(quantity_received),0) received FROM amazon_fba_shipment_items i
+                    coalesce(sum(quantity_received),0) received,
+                    CASE WHEN count(*)>0 AND bool_and(coalesce(quantity_shipped=0 OR quantity_in_case>0,false)) THEN sum(quantity_shipped / nullif(quantity_in_case,0)) END shipped_cases,
+                    CASE WHEN count(*)>0 AND bool_and(coalesce(quantity_shipped=0 OR quantity_in_case>0,false)) THEN sum(quantity_shipped % nullif(quantity_in_case,0)) END loose_units FROM amazon_fba_shipment_items i
                 WHERE i.tenant_id=s.tenant_id AND i.marketplace_connection_id=s.marketplace_connection_id
                     AND i.shipment_id=s.shipment_id) totals ON true
+            LEFT JOIN LATERAL (
+            """+CHARGE_TOTALS+"""
+            ) charges ON true
             ORDER BY coalesce(s.created_date,CASE WHEN s.raw_payload->>'LastUpdatedDate' IS NOT NULL THEN s.updated_date END) DESC NULLS LAST,s.shipment_id DESC
             """,(rs,n)->new Shipment(rs.getString("shipment_id"),rs.getString("shipment_name"),
                 rs.getString("shipment_status"),rs.getString("destination_fulfillment_center"),
                 rs.getString("ship_from"),instant(rs.getTimestamp("updated_date")),rs.getLong("skus"),
-                rs.getLong("shipped"),rs.getLong("received"),instant(rs.getTimestamp("display_date")),rs.getString("ship_from_state")),params.toArray());
+                rs.getLong("shipped"),rs.getLong("received"),instant(rs.getTimestamp("display_date")),rs.getString("ship_from_state"),new ShipmentCosts(rs.getBigDecimal("transportation"),rs.getBigDecimal("placement"),rs.getString("currency"),rs.getLong("shipped")),(Long)rs.getObject("shipped_cases"),(Long)rs.getObject("loose_units"),rs.getBoolean("items_complete")),params.toArray());
         return new ShipmentPage(rows,total,page,size);
     }
     private void scope(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}

@@ -104,6 +104,10 @@ public class AccountSelectionController {
     }
 
     private static String safeWorkspacePath(String path) {
-        return path != null && path.matches("/app(?:/(?:orders|marketplace-skus|collaboration|receiving|inventory(?:/ledger|/replenishment|/physical-counts/history)?))?") ? path : "/app";
+        return java.util.Set.of("/app","/app/orders","/app/marketplace-skus","/app/collaboration","/app/receiving",
+            "/app/inventory","/app/inventory/ledger","/app/inventory/replenishment","/app/inventory/fba-shipments",
+            "/app/inventory/physical-counts/history","/app/catalog","/app/vendors","/app/shipping","/app/shipping/preferences",
+            "/app/connections","/app/connections/carriers","/app/users","/app/platform/accounts","/app/platform/catalog",
+            "/app/platform/action-suggestions").contains(path==null?"":path) ? path : "/app";
     }
 }

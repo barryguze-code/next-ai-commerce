@@ -620,6 +620,26 @@ public class InventoryRepository {
         return parsed;
     }
 
+    /** One account-scoped read for client-side SKU search; includes every bundle component. */
+    @Transactional(readOnly=true)
+    public Map<UUID,String> inventorySkuSearchTerms(UUID tenantId,java.util.Collection<UUID> visibleStores){
+        if(visibleStores==null||visibleStores.isEmpty())return Map.of();
+        var storeIds=visibleStores.stream().distinct().toList();
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        return jdbc.query("""
+            SELECT coalesce(component.account_catalog_item_id,mapping.account_catalog_item_id) item_id,
+                   string_agg(DISTINCT mapping.marketplace_sku,' ' ORDER BY mapping.marketplace_sku) skus
+            FROM marketplace_sku_mappings mapping
+            LEFT JOIN marketplace_sku_mapping_components component
+              ON component.tenant_id=mapping.tenant_id AND component.marketplace_sku_mapping_id=mapping.id
+            WHERE mapping.tenant_id=? AND mapping.status='ACTIVE'
+              AND mapping.marketplace_connection_id IN (%s)
+            GROUP BY coalesce(component.account_catalog_item_id,mapping.account_catalog_item_id)
+            """.formatted(String.join(",",java.util.Collections.nCopies(storeIds.size(),"?"))),rs->{var terms=new LinkedHashMap<UUID,String>();
+                while(rs.next()){UUID item=rs.getObject("item_id",UUID.class);if(item!=null)terms.put(item,rs.getString("skus"));}
+                return terms;},java.util.stream.Stream.concat(java.util.stream.Stream.of(tenantId),storeIds.stream()).toArray());
+    }
+
     private List<String> mappedSellerSkus(UUID tenantId,UUID itemId){
         return jdbc.query("""
             SELECT DISTINCT mapping.marketplace_sku
@@ -758,6 +778,12 @@ public class InventoryRepository {
             throw new IllegalArgumentException("Choose the inventory position and its new location.");
         if(quantity==null||quantity.signum()<=0||quantity.stripTrailingZeros().scale()>0)
             throw new IllegalArgumentException("Enter a whole-number quantity greater than zero.");
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT source.warehouse_id=destination.warehouse_id FROM warehouse_locations source
+            JOIN warehouse_locations destination ON destination.tenant_id=source.tenant_id
+            WHERE source.tenant_id=? AND source.id=? AND destination.id=?
+            """,Boolean.class,tenantId,sourceLocationId,destinationLocationId)))
+            throw new IllegalArgumentException("Transfers between warehouses are not available yet. Choose a location in the same warehouse.");
         UUID destination=resolveItemLocation(tenantId,itemId,destinationLocationId);
         if(sourceLocationId.equals(destination)){
             if(makeDefault)setDefaultLocation(tenantId,itemId,destination);

@@ -88,3 +88,21 @@ Marketplace SKUs retain their accepted intrinsic-frame implementation in
 `marketplace-sku-responsive.css`. This rule does not enroll avatars, company or
 marketplace logos, vendor/session/document images, galleries, or image editors.
 New table consumers require explicit product-photo enrollment and rendered review.
+
+
+## Currency presentation — owner and CD direction 2026-11-07
+
+- Across all account designs, display monetary amounts with the appropriate
+  currency symbol using the shared locale/currency formatter. US marketplace USD
+  amounts display `$25.00`, not `USD25.00` or `USD 25.00`, consistently in tables,
+  dialogs, summaries and tooltips.
+- Resolve the symbol from the amount's actual currency, never the account name or
+  selected marketplace alone. Vendor and warehouse charges may use another
+  currency. Disambiguate mixed-currency views with symbols such as `CA$`/`A$` or
+  clear existing currency context; never relabel another currency as US dollars.
+- All monetary UI values display exactly two decimal places, including per-unit
+  estimates. Preserve underlying calculation precision,
+  negative values and unknown states. Unknown currency stays explicit, not guessed.
+- This is a presentation standard: retain ISO currency codes in storage, APIs,
+  calculations and existing CSV contracts. Implement through shared formatting,
+  not individual page string replacements.

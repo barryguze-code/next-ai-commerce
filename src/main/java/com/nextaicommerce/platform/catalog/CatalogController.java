@@ -317,12 +317,42 @@ public class CatalogController {
     }
 
     @PostMapping("/app/catalog/location-options") @ResponseBody
-    ResponseEntity<Map<String,Object>> addLocationOption(HttpSession session,@RequestParam String code,@RequestParam String name){
+    ResponseEntity<Map<String,Object>> addLocationOption(HttpSession session,@RequestParam String code,@RequestParam String name,@RequestParam(required=false) UUID warehouseId){
         try{
-            UUID id=catalog.addLocation(requiredTenantId(session),code,name);
-            return ResponseEntity.ok(Map.of("id",id.toString(),"code",code.trim().toUpperCase(java.util.Locale.ROOT),"name",name.trim()));
+            UUID id=catalog.addLocation(requiredTenantId(session),code,name,warehouseId);
+            var location=catalog.listLocations(requiredTenantId(session)).stream().filter(row->row.id().equals(id)).findFirst().orElseThrow();
+            return ResponseEntity.ok(Map.of("id",id.toString(),"code",code.trim().toUpperCase(java.util.Locale.ROOT),"name",name.trim(),"warehouseId",location.warehouseId().toString(),"warehouseName",location.warehouseName()));
         }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
         catch(Exception e){log.error("Inventory location creation failed",e);return ResponseEntity.internalServerError().body(Map.of("error","The location could not be added. Nothing was changed."));}
+    }
+
+    @GetMapping("/app/catalog/warehouse-options") @ResponseBody
+    List<CatalogRepository.WarehouseView> warehouseOptions(HttpSession session){return catalog.listWarehouses(requiredTenantId(session));}
+    @GetMapping("/app/catalog/warehouse-options/{id}") @ResponseBody
+    ResponseEntity<CatalogRepository.WarehouseDetails> warehouseDetails(HttpSession session,@PathVariable UUID id){
+        var value=catalog.warehouseDetails(requiredTenantId(session),id);return value==null?ResponseEntity.notFound().build():ResponseEntity.ok(value);
+    }
+    @PostMapping("/app/catalog/warehouse-options") @ResponseBody
+    ResponseEntity<?> saveWarehouseOption(HttpSession session,@RequestParam(required=false) UUID id,@RequestParam String name,
+            @RequestParam(defaultValue="") String addressLine1,@RequestParam(defaultValue="") String addressLine2,
+            @RequestParam(defaultValue="") String city,@RequestParam(defaultValue="") String stateOrProvince,
+            @RequestParam(defaultValue="") String postalCode,@RequestParam(defaultValue="") String countryCode,
+            @RequestParam(required=false) List<String> contactName,@RequestParam(required=false) List<String> contactPhone){
+        try{return ResponseEntity.ok(catalog.saveWarehouse(requiredTenantId(session),id,name,addressLine1,addressLine2,city,stateOrProvince,postalCode,countryCode,contactName,contactPhone));}
+        catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
+        catch(org.springframework.dao.DataIntegrityViolationException e){return ResponseEntity.badRequest().body(Map.of("error","Warehouse nickname already exists or the details are invalid. Nothing changed."));}
+    }
+
+    @GetMapping("/app/catalog/warehouse-options/{id}/removal") @ResponseBody
+    ResponseEntity<?> warehouseRemovalPreview(HttpSession session,@PathVariable UUID id){
+        try{return ResponseEntity.ok(catalog.warehouseRemovalPreview(requiredTenantId(session),id));}
+        catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
+    }
+    @PostMapping("/app/catalog/warehouse-options/{id}/remove") @ResponseBody
+    ResponseEntity<?> removeWarehouse(HttpSession session,@PathVariable UUID id,@RequestParam String expectedOutcome){
+        try{return ResponseEntity.ok(catalog.removeWarehouse(requiredTenantId(session),id,expectedOutcome));}
+        catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
+        catch(org.springframework.dao.DataAccessException e){return ResponseEntity.status(409).body(Map.of("error","Warehouse usage changed or is being updated. Nothing changed; try again to review its current usage."));}
     }
 
     @PostMapping("/app/catalog/location-options/{id}/change") @ResponseBody

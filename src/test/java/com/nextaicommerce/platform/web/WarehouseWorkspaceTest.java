@@ -45,7 +45,7 @@ class WarehouseWorkspaceTest {
         var repository=mock(WorkspaceAccessRepository.class);var auth=new UsernamePasswordAuthenticationToken("fixture@example.test","unused",List.of());
         UUID account=UUID.randomUUID();when(repository.canAccessAccount(account,auth.getName(),false)).thenReturn(true);
         var controller=new AccountSelectionController(repository);var session=new MockHttpSession();
-        for(String path:List.of("/app/inventory","/app/inventory/ledger","/app/inventory/replenishment","/app/receiving")){
+        for(String path:List.of("/app/inventory","/app/inventory/ledger","/app/inventory/replenishment","/app/receiving","/app/inventory/fba-shipments","/app/catalog","/app/vendors")){
             session.setAttribute(AccountSelectionController.STORE_ID,UUID.randomUUID());
             assertThat(controller.choose(account,"Ibcore",auth,session,new MockHttpServletResponse(),path)).isEqualTo("redirect:"+path);
             assertThat(session.getAttribute(AccountSelectionController.TENANT_ID)).isEqualTo(account);

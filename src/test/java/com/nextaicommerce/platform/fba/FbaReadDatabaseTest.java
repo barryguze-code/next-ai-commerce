@@ -117,6 +117,11 @@ class FbaReadDatabaseTest {
         assertThat(row.shipFromState()).isNull();
         jdbc.update("UPDATE amazon_fba_shipments SET raw_payload='{\"ShipFromAddress\":{\"City\":\"Houston\",\"StateOrProvinceCode\":\"TX\",\"CountryCode\":\"US\"}}' WHERE tenant_id=? AND marketplace_connection_id=?",tenant,store);
         assertThat(repository.shipments(tenant,store,"",0,25).rows().getFirst().shipFromState()).isEqualTo("TX");
+        assertThat(repository.shipments(tenant,store,"",0,25).rows().getFirst().shipFrom()).isEqualTo("Houston, TX, US");
+        jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=jsonb_set(raw_payload,'{ShipFromAddress,PostalCode}','\"01234-5678\"') WHERE tenant_id=?",tenant);
+        assertThat(repository.shipments(tenant,store,"",0,25).rows().getFirst().shipFrom()).isEqualTo("Houston, TX 01234-5678, US");
+        jdbc.update("UPDATE amazon_fba_shipments SET raw_payload='{\"ShipFromAddress\":{\"City\":\"London\",\"PostalCode\":\"SW1A 1AA\",\"CountryCode\":\"GB\"}}' WHERE tenant_id=?",tenant);
+        assertThat(repository.shipments(tenant,store,"",0,25).rows().getFirst().shipFrom()).isEqualTo("London, SW1A 1AA, GB");
         assertThat(repository.shipments(other,store,"",0,25).rows()).isEmpty();
         assertThat(repository.shipments(tenant,UUID.randomUUID(),"",0,25).rows()).isEmpty();
         assertThat(repository.shipments(tenant,store,"' OR 1=1 --",0,25).rows()).isEmpty();
@@ -148,7 +153,7 @@ class FbaReadDatabaseTest {
         var job=new AmazonSyncStore.Job(id,tenant,run,store,"FBA_INBOUND","FBA_INBOUND","US",now,now,null,0,0,false,null);
         when(amazon.get(eq(tenant),eq(store),anyString())).thenReturn(
             new AmazonSpApiClient.ApiResponse(200,"test",json.readTree("""
-                {"payload":{"ShipmentData":[{"ShipmentId":"FBA1","CreationDate":"2026-10-01T12:00:00Z","ShipmentStatus":"SHIPPED","ShipFromAddress":{"City":"Dallas","Name":"PRIVATE","AddressLine1":"PRIVATE"}}]}}
+                {"payload":{"ShipmentData":[{"ShipmentId":"FBA1","CreationDate":"2026-10-01T12:00:00Z","ShipmentStatus":"SHIPPED","ShipFromAddress":{"City":"Dallas","PostalCode":"00123","Name":"PRIVATE","AddressLine1":"PRIVATE"}}]}}
                 """),""),
             new AmazonSpApiClient.ApiResponse(200,"test",json.readTree("""
                 {"payload":{"ItemData":[{"ShipmentId":"FBA1","SellerSKU":"SKU1","QuantityShipped":10,"QuantityReceived":2}],"NextToken":"more"}}
@@ -158,8 +163,8 @@ class FbaReadDatabaseTest {
                 """),""),
             new AmazonSpApiClient.ApiResponse(200,"test",json.readTree("""
                 {"payload":{"transactions":[
-                  {"transactionId":"transport","transactionType":"ServiceFee","transactionStatus":"RELEASED","description":"FBAPostInboundTransportation","relatedIdentifiers":[{"relatedIdentifierName":"ORDER_ID","relatedIdentifierValue":"FBA1"}],"totalAmount":{"currencyCode":"USD","currencyAmount":-30}},
-                  {"transactionId":"placement","transactionType":"ServiceFee","transactionStatus":"RELEASED","description":"FBAInboundConvenience","relatedIdentifiers":[{"relatedIdentifierName":"ORDER_ID","relatedIdentifierValue":"FBA1"}],"totalAmount":{"currencyCode":"USD","currencyAmount":-15}}
+                  {"sellingPartnerMetadata":{"marketplaceId":"US"},"transactionId":"transport","transactionType":"ServiceFee","transactionStatus":"RELEASED","description":"FBAPostInboundTransportation","relatedIdentifiers":[{"relatedIdentifierName":"ORDER_ID","relatedIdentifierValue":"FBA1"}],"totalAmount":{"currencyCode":"USD","currencyAmount":-30}},
+                  {"sellingPartnerMetadata":{"marketplaceId":"US"},"transactionId":"placement","transactionType":"ServiceFee","transactionStatus":"RELEASED","description":"FBAInboundConvenience","relatedIdentifiers":[{"relatedIdentifierName":"ORDER_ID","relatedIdentifierValue":"FBA1"}],"totalAmount":{"currencyCode":"USD","currencyAmount":-15}}
                 ]}}
                 """),"{}"));
         var normalizer=new AmazonReportNormalizer(jdbc,tx,json,null);
@@ -168,12 +173,13 @@ class FbaReadDatabaseTest {
         assertThat(repository.shipments(tenant,store,"",0,25).rows().getFirst().createdAt()).isEqualTo(java.time.Instant.parse("2026-10-01T12:00:00Z"));
         assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("WAITING");
         importer.processPage(job);importer.processPage(job);importer.processPage(job);
-        verify(amazon).get(tenant,store,"/finances/2024-06-19/transactions?relatedIdentifierName=ORDER_ID&relatedIdentifierValue=FBA1");
+        verify(amazon).get(eq(tenant),eq(store),argThat(path->path.startsWith("/finances/2024-06-19/transactions?postedAfter=")&&!path.contains("relatedIdentifier")));
         verify(amazon).get(tenant,store,"/fba/inbound/v0/shipmentItems?MarketplaceId=US&QueryType=NEXT_TOKEN&NextToken=more");
         assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("COMPLETED");
         assertThat(jdbc.queryForObject("SELECT sum(quantity_shipped) FROM amazon_fba_shipment_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(15);
+        assertThat(jdbc.queryForObject("SELECT cursor->>'consecutiveFailures' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("0");
         assertThat(repository.items(tenant,store,"FBA1","",0).costs().getPerUnit()).isEqualByComparingTo("3");
-        assertThat(jdbc.queryForObject("SELECT raw_payload::text FROM amazon_fba_shipments WHERE tenant_id=?",String.class,tenant)).contains("Dallas").doesNotContain("PRIVATE");
+        assertThat(jdbc.queryForObject("SELECT raw_payload::text FROM amazon_fba_shipments WHERE tenant_id=?",String.class,tenant)).contains("Dallas").contains("00123").doesNotContain("PRIVATE");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Long.class,tenant)).isZero();
     }
 
@@ -189,7 +195,7 @@ class FbaReadDatabaseTest {
         var json=new tools.jackson.databind.ObjectMapper();var amazon=mock(AmazonSpApiClient.class);
         UUID run=UUID.randomUUID(),id=UUID.randomUUID();var now=java.time.Instant.now();
         jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,window_start,window_end) VALUES (?,?,?,'RECONCILIATION',now(),now())",run,tenant,store);
-        jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,cursor) VALUES (?,?,?,?,'FBA_INBOUND',1,'{\"feeShipment\":\"FBA1\",\"pending\":[],\"records\":2}')",id,tenant,run,store);
+        jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,cursor) VALUES (?,?,?,?,'FBA_INBOUND',1,'{\"shipmentsComplete\":true,\"pending\":[],\"records\":2}')",id,tenant,run,store);
         var job=new AmazonSyncStore.Job(id,tenant,run,store,"FBA_INBOUND","FBA_INBOUND","US",now,now,null,0,0,false,null);
         when(amazon.get(eq(tenant),eq(store),anyString())).thenThrow(new AmazonSpApiClient.AmazonApiException(403,null,"Denied"));
         new FbaInboundSync(amazon,new AmazonSyncStore(jdbc,tx),jdbc,tx,json,new AmazonReportNormalizer(jdbc,tx,json,null)).processPage(job);
@@ -197,4 +203,137 @@ class FbaReadDatabaseTest {
         assertThat(jdbc.queryForObject("SELECT cursor->>'feesUnavailable' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("true");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM amazon_financial_transactions WHERE tenant_id=?",Integer.class,tenant)).isZero();
     }
+
+    @Test void shipmentListUsesSameNetChargesAsDetailsAndFullShippedDenominator(){tx.executeWithoutResult(st->{
+        jdbc.update("INSERT INTO amazon_fba_shipments(tenant_id,marketplace_connection_id,shipment_id) VALUES(?,?,'COST-LIST')",tenant,store);
+        for(String sku:List.of("VISIBLE","OTHER"))jdbc.update("INSERT INTO amazon_fba_shipment_items(tenant_id,marketplace_connection_id,shipment_id,seller_sku,quantity_shipped,quantity_received) VALUES(?,?,'COST-LIST',?,10,8)",tenant,store,sku);
+        for(var e:List.of(new Object[]{"transport","FBAPostInboundTransportation",-30},new Object[]{"placement","FBAInboundConvenience",-10},new Object[]{"credit","FBAPostInboundTransportation",5}))jdbc.update("INSERT INTO amazon_financial_transactions(tenant_id,marketplace_connection_id,transaction_key,transaction_type,amazon_order_id,description,amount,currency,raw_payload) VALUES(?,?,?,'ServiceFee','COST-LIST',?,?,'USD','{\"transactionStatus\":\"RELEASED\"}')",tenant,store,e[0],e[1],e[2]);
+        var list=repository.shipments(tenant,store,"VISIBLE",0,25).rows().getFirst();var details=repository.items(tenant,store,"COST-LIST","VISIBLE",0).costs();
+        assertThat(list.costs()).isEqualTo(details);assertThat(list.costs().getTotal()).isEqualByComparingTo("35");assertThat(list.costs().getPerUnit()).isEqualByComparingTo("1.75");assertThat(list.shipped()).isEqualTo(20);assertThat(list.skuCount()).isEqualTo(2);
+        assertThat(repository.shipments(other,store,"",0,25).rows()).isEmpty();
+    });}
+    @Test void shipmentListKeepsPartialZeroAndMixedCurrencyCostsExplicit(){tx.executeWithoutResult(st->{
+        jdbc.update("INSERT INTO amazon_fba_shipments(tenant_id,marketplace_connection_id,shipment_id) VALUES(?,?,'PARTIAL')",tenant,store);
+        jdbc.update("INSERT INTO amazon_fba_shipment_items(tenant_id,marketplace_connection_id,shipment_id,seller_sku,quantity_shipped,quantity_received) VALUES(?,?,'PARTIAL','SKU',0,0)",tenant,store);
+        jdbc.update("INSERT INTO amazon_financial_transactions(tenant_id,marketplace_connection_id,transaction_key,transaction_type,amazon_order_id,description,amount,currency,raw_payload) VALUES(?,?,'partial','ServiceFee','PARTIAL','FBAPostInboundTransportation',0,'USD','{\"transactionStatus\":\"RELEASED\"}')",tenant,store);
+        var costs=repository.shipments(tenant,store,"",0,25).rows().getFirst().costs();assertThat(costs.transportation()).isEqualByComparingTo("0");assertThat(costs.placement()).isNull();assertThat(costs.getTotal()).isNull();assertThat(costs.getPerUnit()).isNull();
+        jdbc.update("INSERT INTO amazon_financial_transactions(tenant_id,marketplace_connection_id,transaction_key,transaction_type,amazon_order_id,description,amount,currency,raw_payload) VALUES(?,?,'foreign','ServiceFee','PARTIAL','FBAInboundConvenience',-10,'CAD','{\"transactionStatus\":\"RELEASED\"}')",tenant,store);
+        costs=repository.shipments(tenant,store,"",0,25).rows().getFirst().costs();assertThat(costs.currency()).isNull();assertThat(costs.getTotal()).isNull();
+    });}
+    @Test void shipmentCasesUseEveryAuthoritativePackSizeOrStayUnknown(){tx.executeWithoutResult(s->{
+        jdbc.update("INSERT INTO amazon_fba_shipments(tenant_id,marketplace_connection_id,shipment_id) VALUES (?,?,'CASES')",tenant,store);
+        jdbc.update("INSERT INTO amazon_fba_shipment_items(tenant_id,marketplace_connection_id,shipment_id,seller_sku,quantity_shipped,quantity_received,quantity_in_case) VALUES (?,?,'CASES','SIX',14,12,6),(?,?,'CASES','TWELVE',24,20,12)",tenant,store,tenant,store);
+        var row=repository.shipments(tenant,store,"",0,25).rows().getFirst();assertThat(row.shipped()).isEqualTo(38);assertThat(row.shippedCases()).isEqualTo(4);assertThat(row.looseUnits()).isEqualTo(2);assertThat(row.received()).isEqualTo(32);
+        jdbc.update("UPDATE amazon_fba_shipment_items SET quantity_in_case=NULL WHERE tenant_id=? AND seller_sku='TWELVE'",tenant);
+        assertThat(repository.shipments(tenant,store,"",0,25).rows().getFirst().shippedCases()).isNull();
+    });}
+    @Test void manualFbaNeverTakesOverSharedRunOrOlderCheckpoint() throws Exception {
+        jdbc.update("INSERT INTO marketplace_connection_credentials(tenant_id,marketplace_connection_id,encrypted_payload,encryption_nonce) VALUES (?,?,?,?)",tenant,store,new byte[]{1},new byte[]{2});
+        UUID run=UUID.randomUUID(),fba=UUID.randomUUID(),orders=UUID.randomUUID();
+        jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,window_start,window_end) VALUES (?,?,?,'RECONCILIATION','INITIAL',now()-interval '1 day',now()-interval '3 minutes')",run,tenant,store);
+        jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number) VALUES (?,?,?,?,'FBA_INBOUND',1),(?,?,?,?,'ORDERS',2)",fba,tenant,store,run,orders,tenant,store,run);
+        var inbound=mock(FbaInboundSync.class);var manualWorker=new FbaManualWorker(jdbc,tx,inbound,new AmazonSyncStore(jdbc,tx));
+        manualWorker.start(tenant,store,fba);verifyNoInteractions(inbound);
+        var manual=new FbaManualSync(jdbc,tx,mock(FbaManualWorker.class),true);
+        assertThatThrownBy(()->manual.request(tenant,store)).isInstanceOf(IllegalStateException.class);
+        assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_runs WHERE id=?",String.class,run)).isEqualTo("QUEUED");
+        assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,orders)).isEqualTo("QUEUED");
+        jdbc.update("UPDATE marketplace_sync_jobs SET status='COMPLETED',completed_at=now()-interval '10 minutes' WHERE sync_run_id=?",run);
+        jdbc.update("UPDATE marketplace_sync_runs SET status='COMPLETED' WHERE id=?",run);
+        UUID old=manual.request(tenant,store);
+        jdbc.update("UPDATE marketplace_sync_jobs SET status='FAILED',completed_at=now(),error_message='HTTP 429' WHERE id=?",old);
+        jdbc.update("UPDATE marketplace_sync_runs SET status='COMPLETED_WITH_WARNINGS' WHERE id=(SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?)",old);
+        jdbc.update("UPDATE marketplace_sync_jobs SET created_at=now()-interval '1 hour' WHERE id=?",old);
+        UUID newer=manual.request(tenant,store);assertThat(newer).isNotEqualTo(old);
+        assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,old)).isEqualTo("FAILED");
+    }
+    @Test void fbaFinanceEvidenceCannotCrossMarketplaceOrGuessMissingAttribution(){
+        var json=new tools.jackson.databind.ObjectMapper();var normalizer=new AmazonReportNormalizer(jdbc,tx,json,null);
+        var job=new AmazonSyncStore.Job(UUID.randomUUID(),tenant,UUID.randomUUID(),store,"FBA_INBOUND","FBA_MANUAL","US",java.time.Instant.now(),java.time.Instant.now(),null,0,0,false,null);
+        var rows=json.createObjectNode();var array=rows.putObject("payload").putArray("transactions");
+        for(String market:List.of("US","CA")){var r=array.addObject();r.put("transactionType","ServiceFee");r.put("description","FBAInboundConvenience");r.putObject("sellingPartnerMetadata").put("marketplaceId",market);}
+        var scoped=normalizer.scopedShipmentFinances(job,rows);assertThat(scoped.path("payload").path("transactions").size()).isEqualTo(1);
+        assertThat(scoped.toString()).doesNotContain("CA");
+        array.addObject().put("transactionType","ServiceFee").put("description","FBAInboundConvenience");
+        assertThatThrownBy(()->normalizer.scopedShipmentFinances(job,rows)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test void manualFbaQueueIsExplicitScopedAndDeduplicated(){
+        jdbc.update("INSERT INTO marketplace_connection_credentials(tenant_id,marketplace_connection_id,encrypted_payload,encryption_nonce) VALUES (?,?,?,?)",tenant,store,new byte[]{1},new byte[]{2});
+        var worker=mock(FbaManualWorker.class);var manual=new FbaManualSync(jdbc,tx,worker,true);
+        UUID job=manual.request(tenant,store);assertThat(manual.request(tenant,store)).isEqualTo(job);
+        assertThat(manual.state(tenant,store).running()).isTrue();assertThat(manual.state(other,store).status()).isEqualTo("NOT_STARTED");
+        assertThatThrownBy(()->manual.request(other,store)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->new FbaManualSync(jdbc,tx,worker,false).request(tenant,store)).isInstanceOf(IllegalStateException.class);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM marketplace_sync_jobs WHERE tenant_id=? AND job_type<>'FBA_INBOUND'",Long.class,tenant)).isZero();
+        var amazon=mock(AmazonSpApiClient.class);var json=new tools.jackson.databind.ObjectMapper();var queue=new AmazonSyncStore(jdbc,tx);var inbound=new FbaInboundSync(amazon,queue,jdbc,tx,json,new AmazonReportNormalizer(jdbc,tx,json,null));
+        assertThat(queue.claim("fba-lease-fixture")).isNull();var claimed=new AmazonSyncStore.Job(job,tenant,jdbc.queryForObject("SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?",UUID.class,job),store,"FBA_INBOUND","FBA_MANUAL","US",java.time.Instant.now().minusSeconds(60),java.time.Instant.now(),null,0,0,false,null,"fba-lease-fixture");jdbc.update("UPDATE marketplace_sync_jobs SET lease_owner='replacement' WHERE id=?",job);
+        assertThatThrownBy(()->inbound.processPage(claimed)).isInstanceOf(AmazonSyncStore.LostOrderLease.class);verifyNoInteractions(amazon);
+    }
+
+    @Test void fbaThrottleDoesNotExhaustLifetimeRetryCountAndKeepsCheckpoint() throws Exception {
+        jdbc.update("INSERT INTO marketplace_connection_credentials(tenant_id,marketplace_connection_id,encrypted_payload,encryption_nonce) VALUES (?,?,?,?)",tenant,store,new byte[]{1},new byte[]{2});
+        UUID id=new FbaManualSync(jdbc,tx,mock(FbaManualWorker.class),true).request(tenant,store);
+        jdbc.update("UPDATE marketplace_sync_jobs SET failure_count=3,cursor='{\"shipmentsComplete\":true,\"feeNext\":\"saved-page\"}' WHERE id=?",id);
+        var inbound=mock(FbaInboundSync.class);doThrow(new AmazonSpApiClient.AmazonApiException(429,java.time.Duration.ofSeconds(95),"Amazon rate limit")).when(inbound).processPage(any());
+        var worker=new FbaManualWorker(jdbc,tx,inbound,new AmazonSyncStore(jdbc,tx));
+        Thread thread=new Thread(()->worker.start(tenant,store,id));thread.start();
+        try {
+            long end=System.nanoTime()+java.time.Duration.ofSeconds(5).toNanos();String state;
+            do{Thread.sleep(20);state=jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,id);}while(List.of("QUEUED","RUNNING").contains(state)&&System.nanoTime()<end);
+            assertThat(state).isEqualTo("WAITING");
+            assertThat(jdbc.queryForObject("SELECT available_at>now()+interval '90 seconds' FROM marketplace_sync_jobs WHERE id=?",Boolean.class,id)).isTrue();
+            assertThat(jdbc.queryForObject("SELECT cursor->>'feeNext' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("saved-page");
+        }finally{thread.interrupt();thread.join(3000);}
+        verify(inbound,times(1)).processPage(any());
+    }
+
+    @Test void explicitFbaThrottleRetryReusesJobAndNeverRestartsShipmentImport(){
+        jdbc.update("INSERT INTO marketplace_connection_credentials(tenant_id,marketplace_connection_id,encrypted_payload,encryption_nonce) VALUES (?,?,?,?)",tenant,store,new byte[]{1},new byte[]{2});
+        var worker=mock(FbaManualWorker.class);var manual=new FbaManualSync(jdbc,tx,worker,true);UUID id=manual.request(tenant,store);
+        jdbc.update("UPDATE marketplace_sync_jobs SET status='FAILED',completed_at=now(),error_message='Amazon FBA read could not complete (HTTP 429)',cursor='{\"shipmentsComplete\":true,\"feeNext\":\"same-page\"}' WHERE id=?",id);
+        jdbc.update("UPDATE marketplace_sync_runs SET status='COMPLETED_WITH_WARNINGS',completed_at=now() WHERE id=(SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?)",id);
+        assertThat(manual.request(tenant,store)).isEqualTo(id);
+        assertThat(manual.request(tenant,store)).isEqualTo(id);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM marketplace_sync_jobs WHERE tenant_id=?",Long.class,tenant)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT cursor->>'feeNext' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("same-page");
+        assertThat(jdbc.queryForObject("SELECT cursor->>'shipmentsComplete' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("true");
+        jdbc.update("UPDATE marketplace_sync_jobs SET status='COMPLETED',completed_at=now()-interval '6 minutes',cursor=cursor||'{\"feesComplete\":true,\"feesUnavailable\":true}'::jsonb WHERE id=?",id);
+        jdbc.update("UPDATE marketplace_sync_runs SET status='COMPLETED' WHERE id=(SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?)",id);
+        assertThat(manual.request(tenant,store)).isEqualTo(id);
+        assertThat(jdbc.queryForObject("SELECT cursor->>'feeRestartCount' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("1");
+        assertThat(jdbc.queryForObject("SELECT cursor->>'feeNext' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isNull();
+        assertThat(jdbc.queryForObject("SELECT cursor->>'feesUnavailable' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isNull();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM marketplace_sync_jobs WHERE tenant_id=?",Long.class,tenant)).isEqualTo(1);
+        assertThatThrownBy(()->manual.request(other,store)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Long.class,tenant)).isZero();
+    }
+    @Test void fbaRetryStillStopsForAuthorizationOrEightConsecutiveFailures() throws Exception {
+        for(int status:List.of(401,429)){
+            UUID run=UUID.randomUUID(),id=UUID.randomUUID();
+            jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,window_start,window_end) VALUES (?,?,?,'RECONCILIATION','FBA_MANUAL',now()-interval '180 days',now()-interval '3 minutes')",run,tenant,store);
+            jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,cursor) VALUES (?,?,?,?,'FBA_INBOUND',1,CAST(? AS jsonb))",id,tenant,store,run,status==429?"{\"consecutiveFailures\":7}":"{}");
+            var inbound=mock(FbaInboundSync.class);doThrow(new AmazonSpApiClient.AmazonApiException(status,null,"Amazon read rejected")).when(inbound).processPage(any());
+            var worker=new FbaManualWorker(jdbc,tx,inbound,new AmazonSyncStore(jdbc,tx));Thread thread=new Thread(()->worker.start(tenant,store,id));thread.start();
+            try{long end=System.nanoTime()+java.time.Duration.ofSeconds(5).toNanos();String state;do{Thread.sleep(20);state=jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,id);}while(List.of("QUEUED","RUNNING").contains(state)&&System.nanoTime()<end);assertThat(state).isEqualTo("FAILED");}finally{thread.interrupt();thread.join(3000);}
+            verify(inbound,times(1)).processPage(any());
+        }
+    }
+
+    @Test void rejectedFeePageRestartsOnlyFinanceOnceRatherThanPretendingComplete(){
+        var amazon=mock(AmazonSpApiClient.class);var json=new tools.jackson.databind.ObjectMapper();UUID run=UUID.randomUUID(),id=UUID.randomUUID();var now=java.time.Instant.now();
+        jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,window_start,window_end) VALUES (?,?,?,'RECONCILIATION',now()-interval '180 days',now()-interval '3 minutes')",run,tenant,store);
+        jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,cursor) VALUES (?,?,?,?,'FBA_INBOUND',1,'{\"shipmentsComplete\":true,\"feeQueryRevision\":2,\"feeNext\":\"rejected-token\"}')",id,tenant,store,run);
+        when(amazon.get(any(),any(),anyString())).thenThrow(new AmazonSpApiClient.AmazonApiException(400,null,"Amazon rejected page"));
+        var inbound=new FbaInboundSync(amazon,new AmazonSyncStore(jdbc,tx),jdbc,tx,json,new AmazonReportNormalizer(jdbc,tx,json,null));
+        var job=new AmazonSyncStore.Job(id,tenant,run,store,"FBA_INBOUND","FBA_INBOUND","US",now.minus(java.time.Duration.ofDays(179)),now.minusSeconds(180),null,0,0,false,null,null);
+        inbound.processPage(job);
+        assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("WAITING");
+        assertThat(jdbc.queryForObject("SELECT cursor->>'feeNext' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isNull();
+        assertThat(jdbc.queryForObject("SELECT cursor->>'feesComplete' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isNull();
+        assertThat(jdbc.queryForObject("SELECT cursor->>'shipmentsComplete' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("true");
+        inbound.processPage(job);
+        assertThat(jdbc.queryForObject("SELECT cursor->>'feesUnavailable' FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("true");
+    }
+
 }

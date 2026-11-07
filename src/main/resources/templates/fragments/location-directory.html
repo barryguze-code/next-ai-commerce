@@ -6,7 +6,7 @@
   <div class="location-directory-list">
     <article th:each="location:${locations}" th:attr="data-location-id=${location.id}" th:classappend="${location.status != 'ACTIVE'} ? ' inactive'">
       <span class="location-code" th:text="${location.code}">MAIN</span>
-      <div><strong th:text="${location.name}">Main storage</strong><small>Available for receipts, physical counts, and product defaults</small></div>
+      <div><strong th:text="${location.name}">Main storage</strong><small><span th:text="${location.warehouseName}">Default Warehouse</span> · <span th:text="${location.status == 'ACTIVE' ? 'Available for receipts, physical counts, and product defaults' : 'Inactive · Existing inventory and history retained'}"></span></small></div>
       <b class="location-status" th:text="${#strings.toLowerCase(location.status)}">active</b>
       <div class="location-actions"><button type="button" onclick="editManagedLocation(this,false)">Edit</button><button type="button" onclick="editManagedLocation(this,true)">Delete</button></div>
     </article>

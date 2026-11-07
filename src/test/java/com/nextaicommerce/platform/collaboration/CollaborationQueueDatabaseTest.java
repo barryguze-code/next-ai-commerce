@@ -164,6 +164,25 @@ class CollaborationQueueDatabaseTest {
         assertThatThrownBy(()->tx.execute(t->personal.authorized(otherEmail,false,new PersonalCollaborationQueue.Key("TASK",task)))).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
 
+    @Test void fbaShipmentCollaborationUsesExactStoreAndRejectsForeignSources(){
+        UUID account=UUID.randomUUID(),a=UUID.randomUUID(),b=UUID.randomUUID(),foreign=UUID.randomUUID();
+        for(UUID id:List.of(account,foreign))jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,'FBA fixture')",id,id.toString());
+        jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role,stores_restricted) VALUES (?,?,'OPERATOR',true)",account,user);
+        for(UUID store:List.of(a,b)){
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test://none','ACTIVE','Store','UTC',now())",store,account,store.toString());
+            jdbc.update("INSERT INTO amazon_fba_shipments(tenant_id,marketplace_connection_id,shipment_id) VALUES (?,?,'FBA-SAME')",account,store);
+        }
+        jdbc.update("INSERT INTO membership_store_access(tenant_id,user_id,marketplace_connection_id,granted_by) VALUES (?,?,?,?)",account,user,a,user);
+        var reviews=new CollaborationRepository(jdbc);
+        var created=tx.execute(t->reviews.create(account,"FBA_SHIPMENT",a+"|FBA-SAME","FBA shipment FBA-SAME","Amazon","CONVERSATION","FBA shipment","Body","TEAM_CHAT","{}","/app/inventory/fba-shipments?q=FBA-SAME",email,null,null,List.of()));
+        assertThat(jdbc.queryForObject("SELECT marketplace_connection_id FROM collaboration_reviews WHERE id=?",UUID.class,created.reviewId())).isEqualTo(a);
+        var summaries=tx.execute(t->reviews.openSubjectSummaries(account,"FBA_SHIPMENT",List.of(a+"|FBA-SAME"),email));assertThat(summaries).containsKey(a+"|FBA-SAME");
+        assertThatThrownBy(()->tx.execute(t->reviews.create(account,"FBA_SHIPMENT",b+"|FBA-SAME","FBA shipment","Amazon","CONVERSATION","Title","Body","TEAM_CHAT","{}","/app/inventory/fba-shipments",email,null,null,List.of()))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->tx.execute(t->reviews.create(foreign,"FBA_SHIPMENT",a+"|FBA-SAME","FBA shipment","Amazon","CONVERSATION","Title","Body","TEAM_CHAT","{}","/app/inventory/fba-shipments",email,null,null,List.of()))).isInstanceOf(IllegalArgumentException.class);
+        jdbc.update("DELETE FROM membership_store_access WHERE tenant_id=? AND user_id=? AND marketplace_connection_id=?",account,user,a);
+        assertThat((Object)tx.execute(t->reviews.review(account,created.reviewId(),email))).isNull();
+    }
+
     @Test void sameAccountStoreRestrictionsProtectLegacySourcesFilesAndMutations(){
         UUID account=UUID.randomUUID(),a=UUID.randomUUID(),b=UUID.randomUUID(),allowed=UUID.randomUUID(),denied=UUID.randomUUID(),task=UUID.randomUUID();
         jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,'Two stores')",account,account.toString());

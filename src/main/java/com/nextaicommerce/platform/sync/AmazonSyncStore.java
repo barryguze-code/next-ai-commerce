@@ -76,7 +76,7 @@ public class AmazonSyncStore {
                     ORDER BY requested.created_at DESC LIMIT 1)
             FROM marketplace_sync_jobs j JOIN marketplace_sync_runs r ON r.id=j.sync_run_id
             JOIN marketplace_connections c ON c.id=j.marketplace_connection_id AND c.tenant_id=j.tenant_id
-            WHERE j.tenant_id=? AND c.channel='AMAZON' AND j.job_type<>'VARIATION_RELATIONSHIPS' AND (j.job_type<>'FEES_SNAPSHOT' OR (r.status NOT IN ('FAILED','CANCELLED') AND c.status='ACTIVE')) AND (
+            WHERE j.tenant_id=? AND r.sync_profile IS DISTINCT FROM 'FBA_MANUAL' AND c.channel='AMAZON' AND j.job_type<>'VARIATION_RELATIONSHIPS' AND (j.job_type<>'FEES_SNAPSHOT' OR (r.status NOT IN ('FAILED','CANCELLED') AND c.status='ACTIVE')) AND (
                 (j.status IN ('QUEUED','WAITING') AND j.available_at<=now()
                     AND (j.lease_expires_at IS NULL OR j.lease_expires_at<now()))
                 OR (j.status='RUNNING' AND j.lease_expires_at<now())

@@ -120,3 +120,13 @@ jobs:
           name: workspace-identity-hotfix-package
           path: target/next-ai-commerce-1.11.7.jar
           if-no-files-found: error
+
+      - name: Preserve verified warehouses and FBA release package
+        if: github.ref == 'refs/heads/codex/frontend-standardization-hotfix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: warehouses-fba-1-12-package
+          path: |
+            target/next-ai-commerce-1.12.0.jar
+            target/surefire-reports/
+          if-no-files-found: error

@@ -53,3 +53,29 @@
 .fba-item-picture img{max-width:90%;max-height:90%;object-fit:contain}
 .fba-item-copy{min-width:0}.fba-item-copy strong{display:block;font-size:15px;line-height:1.45;overflow-wrap:anywhere}.fba-item-copy small{display:block;font-size:13px;line-height:1.5;color:var(--muted,#637287);overflow-wrap:anywhere;margin-top:4px}
 @media(max-width:600px){#fba-shipment-dialog .dialog-body{padding:12px}.fba-item-picture{width:40px;height:48px;flex-basis:40px}.fba-item-identity{gap:8px}#fba-shipment-dialog th,#fba-shipment-dialog td{padding:12px 6px}#fba-shipment-dialog th:first-child{width:60%}}
+
+/* FBA shipment table: approved compact utility and readable horizontal table. */
+.fba-shipments-page .fba-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.fba-toolbar h2{margin:0}.fba-sync-utility{display:flex;align-items:center;gap:12px;margin-left:auto}.fba-sync-utility small{color:var(--muted);font-size:11px}.fba-sync-utility form{margin:0}
+.fba-sync-utility button{border:1px solid var(--border,#cad8eb);border-radius:7px;background:var(--surface,#fff);color:var(--primary,#2867df);font:inherit;font-size:11px;font-weight:600;padding:4px 9px;cursor:pointer}.fba-sync-utility button:disabled{opacity:.55;cursor:default}
+.fba-search-toolbar{padding:16px 20px;border-top:1px solid var(--border,#dce3ed)}.fba-search-toolbar form{display:flex;gap:10px;align-items:center}.fba-search-toolbar .search-field{max-width:420px;width:100%}
+.fba-sync-feedback{padding:0 20px;color:var(--muted);font-size:12px}.fba-sync-feedback:empty{display:none}
+.fba-shipments-page .table-wrap{max-width:100%;overflow-x:auto}.fba-shipment-table{min-width:1100px!important}.fba-shipment-table th{white-space:nowrap}.fba-shipment-table td.numeric{white-space:nowrap;word-break:normal;overflow-wrap:normal}.fba-shipment-table td small{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
+.fba-shipment-table .text-button{border:0;background:none;padding:0;color:var(--primary,#2867df);font:inherit;font-weight:600;white-space:nowrap;cursor:pointer}.fba-shipment-table td:first-of-type{word-break:normal}.fba-shipment-table td small{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.fba-shipments-page .fba-shipment-table td.numeric,.fba-shipments-page .fba-shipment-table td.numeric strong{white-space:nowrap!important;overflow-wrap:normal!important;word-break:normal!important}.fba-shipments-page .fba-shipment-table .text-button{color:var(--ui-action-text,var(--text))!important}
+
+.fba-shipments-page .fba-shipment-table td.fba-shipment-date{white-space:nowrap!important}
+
+/* CD: compact FBA headers and operational facts, retaining the shared Record rail. */
+.fba-shipments-page .data-card .fba-shipment-table :is(th,td){padding-left:8px;padding-right:8px}
+.fba-shipments-page .data-card table.fba-shipment-table [data-column=record-context]{width:90px!important;min-width:90px!important}
+.fba-shipments-page .data-card table.fba-shipment-table .table-overview-layout{min-width:74px!important;gap:6px}
+.fba-shipments-page .fba-shipment-table .table-overview-layout>.table-overview-picture{flex-basis:34px;width:34px!important;height:40px!important;margin:0!important;background:transparent}
+.fba-shipments-page .fba-origin-state{min-width:30px;min-height:32px;padding:2px;font-size:12px}
+.fba-shipments-page .fba-shipment-table [data-column=shipment]{width:17%}
+.fba-shipments-page .fba-shipment-table td[data-column=shipment] small{max-width:145px}
+.fba-shipments-page .fba-shipment-table [data-column=ship-from]{width:9%;overflow-wrap:normal;word-break:normal}
+.fba-shipments-page .fba-shipment-table [data-column=amazon-destination]{width:5%}
+.fba-shipments-page .fba-shipment-table [data-column=skus]{width:4%}
+.fba-shipments-page .fba-shipment-table [data-column=status]{white-space:nowrap}

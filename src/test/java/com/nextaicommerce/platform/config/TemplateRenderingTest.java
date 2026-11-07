@@ -39,6 +39,26 @@ import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 class TemplateRenderingTest {
+    @Test void fbaTableUsesCompactHeadersScopedCollaborationAndUnitsOnly(){
+        var context=webContext();UUID store=UUID.randomUUID();
+        var row=new com.nextaicommerce.platform.fba.FbaReadRepository.Shipment("FBA-TEST","Long Amazon shipment name","CLOSED","ABC1","City, TX 00123, US",Instant.EPOCH,2,24,23);
+        context.setVariable("amazonStore",true);context.setVariable("canEditCatalog",true);context.setVariable("fbaConnectionId",store);
+        context.setVariable("query","");context.setVariable("fbaSync",new com.nextaicommerce.platform.sync.FbaManualSync.State(false,false,"COMPLETED","",Instant.EPOCH));
+        context.setVariable("shipments",new com.nextaicommerce.platform.fba.FbaReadRepository.ShipmentPage(List.of(row),1,0,25));
+        String html=templateEngine().process("fba-shipments",context);
+        assertThat(html).contains("AMZ FC","data-column=\"amazon-destination\"","data-column=\"fba-shipment-date\"","data-column=\"cost-unit\"","data-entity-type=\"FBA_SHIPMENT\"","data-entity-id=\""+store+"|FBA-TEST\"","data-can-collaborate=\"true\"","24 units").doesNotContain("Case quantity unavailable","1600");
+        var costs=new com.nextaicommerce.platform.fba.FbaReadRepository.ShipmentCosts(new java.math.BigDecimal("34.16"),new java.math.BigDecimal("13.80"),"USD",30);
+        context.setVariable("shipments",new com.nextaicommerce.platform.fba.FbaReadRepository.ShipmentPage(List.of(new com.nextaicommerce.platform.fba.FbaReadRepository.Shipment("FBA-TEST","Name","CLOSED","ABC1","City",Instant.EPOCH,2,30,30,Instant.EPOCH,"TX",costs)),1,0,25));
+        String moneyHtml=templateEngine().process("fba-shipments",context);
+        assertThat(moneyHtml).contains(">$34.16</td>",">$13.80</td>",">$47.96</td>",">$1.60</strong>","data-export-value=\"USD 1.5987\"");
+        assertThat(costs.getPerUnit()).isEqualByComparingTo("1.5987");
+        assertThat(costs.displayAmount(new java.math.BigDecimal("-1.2"))).isEqualTo("-$1.20");
+        assertThat(new com.nextaicommerce.platform.fba.FbaReadRepository.ShipmentCosts(null,null,"EUR",1).displayAmount(new java.math.BigDecimal("2"))).isEqualTo("€2.00");
+        assertThat(new com.nextaicommerce.platform.fba.FbaReadRepository.ShipmentCosts(null,null,null,1).displayAmount(new java.math.BigDecimal("2"))).isEqualTo("—");
+        context.setVariable("canEditCatalog",false);
+        assertThat(templateEngine().process("fba-shipments",context)).contains("data-can-collaborate=\"false\"");
+    }
+
     @Test void finalAccountAndConnectionControlsReuseTheSharedTable() throws Exception {
         UUID account=UUID.randomUUID(),store=UUID.randomUUID();var c=webContext();
         c.setVariables(Map.of("canManageUsers",true,"canEditCatalog",true,"selectedAccountName","Account","selectedAccountId",account,
@@ -291,8 +311,9 @@ class TemplateRenderingTest {
             new BigDecimal("12.5"),new BigDecimal("3.25"),new BigDecimal("2.50"),"USD","FIFO",null,null,null,
             new BigDecimal("12.5"),null,null);
         inventory.setVariable("inventory",List.of(fractional));
+        inventory.setVariable("inventorySkuSearchTerms",Map.of(fractional.itemId(),"000-MARKETPLACE-SKU-EAx12"));
         assertThat(renderEvidence("inventory",inventory)).contains("data-export-on-hand=\"12.5\"",
-            "data-export-reserved=\"3.25\"","data-export-available=\"9.25\"","data-export-account-sku=\"0000123\"");
+            "data-export-reserved=\"3.25\"","data-export-available=\"9.25\"","data-export-account-sku=\"0000123\"","000-marketplace-sku-eax12","Search product, brand, SKU, ASIN, Item Code, or UPC");
         inventory.setVariable("inventory",List.of(new InventoryView(UUID.randomUUID(),"Ski Queen Gjetost",
             "IB-GJETOST","012345678905",java.time.LocalDate.of(2026,9,1),new BigDecimal("24"),BigDecimal.ZERO,
             new BigDecimal("5.85"),"USD","FEFO","DISCOUNT","Move to promotion","PROVISIONAL",new BigDecimal("24"),
@@ -300,7 +321,7 @@ class TemplateRenderingTest {
         assertThat(renderEvidence("inventory",inventory)).contains("Available Inventory","Inventory on hand",
             "All inventory","Available","Marketplace sellable quantity: 0",
             "data-overview-ready=\"true\"","table-overview-layout","data-column=\"record-context\"",
-            "Inventory Ledger","Search product, brand, ASIN, Item Code, or UPC","Shelf-life rules","Cannot sell","Act soon",
+            "Inventory Ledger","Search product, brand, SKU, ASIN, Item Code, or UPC","Shelf-life rules","Cannot sell","Act soon",
             "Upload Physical Count","Recent files","Uploaded Files","Storage locations","/app/inventory",
             "5 days left","Action","Inventory actions","Plan sale pricing","Adjust inventory",
             "Remove or return stock","Amazon shelf-life discounts",

@@ -123,13 +123,23 @@ public class InventoryController {
             ()->List.copyOf(inventory.inventory(tenantId)));
         var policy=inventory.shelfLifePolicy(tenantId);LocalDate today=LocalDate.now();
         model.addAttribute("inventory",rows);model.addAttribute("today",today);model.addAttribute("policy",policy);
+        var visibleStores=new java.util.ArrayList<UUID>();
+        if(model.getAttribute("accountOptions") instanceof List<?> options)for(Object option:options){
+            if(option instanceof com.nextaicommerce.platform.web.WorkspaceAccessRepository.AccountOption account && tenantId.equals(account.id()))account.stores().forEach(store->visibleStores.add(store.id()));
+        }
+        model.addAttribute("inventorySkuSearchTerms",inventory.inventorySkuSearchTerms(tenantId,visibleStores));
         var collaborationRepository=collaboration.getIfAvailable();
         model.addAttribute("openReviewsByPosition", collaborationRepository==null?Map.of():collaborationRepository.openSubjectSummaries(tenantId,"INVENTORY",rows.stream().map(row->row.itemId()+"|"+(row.expirationDate()==null?"":row.expirationDate())).toList(),auth.getName()));
         var catalogRepository=catalog.getIfAvailable();
         var countService=physicalCounts.getIfAvailable();
         model.addAttribute("recentPhysicalCounts",countService==null?List.of():countService.history(tenantId).stream().limit(3).toList());
-        try { model.addAttribute("vendors",catalogRepository==null?List.of():catalogRepository.listVendorChoices(tenantId));
-            model.addAttribute("locations",catalogRepository==null?List.of():catalogRepository.listLocations(tenantId)); }
+        try { model.addAttribute("warehouses",catalogRepository==null?List.of():catalogRepository.listWarehouses(tenantId));
+            model.addAttribute("vendors",catalogRepository==null?List.of():catalogRepository.listVendorChoices(tenantId));
+            var locationRows=catalogRepository==null?List.<CatalogRepository.LocationView>of():catalogRepository.listLocations(tenantId);
+            model.addAttribute("locations",locationRows);
+            var warehouseIds=new LinkedHashMap<UUID,UUID>();var warehouseNames=new LinkedHashMap<UUID,String>();
+            locationRows.forEach(location->{if(location.warehouseId()!=null)warehouseIds.put(location.id(),location.warehouseId());warehouseNames.put(location.id(),location.warehouseName());});
+            model.addAttribute("locationWarehouseIds",warehouseIds);model.addAttribute("locationWarehouseNames",warehouseNames); }
         catch(Exception ignored) { model.addAttribute("vendors",List.of());model.addAttribute("locations",List.of()); }
         var blocked=rows.stream().filter(row->List.of("EXPIRED","CANNOT_SELL").contains(row.shelfStatus(today,policy.minimumSellableDays(),policy.warningDays()))).toList();
         var soon=rows.stream().filter(row->"ACT_SOON".equals(row.shelfStatus(today,policy.minimumSellableDays(),policy.warningDays()))).toList();
@@ -309,7 +319,8 @@ public class InventoryController {
                 review.headers(),selected,review.samples(),review.totalRows(),review.appliedRows(),review.vendorId());
         }
         model.addAttribute("physicalCount",review);
-        var catalogRepository=catalog.getIfAvailable();model.addAttribute("vendors",catalogRepository==null?List.of():catalogRepository.listVendorChoices(tenantId));
+        var catalogRepository=catalog.getIfAvailable();model.addAttribute("warehouses",catalogRepository==null?List.of():catalogRepository.listWarehouses(tenantId));
+            model.addAttribute("vendors",catalogRepository==null?List.of():catalogRepository.listVendorChoices(tenantId));
         var tracker=physicalCountProgress.getIfAvailable();
         PhysicalCountProgress.View progress=tracker==null?null:tracker.view(tenantId,importId);
         model.addAttribute("physicalCountProgress",progress);

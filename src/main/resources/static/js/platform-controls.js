@@ -46,7 +46,8 @@
     const sync=()=>{
       const label=select.selectedOptions[0]?.textContent.trim()||'Choose location';
       const code=label.split(' · ')[0];trigger.textContent=compact?code.toUpperCase():label;
-      if(conditionChoice){const chevron=document.createElement('span');chevron.className='sku-choice-chevron';chevron.setAttribute('aria-hidden','true');chevron.textContent='⌄';trigger.append(chevron);}
+      if(select.closest('.inventory-warehouse-filter')){const text=document.createElement('span');text.className='warehouse-choice-label';text.textContent=label;trigger.replaceChildren(text);}
+      if(conditionChoice||select.closest('.inventory-warehouse-filter')){const chevron=document.createElement('span');chevron.className='sku-choice-chevron';chevron.setAttribute('aria-hidden','true');chevron.textContent='⌄';trigger.append(chevron);}
       trigger.dataset.tooltip=label;trigger.disabled=select.disabled;
       trigger.setAttribute('aria-label',(select.getAttribute('aria-label')||'Storage location')+': '+label);
     };

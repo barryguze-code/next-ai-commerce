@@ -1,5 +1,27 @@
 [
 {
+  "version": "1.12.0",
+  "title": "Warehouses and clearer FBA shipments",
+  "sections": [
+    {
+      "title": "Warehouses and storage locations",
+      "items": [
+        "Organize each account’s storage locations under warehouses, with optional addresses and contacts. Existing locations remain in Default Warehouse.",
+        "Filter Available Inventory by warehouse, find stock using mapped marketplace SKUs, and retain your current page when switching accounts.",
+        "Unused warehouses can be deleted; warehouses with operational history become inactive while stock and historical records are preserved."
+      ]
+    },
+    {
+      "title": "FBA shipment visibility",
+      "items": [
+        "Review shipment SKU counts, shipped and Amazon-received units, ship-from postal codes and date-only shipment dates.",
+        "See transport, placement, total and per-unit charges with currency symbols and two decimal places. Missing Amazon charges remain unknown.",
+        "Open shipment collaboration from the shared record controls. FBA shipment reads do not deduct warehouse stock or alter reservations."
+      ]
+    }
+  ]
+},
+{
   "version": "1.11.0",
   "title": "Personal collaboration and clearer account workspaces",
   "sections": [

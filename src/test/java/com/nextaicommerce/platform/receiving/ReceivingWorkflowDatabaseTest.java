@@ -84,6 +84,97 @@ class ReceivingWorkflowDatabaseTest {
         });
     }
     void setTenant(){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
+    @Test void inventorySearchIncludesActiveExactSkusAndBundleComponentsWithinAccount(){
+        var first=twelve();var second=twelve();UUID connection=UUID.randomUUID(),mapping=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'QA','test-only','Search test','America/Los_Angeles',now())",connection,tenant,connection.toString());
+            jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,account_catalog_item_id,marketplace_sku,status) VALUES (?,?,?,?,'000-SKU-EAx12','ACTIVE')",mapping,tenant,connection,first.product());
+            jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,12),(?,?,?,1)",tenant,mapping,first.product(),tenant,mapping,second.product());
+        });
+        assertThat(inventory.inventorySkuSearchTerms(tenant,List.of(connection))).containsEntry(first.product(),"000-SKU-EAx12").containsEntry(second.product(),"000-SKU-EAx12");
+        assertThat(inventory.inventorySkuSearchTerms(UUID.randomUUID(),List.of(connection))).isEmpty();
+        assertThat(inventory.inventorySkuSearchTerms(tenant,List.of(UUID.randomUUID()))).isEmpty();
+        assertThat(inventory.inventorySkuSearchTerms(tenant,List.of())).isEmpty();
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE marketplace_sku_mappings SET status='INACTIVE' WHERE id=?",mapping);});
+        assertThat(inventory.inventorySkuSearchTerms(tenant,List.of(connection))).doesNotContainKeys(first.product(),second.product());
+    }
+
+    @Test void warehousesInitializeAndLocationsPreserveInventoryAndAccountScope(){
+        var catalog=context.getBean(CatalogRepository.class);var f=twelve();
+        var defaults=catalog.listWarehouses(tenant);assertThat(defaults).hasSize(1);
+        assertThat(defaults.getFirst().name()).isEqualTo("Default Warehouse");assertThat(defaults.getFirst().isDefault()).isTrue();
+        assertThat(catalog.listLocations(tenant)).allMatch(location->defaults.getFirst().id().equals(location.warehouseId()));
+        UUID other=catalog.addWarehouse(tenant,"Second Warehouse");UUID bin=catalog.addLocation(tenant,"W2-A","Shelf A",other);
+        assertThat(catalog.listLocations(tenant)).anyMatch(location->location.id().equals(bin)&&location.warehouseId().equals(other));
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),BigDecimal.TEN,expiry,f.location(),"Warehouse fixture");
+        BigDecimal before=stock(f);
+        assertThatThrownBy(()->inventory.moveInventoryPosition(tenant,actor,f.product(),f.location(),bin,expiry,BigDecimal.ONE,false)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("same warehouse");
+        assertThat(stock(f)).isEqualByComparingTo(before);
+        assertThat(catalog.listWarehouses(UUID.randomUUID())).isEmpty();
+        assertThatThrownBy(()->catalog.addLocation(tenant,"BAD","Foreign warehouse",UUID.randomUUID())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->catalog.addWarehouse(tenant,"second warehouse")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void warehouseDetailsSaveContactsAtomicallyAndStayAccountScoped(){
+        var catalog=context.getBean(CatalogRepository.class);var id=catalog.listWarehouses(tenant).getFirst().id();
+        var saved=catalog.saveWarehouse(tenant,id,"Tomball","123 Test Road","Suite 2","Tomball","TX","77375","us",List.of("Receiving Lead","Backup Contact"),List.of("+1 (555) 010-1111","555-010-2222"));
+        assertThat(saved.name()).isEqualTo("Tomball");assertThat(saved.countryCode()).isEqualTo("US");assertThat(saved.isDefault()).isTrue();assertThat(saved.contacts()).hasSize(2);
+        assertThat(catalog.warehouseDetails(tenant,id)).isEqualTo(saved);
+        assertThat(catalog.warehouseDetails(UUID.randomUUID(),id)).isNull();
+        assertThatThrownBy(()->catalog.saveWarehouse(tenant,id,"Wrong","","","","","","",List.of("Missing phone"),List.of(""))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(catalog.warehouseDetails(tenant,id)).isEqualTo(saved);
+        assertThatThrownBy(()->catalog.saveWarehouse(UUID.randomUUID(),id,"Foreign","","","","","","",List.of(),List.of())).isInstanceOf(IllegalArgumentException.class);
+        assertThat(catalog.warehouseDetails(tenant,id)).isEqualTo(saved);
+    }
+
+    @Test void warehouseRemovalDeletesOnlyUnusedAndPreservesDependentHistory(){
+        var catalog=context.getBean(CatalogRepository.class);var f=twelve();
+        UUID empty=catalog.addWarehouse(tenant,"Empty");UUID unused=catalog.addLocation(tenant,"EMPTY","Unused",empty);
+        catalog.saveWarehouse(tenant,empty,"Empty","","","","","","",List.of("Test Contact"),List.of("555-0100"));
+        assertThat(catalog.warehouseRemovalPreview(tenant,empty).outcome()).isEqualTo("DELETED");
+        assertThatThrownBy(()->catalog.removeWarehouse(UUID.randomUUID(),empty,"DELETED")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(catalog.removeWarehouse(tenant,empty,"DELETED").locationIds()).containsExactly(unused);
+        assertThat(catalog.warehouseDetails(tenant,empty)).isNull();
+        UUID used=catalog.addWarehouse(tenant,"Used");UUID bin=catalog.addLocation(tenant,"USED","Used shelf",used);
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),BigDecimal.TEN,expiry,bin,"Fixture");
+        // Zero current stock still has protected historical movement rows.
+        inventory.adjustInventory(tenant,actor,f.product(),expiry,bin,BigDecimal.TEN.negate(),"COUNT_CORRECTION","Fixture");
+        String before=tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT md5(string_agg(row_to_json(e)::text,',' ORDER BY id)) FROM inventory_ledger_entries e WHERE tenant_id=?",String.class,tenant);});
+        assertThat(catalog.warehouseRemovalPreview(tenant,used).outcome()).isEqualTo("INACTIVE");
+        assertThatThrownBy(()->catalog.removeWarehouse(tenant,used,"DELETED")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("usage changed");
+        assertThat(catalog.warehouseDetails(tenant,used).status()).isEqualTo("ACTIVE");
+        assertThat(catalog.removeWarehouse(tenant,used,"INACTIVE").outcome()).isEqualTo("INACTIVE");
+        assertThat(catalog.warehouseDetails(tenant,used).status()).isEqualTo("INACTIVE");
+        assertThat(catalog.listLocations(tenant)).anyMatch(l->l.id().equals(bin)&&l.status().equals("INACTIVE"));
+        assertThat((String)tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT md5(string_agg(row_to_json(e)::text,',' ORDER BY id)) FROM inventory_ledger_entries e WHERE tenant_id=?",String.class,tenant);})).isEqualTo(before);
+        assertThatThrownBy(()->catalog.addLocation(tenant,"NOPE","Inactive warehouse",used)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->inventory.receiveUninvoicedItem(tenant,actor,f.product(),BigDecimal.ONE,expiry,bin,"Rejected")).isInstanceOf(IllegalArgumentException.class);
+        UUID main=catalog.listWarehouses(tenant).stream().filter(CatalogRepository.WarehouseView::isDefault).findFirst().orElseThrow().id();
+        assertThatThrownBy(()->catalog.removeWarehouse(tenant,main,"INACTIVE")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Default");
+    }
+
+    @Test void warehouseRemovalProtectsAssignmentsAndConcurrentUsage(){
+        var catalog=context.getBean(CatalogRepository.class);var f=twelve();
+        UUID warehouse=catalog.addWarehouse(tenant,"Assigned");UUID bin=catalog.addLocation(tenant,"ASSIGNED","Assigned",warehouse);
+        assertThat(catalog.warehouseRemovalPreview(tenant,warehouse).outcome()).isEqualTo("DELETED");
+        tx.executeWithoutResult(t->{setTenant();jdbc.update("INSERT INTO account_catalog_item_locations(tenant_id,account_catalog_item_id,location_id) VALUES (?,?,?)",tenant,f.product(),bin);});
+        assertThatThrownBy(()->catalog.removeWarehouse(tenant,warehouse,"DELETED")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("usage changed");
+        assertThat(catalog.removeWarehouse(tenant,warehouse,"INACTIVE").outcome()).isEqualTo("INACTIVE");
+        assertThat((Long)tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT count(*) FROM account_catalog_item_locations WHERE tenant_id=? AND location_id=?",Long.class,tenant,bin);})).isEqualTo(1L);
+    }
+
+    @Test void warehouseRemovalPreservesReservationsAndStock() {
+        var catalog=context.getBean(CatalogRepository.class);var f=twelve();
+        UUID warehouse=catalog.addWarehouse(tenant,"Reserved");UUID bin=catalog.addLocation(tenant,"RESERVED","Reserved",warehouse);
+        var position=new Fixture(f.session(),f.document(),f.line(),f.product(),bin);
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),BigDecimal.TEN,expiry,bin,"Fixture");
+        UUID reservation=reserve(position,3);
+        String before=tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT row_to_json(r)::text FROM order_inventory_reservations r WHERE id=?",String.class,reservation);});
+        catalog.removeWarehouse(tenant,warehouse,"INACTIVE");
+        assertThat((String)tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT row_to_json(r)::text FROM order_inventory_reservations r WHERE id=?",String.class,reservation);})).isEqualTo(before);
+        assertThat((BigDecimal)tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND location_id=?",BigDecimal.class,tenant,bin);})).isEqualByComparingTo("10");
+    }
+
     Fixture twelve(){
         var f=fixture("INVOICE");
         tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET ordered_quantity=12 WHERE tenant_id=? AND id=?",tenant,f.line());});

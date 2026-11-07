@@ -623,6 +623,19 @@ public class CollaborationRepository {
         return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM (SELECT tenant_id,id marketplace_connection_id FROM marketplace_connections WHERE channel='SHOPIFY' AND status<>'DISABLED') sv WHERE sv.tenant_id=? AND sv.marketplace_connection_id=? AND "+SHOPIFY_STORE_ACCESS.replace(VIEWER,"(SELECT email FROM app_users WHERE id=?)")+")",Boolean.class,tenant,store,member));
     }
     private UUID sourceSubjectStore(UUID tenant,String type,String key){
+        if("FBA_SHIPMENT".equalsIgnoreCase(type)){
+            String[] identity=key.split("\\|",2);
+            if(identity.length!=2||identity[1].isBlank())throw new IllegalArgumentException("Choose an FBA shipment in its marketplace store.");
+            UUID connection=UUID.fromString(identity[0]);
+            var stores=jdbc.queryForList("""
+                SELECT sv.marketplace_connection_id FROM amazon_fba_shipments sv
+                JOIN marketplace_connections sc ON sc.tenant_id=sv.tenant_id AND sc.id=sv.marketplace_connection_id
+                  AND sc.channel='AMAZON' AND sc.status='ACTIVE'
+                WHERE sv.tenant_id=? AND sv.marketplace_connection_id=? AND sv.shipment_id=? AND
+                """+SHOPIFY_STORE_ACCESS,UUID.class,tenant,connection,identity[1]);
+            if(stores.size()!=1)throw new IllegalArgumentException("This FBA shipment is unavailable in your authorized stores.");
+            return stores.getFirst();
+        }
         UUID shopify=shopifySubjectStore(tenant,type,key);if(shopify!=null)return shopify;
         if(!List.of("ORDER","MARKETPLACE_SKU").contains(type.toUpperCase(Locale.ROOT)))return null;
         String table="ORDER".equalsIgnoreCase(type)?"amazon_orders":"amazon_listings";

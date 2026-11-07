@@ -257,6 +257,7 @@ function init(root){
   let order=[...(saved.order||[])].filter(valid);defaults.forEach(c=>{if(!order.includes(c.id))order.push(c.id)});
   if(key==='orders'&&order.includes('profit')&&order.includes('sales')){order=order.filter(id=>id!=='profit');order.splice(order.indexOf('sales')+1,0,'profit');}
   if(key==='orders'&&order.includes('fees')){order=order.filter(id=>id!=='fees');order.splice(order.indexOf('profit')+1,0,'fees');}
+  if(root.matches('.fba-shipment-table')&&order.includes('received')&&order.includes('shipped')){order=order.filter(id=>id!=='received');order.splice(order.indexOf('shipped')+1,0,'received');}
   const pinned=id=>id==='record-context'||(root.dataset.priorityAfterRecord==='true'&&id==='priority')||(key==='orders'&&id==='picture');
   if(key==='marketplace-skus'){const financial=['profit','est-fees','available','4w-sales'];order=order.filter(id=>!financial.includes(id)).concat(financial.filter(valid));}
   order=[...order.filter(pinned),...order.filter(id=>!pinned(id))];

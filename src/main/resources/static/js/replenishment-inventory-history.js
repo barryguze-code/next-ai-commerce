@@ -28,7 +28,7 @@
   if(!response.ok)throw new Error();const context=await response.json();if(active.signal.aborted||request!==active)return;
   if(!Array.isArray(context.locations))throw Error('Account locations unavailable');window.hydrateManagedLocations?.(context.locations);positions=context.positions;if(!positions.length)throw new Error();
   const destination=document.getElementById('location-destination');destination.replaceChildren();
-  context.locations.filter(location=>location.status==='ACTIVE').forEach(location=>destination.add(new Option(location.code+' · '+location.name,location.id)));
+  context.locations.filter(location=>location.status==='ACTIVE').forEach(location=>{const option=new Option(location.code+' · '+location.name,location.id);option.dataset.warehouse=location.warehouseId||'';destination.add(option);});
   select.replaceChildren();positions.forEach((position,index)=>select.add(new Option((position.locationCode||'No location')+' · '+(position.expiration?window.NextAiShortDates.display(position.expiration):'No expiration'),index)));
   select.value='0';openPosition(0);window.NextAiLedgerDesignPreview?.positions(positions);itemPicker.hidden=components.length<2;window.NextAiPlatformControls?.enhance(itemPicker);itemSelect.dispatchEvent(new Event('platform-choice-sync'));
  }

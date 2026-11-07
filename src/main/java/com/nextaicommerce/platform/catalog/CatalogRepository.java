@@ -169,7 +169,120 @@ public class CatalogRepository {
             BigDecimal listCost, BigDecimal discountRate, BigDecimal buyingCost, String currency,
             boolean preferred) { public String discountDisplay(){return percentage(discountRate);} }
     static String percentage(BigDecimal value){return value==null?"—":value.setScale(2,java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()+"%";}
-    public record LocationView(UUID id,String code,String name,String status) {}
+    public record LocationView(UUID id,String code,String name,String status,UUID warehouseId,String warehouseName) {
+        public LocationView(UUID id,String code,String name,String status){this(id,code,name,status,null,"Default Warehouse");}
+    }
+    public record WarehouseView(UUID id,String name,boolean isDefault,String status,String addressSummary) {
+        public WarehouseView(UUID id,String name,boolean isDefault,String status){this(id,name,isDefault,status,"");}
+    }
+    @Transactional(readOnly=true)
+    public List<WarehouseView> listWarehouses(UUID tenantId){
+        setTenant(tenantId);
+        return jdbc.query("SELECT id,name,is_default,status,concat_ws(', ',nullif(address_line_1,''),nullif(city,''),nullif(state_or_province,''),nullif(postal_code,''),nullif(country_code,'')) address_summary FROM warehouses WHERE tenant_id=? ORDER BY is_default DESC,lower(name)",
+            (rs,n)->new WarehouseView(rs.getObject(1,UUID.class),rs.getString(2),rs.getBoolean(3),rs.getString(4),rs.getString(5)),tenantId);
+    }
+    @Transactional
+    public UUID addWarehouse(UUID tenantId,String name){
+        setTenant(tenantId);String clean=name==null?"":name.trim();
+        if(clean.isBlank()||clean.length()>160)throw new IllegalArgumentException("Enter a warehouse name of up to 160 characters.");
+        if(jdbc.queryForObject("SELECT count(*) FROM warehouses WHERE tenant_id=? AND lower(name)=lower(?)",Long.class,tenantId,clean)>0)
+            throw new IllegalArgumentException("That warehouse already exists in this account.");
+        return jdbc.queryForObject("INSERT INTO warehouses(tenant_id,name) VALUES (?,?) RETURNING id",UUID.class,tenantId,clean);
+    }
+    public record WarehouseRemoval(String outcome,List<UUID> locationIds) {}
+    /** Inspect every declared FK, including future location dependencies; never net history to zero. */
+    private boolean warehouseHasDependencies(UUID tenant,UUID warehouse){
+        var references=jdbc.query("""
+            SELECT ns.nspname,child.relname,ca.attname,parent.relname
+            FROM pg_constraint fk JOIN pg_class child ON child.oid=fk.conrelid
+            JOIN pg_namespace ns ON ns.oid=child.relnamespace
+            JOIN pg_class parent ON parent.oid=fk.confrelid
+            JOIN LATERAL unnest(fk.conkey,fk.confkey) keys(childkey,parentkey) ON true
+            JOIN pg_attribute pa ON pa.attrelid=parent.oid AND pa.attnum=keys.parentkey
+            JOIN pg_attribute ca ON ca.attrelid=child.oid AND ca.attnum=keys.childkey
+            WHERE fk.contype='f' AND fk.confrelid IN ('warehouses'::regclass,'warehouse_locations'::regclass)
+              AND pa.attname='id' AND child.relname NOT IN ('warehouse_contacts','warehouse_locations')
+            """,(rs,n)->new String[]{rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4)});
+        for(var ref:references){
+            String table=sqlIdentifier(ref[0])+"."+sqlIdentifier(ref[1]),column=sqlIdentifier(ref[2]);
+            String target="warehouses".equals(ref[3])?"SELECT id FROM warehouses WHERE tenant_id=? AND id=?":"SELECT id FROM warehouse_locations WHERE tenant_id=? AND warehouse_id=?";
+            if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM "+table+" WHERE tenant_id=? AND "+column+" IN ("+target+"))",Boolean.class,tenant,tenant,warehouse)))return true;
+        }
+        // Staged physical counts identify locations by code rather than foreign key.
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM physical_count_imports i
+            JOIN physical_count_import_rows r ON r.tenant_id=i.tenant_id AND r.physical_count_import_id=i.id
+            JOIN warehouse_locations l ON l.tenant_id=i.tenant_id
+              AND upper(trim(r.source_data->>(i.column_mapping->>'location')))=upper(l.code)
+            WHERE i.tenant_id=? AND l.warehouse_id=? AND i.status IN ('STAGED','APPLYING'))
+            """,Boolean.class,tenant,warehouse));
+    }
+    private static String sqlIdentifier(String value){return "\""+value.replace("\"","\"\"")+"\"";}
+    @Transactional(readOnly=true)
+    public WarehouseRemoval warehouseRemovalPreview(UUID tenant,UUID warehouse){
+        setTenant(tenant);
+        var rows=jdbc.query("SELECT is_default FROM warehouses WHERE tenant_id=? AND id=?",(rs,n)->rs.getBoolean(1),tenant,warehouse);
+        if(rows.isEmpty())throw new IllegalArgumentException("Warehouse is unavailable in this account.");
+        if(rows.getFirst())throw new IllegalArgumentException("Default warehouse cannot be deleted or deactivated.");
+        return new WarehouseRemoval(warehouseHasDependencies(tenant,warehouse)?"INACTIVE":"DELETED",List.of());
+    }
+    @Transactional
+    public WarehouseRemoval removeWarehouse(UUID tenant,UUID warehouse,String expectedOutcome){
+        setTenant(tenant);
+        // Same account stock lock as receiving/adjustments; fail promptly instead of blocking operations.
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT pg_try_advisory_xact_lock(hashtextextended(?::text,0))",Boolean.class,tenant)))
+            throw new IllegalArgumentException("Inventory is being updated. Try again in a moment.");
+        jdbc.execute("SET LOCAL lock_timeout='750ms'");
+        var rows=jdbc.query("SELECT is_default FROM warehouses WHERE tenant_id=? AND id=? FOR UPDATE",(rs,n)->rs.getBoolean(1),tenant,warehouse);
+        if(rows.isEmpty())throw new IllegalArgumentException("Warehouse is unavailable in this account.");
+        if(rows.getFirst())throw new IllegalArgumentException("Default warehouse cannot be deleted or deactivated.");
+        var locations=jdbc.query("SELECT id FROM warehouse_locations WHERE tenant_id=? AND warehouse_id=? ORDER BY id FOR UPDATE",(rs,n)->rs.getObject(1,UUID.class),tenant,warehouse);
+        String outcome=warehouseHasDependencies(tenant,warehouse)?"INACTIVE":"DELETED";
+        if(!outcome.equals(expectedOutcome))throw new IllegalArgumentException("Warehouse usage changed. Choose Delete again to review the updated action.");
+        if("INACTIVE".equals(outcome)){
+            jdbc.update("UPDATE warehouse_locations SET status='INACTIVE' WHERE tenant_id=? AND warehouse_id=?",tenant,warehouse);
+            jdbc.update("UPDATE warehouses SET status='INACTIVE' WHERE tenant_id=? AND id=?",tenant,warehouse);
+        }else{
+            jdbc.update("DELETE FROM warehouse_contacts WHERE tenant_id=? AND warehouse_id=?",tenant,warehouse);
+            jdbc.update("DELETE FROM warehouse_locations WHERE tenant_id=? AND warehouse_id=?",tenant,warehouse);
+            jdbc.update("DELETE FROM warehouses WHERE tenant_id=? AND id=?",tenant,warehouse);
+        }
+        return new WarehouseRemoval(outcome,locations);
+    }
+
+    public record WarehouseContact(String fullName,String phone) {}
+    public record WarehouseDetails(UUID id,String name,boolean isDefault,String addressLine1,String addressLine2,
+            String city,String stateOrProvince,String postalCode,String countryCode,List<WarehouseContact> contacts,String status) {}
+    @Transactional(readOnly=true)
+    public WarehouseDetails warehouseDetails(UUID tenantId,UUID id){
+        setTenant(tenantId);
+        var contacts=jdbc.query("SELECT full_name,phone FROM warehouse_contacts WHERE tenant_id=? AND warehouse_id=? ORDER BY sort_order",(rs,n)->new WarehouseContact(rs.getString(1),rs.getString(2)),tenantId,id);
+        return jdbc.query("SELECT * FROM warehouses WHERE tenant_id=? AND id=?",rs->rs.next()?new WarehouseDetails(id,rs.getString("name"),rs.getBoolean("is_default"),rs.getString("address_line_1"),rs.getString("address_line_2"),rs.getString("city"),rs.getString("state_or_province"),rs.getString("postal_code"),rs.getString("country_code"),contacts,rs.getString("status")):null,tenantId,id);
+    }
+    private static String warehouseText(String value,int max,String label){
+        String clean=value==null?"":value.trim();if(clean.length()>max)throw new IllegalArgumentException(label+" is too long.");return clean;
+    }
+    @Transactional
+    public WarehouseDetails saveWarehouse(UUID tenantId,UUID id,String name,String line1,String line2,String city,String state,String postal,String country,List<String> names,List<String> phones){
+        setTenant(tenantId);
+        String clean=warehouseText(name,160,"Warehouse nickname");if(clean.isEmpty())throw new IllegalArgumentException("Enter a warehouse nickname.");
+        line1=warehouseText(line1,240,"Address");line2=warehouseText(line2,240,"Address line 2");city=warehouseText(city,120,"City");state=warehouseText(state,80,"State / province");postal=warehouseText(postal,32,"Postal code");country=warehouseText(country,2,"Country code").toUpperCase(Locale.ROOT);
+        if(!country.isEmpty()&&!country.matches("[A-Z]{2}"))throw new IllegalArgumentException("Use a two-letter country code, such as US.");
+        names=names==null?List.of():names;phones=phones==null?List.of():phones;
+        if(names.size()!=phones.size()||names.size()>20)throw new IllegalArgumentException("Add up to 20 complete contacts.");
+        var contacts=new java.util.ArrayList<WarehouseContact>();
+        for(int n=0;n<names.size();n++){
+            String person=warehouseText(names.get(n),180,"Contact name"),phone=warehouseText(phones.get(n),40,"Phone");
+            if(person.isEmpty()||phone.isEmpty())throw new IllegalArgumentException("Enter a full name and phone for every contact, or remove its row.");
+            contacts.add(new WarehouseContact(person,phone));
+        }
+        if(id==null)id=addWarehouse(tenantId,clean);
+        else if(jdbc.query("SELECT id FROM warehouses WHERE tenant_id=? AND id=? FOR UPDATE",(rs,n)->rs.getObject(1,UUID.class),tenantId,id).isEmpty())throw new IllegalArgumentException("Warehouse is unavailable in this account.");
+        jdbc.update("UPDATE warehouses SET name=?,address_line_1=?,address_line_2=?,city=?,state_or_province=?,postal_code=?,country_code=? WHERE tenant_id=? AND id=?",clean,line1,line2,city,state,postal,country,tenantId,id);
+        jdbc.update("DELETE FROM warehouse_contacts WHERE tenant_id=? AND warehouse_id=?",tenantId,id);
+        int order=0;for(var contact:contacts)jdbc.update("INSERT INTO warehouse_contacts(tenant_id,warehouse_id,full_name,phone,sort_order) VALUES (?,?,?,?,?)",tenantId,id,contact.fullName(),contact.phone(),order++);
+        return warehouseDetails(tenantId,id);
+    }
     public record MarketplaceSkuRef(UUID itemId,String sku,BigDecimal quantity,String status,
             String channel,Integer marketplaceQuantity,String fulfillment,String asin,
             BigDecimal price,String currency,String amazonDomain,UUID connectionId,BigDecimal buyBoxPrice,String itemCode,String shopifyAdmin,String shopifyStorefront,BigDecimal warehouseAvailable,UUID shopifyVariantId) {
@@ -1200,9 +1313,10 @@ public class CatalogRepository {
     public List<LocationView> listLocations(UUID tenantId){
         setTenant(tenantId);
         return jdbc.query("""
-            SELECT id,code,name,status FROM warehouse_locations
-            WHERE tenant_id=? ORDER BY status DESC,upper(code),lower(name)
-            """,(rs,row)->new LocationView(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getString(4)),tenantId);
+            SELECT l.id,l.code,l.name,l.status,l.warehouse_id,w.name warehouse_name FROM warehouse_locations l
+            JOIN warehouses w ON w.tenant_id=l.tenant_id AND w.id=l.warehouse_id
+            WHERE l.tenant_id=? ORDER BY w.is_default DESC,lower(w.name),l.status DESC,upper(l.code),lower(l.name)
+            """,(rs,row)->new LocationView(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),rs.getString(4),rs.getObject(5,UUID.class),rs.getString(6)),tenantId);
     }
 
     @Transactional
@@ -1240,8 +1354,12 @@ public class CatalogRepository {
     }
 
     @Transactional
-    public UUID addLocation(UUID tenantId,String code,String name){
+    public UUID addLocation(UUID tenantId,String code,String name){return addLocation(tenantId,code,name,null);}
+    @Transactional
+    public UUID addLocation(UUID tenantId,String code,String name,UUID warehouseId){
         setTenant(tenantId);
+        if(warehouseId!=null&&jdbc.query("SELECT id FROM warehouses WHERE tenant_id=? AND id=? AND status='ACTIVE' FOR SHARE",(rs,n)->rs.getObject(1,UUID.class),tenantId,warehouseId).isEmpty())
+            throw new IllegalArgumentException("Choose an active warehouse in this account.");
         String cleanCode=code==null?"":code.trim().toUpperCase(Locale.ROOT);
         String cleanName=name==null?"":name.trim();
         if(!cleanCode.matches("[A-Z0-9][A-Z0-9._/-]{0,79}"))
@@ -1249,8 +1367,8 @@ public class CatalogRepository {
         if(cleanName.isBlank()||cleanName.length()>160)throw new IllegalArgumentException("Enter a location name.");
         Integer exists=jdbc.queryForObject("SELECT count(*) FROM warehouse_locations WHERE tenant_id=? AND upper(code)=?",Integer.class,tenantId,cleanCode);
         if(exists!=null&&exists>0)throw new IllegalArgumentException("That location code already exists in this account.");
-        return jdbc.queryForObject("INSERT INTO warehouse_locations(tenant_id,code,name) VALUES (?,?,?) RETURNING id",
-            UUID.class,tenantId,cleanCode,cleanName);
+        return jdbc.queryForObject("INSERT INTO warehouse_locations(tenant_id,code,name,warehouse_id) VALUES (?,?,?,?) RETURNING id",
+            UUID.class,tenantId,cleanCode,cleanName,warehouseId);
     }
 
     public record PackingProductDetails(UUID itemId,String description,UUID defaultLocationId,String locationCode) {}
@@ -1295,12 +1413,12 @@ public class CatalogRepository {
     @Transactional
     public void setDefaultLocation(UUID tenantId,UUID itemId,UUID locationId){
         setTenant(tenantId);
-        Integer valid=jdbc.queryForObject("""
-            SELECT count(*) FROM account_catalog_items item CROSS JOIN warehouse_locations location
+        UUID valid=jdbc.query("""
+            SELECT location.id FROM account_catalog_items item CROSS JOIN warehouse_locations location
             WHERE item.tenant_id=? AND item.id=? AND location.tenant_id=item.tenant_id
-              AND location.id=? AND location.status='ACTIVE'
-            """,Integer.class,tenantId,itemId,locationId);
-        if(valid==null||valid!=1)throw new IllegalArgumentException("Choose an active location from this account.");
+              AND location.id=? AND location.status='ACTIVE' FOR SHARE OF location
+            """,rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,itemId,locationId);
+        if(valid==null)throw new IllegalArgumentException("Choose an active location from this account.");
         jdbc.update("UPDATE account_catalog_item_locations SET is_default=false WHERE tenant_id=? AND account_catalog_item_id=? AND is_default",
             tenantId,itemId);
         jdbc.update("""

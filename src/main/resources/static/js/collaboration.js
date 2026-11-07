@@ -392,12 +392,12 @@
     setParentLink(button.dataset.parentUrl,(button.dataset.entityType||button.dataset.type||'record'));
   }
   function sourceTableUrl(url,type,key,label){
-    const fallback={ORDER:'/app/orders',INVENTORY:'/app/inventory',MARKETPLACE_SKU:'/app/marketplace-skus',CATALOG:'/app/catalog',ACCOUNT_PRODUCT:'/app/account-catalog',USER:'/app/users',SHIPMENT:'/app/shipping'};
+    const fallback={ORDER:'/app/orders',INVENTORY:'/app/inventory',MARKETPLACE_SKU:'/app/marketplace-skus',CATALOG:'/app/catalog',ACCOUNT_PRODUCT:'/app/account-catalog',USER:'/app/users',SHIPMENT:'/app/shipping',FBA_SHIPMENT:'/app/inventory/fba-shipments'};
     const path=url||fallback[type];if(typeof path!=='string'||!/^\/app(?:\/|\?|$)/.test(path)||path.includes('\\'))return '';
     const source=new URL(path,location.origin);
     if(!source.searchParams.get('q')&&type!=='PLATFORM'){
       const readableKey=key&&!/^[0-9a-f]{8}-[0-9a-f-]{27}/i.test(key);
-      const query=readableKey?key:String(label||'').split(' · expires')[0];
+      const query=type==='FBA_SHIPMENT'?String(key||'').split('|')[1]:(readableKey?key:String(label||'').split(' · expires')[0]);
       if(query)source.searchParams.set('q',query);
     }
     source.searchParams.delete('page');source.searchParams.delete('status');

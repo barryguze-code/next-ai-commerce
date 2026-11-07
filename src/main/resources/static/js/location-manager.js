@@ -10,7 +10,7 @@ async function createManagedLocation(event,form){
     if(!response.ok)throw new Error(result.error||'The location could not be added.');
     const label=result.code+' · '+result.name;
     document.querySelectorAll('select[name="destinationLocationId"],select[name="locationId"]').forEach(select=>{
-      if(!Array.from(select.options).some(option=>option.value===result.id))select.add(new Option(label,result.id));
+      if(!Array.from(select.options).some(option=>option.value===result.id)){const option=new Option(label,result.id);option.dataset.warehouse=result.warehouseId||'';select.add(option);}
     });
     const list=form.querySelector('.location-directory-list');
     list.querySelector('.location-directory-empty')?.remove();
@@ -18,7 +18,7 @@ async function createManagedLocation(event,form){
     const code=document.createElement('span');code.className='location-code';code.textContent=result.code;
     const details=document.createElement('div');
     const name=document.createElement('strong');name.textContent=result.name;
-    const help=document.createElement('small');help.textContent='Available for receipts, physical counts, and product defaults';
+    const help=document.createElement('small');help.textContent=(result.warehouseName?result.warehouseName+' · ':'')+'Available for receipts, physical counts, and product defaults';
     const status=document.createElement('b');status.className='location-status';status.textContent='active';
     article.dataset.locationId=result.id;
     details.append(name,help);article.append(code,details,status);
@@ -30,7 +30,7 @@ async function createManagedLocation(event,form){
     });
     const destination=document.getElementById('location-destination');
     if(destination&&form.closest('#inventory-location-dialog')){destination.value=result.id;destination.dispatchEvent(new Event('change',{bubbles:true}));const safety=document.getElementById('location-safety');if(safety)safety.textContent=label+' was added to this account and selected for this batch.'}
-    form.reset();feedback.textContent=label+' added. You can add another location or choose Done.';feedback.hidden=false;
+    form.reset();if(form.elements.warehouseId&&result.warehouseId)form.elements.warehouseId.value=result.warehouseId;feedback.textContent=label+' added. You can add another location or choose Done.';feedback.hidden=false;
     list.scrollTo({top:list.scrollHeight,behavior:'smooth'});form.elements.code.focus();
     form.dispatchEvent(new CustomEvent('location:created',{bubbles:true,detail:result}));
   }catch(problem){feedback.textContent=problem.message;feedback.classList.add('error');feedback.hidden=false}
@@ -104,7 +104,7 @@ function hydrateManagedLocations(locations){
   for(const location of locations){
    const article=document.createElement('article');article.dataset.locationId=location.id;article.classList.toggle('inactive',location.status!=='ACTIVE');
    const code=document.createElement('span');code.className='location-code';code.textContent=location.code;
-   const details=document.createElement('div'),name=document.createElement('strong'),help=document.createElement('small'),status=document.createElement('b');name.textContent=location.name;help.textContent='Available for receipts, physical counts, and product defaults';status.className='location-status';status.textContent=String(location.status||'').toLowerCase();details.append(name,help);article.append(code,details,status);addLocationActions(article);fragment.append(article);
+   const details=document.createElement('div'),name=document.createElement('strong'),help=document.createElement('small'),status=document.createElement('b');name.textContent=location.name;help.textContent=(location.warehouseName?location.warehouseName+' · ':'')+(location.status==='ACTIVE'?'Available for receipts, physical counts, and product defaults':'Inactive · Existing inventory and history retained');status.className='location-status';status.textContent=String(location.status||'').toLowerCase();details.append(name,help);article.append(code,details,status);addLocationActions(article);fragment.append(article);
   }
   if(!locations.length){const empty=document.createElement('p');empty.className='location-directory-empty';empty.textContent='No storage locations have been created for this account.';fragment.append(empty);}
   list.replaceChildren(fragment);directory.querySelector('.location-directory-count').textContent=locations.length+' in this account';directory.dataset.locationState='ready';directory.querySelector('[data-location-load-feedback]')?.remove();

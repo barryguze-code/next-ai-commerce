@@ -299,7 +299,7 @@
 <div class="dialog-body catalog-form">
 <div th:replace="~{fragments/location-directory :: directory(${locations})}"></div>
 <section class="location-create-panel">
-<div class="location-create-section"><div><strong>Add a new location</strong><small>Use concise codes that warehouse teams can scan on counts and packing slips.</small></div>
+<label th:if="${warehouses != null}">Warehouse<select name="warehouseId" required><option th:each="warehouse:${warehouses}" th:if="${warehouse.status == 'ACTIVE'}" th:value="${warehouse.id}" th:text="${warehouse.name}">Default Warehouse</option></select></label><div class="location-create-section"><div><strong>Add a new location</strong><small>Use concise codes that warehouse teams can scan on counts and packing slips.</small></div>
 <div class="form-pair"><label>Location code<input name="code" maxlength="80" placeholder="A-01" required><small>Unique within this account.</small></label><label>Location name<input name="name" maxlength="160" placeholder="Aisle A · Shelf 01" required><small>Human-readable picking label.</small></label></div></div>
 <div class="import-safety"><strong>Defaults do not move stock</strong><span>Changing a product default routes future receipts only. Existing batches remain at their recorded locations.</span></div>
 <p class="notice location-manager-feedback" data-location-feedback hidden></p>
