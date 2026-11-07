@@ -19,7 +19,9 @@ class PackingSlipTemplateTest {
                 new PackingSlipRepository.Line("12345","Second product",2,null,"F1"),
                 new PackingSlipRepository.Line("67890","Third product",3,null,"F2")));
         assertThat(slip.pages()).hasSize(2).allSatisfy(page->assertThat(page).hasSizeLessThanOrEqualTo(2));
-        var html=engine.process("packing-slip",new Context(null,java.util.Map.of("slip",slip)));
+        var servlet=new org.springframework.mock.web.MockServletContext();var app=org.thymeleaf.web.servlet.JakartaServletWebApplication.buildApplication(servlet);
+        var context=new org.thymeleaf.context.WebContext(app.buildExchange(new org.springframework.mock.web.MockHttpServletRequest(servlet),new org.springframework.mock.web.MockHttpServletResponse()));context.setVariable("slip",slip);
+        var html=engine.process("packing-slip",context);
         assertThat(html)
             .contains("Ski Queen","UPS OMBox","53383","12345","67890","Cheese Gjetost","Second product","Third product","06/17/27","MAIN","Seller Central","Save package","Print 2 × 1 slip")
             .doesNotContain("IB-MKH-53383-GJETOST-SKIQUEEN-EA","No historical package match","Order 113-1234567-1234567","Internal packing only");

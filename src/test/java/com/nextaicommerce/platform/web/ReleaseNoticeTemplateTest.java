@@ -11,7 +11,8 @@ class ReleaseNoticeTemplateTest {
         var resolver=new ClassLoaderTemplateResolver();
         resolver.setPrefix("templates/");resolver.setSuffix(".html");
         var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);
-        var context=new Context();context.setVariable("releaseNotice",notice);
+        var servlet=new org.springframework.mock.web.MockServletContext();var app=org.thymeleaf.web.servlet.JakartaServletWebApplication.buildApplication(servlet);
+        var context=new org.thymeleaf.context.WebContext(app.buildExchange(new org.springframework.mock.web.MockHttpServletRequest(servlet),new org.springframework.mock.web.MockHttpServletResponse()));context.setVariable("releaseNotice",notice);
         return engine.process("fragments/release-notice",context);
     }
     @Test void disabledNoticeDoesNotLoadAssetsOrControls() {

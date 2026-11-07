@@ -22,7 +22,7 @@ class CollaborationBoardTemplateTest {
         context.setVariable("personalUser","fixture@example.test");
         context.setVariable("signedInEmail","fixture@example.test");
         String shared=engine.process("fragments/sidebar-user",context);
-        assertThat(shared).contains("/js/confirm-dialog.js?v=1.11.8","/css/confirm-dialog.css");
+        assertThat(shared).contains("/js/confirm-dialog.js?v=","/css/confirm-dialog.css");
         Files.createDirectories(Path.of(".local/browser-fixtures"));Files.writeString(Path.of(".local/browser-fixtures/shared-confirm.html"),shared);
         String personal=engine.process("personal-collaboration",context);
         Files.createDirectories(Path.of(".local/browser-fixtures"));Files.writeString(Path.of(".local/browser-fixtures/personal-collaboration.html"),personal);

@@ -20,7 +20,7 @@ class FbaTemplateTest {
         // table-data-tools recognizes this class and these attributes; without them it
         // creates a second client-side pager counting only the currently loaded rows.
         assertThat(html).contains("table-pagination","data-page=\"0\"","data-page-max=\"2\"","data-page-size=\"25\"","Total: 50 shipments");
-        assertThat(html).contains("FBA Shipment Date").doesNotContain("Last imported");
+        assertThat(html).contains("data-column=\"fba-shipment-date\"","title=\"FBA shipment date\"").doesNotContain("Last imported");
     }
     @Test void stockRendersUnknownZeroAndFeesWithoutInventingTransfers()throws Exception{
         var context=context();context.setVariable("sku","KARACA <test>");
@@ -46,5 +46,5 @@ class FbaTemplateTest {
         }
     }
     private static SpringTemplateEngine engine(){var resolver=new ClassLoaderTemplateResolver();resolver.setPrefix("templates/");resolver.setSuffix(".html");resolver.setTemplateMode("HTML");var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);return engine;}
-    private static WebContext context(){var servlet=new MockServletContext();return new WebContext(JakartaServletWebApplication.buildApplication(servlet).buildExchange(new MockHttpServletRequest(servlet),new MockHttpServletResponse()));}
+    private static WebContext context(){var servlet=new MockServletContext();var context=new WebContext(JakartaServletWebApplication.buildApplication(servlet).buildExchange(new MockHttpServletRequest(servlet),new MockHttpServletResponse()));context.setVariable("fbaSync",new com.nextaicommerce.platform.sync.FbaManualSync.State(false,false,"NOT_STARTED","",null));context.setVariable("fbaConnectionId",UUID.randomUUID());return context;}
 }
