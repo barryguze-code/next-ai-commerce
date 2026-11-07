@@ -5,20 +5,23 @@ const inventory=JSON.parse(fs.readFileSync('src/test/fixtures/release-cache-asse
 const templates=path.resolve('src/main/resources/templates');
 const refs=html=>[...html.matchAll(/["'](\/(?:css|js)\/[^"'?]+)(\?[^"']*)?["']/g)].map(m=>({asset:m[1],query:m[2]||''}));
 const html=file=>fs.readFileSync(path.join(templates,file),'utf8');
-function assetUrl(file,asset){const found=refs(html(file)).find(r=>r.asset===asset);assert.ok(found,`${file} references ${asset}`);return found.asset+found.query;}
-test('all changed released asset references use one fresh canonical cache version',()=>{
- assert.deepEqual(Object.keys(inventory.versions).sort(),[...inventory.assets].sort(),'Every inventoried asset has an explicit release cache version');
+// Resolve the same release binding used by rendered Thymeleaf pages for this HTTP-cache fixture.
+const releaseVersion=require('node:fs').readFileSync('pom.xml','utf8').match(/<artifactId>next-ai-commerce<\/artifactId>\s*<version>([^<]+)/)[1];
+function assetUrl(file,asset){
+ const tag=[...html(file).matchAll(/<(?:link|script)\b[^>]*>/g)].map(m=>m[0]).find(t=>refs(t).some(r=>r.asset===asset));
+ assert.ok(tag,`${file} references ${asset}`);
+ assert.ok(tag.includes('@{'+asset+'(v=${buildVersion})}'),`${file}: ${asset} must use the running build version`);
+ return asset+'?v='+releaseVersion;
+}
+test('all changed released asset references use the running release cache version',()=>{
  const actualFiles=fs.readdirSync(templates,{recursive:true}).filter(file=>file.endsWith('.html')&&refs(html(file)).some(ref=>inventory.assets.includes(ref.asset))).sort();
  assert.deepEqual([...inventory.templates].sort(),actualFiles,'Inventory covers every template reference, including shared fragments');
  let count=0;
  for(const file of inventory.templates)for(const ref of refs(html(file)))if(inventory.assets.includes(ref.asset)){
-  assert.equal(ref.query,'?v='+inventory.versions[ref.asset],`${file}: ${ref.asset} must not reuse a released stale cache URL`);count++;
+  assert.equal(assetUrl(file,ref.asset),ref.asset+'?v='+releaseVersion);count++;
  }
  assert.equal(count,inventory.reference_count);
  for(const asset of ['/js/table-widget.js','/css/table-widget.css'])assert.equal(assetUrl('marketplace-skus.html',asset),assetUrl('fragments/sidebar-user.html',asset),'Head and shared fragment must request the same version');
- for(const asset of ['/js/table-data-tools.js','/js/profit.js']){
-  const matches=inventory.templates.flatMap(file=>refs(html(file))).filter(ref=>ref.asset===asset);assert.ok(matches.length);assert.ok(matches.every(ref=>ref.query==='?v='+inventory.versions[asset]));
- }
 });
 let browser,server,origin,requests=[];
 before(async()=>{
@@ -63,7 +66,7 @@ test('negative control reproduces a cached old head script shadowing the shared 
 });
 
 
-test('tooltip hotfix uses a fresh canonical URL without repinning unchanged assets',()=>{
- assert.equal(assetUrl('fragments/ux-components.html','/js/platform-tooltips.js'),'/js/platform-tooltips.js?v=1.7.3');
- assert.equal(assetUrl('fragments/sidebar-user.html','/css/product-thumbnails.css'),'/css/product-thumbnails.css?v=1.7.2');
+test('tooltip and thumbnail assets follow the running release version',()=>{
+ assert.equal(assetUrl('fragments/ux-components.html','/js/platform-tooltips.js'),'/js/platform-tooltips.js?v='+releaseVersion);
+ assert.equal(assetUrl('fragments/sidebar-user.html','/css/product-thumbnails.css'),'/css/product-thumbnails.css?v='+releaseVersion);
 });

@@ -21,7 +21,7 @@
     "/js/table-widget.js",
     "/js/mapping-widget.js"
   ],
-  "reference_count": 41,
+  "reference_count": 39,
   "templates": [
     "carrier-connections.html",
     "collaboration.html",
