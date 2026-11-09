@@ -172,6 +172,10 @@ public class CatalogRepository {
     public record LocationView(UUID id,String code,String name,String status,UUID warehouseId,String warehouseName) {
         public LocationView(UUID id,String code,String name,String status){this(id,code,name,status,null,"Default Warehouse");}
     }
+    private void lockWarehouseIdentity(UUID tenant){
+        jdbc.execute("SET LOCAL lock_timeout='5s'");
+        jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",Object.class,tenant.toString());
+    }
     public record WarehouseView(UUID id,String name,boolean isDefault,String status,String addressSummary) {
         public WarehouseView(UUID id,String name,boolean isDefault,String status){this(id,name,isDefault,status,"");}
     }
@@ -183,7 +187,7 @@ public class CatalogRepository {
     }
     @Transactional
     public UUID addWarehouse(UUID tenantId,String name){
-        setTenant(tenantId);String clean=name==null?"":name.trim();
+        setTenant(tenantId);lockWarehouseIdentity(tenantId);String clean=name==null?"":name.trim();
         if(clean.isBlank()||clean.length()>160)throw new IllegalArgumentException("Enter a warehouse name of up to 160 characters.");
         if(jdbc.queryForObject("SELECT count(*) FROM warehouses WHERE tenant_id=? AND lower(name)=lower(?)",Long.class,tenantId,clean)>0)
             throw new IllegalArgumentException("That warehouse already exists in this account.");
@@ -264,7 +268,7 @@ public class CatalogRepository {
     }
     @Transactional
     public WarehouseDetails saveWarehouse(UUID tenantId,UUID id,String name,String line1,String line2,String city,String state,String postal,String country,List<String> names,List<String> phones){
-        setTenant(tenantId);
+        setTenant(tenantId);lockWarehouseIdentity(tenantId);
         String clean=warehouseText(name,160,"Warehouse nickname");if(clean.isEmpty())throw new IllegalArgumentException("Enter a warehouse nickname.");
         line1=warehouseText(line1,240,"Address");line2=warehouseText(line2,240,"Address line 2");city=warehouseText(city,120,"City");state=warehouseText(state,80,"State / province");postal=warehouseText(postal,32,"Postal code");country=warehouseText(country,2,"Country code").toUpperCase(Locale.ROOT);
         if(!country.isEmpty()&&!country.matches("[A-Z]{2}"))throw new IllegalArgumentException("Use a two-letter country code, such as US.");

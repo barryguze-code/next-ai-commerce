@@ -11,6 +11,212 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 class FbaReadDatabaseTest {
+    private record DepletionFixture(FbaDepletionRepository operations,UUID item,UUID warehouse,UUID location,UUID layer,String email){}
+    private DepletionFixture depletionFixture(){
+        UUID user=UUID.randomUUID(),item=UUID.randomUUID(),product=UUID.randomUUID(),mapping=UUID.randomUUID(),layer=UUID.randomUUID();String email=user+"@fixture.test";
+        jdbc.update("INSERT INTO app_users(id,email,display_name) VALUES (?,?,'Operator')",user,email);
+        jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Fixture product')",product);
+        jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,display_name) VALUES (?,?,?,'Fixture product')",item,tenant,product);
+        UUID warehouse=jdbc.queryForObject("SELECT id FROM warehouses WHERE tenant_id=? AND is_default",UUID.class,tenant);
+        jdbc.update("UPDATE warehouses SET postal_code='00123',country_code='US' WHERE id=?",warehouse);
+        UUID location=jdbc.queryForObject("SELECT id FROM warehouse_locations WHERE tenant_id=? AND warehouse_id=? AND code='MAIN'",UUID.class,tenant,warehouse);
+        jdbc.update("INSERT INTO amazon_fba_shipments(tenant_id,marketplace_connection_id,shipment_id,shipment_status,raw_payload) VALUES (?,?,'FBA-TEST','SHIPPED',?::jsonb)",tenant,store,"{\"ShipFromAddress\":{\"PostalCode\":\"00123\",\"CountryCode\":\"US\"},\"itemEvidenceVersion\":1,\"itemEvidence\":[{\"SellerSKU\":\"000-SKU\",\"QuantityShipped\":2,\"QuantityReceived\":1}]}");
+        jdbc.update("INSERT INTO amazon_fba_shipment_items(tenant_id,marketplace_connection_id,shipment_id,seller_sku,quantity_shipped,quantity_received) VALUES (?,?,'FBA-TEST','000-SKU',2,1)",tenant,store);
+        jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,marketplace_sku,account_catalog_item_id) VALUES (?,?,?,'000-SKU',?)",mapping,tenant,store,item);
+        jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,3)",tenant,mapping,item);
+        jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,entry_type,quantity,location_id,expiration_date,unit_cost,currency,source_type,occurred_at,idempotency_key) VALUES (?,?,?,'RECEIVED',10,?,current_date+30,2,'USD','FIXTURE',now()-interval '1 day',?)",layer,tenant,item,location,layer.toString());
+        return new DepletionFixture(new FbaDepletionRepository(jdbc,new tools.jackson.databind.ObjectMapper()),item,warehouse,location,layer,email);
+    }
+    @Test void depletionIsAtomicIdempotentAndPreservesAmazonAndHistoricalReceipts(){tx.executeWithoutResult(s->{
+        var f=depletionFixture();var p=f.operations.preview(tenant,store,"FBA-TEST");assertThat(p.blockers()).isEmpty();assertThat(p.allocations()).hasSize(1);assertThat(p.allocations().getFirst().layer()).isEqualTo(f.layer);assertThat(p.allocations().getFirst().quantity()).isEqualByComparingTo("6");
+        UUID request=UUID.randomUUID();UUID operation=f.operations.deplete(tenant,store,"FBA-TEST",f.email,request,p.revision(),p.allocations());
+        assertThat(f.operations.deplete(tenant,store,"FBA-TEST",f.email,request,p.revision(),p.allocations())).isEqualTo(operation);
+        assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",java.math.BigDecimal.class,tenant,f.item)).isEqualByComparingTo("4");
+        assertThat(jdbc.queryForObject("SELECT quantity FROM inventory_ledger_entries WHERE id=?",java.math.BigDecimal.class,f.layer)).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("SELECT quantity_shipped FROM amazon_fba_shipment_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+        assertThat(f.operations.preview(tenant,store,"FBA-TEST").depleted()).isTrue();
+        assertThatThrownBy(()->f.operations.deplete(tenant,store,"FBA-TEST",f.email,request,p.revision(),java.util.List.of(new FbaDepletionRepository.Allocation(f.layer,new java.math.BigDecimal("1"))))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("different allocations");
+        assertThatThrownBy(()->f.operations.preview(other,store,"FBA-TEST")).isInstanceOf(IllegalArgumentException.class);
+    });}
+    @Test void depletionBlocksStaleMembershipAndInactiveBundleComponents(){tx.executeWithoutResult(s->{
+        var f=depletionFixture();jdbc.update("UPDATE account_catalog_items SET status='INACTIVE' WHERE id=?",f.item);
+        assertThat(f.operations.preview(tenant,store,"FBA-TEST").blockers()).anyMatch(v->v.contains("Complete the mapping"));
+        jdbc.update("UPDATE account_catalog_items SET status='ACTIVE' WHERE id=?",f.item);
+        jdbc.update("UPDATE amazon_fba_shipment_items SET quantity_shipped=3 WHERE tenant_id=?",tenant);
+        assertThat(f.operations.preview(tenant,store,"FBA-TEST").blockers()).anyMatch(v->v.contains("incomplete"));
+    });}
+    private FbaBatchDeduction batch(DepletionFixture f){var access=mock(com.nextaicommerce.platform.web.MemberAccessService.class);when(access.current(tenant,f.email)).thenReturn(new com.nextaicommerce.platform.web.MemberAccessService.Access("OWNER",false,Set.of()));return new FbaBatchDeduction(f.operations,jdbc,access);}
+    private void secondShipment(){jdbc.update("INSERT INTO amazon_fba_shipments(tenant_id,marketplace_connection_id,shipment_id,shipment_status,raw_payload) SELECT tenant_id,marketplace_connection_id,'FBA-SECOND',shipment_status,raw_payload FROM amazon_fba_shipments WHERE tenant_id=? AND shipment_id='FBA-TEST'",tenant);jdbc.update("INSERT INTO amazon_fba_shipment_items(tenant_id,marketplace_connection_id,shipment_id,seller_sku,quantity_shipped,quantity_received) SELECT tenant_id,marketplace_connection_id,'FBA-SECOND',seller_sku,quantity_shipped,quantity_received FROM amazon_fba_shipment_items WHERE tenant_id=? AND shipment_id='FBA-TEST'",tenant);}
+    @Test void batchPlansSharedStockOnceAndCommitsAllShipmentsIdempotently(){
+        var f=tx.execute(st->depletionFixture());secondShipment();jdbc.update("UPDATE inventory_ledger_entries SET quantity=20 WHERE id=?",f.layer);var service=batch(f);var ids=List.of("FBA-TEST","FBA-SECOND");var review=tx.execute(st->service.preview(tenant,store,ids));assertThat(review.blockers()).isEmpty();var choices=review.plans().stream().map(p->new FbaBatchDeduction.Choice(p.shipment().shipment(),p.allocations())).toList();UUID request=UUID.randomUUID();
+        var result=tx.execute(st->service.confirm(tenant,store,f.email,request,review.revision(),choices));assertThat(result).hasSize(2);var replay=tx.execute(st->service.confirm(tenant,store,f.email,request,review.revision(),choices));assertThat(replay).isEqualTo(result);
+        assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=?",java.math.BigDecimal.class,tenant)).isEqualByComparingTo("8");
+        assertThatThrownBy(()->tx.execute(st->service.confirm(tenant,store,f.email,request,review.revision(),choices.subList(0,1)))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("different selection");
+        UUID secondStore=UUID.randomUUID();jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON','other-seller','US','fixture','ACTIVE','Second authorized store','America/Los_Angeles',now())",secondStore,tenant);
+        assertThatThrownBy(()->tx.execute(st->service.confirm(tenant,secondStore,f.email,request,review.revision(),List.of(new FbaBatchDeduction.Choice("OTHER-SHIPMENT",choices.getFirst().allocations()))))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("different selection");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT sum(quantity_shipped) FROM amazon_fba_shipment_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(4);
+    }
+    @Test void batchShortfallAndFailureOnSecondShipmentNeverPartiallyDeduct(){
+        var f=tx.execute(st->depletionFixture());secondShipment();var service=batch(f);var ids=List.of("FBA-TEST","FBA-SECOND");var shortfall=tx.execute(st->service.preview(tenant,store,ids));assertThat(shortfall.blockers()).anyMatch(v->v.contains("complete selection"));
+        jdbc.update("UPDATE inventory_ledger_entries SET quantity=20 WHERE id=?",f.layer);var p=tx.execute(st->service.preview(tenant,store,ids));var choices=new ArrayList<>(p.plans().stream().map(x->new FbaBatchDeduction.Choice(x.shipment().shipment(),x.allocations())).toList());choices.set(1,new FbaBatchDeduction.Choice(choices.get(1).shipment(),List.of(new FbaDepletionRepository.Allocation(f.layer,java.math.BigDecimal.ONE))));
+        assertThatThrownBy(()->tx.execute(st->service.confirm(tenant,store,f.email,UUID.randomUUID(),p.revision(),choices))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isZero();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=?",java.math.BigDecimal.class,tenant)).isEqualByComparingTo("20");
+        jdbc.update("UPDATE inventory_ledger_entries SET unit_cost=3 WHERE id=?",f.layer);
+        assertThatThrownBy(()->tx.execute(st->service.confirm(tenant,store,f.email,UUID.randomUUID(),p.revision(),p.plans().stream().map(x->new FbaBatchDeduction.Choice(x.shipment().shipment(),x.allocations())).toList()))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("changed");
+    }
+    @Test void legacyCompletedShipmentStillShowsItsImportedLinesForManualReview(){tx.executeWithoutResult(st->{
+        var f=depletionFixture();jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=(raw_payload-'itemEvidence'-'itemEvidenceVersion')||jsonb_build_object('itemsCheckedAt',now()::text) WHERE tenant_id=?",tenant);
+        assertThat(repository.items(tenant,store,"FBA-TEST","",0).rows()).hasSize(1);
+        assertThat(f.operations.preview(tenant,store,"FBA-TEST").lines()).hasSize(1);
+    });}
+    @Test void depletionCorrectionsAreSeparateAndStaleApprovalIsRejected(){tx.executeWithoutResult(s->{
+        var f=depletionFixture();var before=f.operations.preview(tenant,store,"FBA-TEST");f.operations.correct(tenant,store,"FBA-TEST",f.email,"000-SKU",1,"Actual packed units",before.revision());
+        var after=f.operations.preview(tenant,store,"FBA-TEST");assertThat(after.lines().getFirst().unitsToDeduct()).isEqualTo(1);assertThat(after.allocations().getFirst().quantity()).isEqualByComparingTo("3");
+        assertThat(after.lines().getFirst().reason()).isEqualTo("Actual packed units");assertThat(after.revision()).isNotEqualTo(before.revision());
+        assertThatThrownBy(()->f.operations.deplete(tenant,store,"FBA-TEST",f.email,UUID.randomUUID(),before.revision(),before.allocations())).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("changed");
+        assertThat(jdbc.queryForObject("SELECT quantity_shipped FROM amazon_fba_shipment_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
+    });}
+    @Test void depletionNeverUsesReservedPositionAndRejectsDuplicateWarehouseZip(){tx.executeWithoutResult(s->{
+        var f=depletionFixture();UUID order=UUID.randomUUID();
+        jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status) VALUES (?,?,'US','RESERVED',now(),'Unshipped')",tenant,store);
+        jdbc.update("INSERT INTO amazon_order_items(id,tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,'RESERVED','LINE','000-SKU',1)",order,tenant,store);
+        jdbc.update("INSERT INTO order_inventory_reservations(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,account_catalog_item_id,expiration_date,quantity,location_id,cost_layer_id) VALUES (?,?,'RESERVED',?,?,current_date+30,1,?,?)",tenant,store,order,f.item,f.location,f.layer);
+        assertThat(f.operations.preview(tenant,store,"FBA-TEST").stock()).isEmpty();
+        assertThat(f.operations.preview(tenant,store,"FBA-TEST").blockers()).anyMatch(v->v.contains("Insufficient"));
+        jdbc.update("INSERT INTO warehouses(tenant_id,name,postal_code,country_code) VALUES (?,'Duplicate ZIP','00123','US')",tenant);
+        assertThat(f.operations.preview(tenant,store,"FBA-TEST").warehouse()).isNull();
+        assertThat(jdbc.queryForObject("SELECT quantity FROM order_inventory_reservations WHERE tenant_id=?",java.math.BigDecimal.class,tenant)).isEqualByComparingTo("1");
+    });}
+    @Test void removalIsPersonalAndStockIsUnchanged(){tx.executeWithoutResult(s->{
+        var f=depletionFixture();f.operations.removed(tenant,store,"FBA-TEST",f.email,true);
+        assertThat(repository.shipments(tenant,store,"",0,25,f.email,"",null,false).total()).isZero();
+        assertThat(repository.shipments(tenant,store,"",0,25,"someone@fixture.test","",null,false).total()).isEqualTo(1);
+        assertThat(repository.shipments(tenant,store,"",0,25,f.email,"",null,true).total()).isEqualTo(1);
+        f.operations.removed(tenant,store,"FBA-TEST",f.email,false);
+        assertThat(repository.shipments(tenant,store,"",0,25,f.email,"",null,false).total()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT quantity FROM inventory_ledger_entries WHERE id=?",java.math.BigDecimal.class,f.layer)).isEqualByComparingTo("10");
+    });}
+    @Test void concurrentSourceRefreshRejectsAnOldQuantityCorrection() throws Exception {
+        var f=tx.execute(st->depletionFixture());var before=tx.execute(st->f.operations.preview(tenant,store,"FBA-TEST"));
+        var locked=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
+        try(var threads=java.util.concurrent.Executors.newFixedThreadPool(2)){
+            var writer=threads.submit(()->tx.executeWithoutResult(st->{
+                jdbc.queryForList("SELECT id FROM amazon_fba_shipments WHERE tenant_id=? AND shipment_id='FBA-TEST' FOR UPDATE",tenant);locked.countDown();
+                try{if(!release.await(5,java.util.concurrent.TimeUnit.SECONDS))throw new IllegalStateException("Fixture timeout");}catch(InterruptedException e){throw new IllegalStateException(e);}
+                jdbc.update("UPDATE amazon_fba_shipment_items SET quantity_shipped=3 WHERE tenant_id=?",tenant);
+                jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=jsonb_set(raw_payload,'{itemEvidence,0,QuantityShipped}','3') WHERE tenant_id=?",tenant);
+            }));
+            assertThat(locked.await(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var correction=threads.submit(()->tx.executeWithoutResult(st->f.operations.correct(tenant,store,"FBA-TEST",f.email,"000-SKU",1,"Packed correction",before.revision())));
+            release.countDown();writer.get(5,java.util.concurrent.TimeUnit.SECONDS);
+            assertThatThrownBy(()->correction.get(5,java.util.concurrent.TimeUnit.SECONDS)).hasRootCauseInstanceOf(IllegalArgumentException.class);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletion_overrides WHERE tenant_id=?",Integer.class,tenant)).isZero();
+            assertThat(jdbc.queryForObject("SELECT quantity FROM inventory_ledger_entries WHERE id=?",java.math.BigDecimal.class,f.layer)).isEqualByComparingTo("10");
+        }finally{release.countDown();}
+    }
+    private record AutomaticFixture(DepletionFixture fixture,FbaAutomaticDepletion automatic,UUID importJob){}
+    private AutomaticFixture automaticFixture(){
+        var f=tx.execute(st->depletionFixture());var members=mock(com.nextaicommerce.platform.web.MemberAccessService.class);
+        when(members.current(eq(tenant),eq(f.email))).thenReturn(new com.nextaicommerce.platform.web.MemberAccessService.Access("OWNER",false,Set.of()));
+        var engine=new FbaAutomaticDepletion(jdbc,tx,f.operations,members,true);engine.configure(tenant,store,f.warehouse,f.email,true,0);
+        UUID run=UUID.randomUUID(),job=UUID.randomUUID();
+        jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,status,window_start,window_end) VALUES (?,?,?,'RECONCILIATION','FBA_MANUAL','RUNNING',now(),now())",run,tenant,store);
+        jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,status) VALUES (?,?,?,?,'FBA_INBOUND',1,'COMPLETED')",job,tenant,store,run);
+        jdbc.update("UPDATE fba_warehouse_depletion_settings SET enabled_after=now()-interval '1 hour' WHERE tenant_id=?",tenant);
+        jdbc.update("UPDATE amazon_fba_shipments SET created_at=now()-interval '5 minutes',raw_payload=raw_payload||jsonb_build_object('CreationDate',?::text,'itemEvidenceJob',?::text) WHERE tenant_id=?",java.time.Instant.now().minusSeconds(600).toString(),job.toString(),tenant);
+        return new AutomaticFixture(f,engine,job);
+    }
+    @Test void automaticDepletionUsesFrozenPlanAndExistingLeasedQueue(){
+        var a=automaticFixture();UUID job=a.automatic.enqueue(tenant,store,a.importJob);assertThat(job).isNotNull();assertThat(a.automatic.enqueue(tenant,store,a.importJob)).isEqualTo(job);
+        assertThat(a.automatic.enqueue(other,store,a.importJob)).isNull();String owner=a.automatic.claim(tenant,store,job);assertThat(owner).isNotNull();assertThat(a.automatic.claim(tenant,store,job)).isNull();
+        assertThat(a.automatic.processOne(tenant,store,job,owner)).isTrue();assertThat(a.automatic.processOne(tenant,store,job,owner)).isFalse();
+        assertThat(jdbc.queryForObject("SELECT status FROM fba_shipment_depletion_attempts WHERE tenant_id=?",String.class,tenant)).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=?",java.math.BigDecimal.class,tenant)).isEqualByComparingTo("4");
+        assertThat(jdbc.queryForObject("SELECT quantity FROM inventory_ledger_entries WHERE id=?",java.math.BigDecimal.class,a.fixture.layer)).isEqualByComparingTo("10");
+    }
+    @Test void automaticChangedStockRequiresReviewRatherThanReplanning(){
+        var a=automaticFixture();UUID job=a.automatic.enqueue(tenant,store,a.importJob);String owner=a.automatic.claim(tenant,store,job);
+        jdbc.update("UPDATE inventory_ledger_entries SET unit_cost=3 WHERE id=?",a.fixture.layer);
+        a.automatic.processOne(tenant,store,job,owner);
+        assertThat(jdbc.queryForObject("SELECT status FROM fba_shipment_depletion_attempts WHERE tenant_id=?",String.class,tenant)).isEqualTo("NEEDS_REVIEW");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isZero();
+    }
+    @Test void automaticCancellationAndExhaustedLeaseCannotWriteStock(){
+        var a=automaticFixture();UUID job=a.automatic.enqueue(tenant,store,a.importJob);String owner=a.automatic.claim(tenant,store,job);
+        jdbc.update("UPDATE marketplace_sync_runs SET status='CANCELLED' WHERE id=(SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?)",job);
+        assertThatThrownBy(()->a.automatic.processOne(tenant,store,job,owner)).isInstanceOf(IllegalStateException.class);
+        assertThat(a.automatic.claim(tenant,store,job)).isNull();
+        assertThat(jdbc.queryForObject("SELECT status FROM fba_shipment_depletion_attempts WHERE tenant_id=?",String.class,tenant)).isEqualTo("NEEDS_REVIEW");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isZero();
+        assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_runs WHERE id=(SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?)",String.class,job)).isEqualTo("CANCELLED");
+    }
+    @Test void automaticThirdExpiredLeaseTerminalizesInsteadOfBlockingTheStore(){
+        var a=automaticFixture();UUID job=a.automatic.enqueue(tenant,store,a.importJob);a.automatic.claim(tenant,store,job);
+        jdbc.update("UPDATE marketplace_sync_jobs SET attempt_count=3,lease_expires_at=now()-interval '1 second' WHERE id=?",job);
+        assertThat(a.automatic.claim(tenant,store,job)).isNull();assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,job)).isEqualTo("SKIPPED");
+        assertThat(jdbc.queryForObject("SELECT status FROM fba_shipment_depletion_attempts WHERE tenant_id=?",String.class,tenant)).isEqualTo("NEEDS_REVIEW");
+    }
+    @Test void automaticHistoricalCandidatesDoNotPermanentlyStarveThe101stShipment(){
+        var a=automaticFixture();
+        for(int i=0;i<100;i++)jdbc.update("INSERT INTO amazon_fba_shipments(tenant_id,marketplace_connection_id,shipment_id,shipment_status,created_at,raw_payload) VALUES (?, ?,?,'SHIPPED',now()-interval '30 minutes',jsonb_build_object('ShipFromAddress',jsonb_build_object('PostalCode','00123','CountryCode','US'),'itemEvidenceVersion',1,'CreationDate','2020-01-01T00:00:00Z','itemEvidenceJob',?::text))",tenant,store,"HISTORY-"+i,a.importJob.toString());
+        new FbaDepletionWorker(a.automatic).afterCompletedImport(tenant,store,a.importJob);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletion_attempts WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(101);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM marketplace_sync_jobs WHERE tenant_id=? AND job_type='FBA_WAREHOUSE_DEPLETION'",Integer.class,tenant)).isEqualTo(5);
+        assertThat(jdbc.queryForObject("SELECT cursor->>'depletionDispatch' FROM marketplace_sync_jobs WHERE id=?",String.class,a.importJob)).isEqualTo("DONE");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+    }
+    @Test void overlappingCompletedImportsRemainDurableUntilTheCurrentWorkerDrainsThem(){
+        var a=automaticFixture();UUID first=a.automatic.enqueue(tenant,store,a.importJob);String owner=a.automatic.claim(tenant,store,first);
+        UUID secondImport=UUID.randomUUID(),secondRun=UUID.randomUUID();jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,status,window_start,window_end) VALUES (?,?,?,'RECONCILIATION','FBA_MANUAL','RUNNING',now(),now())",secondRun,tenant,store);jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,status) VALUES (?,?,?,?,'FBA_INBOUND',1,'COMPLETED')",secondImport,tenant,store,secondRun);
+        jdbc.update("INSERT INTO amazon_fba_shipments(tenant_id,marketplace_connection_id,shipment_id,shipment_status,created_at,raw_payload) VALUES (?,?,'OVERLAP','SHIPPED',now()-interval '5 minutes',jsonb_build_object('ShipFromAddress',jsonb_build_object('PostalCode','00123','CountryCode','US'),'itemEvidenceVersion',1,'CreationDate','2020-01-01T00:00:00Z','itemEvidenceJob',?::text))",tenant,store,secondImport.toString());
+        new FbaDepletionWorker(a.automatic).afterCompletedImport(tenant,store,secondImport);
+        assertThat(jdbc.queryForObject("SELECT cursor->>'depletionDispatch' FROM marketplace_sync_jobs WHERE id=?",String.class,secondImport)).isEqualTo("PENDING");
+        assertThat(a.automatic.processOne(tenant,store,first,owner)).isTrue();assertThat(a.automatic.processOne(tenant,store,first,owner)).isFalse();
+        jdbc.update("UPDATE marketplace_sync_runs SET status='CANCELLED' WHERE id=(SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?)",a.importJob);
+        new FbaDepletionWorker(a.automatic).resumePending(tenant,store);
+        assertThat(jdbc.queryForObject("SELECT status FROM fba_shipment_depletion_attempts WHERE tenant_id=? AND shipment_id='OVERLAP'",String.class,tenant)).isEqualTo("NEEDS_REVIEW");
+        assertThat(jdbc.queryForObject("SELECT cursor->>'depletionDispatch' FROM marketplace_sync_jobs WHERE id=?",String.class,secondImport)).isEqualTo("DONE");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+    }
+    @Test void cancelledParentLockedByAnotherTransactionCannotBeResurrectedByClaim() throws Exception {
+        var a=automaticFixture();UUID job=a.automatic.enqueue(tenant,store,a.importJob);var locked=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
+        try(var threads=java.util.concurrent.Executors.newFixedThreadPool(2)){
+            var cancel=threads.submit(()->tx.executeWithoutResult(st->{jdbc.queryForList("SELECT id FROM marketplace_sync_runs WHERE id=(SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?) FOR UPDATE",job);locked.countDown();try{release.await(5,java.util.concurrent.TimeUnit.SECONDS);}catch(InterruptedException e){throw new IllegalStateException(e);}jdbc.update("UPDATE marketplace_sync_runs SET status='CANCELLED' WHERE id=(SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?)",job);}));
+            assertThat(locked.await(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(a.automatic.claim(tenant,store,job)).isNull();release.countDown();cancel.get(5,java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(a.automatic.claim(tenant,store,job)).isNull();
+            assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_runs WHERE id=(SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?)",String.class,job)).isEqualTo("CANCELLED");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isZero();
+        }finally{release.countDown();}
+    }
+
+    @Test void settingsRejectOffEnvironmentAndStaleRevisionAndUnauthorizedActors(){
+        var a=automaticFixture();var denied=mock(com.nextaicommerce.platform.web.MemberAccessService.class);
+        var off=new FbaAutomaticDepletion(jdbc,tx,a.fixture.operations,denied,false);
+        assertThatThrownBy(()->off.configure(tenant,store,a.fixture.warehouse,a.fixture.email,true,1)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("off");
+        var blocked=new FbaAutomaticDepletion(jdbc,tx,a.fixture.operations,denied,true);
+        assertThatThrownBy(()->blocked.configure(tenant,store,a.fixture.warehouse,a.fixture.email,false,1)).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThatThrownBy(()->a.automatic.configure(tenant,store,a.fixture.warehouse,a.fixture.email,false,0)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("changed");
+    }
+    @Test void automaticStaleOwnerCannotPublishAfterLeaseReplacement(){
+        var a=automaticFixture();UUID job=a.automatic.enqueue(tenant,store,a.importJob);String old=a.automatic.claim(tenant,store,job);
+        jdbc.update("UPDATE marketplace_sync_jobs SET lease_expires_at=now()-interval '1 second' WHERE id=?",job);String replacement=a.automatic.claim(tenant,store,job);assertThat(replacement).isNotNull().isNotEqualTo(old);
+        assertThatThrownBy(()->a.automatic.processOne(tenant,store,job,old)).isInstanceOf(IllegalStateException.class);
+        assertThat(a.automatic.processOne(tenant,store,job,replacement)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+    }
+    @Test void forcedRowSecurityHidesAllFbaOperationalMetadataFromAnotherTenant(){
+        var a=automaticFixture();a.automatic.enqueue(tenant,store,a.importJob);String role="fba_rls_"+UUID.randomUUID().toString().replace("-","");jdbc.execute("CREATE ROLE "+role+" NOLOGIN NOSUPERUSER NOBYPASSRLS");
+        var tables=List.of("fba_shipment_user_preferences","fba_warehouse_depletion_settings","fba_shipment_depletion_overrides","fba_shipment_depletions","fba_shipment_depletion_allocations","fba_shipment_depletion_attempts");
+        jdbc.execute("GRANT USAGE ON SCHEMA "+schema+" TO "+role);jdbc.execute("GRANT SELECT ON "+String.join(",",tables)+" TO "+role);
+        tx.executeWithoutResult(st->{jdbc.execute("SET LOCAL ROLE "+role);jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,other.toString());for(String table:tables)assertThat(jdbc.queryForObject("SELECT count(*) FROM "+table,Integer.class)).isZero();jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletion_attempts",Integer.class)).isEqualTo(1);});
+    }
+    @Test void automaticEnvironmentDefaultOffDoesNotEvenQueryOrEnqueue(){
+        var db=mock(org.springframework.jdbc.core.JdbcTemplate.class);var engine=new FbaAutomaticDepletion(db,tx,mock(FbaDepletionRepository.class),mock(com.nextaicommerce.platform.web.MemberAccessService.class),false);
+        assertThat(engine.enqueue(tenant,store,UUID.randomUUID())).isNull();assertThat(engine.claim(tenant,store,UUID.randomUUID())).isNull();assertThat(engine.processOne(tenant,store,UUID.randomUUID(),"stale")).isFalse();verifyNoInteractions(db);
+    }
     @Test void outOfStockRequiresHistoricalConfirmedSale(){tx.executeWithoutResult(s->{
         for(String sku:List.of("OLD-SALE","NEW","CANCELLED","PENDING")){
             jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,listing_status,quantity) VALUES (?,?,'US',?,'Active',0)",tenant,store,sku);
@@ -172,7 +378,10 @@ class FbaReadDatabaseTest {
         importer.processPage(job);
         assertThat(repository.shipments(tenant,store,"",0,25).rows().getFirst().createdAt()).isEqualTo(java.time.Instant.parse("2026-10-01T12:00:00Z"));
         assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("WAITING");
-        importer.processPage(job);importer.processPage(job);importer.processPage(job);
+        importer.processPage(job);
+        assertThat(jdbc.queryForObject("SELECT jsonb_exists(raw_payload,'itemEvidence') FROM amazon_fba_shipments WHERE tenant_id=?",Boolean.class,tenant)).isFalse();
+        importer.processPage(job);importer.processPage(job);
+        assertThat(jdbc.queryForObject("SELECT jsonb_array_length(raw_payload->'itemEvidence') FROM amazon_fba_shipments WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
         verify(amazon).get(eq(tenant),eq(store),argThat(path->path.startsWith("/finances/2024-06-19/transactions?postedAfter=")&&!path.contains("relatedIdentifier")));
         verify(amazon).get(tenant,store,"/fba/inbound/v0/shipmentItems?MarketplaceId=US&QueryType=NEXT_TOKEN&NextToken=more");
         assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,id)).isEqualTo("COMPLETED");

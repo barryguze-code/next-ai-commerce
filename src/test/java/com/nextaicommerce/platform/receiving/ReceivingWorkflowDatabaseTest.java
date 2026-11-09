@@ -1052,7 +1052,7 @@ class ReceivingWorkflowDatabaseTest {
             jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,'SHELF-ORDER','SECOND','SECOND-SKU',4)",tenant,connection);
         });
         var loader=new ReplenishmentDataLoader(jdbc,inventory);
-        var service=new ReplenishmentSuggestions(jdbc,tx,loader,new tools.jackson.databind.ObjectMapper());
+        var service=new ReplenishmentSuggestions(jdbc,tx,loader,new tools.jackson.databind.ObjectMapper()){@Override public void queueRefresh(){/* This test drives the synchronous builder; dispatch is covered in ReplenishmentActivationTest. */}};
         service.save(tenant,actor,7,14,35,Map.of(vendor+"_lead","12",vendor+"_low","8"));
         assertThat(service.pending(tenant)).isTrue();service.refresh();
         var snapshot=service.snapshot(tenant);assertThat(snapshot).isNotNull();

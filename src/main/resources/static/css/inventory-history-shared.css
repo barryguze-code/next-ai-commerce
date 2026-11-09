@@ -79,3 +79,9 @@ html[data-theme="dark"] #inventory-history-dialog .history-summary div,html[data
 #inventory-history-dialog .order-identifier-market{display:inline-flex;width:20px;height:20px;flex:none}#inventory-history-dialog .order-identifier-market img{width:20px;height:20px;object-fit:contain}
 #inventory-history-dialog .order-identifier-line .order-sku-copy,#inventory-history-dialog .order-copy-value{flex:1;min-width:0;max-width:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;color:var(--muted);background:transparent;border:0;padding:0;font:inherit;font-size:.75rem;cursor:copy}
 #inventory-history-dialog .order-identifier-line .order-sku-copy svg{display:none}#inventory-history-dialog .order-identifier-line code{font-family:inherit!important;font-size:.75rem!important}
+/* The shared drawer must not depend on Orders-page styles for its copy control. */
+#inventory-history-dialog .order-identifier-copy{display:inline-flex;align-items:center;justify-content:center;flex:0 0 22px;width:22px;height:24px;margin:0;padding:3px;border:0;border-radius:3px;background:transparent;box-shadow:none;color:var(--muted);vertical-align:middle;cursor:copy}
+#inventory-history-dialog .order-identifier-copy svg{display:block;flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5}
+#inventory-history-dialog .order-identifier-copy:hover{color:var(--blue)}
+#inventory-history-dialog .order-identifier-copy:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+#inventory-history-dialog .order-identifier-line a.order-copy-value{flex:0 1 auto}

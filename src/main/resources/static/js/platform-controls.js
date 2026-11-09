@@ -38,42 +38,49 @@
     const compact=Boolean(select.closest('.default-location-form,td'));trigger.classList.toggle('is-compact',compact);
     const popup=document.createElement('div');popup.className='location-picker-popup';popup.hidden=true;
     if(select.hasAttribute('data-standard-choice')){trigger.classList.add('standard-choice-trigger');popup.classList.add('standard-choice-popup');}
+    let managed=select.dataset.choiceManager;
+    if(managed){popup.setAttribute('aria-label',managed==='warehouse'?'Choose warehouse':'Choose location');trigger.setAttribute('aria-haspopup','dialog');}
     const conditionChoice=select.matches('[data-standard-choice][data-sku-view-filter="f_condition"]');
     if(conditionChoice){trigger.classList.add('sku-condition-choice-trigger');popup.classList.add('sku-condition-choice-popup');}
-    popup.setAttribute('role','listbox');popup.id='location-picker-'+(++locationPicker.counter);
-    trigger.setAttribute('aria-haspopup','listbox');trigger.setAttribute('aria-controls',popup.id);trigger.setAttribute('aria-expanded','false');
+    popup.setAttribute('role',managed?'dialog':'listbox');popup.id='location-picker-'+(++locationPicker.counter);
+    trigger.setAttribute('aria-haspopup',managed?'dialog':'listbox');trigger.setAttribute('aria-controls',popup.id);trigger.setAttribute('aria-expanded','false');
     const close=(focus=false)=>{popup.hidden=true;trigger.setAttribute('aria-expanded','false');if(activePicker?.trigger===trigger)activePicker=null;if(focus)trigger.focus();};
     const sync=()=>{
       const label=select.selectedOptions[0]?.textContent.trim()||'Choose location';
       const code=label.split(' · ')[0];trigger.textContent=compact?code.toUpperCase():label;
       if(select.closest('.inventory-warehouse-filter')){const text=document.createElement('span');text.className='warehouse-choice-label';text.textContent=label;trigger.replaceChildren(text);}
-      if(conditionChoice||select.closest('.inventory-warehouse-filter')){const chevron=document.createElement('span');chevron.className='sku-choice-chevron';chevron.setAttribute('aria-hidden','true');chevron.textContent='⌄';trigger.append(chevron);}
+      if(conditionChoice||select.closest('.inventory-warehouse-filter')||select.hasAttribute('data-choice-chevron')){const chevron=document.createElement('span');chevron.className='sku-choice-chevron';chevron.setAttribute('aria-hidden','true');chevron.textContent='⌄';trigger.append(chevron);}
       trigger.dataset.tooltip=label;trigger.disabled=select.disabled;
       trigger.setAttribute('aria-label',(select.getAttribute('aria-label')||'Storage location')+': '+label);
     };
     const open=()=>{
+      managed=select.dataset.choiceManager;if(managed)popup.setAttribute('aria-label',managed==='warehouse'?'Choose warehouse':'Choose location');popup.setAttribute('role',managed?'dialog':'listbox');trigger.setAttribute('aria-haspopup',managed?'dialog':'listbox');
       activePicker?.close();popup.replaceChildren();
       [...select.options].filter(option=>!option.hidden).forEach(option=>{
-        const choice=document.createElement('button');choice.type='button';choice.setAttribute('role','option');
-        choice.setAttribute('aria-selected',String(option.selected));choice.disabled=option.disabled;
+        const choice=document.createElement('button');choice.type='button';choice.setAttribute('role',managed?'button':'option');if(managed){choice.dataset.choiceOption='';choice.setAttribute('aria-pressed',String(option.selected));}
+        if(!managed)choice.setAttribute('aria-selected',String(option.selected));choice.disabled=option.disabled;
         const badge=document.createElement('span');badge.className='location-option-code';badge.textContent=option.textContent.trim().split(' · ')[0].toUpperCase();
         const label=document.createElement('span');label.textContent=option.textContent.trim();if(!select.hasAttribute('data-standard-choice'))choice.append(badge);choice.append(label);if(conditionChoice){const check=document.createElement('span');check.className='sku-choice-check';check.setAttribute('aria-hidden','true');check.textContent='✓';choice.append(check);}
-        choice.onclick=()=>{select.value=option.value;sync();close(true);select.dispatchEvent(new Event('change',{bubbles:true}));};popup.append(choice);
+        choice.onclick=()=>{select.value=option.value;sync();close(true);select.dispatchEvent(new Event('change',{bubbles:true}));};
+        if(managed&&option.value){const row=document.createElement('div');row.className='managed-choice-row';row.append(choice);const edit=document.createElement('button');edit.type='button';edit.className='managed-choice-edit';edit.textContent='Edit';edit.setAttribute('aria-label','Edit '+option.textContent.trim());edit.onclick=()=>manage('edit',option.value);row.append(edit);popup.append(row);}else popup.append(choice);
       });
+      if(managed){const footer=document.createElement('div');footer.className='managed-choice-footer';const add=document.createElement('button');add.type='button';add.textContent=managed==='warehouse'?'+ Add warehouse':'+ Add location';add.onclick=()=>manage('add','');footer.append(add);popup.append(footer);}
       (select.closest('dialog')||document.body).append(popup);popup.hidden=false;
       const rect=trigger.getBoundingClientRect(),width=Math.min(300,window.innerWidth-24);
       popup.style.width=width+'px';popup.style.left=Math.max(12,Math.min(rect.left,window.innerWidth-width-12))+'px';
       popup.style.maxHeight=Math.min(300,window.innerHeight-32)+'px';
       popup.style.top=Math.max(12,Math.min(rect.bottom+6,window.innerHeight-popup.offsetHeight-12))+'px';
       trigger.setAttribute('aria-expanded','true');activePicker={trigger,popup,close};
-      (popup.querySelector('[aria-selected=true]:not(:disabled)')||popup.querySelector('button:not(:disabled)'))?.focus();
+      (popup.querySelector('[aria-selected=true]:not(:disabled),[aria-pressed=true]:not(:disabled)')||popup.querySelector('button:not(:disabled)'))?.focus();
     };
+    const manage=(action,id)=>{close();select.dispatchEvent(new CustomEvent('platform-choice-manage',{bubbles:true,detail:{kind:managed,action,id,trigger}}));};
     popup.addEventListener('keydown',event=>{
-      const options=[...popup.querySelectorAll('button:not(:disabled)')],index=options.indexOf(document.activeElement);
+      const options=[...popup.querySelectorAll(managed?'[data-choice-option]:not(:disabled)':'button:not(:disabled)')],index=options.indexOf(document.activeElement);
       if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close(true);}
       else if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?options.length-1:(index+(event.key==='ArrowDown'?1:-1)+options.length)%options.length;options[next]?.focus();}
-      else if(event.key==='Tab'){if(conditionChoice)trigger.focus();close();}
+      else if(event.key==='Tab'&&!managed){if(conditionChoice)trigger.focus();close();}
     });
+    popup.addEventListener('focusout',()=>setTimeout(()=>{if(managed&&activePicker?.popup===popup&&!popup.contains(document.activeElement)&&document.activeElement!==trigger)close();},0));
     trigger.onclick=()=>popup.hidden?open():close();
     trigger.addEventListener('keydown',event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();open();}});
     select.addEventListener('change',sync);select.addEventListener('platform-choice-sync',sync);select.addEventListener('invalid',event=>{event.preventDefault();trigger.focus();open();});

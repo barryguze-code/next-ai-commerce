@@ -59,3 +59,12 @@ select[data-location-picker-ready][hidden]{display:none!important}
 .bundle-ledger-option strong{font-size:15px;line-height:1.4;}
 .bundle-ledger-option span{font-size:14px;color:var(--muted,#617084);}
 .bundle-ledger-option:hover,.bundle-ledger-option:focus-visible{background:#edf4ff;border-color:#326de6;outline:2px solid transparent;}
+
+/* Opt-in choice management: selection and editor actions remain separate targets. */
+.location-picker-popup .managed-choice-row{display:flex;align-items:center;gap:6px}
+.location-picker-popup .managed-choice-row>button:first-child{flex:1;min-width:0}
+.location-picker-popup.standard-choice-popup .managed-choice-edit,.location-picker-popup .managed-choice-edit{flex:0 0 auto;width:auto;min-width:44px;color:var(--ui-action-text,var(--blue,#2b6ce6));font:inherit;font-size:12px;font-weight:600}
+.location-picker-popup .managed-choice-footer{border-top:1px solid var(--line,#dce3ec);margin-top:6px;padding-top:6px}
+.location-picker-popup .managed-choice-footer button{color:var(--ui-action-text,var(--blue,#2b6ce6));font-weight:650}
+
+.location-picker-popup button[aria-pressed=true]{background:#edf4ff}.location-picker-popup button[aria-pressed=true]:after{content:"✓";margin-left:auto;color:#2864b8;font-weight:800}html[data-theme=dark] .location-picker-popup button[aria-pressed=true]{background:#213752}

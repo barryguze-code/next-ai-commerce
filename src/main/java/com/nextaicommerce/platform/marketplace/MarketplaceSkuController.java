@@ -268,7 +268,7 @@ public class MarketplaceSkuController {
     private static String normalizeStatus(String status) {
         if (status == null) return "ALL";
         String normalized = status.trim().toUpperCase(java.util.Locale.ROOT);
-        return java.util.Set.of("ALL", "ACTIVE", "OOS", "NEVER_SOLD", "INACTIVE", "AMAZON_PROBLEM", "DELETED", "UNMAPPED").contains(normalized)
+        return java.util.Set.of("ALL", "ACTIVE", "OOS", "NEVER_SOLD", "INACTIVE", "AMAZON_PROBLEM", "DELETED", "UNMAPPED", "BUY_BOX_LOST").contains(normalized)
             ? normalized : "ALL";
     }
 

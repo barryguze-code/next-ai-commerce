@@ -65,7 +65,7 @@
     const management=$('#thread-management');if(management)management.hidden=!state.canCollaborate||(state.currentReview&&state.currentReview.status!=='ACTIVE')||state.messageType==='PRIVATE_NOTE';
     const elements=view(),snapshot=JSON.stringify(state.snapshot||{});if(elements.start)elements.start.action=state.general?state.generalAction:api('/reviews');
     $$('[data-thread-tab=PRIVATE_NOTE]',dialog()).forEach(button=>button.hidden=globalScope());
-    const audience=$('[data-thread-tab=TEAM_CHAT] small',dialog());if(audience)audience.textContent=globalScope()?'Shared with platform administrators across accounts.':'Visible to permitted teammates';if(elements.start){const form=elements.start;form.elements.subjectType.value=state.type;form.elements.subjectKey.value=state.key;form.elements.subjectLabel.value=state.label;form.elements.title.value=state.draftTitle??state.label;form.elements.messageType.value=state.messageType;form.elements.contextSnapshot.value=snapshot;form.elements.parentUrl.value=state.parentUrl||location.pathname+location.search;}
+    const audience=$('[data-thread-tab=TEAM_CHAT] small',dialog());if(audience)audience.textContent=globalScope()?'Shared with platform administrators across accounts.':'Visible to permitted teammates';if(elements.start){const form=elements.start;form.elements.subjectType.value=state.type;form.elements.subjectKey.value=state.key;form.elements.subjectLabel.value=state.label;form.elements.title.value=state.draftTitle??state.label;form.elements.messageType.value=state.messageType;form.elements.contextSnapshot.value=snapshot;form.elements.parentUrl.value=state.parentUrl||location.pathname+location.search;if(form.elements.returnTo)form.elements.returnTo.value=location.pathname+location.search;}
     if(elements.reply)elements.reply.elements.messageType.value=state.messageType;
     const modes=$('.thread-mode-switch',dialog());if(modes&&state.general)modes.hidden=true;
     $$('.collaboration-composer textarea',elements.dialog).forEach(field=>{field.placeholder=state.messageType==='PRIVATE_NOTE'?'Write a private note…':'Write a message… Type @ to mention a teammate';});
@@ -400,10 +400,10 @@
       const query=type==='FBA_SHIPMENT'?String(key||'').split('|')[1]:(readableKey?key:String(label||'').split(' · expires')[0]);
       if(query)source.searchParams.set('q',query);
     }
-    source.searchParams.delete('page');source.searchParams.delete('status');
+    source.searchParams.delete('page');if(source.pathname!=='/app/inventory/replenishment')source.searchParams.delete('status');
     return source.pathname+source.search;
   }
-  function setParentLink(url,type,key=state?.key,label=state?.label){const link=$('#thread-parent-link');if(!link)return;const source=sourceTableUrl(url,type,key,label);link.hidden=!source;if(source){link.href=source;link.dataset.tooltip='Open original '+(type||'record').replaceAll('_',' ').toLowerCase()+': '+(label||key||'');link.setAttribute('aria-label',link.dataset.tooltip);
+  function setParentLink(url,type,key=state?.key,label=state?.label){const link=$('#thread-parent-link');if(!link)return;const source=sourceTableUrl(url,type,key,label);link.hidden=!source;if(source){link.href=source;link.dataset.tooltip=(source.startsWith('/app/inventory/replenishment')?'Open in Replenishment':'Open original '+(type||'record').replaceAll('_',' ').toLowerCase())+': '+(label||key||'');link.setAttribute('aria-label',link.dataset.tooltip);
       link.onclick=state?.personalContext?event=>{event.preventDefault();const form=document.createElement('form');form.method='POST';form.action='/app/collaboration/personal/open-source';form.hidden=true;
         for(const input of document.querySelectorAll('#personal-form input[type=hidden]'))form.append(input.cloneNode(true));
         for(const [name,value] of Object.entries({id:state.personalContext,returnTo:source})){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;form.append(input);}
@@ -414,7 +414,7 @@
     clearDrafts();
     const type=(button.dataset.entityType||button.dataset.type||'RECORD').toUpperCase(),key=button.dataset.entityId||button.dataset.key;
     const chooseConversation=forcePicker||Number(button.dataset.totalCount||0)>1;
-    state={type,key,label:button.dataset.title||button.dataset.product||button.dataset.identifier||'Record',parentUrl:sourceTableUrl(location.pathname,type,key,button.dataset.identifier||button.dataset.title),snapshot:snapshotFrom(button),canCollaborate:button.dataset.canCollaborate!=='false',messageType:'TEAM_CHAT',mode:'PERSISTENT',currentReviewId:null,currentHuddleId:null};setHeader(button);selectTab('TEAM_CHAT',false);dialog().showModal();loadSubject(chooseConversation);
+    state={type,key,label:button.dataset.title||button.dataset.product||button.dataset.identifier||'Record',parentUrl:sourceTableUrl(button.dataset.parentUrl||location.pathname+location.search,type,key,button.dataset.identifier||button.dataset.title),snapshot:snapshotFrom(button),canCollaborate:button.dataset.canCollaborate!=='false',messageType:'TEAM_CHAT',mode:'PERSISTENT',currentReviewId:null,currentHuddleId:null};setHeader(button);selectTab('TEAM_CHAT',false);dialog().showModal();loadSubject(chooseConversation);
   };
   let recordRefreshTimer;
   window.prepareRecordCollaboration=button=>{decorateRecordConversationButton(button);clearTimeout(recordRefreshTimer);recordRefreshTimer=setTimeout(refreshRecordSummaries,100);};

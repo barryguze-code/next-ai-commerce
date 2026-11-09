@@ -1,5 +1,34 @@
 [
 {
+  "version": "1.13.0",
+  "title": "FBA stock review and suggested purchase orders",
+  "sections": [
+    {
+      "title": "FBA shipment stock review",
+      "items": [
+        "Filter shipments by warehouse and status, review discrepancies, and hide or restore shipments without deleting Amazon records.",
+        "Review shipment quantities and eligible warehouse allocations before confirming stock deduction. Existing reservations and Amazon quantities stay unchanged. Automatic deduction stays off unless separately enabled."
+      ]
+    },
+    {
+      "title": "Suggested purchase orders",
+      "items": [
+        "Start with suggested case quantities, adjust the working basket, filter by vendor, and download an itemized CSV.",
+        "Name, save, reopen or delete drafts, then submit internal vendor POs when ready. Nothing is sent to vendors automatically.",
+        "Quantity edits update the basket automatically, with a brief confirmation after leaving the field."
+      ]
+    },
+    {
+      "title": "Consistent workspace tools",
+      "items": [
+        "Manage warehouses from the shared selector and use consistent inventory ledger controls.",
+        "Find in-stock Amazon SKUs with recent sales and a lower Buy Box reference through Buybox Lost.",
+        "Use Carrier Rate Change to maintain effective-dated package cost estimates. Collaboration source links and task visibility refresh consistently."
+      ]
+    }
+  ]
+},
+{
   "version": "1.12.0",
   "title": "Warehouses and clearer FBA shipments",
   "sections": [

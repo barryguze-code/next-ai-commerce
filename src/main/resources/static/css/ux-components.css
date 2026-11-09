@@ -41,3 +41,7 @@ body .profit-fee-tooltip dt,body .profit-fee-tooltip>small{color:#d1d8e1}
 .table-widget .collaboration-row-button[data-context-tone=related],.table-widget .collaboration-row-button[data-context-tone=origin]{border-color:#b8d0ee;color:var(--blue,#2c6bea);background:#eef5ff}
 .table-widget .collaboration-row-button[data-context-tone=mine]{border-color:#efb6bd;color:#c93345;background:#fff1f3}
 body .collaboration-row-button .collaboration-unread-dot{background:#ce3548}
+
+.platform-tooltip-notice{opacity:1;transition:opacity .25s ease}
+.platform-tooltip-notice.platform-tooltip-fading{opacity:0}
+@media(prefers-reduced-motion:reduce){.platform-tooltip-notice{transition:none}.platform-tooltip-notice.platform-tooltip-fading{opacity:1}}

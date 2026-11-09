@@ -54,7 +54,7 @@ function prepareContextColumn(root){
     const button=document.createElement('button');button.type='button';button.className='collaboration-row-button';
     for(const name of ['entityType','entityId','title','canCollaborate'])button.dataset[name]=row.dataset[name]||'';
     button.dataset.canCollaborate=row.dataset.canCollaborate==='true'?'true':'false';
-    button.dataset.parentUrl=location.pathname;button.dataset.totalCount='0';button.dataset.activeCount='0';
+    button.dataset.parentUrl=row.dataset.parentUrl||location.pathname+location.search;button.dataset.totalCount='0';button.dataset.activeCount='0';
     button.title='Start collaboration';button.setAttribute('aria-label','Start collaboration for '+(row.dataset.title||'this record'));
     button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg>';
     button.onclick=()=>window.openRecordCollaboration?.(button);
@@ -179,7 +179,7 @@ function prepareOverview(root){
     while(cell.firstChild)rail.append(cell.firstChild);
     const avatar=row.querySelector('.product-avatar,.channel-avatar'),upload=avatar?.closest('.product-image-upload');
     const picture=upload||avatar||document.createElement('span');picture.classList.add('table-overview-picture');
-    if(root.matches('.fba-shipment-table')&&row.dataset.shipFromState){const state=document.createElement('span');state.className='fba-origin-state';state.textContent=row.dataset.shipFromState;state.setAttribute('aria-label','Ship from state: '+row.dataset.shipFromState);picture.append(state);}
+    if(root.matches('.fba-shipment-table')){const postal=document.createElement('span');postal.className='fba-origin-postal';postal.textContent=row.dataset.shipFromPostal||'—';postal.title=row.dataset.shipFromPostal||'Ship from postal code not supplied';postal.setAttribute('aria-label','Ship from postal code: '+(row.dataset.shipFromPostal||'not supplied'));picture.classList.add('fba-origin-frame');const city=document.createElement('small');city.className='fba-origin-city';city.textContent=row.dataset.shipFromCity||'Not supplied';city.title=row.dataset.shipFromCity||'City not supplied';picture.append(postal,city);}
     if(avatar?.matches('.channel-avatar')&&row.dataset.countryFlag){const flag=document.createElement('span');flag.className='connection-country-flag';flag.textContent=row.dataset.countryFlag;picture.append(flag);picture.classList.add('connection-record-logo');}
     if(!avatar&&!root.matches('.fba-shipment-table')){const label=row.dataset.title||row.dataset.product||row.querySelector('strong')?.textContent||'Record';const src=row.dataset.image||row.querySelector('.collaboration-row-button')?.dataset.image;
       const initials=document.createElement('b');initials.textContent=label.trim().split(/\s+/).slice(0,2).map(word=>word[0]).join('').toUpperCase();picture.append(initials);

@@ -74,7 +74,9 @@ public class FbaReadRepository {
     }
 
     public record Shipment(String id,String name,String status,String destination,String shipFrom,
-            Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs,Long shippedCases,Long looseUnits,boolean itemsComplete) {
+            Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs,Long shippedCases,Long looseUnits,boolean itemsComplete,String shipFromPostalCode,String shipFromCity) {
+        public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs,Long shippedCases,Long looseUnits,boolean itemsComplete,String shipFromPostalCode){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,shipFromState,costs,shippedCases,looseUnits,itemsComplete,shipFromPostalCode,null);}
+        public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs,Long shippedCases,Long looseUnits,boolean itemsComplete){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,shipFromState,costs,shippedCases,looseUnits,itemsComplete,null);}
         public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,shipFromState,costs,null,null,true);}
         public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,shipFromState,new ShipmentCosts(null,null,null,shipped));}
         public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,null);}
@@ -170,7 +172,10 @@ public class FbaReadRepository {
     }
 
     @Transactional(readOnly=true)
-    public ShipmentPage shipments(UUID tenant,UUID connection,String search,int requestedPage,int requestedSize) {
+    public ShipmentPage shipments(UUID tenant,UUID connection,String search,int requestedPage,int requestedSize) {return shipments(tenant,connection,search,requestedPage,requestedSize,null,"",null,false);}
+
+    @Transactional(readOnly=true)
+    public ShipmentPage shipments(UUID tenant,UUID connection,String search,int requestedPage,int requestedSize,String email,String status,UUID warehouse,boolean removed) {
         scope(tenant);int size=TablePaging.size(requestedSize);
         String q=search==null?"":search.trim();
         String match="%"+q.replace("!","!!").replace("%","!%").replace("_","!_")+"%";
@@ -185,7 +190,17 @@ public class FbaReadRepository {
                           AND l.marketplace_connection_id=i.marketplace_connection_id AND l.seller_sku=i.seller_sku
                           AND l.item_name ILIKE ? ESCAPE '!'))))
             """;
-        Object[] args={tenant,connection,q,match,match,match,match,match,match};
+        where+="""
+            AND EXISTS(SELECT 1 FROM fba_shipment_user_preferences p JOIN app_users u ON u.id=p.user_id
+                WHERE p.tenant_id=s.tenant_id AND p.marketplace_connection_id=s.marketplace_connection_id AND p.shipment_id=s.shipment_id AND lower(u.email)=lower(?))=?
+            AND (?='' OR s.shipment_status=? OR (?='DIFFERENCE' AND jsonb_exists(s.raw_payload,'itemsCheckedAt') AND EXISTS(
+                SELECT 1 FROM amazon_fba_shipment_items i WHERE i.tenant_id=s.tenant_id AND i.marketplace_connection_id=s.marketplace_connection_id AND i.shipment_id=s.shipment_id
+                GROUP BY i.shipment_id HAVING sum(i.quantity_shipped)<>sum(i.quantity_received))))
+            AND (?::uuid IS NULL OR (SELECT CASE WHEN count(*)=1 THEN min(w.id::text) END FROM warehouses w WHERE w.tenant_id=s.tenant_id AND w.status='ACTIVE'
+                AND upper(w.country_code)=upper(s.raw_payload#>>'{ShipFromAddress,CountryCode}')
+                AND nullif(upper(replace(btrim(w.postal_code),' ','')),'')=upper(replace(btrim(s.raw_payload#>>'{ShipFromAddress,PostalCode}'),' ','')))=?::text)
+            """;
+        Object[] args={tenant,connection,q,match,match,match,match,match,match,email,removed,status,status,status,warehouse,warehouse};
         long total=Objects.requireNonNull(jdbc.queryForObject("SELECT count(*) "+where,Long.class,args));
         int page=Math.min(Math.max(0,requestedPage),(int)Math.max(0,(total-1)/size));
         var params=new ArrayList<>(Arrays.asList(args));params.add(size);params.add((long)page*size);
@@ -195,6 +210,7 @@ public class FbaReadRepository {
                 ORDER BY coalesce(s.created_date,CASE WHEN s.raw_payload->>'LastUpdatedDate' IS NOT NULL THEN s.updated_date END) DESC NULLS LAST,s.shipment_id DESC LIMIT ? OFFSET ?)
             SELECT s.*,jsonb_exists(s.raw_payload,'itemsCheckedAt') items_complete,coalesce(s.created_date,CASE WHEN s.raw_payload->>'LastUpdatedDate' IS NOT NULL THEN s.updated_date END) display_date,totals.skus,totals.shipped,totals.received,totals.shipped_cases,totals.loose_units,charges.transportation,charges.placement,charges.currency,
                 nullif(s.raw_payload#>>'{ShipFromAddress,StateOrProvinceCode}','') ship_from_state,
+                nullif(s.raw_payload#>>'{ShipFromAddress,PostalCode}','') ship_from_postal_code,nullif(s.raw_payload#>>'{ShipFromAddress,City}','') ship_from_city,
                 nullif(concat_ws(', ',nullif(s.raw_payload#>>'{ShipFromAddress,City}',''),
                     nullif(concat_ws(' ',nullif(s.raw_payload#>>'{ShipFromAddress,StateOrProvinceCode}',''),
                         nullif(s.raw_payload#>>'{ShipFromAddress,PostalCode}','')),''),
@@ -213,7 +229,7 @@ public class FbaReadRepository {
             """,(rs,n)->new Shipment(rs.getString("shipment_id"),rs.getString("shipment_name"),
                 rs.getString("shipment_status"),rs.getString("destination_fulfillment_center"),
                 rs.getString("ship_from"),instant(rs.getTimestamp("updated_date")),rs.getLong("skus"),
-                rs.getLong("shipped"),rs.getLong("received"),instant(rs.getTimestamp("display_date")),rs.getString("ship_from_state"),new ShipmentCosts(rs.getBigDecimal("transportation"),rs.getBigDecimal("placement"),rs.getString("currency"),rs.getLong("shipped")),(Long)rs.getObject("shipped_cases"),(Long)rs.getObject("loose_units"),rs.getBoolean("items_complete")),params.toArray());
+                rs.getLong("shipped"),rs.getLong("received"),instant(rs.getTimestamp("display_date")),rs.getString("ship_from_state"),new ShipmentCosts(rs.getBigDecimal("transportation"),rs.getBigDecimal("placement"),rs.getString("currency"),rs.getLong("shipped")),(Long)rs.getObject("shipped_cases"),(Long)rs.getObject("loose_units"),rs.getBoolean("items_complete"),rs.getString("ship_from_postal_code"),rs.getString("ship_from_city")),params.toArray());
         return new ShipmentPage(rows,total,page,size);
     }
     private void scope(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}

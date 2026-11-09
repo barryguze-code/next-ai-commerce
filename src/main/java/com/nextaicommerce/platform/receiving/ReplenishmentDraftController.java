@@ -21,7 +21,7 @@ public class ReplenishmentDraftController {
   if(!PageController.addTenantModel(session,model))return "redirect:/app/select-account";
   PageController.addAccessModel(auth,model);UUID tenant=(UUID)session.getAttribute("selectedTenantId");
   model.addAttribute("basketScope",tenant+":"+auth.getName());
-  var snapshot=suggestions.snapshot(tenant);String search=q.trim().toLowerCase(Locale.ROOT);
+  var snapshot=suggestions.snapshot(tenant);suggestions.ensureFresh(tenant);String search=q.trim().toLowerCase(Locale.ROOT);
   var all=snapshot==null?List.<Map<String,Object>>of():snapshot.items();
   String selected=Set.of("forecast","all","oos","low","healthy","overstock").contains(status)?status:"forecast";
   var filtered=select(all,selected,search);
@@ -31,7 +31,7 @@ public class ReplenishmentDraftController {
   model.addAttribute("items",filtered.subList(start,Math.min(start+pageSize,filtered.size())));
   model.addAttribute("q",q);model.addAttribute("page",current);model.addAttribute("more",start+pageSize<filtered.size());
   model.addAttribute("pageSize",pageSize);model.addAttribute("pageMax",Math.max(1,(filtered.size()+pageSize-1)/pageSize));
-  model.addAttribute("generatedAt",snapshot==null?null:snapshot.generatedAt());model.addAttribute("pending",suggestions.pending(tenant));
+  model.addAttribute("generatedAt",snapshot==null?null:snapshot.generatedAt());model.addAttribute("pending",snapshot==null||suggestions.pending(tenant)||snapshot!=suggestions.snapshot(tenant));
   model.addAttribute("forecastError",suggestions.error(tenant));
   model.addAttribute("configuration",suggestions.configuration(tenant));model.addAttribute("vendors",suggestions.vendors(tenant));
   model.addAttribute("locations",catalog.listLocations(tenant));
@@ -43,6 +43,12 @@ public class ReplenishmentDraftController {
    .filter(r->selected.equals("all")||(selected.equals("forecast")?((Number)r.get("cases")).longValue()>0:selected.equals(r.get("status"))))
    .filter(r->(r.get("name")+" "+r.get("code")+" "+r.get("vendor_code")).toLowerCase(Locale.ROOT).contains(search))
    .sorted(Comparator.<Map<String,Object>>comparingDouble(r->((Number)r.get("demand")).doubleValue()).reversed().thenComparing(r->r.get("id").toString())).toList();
+ }
+ @GetMapping("/app/inventory/replenishment/forecast-state") @ResponseBody
+ Map<String,Object> forecastState(HttpSession session){
+  if(!(session.getAttribute("selectedTenantId") instanceof UUID tenant))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+  var snapshot=suggestions.snapshot(tenant);String error=suggestions.error(tenant);
+  return Map.of("pending",suggestions.pending(tenant),"ready",snapshot!=null,"failed",error!=null);
  }
  @GetMapping("/app/inventory/replenishment/download")
  @ResponseBody
@@ -97,11 +103,11 @@ public class ReplenishmentDraftController {
   return "redirect:/app/inventory/replenishment";
  }
  @PostMapping("/app/inventory/replenishment/refresh")
- String refresh(HttpSession session,Authentication auth,Model model,RedirectAttributes redirect){
+ String refresh(HttpSession session,Authentication auth,Model model,RedirectAttributes redirect,@RequestParam(defaultValue="") String q,@RequestParam(defaultValue="forecast") String status,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="25") int size){
   UUID tenant=(UUID)session.getAttribute("selectedTenantId");if(tenant==null)return "redirect:/app/select-account";
   PageController.addAccessModel(auth,model);if(!Boolean.TRUE.equals(model.getAttribute("canEditCatalog")))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
   suggestions.requestRefresh(tenant);
   redirect.addFlashAttribute("planningMessage","Forecast queued. Preparation starts within one minute; your last forecast stays visible.");
-  return "redirect:/app/inventory/replenishment";
+  return "redirect:"+org.springframework.web.util.UriComponentsBuilder.fromPath("/app/inventory/replenishment").queryParam("q",q).queryParam("status",status).queryParam("page",Math.max(0,page)).queryParam("size",size).build().encode().toUriString();
  }
 }

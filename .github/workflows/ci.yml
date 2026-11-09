@@ -121,12 +121,12 @@ jobs:
           path: target/next-ai-commerce-1.11.7.jar
           if-no-files-found: error
 
-      - name: Preserve verified warehouses and FBA release package
+      - name: Preserve verified FBA and purchase plans release package
         if: github.ref == 'refs/heads/codex/frontend-standardization-hotfix'
         uses: actions/upload-artifact@v4
         with:
-          name: warehouses-fba-1-12-package
+          name: fba-purchase-plans-1-13-package
           path: |
-            target/next-ai-commerce-1.12.0.jar
+            target/next-ai-commerce-1.13.0.jar
             target/surefire-reports/
           if-no-files-found: error

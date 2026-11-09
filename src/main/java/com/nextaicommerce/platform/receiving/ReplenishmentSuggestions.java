@@ -22,6 +22,7 @@ public class ReplenishmentSuggestions {
  private final Map<UUID,Long> revisions=new ConcurrentHashMap<>(),builtRevisions=new ConcurrentHashMap<>();
  private final Set<UUID> building=ConcurrentHashMap.newKeySet();
  private final Map<UUID,String> errors=new ConcurrentHashMap<>();
+ private final java.util.concurrent.atomic.AtomicBoolean manualRefreshRequested=new java.util.concurrent.atomic.AtomicBoolean();
  private final java.util.concurrent.atomic.AtomicBoolean refreshQueued=new java.util.concurrent.atomic.AtomicBoolean();
  private final java.util.concurrent.ExecutorService worker=java.util.concurrent.Executors.newSingleThreadExecutor(task->{var thread=new Thread(task,"replenishment-draft");thread.setDaemon(true);return thread;});
  public ReplenishmentSuggestions(JdbcTemplate jdbc,TransactionTemplate tx,ReplenishmentDataLoader loader,ObjectMapper json){this.jdbc=jdbc;this.tx=tx;this.loader=loader;this.json=json;}
@@ -56,7 +57,8 @@ public class ReplenishmentSuggestions {
  }
  public boolean pending(UUID tenant){var previous=snapshot(tenant);return building.contains(tenant)||previous==null||!previous.generatedAt().isAfter(Instant.now().minusSeconds(REFRESH_SECONDS))||!Objects.equals(revisions.getOrDefault(tenant,0L),builtRevisions.getOrDefault(tenant,0L));}
  public String error(UUID tenant){return errors.get(tenant);}
- public synchronized void requestRefresh(UUID tenant){if(!pending(tenant))revisions.merge(tenant,1L,Long::sum);}
+ public synchronized void requestRefresh(UUID tenant){if(!pending(tenant))revisions.merge(tenant,1L,Long::sum);errors.remove(tenant);manualRefreshRequested.set(true);queueRefresh();}
+ public void ensureFresh(UUID tenant){if(pending(tenant)&&error(tenant)==null){manualRefreshRequested.set(true);queueRefresh();}}
  public List<Map<String,Object>> vendors(UUID tenant){return tx.execute(s->{context(tenant);return jdbc.queryForList("SELECT id,name,coalesce(vendor_code,'—') code,coalesce(distribution_center,'') dc FROM vendors WHERE tenant_id=? AND status='ACTIVE' ORDER BY name,id",tenant);});}
  public Map<String,Object> configuration(UUID tenant){return tx.execute(s->{context(tenant);var values=jdbc.queryForList("SELECT configuration::text FROM replenishment_settings WHERE tenant_id=?",String.class,tenant);if(values.isEmpty())return new LinkedHashMap<>(Map.of("low",7,"target",14,"overstock",35,"vendors",Map.of()));try{return json.readValue(values.get(0),new TypeReference<Map<String,Object>>(){});}catch(Exception e){throw new IllegalStateException("Cannot read replenishment settings",e);}});}
  static int integer(Map<String,Object> m,String key,int fallback){Object value=m.get(key);if(value==null||value.toString().isBlank())return fallback;try{return Integer.parseInt(value.toString());}catch(Exception e){throw new IllegalArgumentException("Enter whole days for "+key);}}
@@ -83,7 +85,7 @@ public class ReplenishmentSuggestions {
  @Scheduled(initialDelay=10000,fixedDelay=60000)
  public void queueRefresh(){
   if(!refreshQueued.compareAndSet(false,true))return;
-  try{worker.execute(()->{try{refresh();}catch(Exception e){LoggerFactory.getLogger(getClass()).error("Replenishment refresh failed; retrying on the next schedule.",e);}finally{refreshQueued.set(false);}});}
+  try{worker.execute(()->{manualRefreshRequested.set(false);try{refresh();}catch(Exception e){LoggerFactory.getLogger(getClass()).error("Replenishment refresh failed; retrying on the next schedule.",e);}finally{refreshQueued.set(false);if(manualRefreshRequested.get())queueRefresh();}});}
   catch(java.util.concurrent.RejectedExecutionException e){refreshQueued.set(false);}
  }
  @jakarta.annotation.PreDestroy

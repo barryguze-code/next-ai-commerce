@@ -52,3 +52,72 @@
 #rp-basket .rp-basket-line{grid-template-columns:48px minmax(140px,1fr) 90px 90px 105px 60px;gap:12px;padding:12px 0;font-size:.85rem}#rp-basket .rp-basket-line img{width:48px;height:52px;object-fit:contain;background:white;border:1px solid var(--line);border-radius:9px}#rp-basket .rp-basket-line label{font-size:.72rem;color:var(--muted)}#rp-basket .rp-basket-line input{display:block;width:100%;height:36px;margin-top:4px;padding:6px 8px;font-size:.85rem}#rp-basket .rp-basket-product{font-weight:650}#rp-basket .rp-basket-product small{font-weight:400}#rp-basket .rp-basket-total{font-weight:650;font-size:.9rem;margin:18px 0 6px}
 .rp-basket-toast{position:fixed;right:22px;bottom:22px;z-index:1500;display:flex;align-items:center;gap:12px;max-width:min(480px,calc(100vw - 44px));padding:14px;background:var(--white);color:var(--ink);border:1px solid var(--line);border-left:4px solid #209b70;border-radius:14px;box-shadow:0 8px 28px #14223b26}.rp-basket-toast[hidden]{display:none}.rp-basket-toast img{width:44px;height:48px;object-fit:contain;background:white;border-radius:8px}.rp-basket-toast span,.rp-basket-toast small{display:block;font-size:.8rem;margin-top:3px}.rp-basket-toast small{color:var(--muted)}
 @media(max-width:700px){#rp-basket .rp-basket-line{grid-template-columns:44px minmax(120px,1fr) 80px}#rp-basket .dialog-actions{flex-wrap:wrap}.rp-basket-toast{right:12px;bottom:12px}}
+/* Purchase planning uses the existing compact basket and shared dialog controls. */
+#rp-basket h2{display:flex;align-items:center;gap:8px}
+#rp-basket [data-plan-name]{font:inherit;color:inherit;min-width:0;width:min(560px,65vw);padding:5px 8px}
+#rp-basket [data-plan-name]:read-only{border-color:transparent;background:transparent;padding-left:0}
+.rp-plan-toolbar{display:flex;justify-content:space-between;align-items:end;gap:12px;padding:12px 22px;border-bottom:1px solid var(--border,#dce4ef)}
+.rp-plan-toolbar>label{font-size:.75rem;display:grid;gap:4px;min-width:200px}
+.rp-plan-toolbar>div{display:flex;align-items:center;gap:8px}
+#rp-basket .rp-plan-toolbar button{min-height:38px;padding:8px 12px;font-size:.8rem}
+.rp-plan-feedback{margin:8px 22px 0;min-height:1em}
+.rp-saved-plan{display:flex;gap:16px;align-items:center;padding:12px 0;border-bottom:1px solid var(--border,#dce4ef)}
+.rp-saved-plan>div{flex:1;min-width:0}.rp-saved-plan small{display:block}
+@media(max-width:700px){.rp-plan-toolbar{flex-wrap:wrap}.rp-plan-toolbar>div{flex-wrap:wrap}#rp-basket .rp-basket-line{grid-template-columns:40px minmax(100px,1fr) 70px}.rp-basket-line input{max-width:100%}}
+#rp-basket [data-plan-rename]{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+#rp-basket [data-plan-rename][hidden]{display:none}
+.rp-po-quantity{display:flex;align-items:end;gap:8px}
+.rp-po-quantity>label{display:grid;gap:4px;font-size:.75rem;color:var(--muted);font-weight:600}
+.rp-po-quantity input{width:100px;min-height:36px;padding:7px 10px;font:inherit;color:var(--ink,#17263a);background:var(--panel,#fff);border:1px solid var(--line,#dce4ef);border-radius:9px}
+.app-page .rp-po-quantity .rp-po-remove{width:36px;height:36px;min-height:36px;padding:0;font-size:20px;line-height:1}
+
+/* CD: the shared desktop header remains one row; narrow layouts wrap. */
+.app-page .rp-heading{gap:16px;padding:20px 22px;flex-direction:row;align-items:center;flex-wrap:wrap}
+.rp-heading-copy{display:flex;align-items:center;gap:12px;min-width:0;flex-wrap:wrap}
+body.app-page .rp-heading h2{margin:0;white-space:nowrap}
+.rp-heading time{font-size:var(--ui-meta,12px);line-height:1.5;color:var(--muted);white-space:nowrap}
+.rp-heading .rp-actions{gap:8px;flex-wrap:wrap;align-items:center}
+.app-page .rp-heading .rp-actions button{min-height:var(--ui-control-height,38px);padding:8px 12px;font-size:var(--ui-label,13px);white-space:nowrap}
+.rp-forecast-feedback{margin:0;padding:8px 22px;font-size:var(--ui-meta,12px);color:var(--muted)}
+@media(min-width:1200px){.app-page .rp-heading,.rp-heading .rp-actions,.rp-heading-copy{flex-wrap:nowrap}}
+
+/* CD: page title and explanation share a desktop baseline. */
+@media(min-width:761px){
+ .app-page .rp-workspace-header{flex-direction:row;align-items:center}
+ .app-page .rp-workspace-header>div:first-child{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+ .app-page .rp-workspace-header .page-intro{margin:0}
+ .app-page .rp-workspace-header .header-actions{flex-shrink:0}
+}
+
+/* CD: fixed controls and a single scroll region, including short viewports. */
+#rp-basket{overflow:hidden;height:auto;max-height:calc(100dvh - 32px)}
+#rp-basket .dialog-shell{display:flex;flex-direction:column;min-height:0;max-height:calc(100dvh - 34px)}
+#rp-basket .dialog-header,#rp-basket .rp-plan-toolbar,#rp-basket .rp-plan-feedback,#rp-basket .dialog-actions{flex:none}
+#rp-basket [data-basket-body]{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+#rp-saved-plans{width:min(680px,95vw)}
+#rp-saved-plans .dialog-shell{max-height:calc(100dvh - 34px);min-height:0}
+#rp-saved-plans .dialog-header,#rp-saved-plans .dialog-actions{flex:none}
+#rp-saved-plans .dialog-body{min-height:0;overflow-y:auto}
+#rp-saved-plans .rp-delete-draft{color:var(--red,#bd3644)}
+#rp-saved-plans .rp-saved-plan small{color:var(--muted);font-size:12px;line-height:1.5}
+#rp-basket [data-plan-name]:read-only{field-sizing:content;width:auto;max-width:min(560px,65vw)}
+#rp-basket [data-plan-rename]{width:36px;height:36px}
+
+#rp-basket [data-plan-name]:read-only:focus{outline:none;box-shadow:none}
+
+#rp-basket .ux-dialog-body{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden}
+
+/* CD: supplied update/remove artwork beside cases; preserve compact row. */
+.rp-po-quantity{gap:6px}
+.rp-po-quantity input{width:86px}
+.app-page .rp-po-quantity .rp-po-action{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;min-height:36px;padding:4px;border:0;border-radius:9px;background:transparent;cursor:pointer}
+.rp-po-action img{width:28px;height:28px;object-fit:contain}
+.rp-po-action:hover:not(:disabled){background:var(--surface-soft,#edf3ff)}
+.rp-po-action:disabled{opacity:.4;cursor:default}
+.rp-po-action:focus-visible{outline:2px solid var(--blue,#2864db);outline-offset:2px}
+
+/* CD: transient working-draft confirmation without extra row or icon. */
+.rp-po-quantity input{transition:background-color .15s ease,border-color .15s ease}
+.rp-po-quantity input.rp-quantity-updated{border-color:var(--green,#16875c);background-color:color-mix(in srgb,var(--green,#16875c) 12%,var(--panel,#fff))}
+.rp-sr-status{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.rp-po-quantity input{transition:none}}

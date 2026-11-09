@@ -19,15 +19,20 @@ public class FbaInboundSync {
     public FbaInboundSync(AmazonSpApiClient amazon,AmazonSyncStore store,JdbcTemplate jdbc,TransactionTemplate tx,ObjectMapper json,AmazonReportNormalizer normalizer){
         this.amazon=amazon;this.store=store;this.jdbc=jdbc;this.tx=tx;this.json=json;this.normalizer=normalizer;
     }
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private com.nextaicommerce.platform.fba.FbaDepletionWorker depletionWorker;
+    private void afterCompletedRead(AmazonSyncStore.Job job){if(depletionWorker!=null)depletionWorker.afterCompletedImport(job.tenantId(),job.connectionId(),job.id());}
     public void processPage(AmazonSyncStore.Job job){
         ObjectNode cursor=tx.execute(s->{scope(job);return (ObjectNode)json.readTree(jdbc.queryForObject(
             "SELECT cursor::text FROM marketplace_sync_jobs WHERE tenant_id=? AND id=?",String.class,job.tenantId(),job.id()));});
         int pages=cursor.path("pages").asInt();
         if(pages>=1200)throw new IllegalStateException("FBA import exceeded its page budget; review the checkpoint before retrying.");
-        if(cursor.path("shipmentsComplete").asBoolean()&&!cursor.path("feesComplete").asBoolean()){importShipmentFees(job,cursor,pages);return;}
+        if(cursor.path("shipmentsComplete").asBoolean()&&!cursor.path("feesComplete").asBoolean()){importShipmentFees(job,cursor,pages);afterCompletedRead(job);return;}
         var pending=new ArrayList<String>();cursor.path("pending").forEach(n->pending.add(n.asText()));
         String shipment=pending.isEmpty()?null:pending.getFirst();
         String token=cursor.path(shipment==null?"next":"itemNext").asText("");
+        // A resumed legacy checkpoint cannot establish complete membership: restart only its item read.
+        if(shipment!=null && !token.isBlank() && !cursor.path("itemEvidence").isArray()){token="";cursor.put("itemNext","");}
+        if(shipment!=null && token.isBlank())cursor.putArray("itemEvidence");
         String path;
         if(shipment==null){
             path="/fba/inbound/v0/shipments?MarketplaceId="+encode(job.marketplaceId())+
@@ -50,6 +55,17 @@ public class FbaInboundSync {
             records.add(row);
         }
         String next=payload.path("NextToken").asText("");
+        if(shipment!=null){
+            var evidence=(tools.jackson.databind.node.ArrayNode)cursor.path("itemEvidence");
+            var seen=new HashSet<String>();evidence.forEach(i->seen.add(i.path("SellerSKU").asText()));
+            for(var row:records){
+                if(!shipment.equals(row.path("ShipmentId").asText()) || row.path("SellerSKU").asText("").isBlank()
+                    || !row.path("QuantityShipped").canConvertToInt() || row.path("QuantityShipped").asInt()<0
+                    || !row.path("QuantityReceived").canConvertToInt() || row.path("QuantityReceived").asInt()<0
+                    || !seen.add(row.path("SellerSKU").asText()))throw new IllegalStateException("Incomplete or conflicting FBA item evidence.");
+                evidence.add(row.deepCopy());
+            }
+        }
         if(shipment==null){
             pending.clear();for(JsonNode row:records){String id=row.path("ShipmentId").asText("");if(id.isBlank())throw new IllegalStateException("Amazon shipment ID missing.");pending.add(id);}
             cursor.put("next",next);
@@ -63,11 +79,15 @@ public class FbaInboundSync {
             scope(job);
             long count=store.saveJsonPage(job,"fba-inbound-page-"+pages,sanitized.toString(),response.requestId(),source->
                 shipment==null?saveShipments(job,records):saveItems(job,shipment,records));
-            if(shipment!=null&&next.isBlank())jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=jsonb_set(raw_payload,'{itemsCheckedAt}',to_jsonb(now()::text)) WHERE tenant_id=? AND marketplace_connection_id=? AND shipment_id=?",job.tenantId(),job.connectionId(),shipment);
+            if(shipment!=null){
+                if(next.isBlank())jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=raw_payload || jsonb_build_object('itemsCheckedAt',now()::text,'itemEvidence',?::jsonb,'itemEvidenceVersion',1,'itemEvidenceJob',?::text) WHERE tenant_id=? AND marketplace_connection_id=? AND shipment_id=?",cursor.path("itemEvidence").toString(),job.id().toString(),job.tenantId(),job.connectionId(),shipment);
+                else jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=raw_payload - 'itemEvidence' - 'itemEvidenceVersion' WHERE tenant_id=? AND marketplace_connection_id=? AND shipment_id=?",job.tenantId(),job.connectionId(),shipment);
+            }
             long total=cursor.path("records").asLong()+count;cursor.put("records",total);
             jdbc.update("UPDATE marketplace_sync_jobs SET cursor=CAST(? AS jsonb),records_processed=?,status='WAITING',error_code=NULL,error_message=NULL,available_at=now()+?*interval '1 second',lease_owner=NULL,lease_expires_at=NULL WHERE tenant_id=? AND id=?",cursor.toString(),total,requestDelay(response),job.tenantId(),job.id());
             if(done)store.complete(job,total);
         });
+        if(done&&!cursor.path("itemsRefreshOnly").asBoolean())afterCompletedRead(job);
     }
     long saveShipments(AmazonSyncStore.Job job,JsonNode rows){
         long count=0;for(JsonNode row:rows){

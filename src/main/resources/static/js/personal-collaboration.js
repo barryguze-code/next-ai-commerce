@@ -195,7 +195,7 @@
                         if(!response.ok) throw Error();
                         await load();document.getElementById(article.id)?.focus();
                     } catch {status.textContent='The status could not be changed. Check access and refresh.';}
-                    finally {busy=false;}
+                    finally {busy=false;if(refreshQueued)refreshVisibleQueue();}
                 };
             }
             if(label==='Older'&&rows.length>limit){
@@ -285,7 +285,7 @@
         }catch{
             try{await load();}catch{}
             status.textContent='The saved order could not be confirmed. Refresh and try again.';
-        }finally{busy=false;dragged=null;clearInsertion();}
+        }finally{busy=false;dragged=null;clearInsertion();if(refreshQueued)refreshVisibleQueue();}
     }
     function revealPriority(key){
         const filtered=filteredRows(),index=filtered.findIndex(r=>sameKey(r.card.key,key));
@@ -341,11 +341,13 @@
             button.scrollIntoView({block:'start',behavior:'auto'});
         }
     }
-    async function load() {
+    async function load(background=false) {
         const current=++generation;
         const res=await fetch('/app/collaboration/personal/data?'+new URLSearchParams({q:search.value,scope}));
         if(!res.ok) throw Error();
-        const result=await res.json();if(current!==generation)return;page=result;
+        const result=await res.json();if(current!==generation)return false;
+        if(background&&(busy||dragged||document.hidden||document.querySelector('dialog[open]'))){refreshQueued=true;return false;}
+        page=result;
         render();
     }
     type.onchange=()=>{save();render();};
@@ -369,7 +371,7 @@
     document.addEventListener('pointerdown',event=>{if(scopePicker?.open&&!scopePicker.contains(event.target))scopePicker.open=false;});
     function filteredRows(){
         return page.rows.filter(({card})=>(!account.value||account.value===(card.contextAccount||card.account))&&
-            (!store||store===(card.contextStore||card.store||page.reviews?.[card.key.id]?.storeId))&&
+            (!store||!(card.contextStore||card.store||page.reviews?.[card.key.id]?.storeId)||store===(card.contextStore||card.store||page.reviews?.[card.key.id]?.storeId))&&
             (!type.value||(card.subjectType||page.reviews?.[card.key.id]?.subjectType)===type.value))
             .sort((a,b)=>{
                 if(scope==='ASSIGNED')return (a.position??Number.MAX_SAFE_INTEGER)-(b.position??Number.MAX_SAFE_INTEGER);
@@ -398,7 +400,21 @@
         tab.classList.toggle('active',tab.dataset.personalScope===scope);
         if(tab.dataset.personalScope===scope)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');
     });
-window.addEventListener('personal-collaboration-updated',()=>{const anchor=viewport.capture();load().then(()=>viewport.restore(anchor));});
+    let refreshPending=false,refreshQueued=false;
+    function refreshVisibleQueue(event){
+        if(refreshPending){if(event?.type==='personal-collaboration-updated')refreshQueued=true;return;}
+        if(document.hidden||busy||dragged||document.querySelector('dialog[open]')){refreshQueued=true;return;}
+        refreshPending=true;refreshQueued=false;
+        const anchor=viewport.capture();
+        load(true).then(applied=>{if(applied!==false)viewport.restore(anchor);}).catch(()=>{/* Keep the current usable list on a transient refresh failure. */})
+            .finally(()=>{refreshPending=false;if(refreshQueued&&!document.hidden&&!busy&&!dragged&&!document.querySelector('dialog[open]'))refreshVisibleQueue();});
+    }
+    window.addEventListener('personal-collaboration-updated',refreshVisibleQueue);
+    window.addEventListener('focus',refreshVisibleQueue);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshVisibleQueue();});
+    window.addEventListener('pageshow',event=>{if(event.persisted)refreshVisibleQueue();});
+    document.addEventListener('close',()=>{if(refreshQueued)queueMicrotask(refreshVisibleQueue);},true);
+    document.addEventListener('dragend',()=>{if(refreshQueued)queueMicrotask(refreshVisibleQueue);});
     let searchTimer;
     search.oninput=()=>{save();clearTimeout(searchTimer);searchTimer=setTimeout(()=>load().catch(()=>status.textContent='Search could not be loaded.'),250);};
     load().then(()=>viewport.restore(JSON.parse(sessionStorage.getItem(storage+'.anchor')))).catch(()=>{status.textContent='Your assignments could not be loaded. Refresh to try again.';});

@@ -76,7 +76,7 @@ function editManagedLocation(button,remove){
         Array.from(select.options).filter(option=>option.value===result.id).forEach(option=>{if(remove)option.remove();else option.textContent=result.code+' · '+result.name;});
       });
       document.querySelectorAll('.location-directory').forEach(directory=>{directory.querySelector('.location-directory-count').textContent=directory.querySelectorAll('article').length+' in this account';});
-      const message=form.querySelector('[data-location-feedback]');if(message){message.textContent=remove?'Location deleted.':'Location updated.';message.hidden=false;message.classList.remove('error');}
+      const message=form.querySelector('[data-location-feedback]');if(message){message.textContent=remove?'Location deleted.':'Location updated.';message.hidden=false;message.classList.remove('error');}form.dispatchEvent(new CustomEvent('location:updated',{bubbles:true,detail:result}));
     }catch(error){feedback.textContent=error.message;feedback.hidden=false;}
     finally{save.disabled=false;cancel.disabled=false;}
   };
@@ -110,3 +110,12 @@ function hydrateManagedLocations(locations){
   list.replaceChildren(fragment);directory.querySelector('.location-directory-count').textContent=locations.length+' in this account';directory.dataset.locationState='ready';directory.querySelector('[data-location-load-feedback]')?.remove();
  });
 }
+
+// Offer management only on pages that already provide the authorized account editor.
+(()=>{let origin;const manager=()=>document.getElementById('location-dialog');
+ function enroll(){if(!manager())return;document.querySelectorAll('select[name="locationId"],select[name="destinationLocationId"],.receipt-location-select').forEach(select=>select.dataset.choiceManager='location');}
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',enroll);else enroll();
+ document.addEventListener('platform-choice-manage',event=>{if(event.detail.kind!=='location'||!manager())return;origin=event.detail.trigger;const dialog=manager();dialog.showModal();if(event.detail.action==='edit'){const row=[...dialog.querySelectorAll('[data-location-id]')].find(n=>n.dataset.locationId===event.detail.id);const edit=row?.querySelector('.location-actions button');if(edit)edit.click();else{const feedback=dialog.querySelector('[data-location-feedback]');feedback.textContent='Location unavailable. Reopen the choice to refresh.';feedback.hidden=false;}}else dialog.querySelector('[name="code"]')?.focus({preventScroll:true});});
+ for(const name of ['location:created','location:updated'])document.addEventListener(name,event=>{if(origin&&manager()?.contains(event.target))manager().close();});
+ document.addEventListener('close',event=>{if(event.target===manager()){origin?.focus({preventScroll:true});origin=null;}},true);
+})();

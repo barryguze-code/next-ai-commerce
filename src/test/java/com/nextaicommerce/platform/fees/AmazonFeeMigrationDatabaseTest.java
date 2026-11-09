@@ -30,7 +30,7 @@ class AmazonFeeMigrationDatabaseTest {
    var protectedBefore=new LinkedHashMap<String,String>();
    for(String table:List.of("amazon_source_documents","amazon_orders","amazon_order_items","amazon_inventory_snapshots","marketplace_sku_mappings"))protectedBefore.put(table,digest(scopedAdmin,table));
    org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).createSchemas(false).locations("classpath:db/migration").load().migrate();
-   assertThat(jdbc.queryForObject("SELECT max(version::integer) FROM flyway_schema_history WHERE success",Integer.class)).isEqualTo(132);
+   assertThat(jdbc.queryForObject("SELECT max(version::integer) FROM flyway_schema_history WHERE success",Integer.class)).isEqualTo(136);
    assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_roles WHERE rolname=current_user AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcreatedb AND NOT rolcreaterole",Integer.class)).isEqualTo(1);
    assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_class WHERE relnamespace=?::regnamespace AND relname IN ('amazon_fee_observations','amazon_order_fee_charge_observations','amazon_fee_comparisons','amazon_fee_approvals') AND relrowsecurity AND relforcerowsecurity",Integer.class,schema)).isEqualTo(4);
    var tx=new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(ds));
