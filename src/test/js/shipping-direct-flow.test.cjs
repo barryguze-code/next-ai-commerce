@@ -53,7 +53,7 @@ test('preferences use shared custom choices with native popup suppressed',()=>{
  assert.equal(selects.length,2);
  for(const select of selects){assert.match(select,/data-standard-choice/);assert.match(select,/hidden/);assert.match(select,/aria-label=/);}
  assert.match(read('templates/fragments/sidebar-nav.html'),/platform-controls\.js/);
- assert.match(read('static/js/platform-controls.js'),/role','listbox/);
+ assert.match(read('static/js/platform-controls.js'),/popup\.setAttribute\('role',managed\?'dialog':'listbox'\)/);
 });
 test('label generation is direct, preserves history, and no longer needs queue',()=>{
  const js=read('static/js/fedex-shipping.js');
