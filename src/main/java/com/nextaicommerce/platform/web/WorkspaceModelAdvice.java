@@ -46,6 +46,7 @@ public class WorkspaceModelAdvice {
             path.startsWith("/app/inventory/replenishment")?"/app/inventory/replenishment":path.startsWith("/app/inventory/physical-counts")?"/app/inventory/physical-counts/history":"/app/inventory";
         model.addAttribute("warehouseReturnTo",warehouseReturn);
         Object selectedAccountId = session.getAttribute(AccountSelectionController.TENANT_ID);
+        model.addAttribute("tableShortcutScope",selectedAccountId+":"+authentication.getName());
         accountOptions.stream().filter(account -> account.id().equals(selectedAccountId)).findFirst()
             .ifPresent(account -> { model.addAttribute("selectedAccountInitials", account.initials()); model.addAttribute("selectedAccountLogoUrl", account.logoUrl()); });
         Object selectedStoreId = session.getAttribute(AccountSelectionController.STORE_ID);

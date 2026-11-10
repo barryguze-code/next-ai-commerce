@@ -125,9 +125,8 @@ html[data-theme="dark"] .sku-workspace #marketplace-listings-table>tbody>.sku-fa
  .sku-workspace .sku-family-heading[data-family-collapsed]>td{border-bottom:0}
 }
 
-/* Tooltip suppression owns pseudo-elements; keep the condition affordance decorative DOM. */
-.sku-workspace .sku-condition-choice-trigger:after{content:none}
-.sku-condition-choice-trigger .sku-choice-chevron{margin-inline-start:auto;flex-shrink:0;color:var(--muted)}
+/* The shared choice owns its decorative stroke chevron. */
+.sku-condition-choice-trigger .location-choice-chevron{margin-inline-start:auto;flex-shrink:0;color:var(--muted)}
 
 /* Compact family identity: Inventory's blue title affordance, no row-wide action. */
 .sku-workspace #marketplace-listings-table>tbody>.sku-family-heading{background:color-mix(in srgb,var(--ink) 4%,var(--white));color:var(--ink);font-size:13px}

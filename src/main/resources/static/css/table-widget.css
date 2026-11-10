@@ -273,3 +273,131 @@ html[data-theme=dark] .table-column-activity>button{color:#a8cbff;border-color:#
 .table-tab-arrow{flex:0 0 30px;width:30px;min-height:34px;border:1px solid var(--border,#dbe3ee);border-radius:8px;background:var(--surface,#fff);color:var(--text,#14253c);font:inherit;font-size:24px;cursor:pointer}
 .table-tab-arrow[hidden]{display:none!important}.table-tab-arrow:focus-visible{outline:2px solid var(--accent,#3270db);outline-offset:-3px}
 .table-sort-trigger{background:none;border:0;padding:0;color:inherit;font:inherit;font-weight:inherit;text-align:left;cursor:pointer}.table-sort-trigger:focus-visible{outline:2px solid var(--accent,#3270db)}
+
+/* Approved Nov9 table composition: existing controls, one command surface. */
+[data-table-composition] .table-command-menu{flex:0 0 auto;margin:0;position:relative}
+[data-table-composition] .table-command-menu>summary{display:grid;place-items:center;width:40px;height:40px;list-style:none;cursor:pointer}
+[data-table-composition] .table-command-menu>summary::-webkit-details-marker{display:none}
+[data-table-composition] .table-command-menu>summary img{width:32px;height:32px;object-fit:contain}
+.table-command-panel{box-sizing:border-box;inset:auto;margin:0;overflow:auto;width:min(320px,calc(100vw - 24px));max-height:calc(100dvh - 24px)}
+.table-command-group{display:grid;gap:6px}
+.table-command-group+.table-command-group{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
+.table-command-group .rp-actions,.table-command-group .rw-row-actions,.table-command-group .rw-selection-bar{display:grid;gap:6px;padding:0;margin:0;border:0;background:none}
+.table-command-group [hidden]{display:none!important}
+.table-command-group form{margin:0;display:block}
+.table-command-group button,.table-command-group>a,.table-command-group summary{width:100%;text-align:left;justify-content:flex-start;white-space:normal;font-size:inherit}
+.table-command-group .physical-count-menu-panel{position:static;width:auto;box-shadow:none;border:0;max-height:none;padding:8px 0}
+.table-search-spinner{display:none;width:16px;height:16px;border:2px solid var(--line,#dce4ee);border-top-color:var(--blue,#2869df);border-radius:50%;animation:table-search-spin .8s linear infinite;flex:none}
+.table-standard-toolbar[aria-busy=true] .table-search-spinner{display:inline-block}
+@keyframes table-search-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.table-search-spinner{animation:none;border-style:dotted}}
+[data-table-composition] [data-tab-tone=red]{color:#ba3544}
+[data-table-composition] [data-tab-tone=amber]{color:#a96816}
+html[data-theme=dark] [data-table-composition] [data-tab-tone=red]{color:#ffacb5}
+html[data-theme=dark] [data-table-composition] [data-tab-tone=amber]{color:#f3be78}
+
+[data-table-composition]>.card-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.table-header-commands,[data-table-composition] .order-sync-status,[data-table-composition] .sku-sync-status,[data-table-composition] .fba-sync-utility{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+[data-table-composition]>.card-toolbar .inventory-toolbar-actions:empty,[data-table-composition]>.card-toolbar .rp-actions:empty{display:none}
+
+[data-table-composition] .sku-sync-title{display:flex;align-items:center;gap:8px}
+[data-table-composition] .sku-sync-indicator{padding:2px 6px;border-radius:999px;background:#e7f7ef;color:#16754f;font-size:12px;line-height:1.5;font-weight:600;letter-spacing:0;text-transform:none}
+[data-table-composition] .sku-sync-indicator.syncing{background:#eaf2ff;color:#2868ca}
+[data-table-composition] .sku-sync-indicator.not-synced{background:#fff4df;color:#995a0b}
+[data-table-composition] .card-toolbar:has(.stream-heading)>div:has(.stream-heading){flex:1}
+[data-table-composition] .card-toolbar>.order-sync-status{flex:0 1 auto}
+[data-table-composition] .table-command-menu>summary:focus-visible{outline:2px solid var(--blue,#2869df);outline-offset:2px;border-radius:10px}
+
+[data-table-composition]>.rp-toolbar:not(:has(*)),[data-table-composition]>.fba-search-toolbar:not(:has(*)),[data-table-composition]>.sku-toolbar-actions:not(:has(*)){display:none}
+[data-table-composition] .inventory-toolbar-actions:not(:has(*)){display:none}
+
+body.app-page [data-table-composition]>.card-toolbar{flex-direction:row;flex-wrap:wrap}
+body.app-page [data-table-composition]>.card-toolbar>.table-header-copy{display:flex;align-items:center;flex:1 1 auto;flex-wrap:wrap;gap:8px 14px;width:auto;min-width:0}
+body.app-page [data-table-composition]>.card-toolbar>.table-header-copy>p{margin:0;grid-area:auto;color:var(--muted);font-size:var(--ui-meta,12px);line-height:1.4;flex:0 1 auto}
+body.app-page [data-table-composition]>.card-toolbar>.sku-sync-heading{width:auto;flex:1 1 auto}
+body.app-page [data-table-composition]>.card-toolbar>.sku-sync-status{display:flex;align-items:center;align-self:center;flex:0 1 auto;grid-area:auto;margin:0 0 0 auto}
+body.app-page [data-table-composition]>.card-toolbar>.sku-sync-status>small:first-child{flex:0 1 auto}
+body.app-page [data-table-composition]>.fba-sync-feedback[hidden]{display:none!important;margin:0;padding:0}
+body.app-page [data-table-composition]>.rp-toolbar:not(:has(*)),body.app-page [data-table-composition]>.fba-search-toolbar:not(:has(*)){display:none!important}
+body.app-page [data-table-composition] [data-tab-tone=blue]{color:var(--blue,#2868ca)}
+@media(max-width:760px){body.app-page [data-table-composition]>.card-toolbar>.table-header-copy{flex-basis:100%}body.app-page [data-table-composition]>.card-toolbar>.sku-sync-status{margin-left:0;flex-wrap:wrap}}
+
+.table-sync-actions{display:inline-flex;align-items:center;gap:10px;flex:0 0 auto;white-space:nowrap}
+body.app-page [data-table-composition].shopify-listings .sku-filter-bar>.shopify-exception-tab{margin-inline-start:0;margin-left:0}
+
+/* CD correction: accepted action rows and consistent header/tab/search order. */
+.table-command-panel .table-action-icon{background:transparent;flex:0 0 30px;width:30px;height:30px}
+.table-command-panel .table-action-icon img{width:30px;height:30px;object-fit:contain}
+.table-command-panel .table-action-heading>button{width:auto}
+.table-command-panel .table-action-entry strong{font:inherit;font-weight:650}
+[data-table-composition] .table-column-control>summary:has(.table-columns-art){display:grid;place-items:center;width:40px;height:40px;padding:4px}
+.table-columns-art{width:20px;height:20px;flex:none}
+[data-table-composition]>.table-status-strip{display:flex;align-items:center;gap:10px;background:#f5f7fb;border-bottom:1px solid var(--line);padding:10px 16px;margin:0;min-width:0}
+[data-table-composition]>.table-status-strip .inventory-filter-bar,[data-table-composition]>.table-status-strip .order-filters{background:transparent;padding:0;margin:0;border:0}
+html[data-theme=dark] [data-table-composition]>.table-status-strip{background:#17283b}
+
+/* Accepted menu rows must win over the shared standard-button skin. */
+html body.app-page .table-command-panel .table-action-entry{background:transparent!important;border:0!important;border-radius:9px!important;padding:10px 6px!important;color:var(--ink)!important;justify-content:flex-start;text-align:left}
+html body.app-page .table-command-panel .table-action-entry:hover:not(:disabled){background:#edf4ff!important}
+html[data-theme=dark] body.app-page .table-command-panel .table-action-entry:hover:not(:disabled){background:#243951!important}
+[data-table-composition]>.orders-filter-anchor>.table-status-strip{display:flex;align-items:center;gap:10px;background:#f5f7fb;border-bottom:1px solid var(--line);padding:10px 16px;margin:0;min-width:0}
+html[data-theme=dark] [data-table-composition]>.orders-filter-anchor>.table-status-strip{background:#17283b}
+
+/* One Orders-derived status component across the six composed tables. Domain
+   classes own predicates; these shared classes own strip/tab/count geometry. */
+html body.app-page [data-table-composition] .table-status-strip{padding:10px 16px!important;margin:0!important;border:0!important;border-bottom:1px solid var(--line)!important;border-radius:0!important;background:#f5f7fb!important;gap:10px;box-sizing:border-box;min-height:0}
+html body.app-page [data-table-composition] .table-status-strip .table-status-tabs{display:flex;align-items:center;gap:6px!important;padding:0!important;margin:0!important;border:0!important;border-radius:0!important;background:transparent!important;min-height:0;box-shadow:none}
+html body.app-page [data-table-composition] .table-status-strip.table-status-tabs{gap:6px!important}
+html body.app-page [data-table-composition] .table-status-tabs>.table-status-tab{display:inline-flex;align-items:center;justify-content:center;gap:7px!important;min-height:36px;padding:7px 11px!important;margin:0!important;border:1px solid transparent;border-radius:9px!important;font-family:inherit;font-size:var(--ui-tab,12px)!important;font-weight:650!important;line-height:20px!important;text-decoration:none;white-space:nowrap;box-sizing:border-box;background:transparent;color:var(--blue,#2868ca);box-shadow:none}
+html body.app-page [data-table-composition] .table-status-tab>.table-status-count{display:inline-flex!important;align-items:baseline;gap:2px!important;padding:3px 7px!important;margin:0!important;min-width:22px;border:0;border-radius:999px;font:inherit;font-size:11px!important;font-weight:650!important;line-height:18px!important;font-variant-numeric:tabular-nums;background:color-mix(in srgb,var(--muted) 10%,transparent);color:inherit;white-space:nowrap;box-sizing:content-box}
+html body.app-page [data-table-composition] .table-status-count>b{padding:0!important;margin:0!important;min-width:0!important;background:none!important;border:0;border-radius:0;font:inherit!important;line-height:inherit!important;color:inherit}
+html body.app-page [data-table-composition] .table-status-tab.active{background:var(--ui-action-soft,#edf4ff)!important;border-color:var(--ui-action-line,#c7dafa)!important;color:var(--ui-action-text,#245db7)!important}
+html body.app-page [data-table-composition] .table-status-tab.active>.table-status-count{background:#dceaff!important}
+html body.app-page [data-table-composition] .table-status-tab[data-tab-tone=red]{--ui-action-text:var(--danger,#c73547);--ui-action-soft:var(--danger-soft,#fff1f2);--ui-action-line:#dc4b54;color:#ad303e;background:#d93b4910;border-color:#d93b4933}
+html body.app-page [data-table-composition] .table-status-tab[data-tab-tone=red]>.table-status-count{background:#d93b4915!important}
+html body.app-page [data-table-composition] .table-status-tab[data-tab-tone=red].active>.table-status-count{background:var(--danger-soft,#fde8eb)!important}
+html body.app-page [data-table-composition] .table-status-tab[data-tab-tone=amber]{--ui-action-text:#a96514;--ui-action-soft:#fff2dc;--ui-action-line:#e4a14f;color:#a96514;background:#fff2dc;border-color:#e4a14f}
+html body.app-page [data-table-composition] .table-status-tab[data-tab-tone=amber]>.table-status-count{background:#fbe4bd!important}
+html body.app-page [data-table-composition] .table-status-tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+html[data-theme=dark] body.app-page [data-table-composition] .table-status-strip{background:#17283b!important}
+html[data-theme=dark] body.app-page [data-table-composition] .table-status-tab[data-tab-tone=red]{--ui-action-text:#ffb8bd;--ui-action-soft:#ef66751a;--ui-action-line:#ef8995;color:#ffb8bd;background:#ef66751a;border-color:#ef66754a}
+html[data-theme=dark] body.app-page [data-table-composition] .table-status-tab[data-tab-tone=red]>.table-status-count{background:#ef66751a!important}
+html[data-theme=dark] body.app-page [data-table-composition] .table-status-tab[data-tab-tone=amber]{--ui-action-text:var(--amber,#e4a14f);--ui-action-soft:#332718;--ui-action-line:#825d2d;color:var(--amber,#e4a14f);background:#332718;border-color:#825d2d}
+html[data-theme=dark] body.app-page [data-table-composition] .table-status-tab[data-tab-tone=amber]>.table-status-count{background:#49351c!important}
+html[data-theme=dark] body.app-page [data-table-composition] .table-status-tab.active>.table-status-count{background:#304e70!important}
+html body.app-page [data-table-composition] .table-status-tab[hidden]{display:none!important}
+/* SKU badges previously had a grid/min-height skin; counts now share Orders text. */
+html body.app-page [data-table-composition] .table-status-count>b{display:inline!important;height:auto!important;min-height:0!important;align-self:auto}
+.table-command-panel .table-action-label small{font-weight:400;color:var(--muted);line-height:1.45}
+
+/* Owner-approved local action-shortcut prototype, opt-in per table. */
+.table-action-shortcuts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.table-shortcut-item{position:relative;display:inline-flex}
+.table-action-shortcut,.table-shortcut-target{display:inline-flex;align-items:center;justify-content:center;min-width:40px;min-height:40px;padding:5px;border:1px solid var(--line);border-radius:12px;background:var(--white);color:var(--blue,#2864d7);font:inherit}
+.table-action-shortcut img{display:block;width:28px;height:28px;object-fit:contain}
+.table-shortcut-target{border-style:dashed;font-size:24px;line-height:1}
+.table-shortcut-target.drag-over{background:var(--blue-soft,#edf4ff);border-color:var(--blue,#2864d7)}
+.table-shortcut-remove{position:absolute;right:-5px;top:-7px;min-width:20px;min-height:20px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--white);color:var(--muted);opacity:0}
+.table-shortcut-item:hover .table-shortcut-remove,.table-shortcut-item:focus-within .table-shortcut-remove{opacity:1}
+.table-shortcut-command{display:flex;align-items:center;gap:4px}.table-shortcut-command>.table-action-entry{flex:1;min-width:0}
+.table-command-panel .table-shortcut-add{flex:none;width:32px;height:32px;min-height:32px;padding:0;border:1px dashed var(--line);border-radius:8px;background:transparent;color:var(--blue,#2864d7);font-size:20px}
+.table-shortcut-add:disabled{opacity:.4}.table-action-shortcut:disabled{opacity:.45}
+@media(hover:none){.table-shortcut-remove{opacity:1}}
+/* Same compact Sync now utility for table consumers without the SKU page stylesheet. */
+.table-sync-actions .sku-sync-button{position:relative;box-sizing:border-box;display:inline-flex;align-items:center;gap:4px;min-width:0;min-height:0;padding:4px 7px;border:1px solid #bfd2ec;border-radius:7px;background:#f5f9ff;color:#2868ca;font:inherit;font-size:.53125rem;font-weight:800;line-height:normal;white-space:nowrap;box-shadow:none;cursor:pointer}
+.table-sync-actions .sku-sync-button:hover:not(:disabled){border-color:#78a5df;background:#eaf3ff}.table-sync-actions .sku-sync-button:disabled{cursor:not-allowed;opacity:.46}
+.table-sync-actions .sku-sync-button::after{content:"";position:absolute;left:0;right:0;top:50%;height:max(100%,32px);transform:translateY(-50%)}
+html[data-theme=dark] .table-sync-actions .sku-sync-button{border-color:#385676;background:#17283a;color:#8bb7f5}
+@media(any-pointer:coarse){.table-sync-actions .sku-sync-button::after{height:max(100%,44px)}}
+
+/* Shared utility order: last check / Sync now, shortcut controls, Actions. */
+html body [data-table-composition] .table-command-menu>summary.table-action-trigger{display:inline-flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box;width:40px!important;min-width:40px!important;height:40px!important;padding:0!important;line-height:1!important}
+html body [data-table-composition] .table-command-menu>summary.table-action-trigger>img{display:block!important;position:static!important;width:32px!important;height:32px!important;margin:0!important;padding:0!important;transform:none!important;object-fit:contain}
+html body [data-table-composition] .table-shortcut-target,html body [data-table-composition] .table-shortcut-add{display:inline-flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box;padding:0!important;line-height:1}
+.table-shortcut-target{width:40px;height:40px;flex:0 0 40px}.table-shortcut-target svg,.table-shortcut-add svg{display:block;width:20px;height:20px;margin:0;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round}
+
+/* Widget title, tabs and toolbar remain outside this single records scrollport.
+   A maximum (never fixed height) keeps small tables compact. Phone/card layouts
+   and viewports with insufficient room retain natural page scrolling. */
+html body .data-card .table-data-scroll{max-height:var(--table-records-height,none);overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable}
+@media(max-width:760px){html body .data-card .table-data-scroll{max-height:none;overflow-y:visible;scrollbar-gutter:auto}}

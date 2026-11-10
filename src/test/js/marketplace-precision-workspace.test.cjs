@@ -35,7 +35,6 @@ async function fixture(width=1600,theme='light'){
     row.querySelector('.collaboration-row-button').dataset.entityId='BUNDLE-1';
     row.querySelector('[data-label="Available"]').textContent='62';
     row.querySelector('[data-label="Profit"]').innerHTML='<button class="profit-open"><span>0.00</span><small>Est. / SKU</small></button>';
-    document.querySelector('.sku-summary strong').textContent='25.0%';
     const pager=document.querySelector('.table-pagination');
     Object.assign(pager.dataset,{page:'0',pageMax:'1',pageSize:'25'});
     // Permission-hidden controls must stay hidden despite presentation rules.
@@ -47,7 +46,7 @@ async function fixture(width=1600,theme='light'){
   for(const js of ['table-preferences','platform-icons','table-widget','table-data-tools','platform-ui'])
     await page.addScriptTag({path:path.join(resources,'static/js',js+'.js')});
   await page.locator('.sku-table.table-widget').waitFor();
-  if(width>760)await page.waitForFunction(()=>getComputedStyle(document.querySelector('.sku-table tbody tr')).backgroundColor===getComputedStyle(document.querySelector('.sku-summary')).backgroundColor);
+  if(width>760)await page.waitForFunction(()=>getComputedStyle(document.querySelector('.sku-table tbody tr')).backgroundColor!=='rgba(0, 0, 0, 0)');
   return page;
 }
 
@@ -60,8 +59,8 @@ for(const width of [1600,1440,1024])for(const theme of ['light','dark'])test('Pr
       const wrap=rect('.sku-table-wrap');
       return {pageWidth:document.documentElement.scrollWidth,viewport:innerWidth,
         tableWidth:rect('.sku-table').width,wrapRight:wrap.right,
-        overviewBackground:style('.sku-summary').backgroundColor,
-        firstMetricBackground:style('.sku-summary article').backgroundColor,
+        removedOverview:document.querySelectorAll('.sku-summary').length,
+        neutralSurface:style('.sku-table tbody tr').getPropertyValue('--white').trim(),
         rowBackground:style('.sku-table tbody tr').backgroundColor,
         toolbars:document.querySelectorAll('.table-standard-toolbar').length,
         searchCount:document.querySelectorAll('input[name=q][type=search]').length,
@@ -75,12 +74,11 @@ for(const width of [1600,1440,1024])for(const theme of ['light','dark'])test('Pr
     assert.equal(result.pageWidth,result.viewport,'table must not widen the page');
     assert.ok(result.tableWidth>=1240,'desktop readability boundary');
     assert.ok(result.wrapRight<=width,'scroll wrapper stays inside workspace');
-    assert.notEqual(result.overviewBackground,'rgba(0, 0, 0, 0)');
-    assert.equal(result.firstMetricBackground,'rgba(0, 0, 0, 0)','metrics share one surface');
-    assert.equal(result.rowBackground,result.overviewBackground,'row surfaces remain neutral in both themes');
+    assert.equal(result.removedOverview,0,'removed store overview stays absent');
+    assert.notEqual(result.rowBackground,'rgba(0, 0, 0, 0)','rows retain opaque neutral surfaces');
     assert.equal(result.toolbars,1);assert.equal(result.searchCount,1);
-    assert.ok(result.toolbarY<result.tabsY,'single toolbar precedes status navigation');
-    assert.equal(result.toolbarPrecedesTabs,true,'reading order agrees with visual order');
+    assert.ok(result.tabsY<result.toolbarY,'status navigation precedes the shared search toolbar');
+    assert.equal(result.toolbarPrecedesTabs,false,'reading order agrees with status-before-search composition');
     assert.equal(result.titleWhiteSpace,'normal');assert.ok(result.titleHeight>20);
     assert.equal(result.hiddenAction,true);assert.equal(result.sameMapping,true);
     assert.equal(await page.locator('.sku-mapping-values').textContent(),'COMPONENT-A × 1COMPONENT-B × 2');

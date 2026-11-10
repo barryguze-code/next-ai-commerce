@@ -137,7 +137,7 @@
                 article.dataset.image=picture||'';article.dataset.title=detail?.subjectLabel||c.title;
                 const rail=element('div','',layout);rail.className='table-overview-rail';
                 const chatButton=element('button','',rail);chatButton.className='collaboration-row-button';chatButton.type='button';chatButton.dataset.conversationCount=String(detail?.messageCount||0);chatButton.dataset.assignedToMe=String(!closed&&(c.assignedToMe??(c.key.type==='REVIEW'&&(detail?.assigneeEmail||'').split(',').some(email=>email.trim().toLowerCase()===root.dataset.user.toLowerCase()))));chatButton.dataset.unreadMessageCount=String(detail?.unreadMessageCount||0);chatButton.setAttribute('aria-label','Open conversation');
-                const chat=element('img','',chatButton);chat.src=window.NextAiIcons?.source(chatButton.dataset.assignedToMe==='true'?'collaboration-assigned-red':'collaboration-blue')||'/images/platform/table/collaboration-blue.png';chat.dataset.collaborationIcon='';chat.alt=chatButton.dataset.assignedToMe==='true'?'Assigned to you':'Conversation';chat.className='platform-icon';
+                const chat=element('img','',chatButton);chat.src=window.NextAiIcons?.source(chatButton.dataset.assignedToMe==='true'?'collaboration-assigned-red':'collaboration-blue')||'/images/platform/optimized32/collaboration-default.png?v=20261109-icons32-1';chat.dataset.collaborationIcon='';chat.alt=chatButton.dataset.assignedToMe==='true'?'Assigned to you':'Conversation';chat.className='platform-icon';
                 const copy=element('div','',layout);copy.className='collaboration-record-copy';
                 if(ranked){const handle=element('button','⠿',copy);handle.type='button';handle.draggable=true;handle.className='personal-priority-handle personal-subject-handle';handle.dataset.focusKey='subject-priority';handle.setAttribute('aria-label','Move priority for '+c.title);
                     handle.onkeydown=article.querySelector('.personal-priority-handle')?.onkeydown;}
@@ -180,7 +180,7 @@
                 const actions=element('div','',actionCell);actions.dataset.contextMenu='';actions.dataset.title=c.title;
                 chatButton.onclick=()=>open.click();
                 const action=element('button',closed?'Reopen':'Close',actions);
-                if(!closed)action.dataset.actionImage='/images/platform/table/collaboration-complete.png';
+                if(!closed)action.dataset.actionImage='/images/platform/optimized32/collaboration-complete.png?v=20261109-icons32-1';
                 action.onclick=async()=>{
                     if(busy) return;
                     if(!window.NextAiConfirm)return;

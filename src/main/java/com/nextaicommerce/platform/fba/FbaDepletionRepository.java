@@ -20,6 +20,25 @@ public class FbaDepletionRepository {
  public record Stock(UUID layer,UUID item,UUID location,String product,String locationName,LocalDate expiration,BigDecimal available,BigDecimal unitCost,String currency,Instant received){}
  public record Allocation(UUID layer,BigDecimal quantity){}
  public record Preview(String shipment,UUID warehouse,String warehouseName,String postal,String revision,List<Line> lines,List<Stock> stock,List<Allocation> allocations,List<String> blockers,boolean depleted,boolean automatic,boolean itemsVerified){public boolean ready(){return !depleted&&blockers.isEmpty();}}
+ public record ProductPresentation(UUID item,String name,BigDecimal eachPerSku){}
+ public record LinePresentation(String sku,String imageUrl,List<ProductPresentation> products){}
+ /** Read-only display metadata, deliberately excluded from stock revision and immutable approval. */
+ @Transactional(readOnly=true) public List<LinePresentation> presentation(UUID tenant,UUID connection,List<String> skus){
+  scope(tenant);if(skus.isEmpty())return List.of();
+  record Display(String sku,String image,UUID item,String name,BigDecimal quantity){}
+  var rows=jdbc.query("""
+   SELECT names.sku,listing.image_url,c.account_catalog_item_id,coalesce(nullif(a.display_name,''),g.canonical_name,a.account_sku,'Component details unavailable'),c.quantity
+   FROM unnest(?::text[]) names(sku)
+   LEFT JOIN LATERAL(SELECT image_url FROM amazon_listings l WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.seller_sku=names.sku AND image_url IS NOT NULL ORDER BY l.updated_at DESC LIMIT 1) listing ON true
+   LEFT JOIN marketplace_sku_mappings m ON m.tenant_id=? AND m.marketplace_connection_id=? AND m.marketplace_sku=names.sku AND m.status='ACTIVE'
+   LEFT JOIN marketplace_sku_mapping_components c ON c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id
+   LEFT JOIN account_catalog_items a ON a.tenant_id=c.tenant_id AND a.id=c.account_catalog_item_id
+   LEFT JOIN global_catalog_products g ON g.id=a.global_product_id
+   ORDER BY names.sku,c.account_catalog_item_id
+   """,(r,n)->new Display(r.getString(1),r.getString(2),r.getObject(3,UUID.class),r.getString(4),r.getBigDecimal(5)),skus.toArray(String[]::new),tenant,connection,tenant,connection);
+  var grouped=new LinkedHashMap<String,List<Display>>();rows.forEach(r->grouped.computeIfAbsent(r.sku(),k->new ArrayList<>()).add(r));
+  return grouped.entrySet().stream().map(e->new LinePresentation(e.getKey(),e.getValue().getFirst().image(),e.getValue().stream().filter(r->r.item()!=null).map(r->new ProductPresentation(r.item(),r.name(),r.quantity())).toList())).toList();
+ }
  private record Source(UUID id,String status,String postal,String country,String revision,boolean complete){}
  private Source source(UUID tenant,UUID connection,String shipment){
   var rows=jdbc.query("""
@@ -100,9 +119,10 @@ public class FbaDepletionRepository {
    WITH layers AS (
     SELECT e.*,coalesce(sum(quantity) FILTER(WHERE quantity>0) OVER(PARTITION BY e.account_catalog_item_id,e.location_id,e.expiration_date ORDER BY occurred_at,e.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) prior_positive,
      sum(-quantity) FILTER(WHERE quantity<0) OVER(PARTITION BY e.account_catalog_item_id,e.location_id,e.expiration_date) debits,
-     a.display_name,loc.code,loc.name location_name
+     coalesce(nullif(a.display_name,''),g.canonical_name,a.account_sku,'Component details unavailable') display_name,loc.code,loc.name location_name
     FROM inventory_ledger_entries e JOIN warehouse_locations loc ON loc.tenant_id=e.tenant_id AND loc.id=e.location_id AND loc.status='ACTIVE'
     JOIN account_catalog_items a ON a.tenant_id=e.tenant_id AND a.id=e.account_catalog_item_id AND a.status='ACTIVE'
+    LEFT JOIN global_catalog_products g ON g.id=a.global_product_id
     WHERE e.tenant_id=? AND loc.warehouse_id=? AND e.account_catalog_item_id=ANY(?::uuid[])
      AND (e.expiration_date IS NULL OR e.expiration_date>=current_date)
      AND NOT EXISTS(SELECT 1 FROM order_inventory_reservations r WHERE r.tenant_id=e.tenant_id AND r.account_catalog_item_id=e.account_catalog_item_id AND r.location_id=e.location_id AND r.expiration_date IS NOT DISTINCT FROM e.expiration_date AND r.status='ACTIVE' AND r.quantity>0)

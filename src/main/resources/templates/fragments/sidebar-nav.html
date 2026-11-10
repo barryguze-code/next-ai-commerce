@@ -46,7 +46,7 @@
     <div>
       <a th:if="${canViewOperations}" th:classappend="${active == 'inventory' ? 'active' : ''}" href="/app/inventory">Available Inventory</a>
       <a th:if="${canViewOperations}" th:classappend="${active == 'inventory-ledger' ? 'active' : ''}" href="/app/inventory/ledger">Inventory Ledger</a>
-      <a th:if="${canViewOperations}" th:classappend="${active == 'fba-shipments' ? 'active' : ''}" href="/app/inventory/fba-shipments">FBA Shipments</a>
+      <a th:if="${canViewOperations == true and selectedStore != null and selectedStore.channel == 'AMAZON'}" th:classappend="${active == 'fba-shipments' ? 'active' : ''}" href="/app/inventory/fba-shipments">FBA Shipments</a>
       <a th:classappend="${active == 'receiving' ? 'active' : ''}" href="/app/receiving">Receiving</a>
       <a th:if="${canViewOperations}" th:classappend="${active == 'replenishment' ? 'active' : ''}" href="/app/inventory/replenishment">Replenishment</a>
     </div>
@@ -80,7 +80,7 @@
       <span class="nav-coming">Activity History <small>Planned</small></span>
     </div>
   </details>
-  <div class="collaborate-nav-row"><a class="global-collaboration-link" th:classappend="${active == 'collaboration' ? ' active' : ''}" href="/app/collaboration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-12h-6l1-8Z"/></svg>Collaborate</a><button th:if="${canEditCatalog}" type="button" data-new-task class="sidebar-create-task" aria-label="Create a store task" title="Create a store task" aria-haspopup="dialog"><img src="/images/platform/table/collaboration-create-lightning.png" alt=""></button></div>
+  <div class="collaborate-nav-row"><a class="global-collaboration-link" th:classappend="${active == 'collaboration' ? ' active' : ''}" href="/app/collaboration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-12h-6l1-8Z"/></svg>Collaborate</a><button th:if="${canEditCatalog}" type="button" data-new-task class="sidebar-create-task" aria-label="Create a store task" title="Create a store task" aria-haspopup="dialog"><img src="/images/platform/optimized32/collaboration-new.png?v=20261109-icons32-1" alt=""></button></div>
 </nav>
 <section class="sidebar-collaboration" th:if="${canViewOperations}" th:classappend="${active == 'collaboration' ? ' is-current' : ''}" data-sidebar-collaboration>
   <div class="sidebar-collaboration-row">

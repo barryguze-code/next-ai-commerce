@@ -2,27 +2,31 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-const script=fs.readFileSync('src/main/resources/static/js/packing-slip-workspace.js','utf8');
+const script=fs.readFileSync('src/main/resources/static/js/package-name-editor.js','utf8')+'\n'+fs.readFileSync('src/main/resources/static/js/packing-slip-workspace.js','utf8');
 const template=fs.readFileSync('src/main/resources/templates/packing-slip.html','utf8');
 const anchor=template.match(/<a\b[^>]*\bid="veeqo-shortcut"[^>]*>/)[0];
 
-function workspace(packageName,{clipboardBlocked=false}={}){
+function workspace(packageName,{clipboardBlocked=false,withLocations=false}={}){
   const node=()=>({listeners:{},addEventListener(type,handler){this.listeners[type]=handler;}});
   const link={...node(),hidden:/\shidden(?:\s|>|=)/.test(anchor),style:{}};
   const names=['XSmall','Pak','UPS OMBox','Medium','Large','XLarge','__custom'];
   const select={...node(),options:names.map(value=>({value,textContent:value})),value:''};
   const custom={...node(),value:''},customWrap={hidden:true},status={textContent:''};
-  const printed={textContent:packageName},copied=[];
+  const printed={textContent:packageName},copied=[],prints=[];custom.focus=()=>{};
   const nodes={'.packing-workspace':{dataset:{orderId:'order-fixture-42'}},'#packing-package':select,
     '#custom-package-field':customWrap,'#custom-package':custom,'#packing-status':status,
     '#veeqo-shortcut':link,'#print-slip':node(),'#save-package':node()};
+  const locationChoice={...node(),selectedOptions:[{dataset:{locationCode:'MAIN'}}]};
+  const makeRow=(item,reserved,text)=>{const label={textContent:text};return {dataset:{accountItemId:item,reservedLocation:String(reserved)},querySelector:()=>label};};
+  const locationRows=withLocations?[makeRow('item-1',false,'MAIN'),makeRow('item-1',true,'F2'),makeRow('item-2',false,'FX')]:[];
+  const forms=withLocations?[{...node(),dataset:{accountItemId:'item-1'},elements:{locationId:locationChoice}}]:[];
   const document={documentElement:{dataset:{}},querySelector:s=>nodes[s]||null,
-    querySelectorAll:s=>s==='[data-printed-package]'?[printed]:[]};
-  vm.runInNewContext(script,{document,window:{},location:{search:''},URLSearchParams,
+    querySelectorAll:s=>s==='[data-printed-package]'?[printed]:s==='.packing-slip article'?locationRows:s==='.packing-product-form'?forms:s==='.packing-product-form select[name=locationId]'&&withLocations?[locationChoice]:[]};
+  vm.runInNewContext(script,{document,window:{print:()=>prints.push(printed.textContent),addEventListener(){}},location:{search:''},URLSearchParams,
     localStorage:{getItem:()=>null},navigator:{clipboard:{writeText:async value=>{
       if(clipboardBlocked)throw Error('blocked');copied.push(value);
     }}}});
-  return {link,select,custom,customWrap,status,printed,copied};
+  return {link,select,custom,customWrap,status,printed,copied,prints,nodes,locationChoice,locationRows};
 }
 
 test('Veeqo is a visible native external link before JavaScript, even without its icon',()=>{
@@ -62,4 +66,22 @@ test('blocked clipboard access keeps Veeqo reachable and shows the order ID',asy
   await w.link.listeners.click();
   assert.equal(w.link.hidden,false);
   assert.equal(w.status.textContent,'Clipboard access was blocked. Order ID: order-fixture-42');
+});
+
+ test('print reads the current field even without an input event, and never saves implicitly',()=>{
+  const w=workspace('Pak');w.select.value='__custom';w.custom.value='  Cold   box ';
+  w.nodes['#print-slip'].listeners.click();assert.deepEqual(w.prints,['Cold box']);
+  w.custom.value='';w.nodes['#print-slip'].listeners.click();assert.equal(w.prints.length,1);
+  assert.equal(w.status.textContent,'Write a package name first.');
+ });
+
+test('current default location previews and prints only on matching unreserved product rows',()=>{
+ const w=workspace('Pak',{withLocations:true});
+ w.locationChoice.selectedOptions=[{dataset:{locationCode:'F13'}}];w.locationChoice.listeners.change();
+ assert.deepEqual(w.locationRows.map(r=>r.querySelector().textContent),['F13','F2','FX']);
+ w.locationChoice.selectedOptions=[{dataset:{locationCode:'R1'}}];w.nodes['#print-slip'].listeners.click();
+ assert.equal(w.locationRows[0].querySelector().textContent,'R1');
+ assert.equal(w.locationRows[1].querySelector().textContent,'F2');
+ w.locationChoice.selectedOptions=[{dataset:{}}];w.locationChoice.listeners.change();
+ assert.equal(w.locationRows[0].querySelector().textContent,'MAIN');
 });

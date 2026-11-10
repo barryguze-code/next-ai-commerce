@@ -1,0 +1,34 @@
+file,purpose,size,format,transparent,bytes,source_master
+human-ai.png,Human + AI / AI assistance,32x32,PNG,yes,1502,human-ai.png
+edit-image.png,Edit / change product image,32x32,PNG,yes,1013,edit-image.png
+collaboration-default.png,Base collaboration icon,32x32,PNG,yes,1470,collaboration.png
+collaboration-unread-blue.png,Collaboration with unread messages,32x32,PNG,yes,1470,collaboration-unread-blue.png
+collaboration-no-message-gray.png,No collaboration messages,32x32,PNG,yes,1320,collaboration-no-message-gray.png
+collaboration-assigned-red.png,Assigned/direct collaboration state,32x32,PNG,yes,1346,collaboration-assigned-red.png
+collaboration-new.png,Create a new collaboration/topic,32x32,PNG,yes,1836,a_clean_isolated_3d_neo_glass_style_icon_illustra.png
+collaboration-complete.png,Close/complete collaboration or task,32x32,PNG,yes,1617,a_polished_modern_3d_ish_glossy_icon_in_the_same_s.png
+collaboration-open-original-record.png,Open original/source record,32x32,PNG,yes,1164,a_clean_high_resolution_3d_soft_ui_icon_illustrat.png
+huddle.png,Huddle / fast collaboration,32x32,PNG,yes,1817,a_clean_high_resolution_glossy_3d_style_digital.png
+ai-action-required.png,AI-generated actionable items / attention required,32x32,PNG,yes,1493,a_clean_high_resolution_modern_3d_soft_gradient.png
+sku-mapped.png,SKU mapping configured,32x32,PNG,yes,2059,a_clean_high_resolution_modern_3d_gradient_vecto.png
+sku-not-mapped.png,SKU mapping not configured,32x32,PNG,yes,1902,a_clean_3d_glossy_icon_illustration_on_a_transpare.png
+adjust-inventory.png,Adjust inventory,32x32,PNG,yes,1554,adjust+inventory.png
+inventory-transfer.png,Transfer inventory between locations,32x32,PNG,yes,1315,a_clean_glossy_3d_style_icon_on_a_transparent_bac.png
+add-to-basket.png,Add replenishment item to basket,32x32,PNG,yes,1705,a_clean_high_quality_modern_vector_3d_ish_icon_i.png
+update-basket-quantity.png,Save/update basket quantity,32x32,PNG,yes,1590,a_clean_glossy_modern_3d_gradient_style_app_icon.png
+remove-from-basket.png,Remove item from basket,32x32,PNG,yes,1801,a_clean_glossy_vector_style_icon_on_a_transparent.png
+print-packing-slip.png,Print packing slip,32x32,PNG,yes,1542,print-packing-slip-v2.png
+mark-as-shipped.png,Mark order as shipped,32x32,PNG,yes,1915,mark-as-shipped.png
+undo-mark-as-shipped.png,Undo mark-as-shipped,32x32,PNG,yes,1754,mark-as-shipped-undo.png
+shipping-truck.png,Shipping / carrier,32x32,PNG,yes,1391,shipping-truck.png
+pending.png,Order status: Pending,32x32,PNG,yes,2059,pending-final.png
+unshipped.png,Order status: Unshipped,32x32,PNG,yes,1387,unshipped-final.png
+waiting-for-pickup.png,Order status: Waiting for pickup,32x32,PNG,yes,1404,a_clean_minimal_high_quality_icon_illustration_o.png
+delivered.png,Order status: Delivered,32x32,PNG,yes,1491,delivered-final.png
+delivery-exception.png,Order status: Delivery exception,32x32,PNG,yes,1892,delivery-exception-final.png
+change-sku-price.png,Change SKU price,32x32,PNG,yes,1442,change-sku-price-final.png
+send-sales-price.png,Send / lower sales price,32x32,PNG,yes,1451,send-sales-price-final.png
+profit-calculator.png,Profit calculator / breakdown,32x32,PNG,yes,2207,a_clean_high_resolution_3d_illustration_style_app.png
+amazon-account-manager-agent.png,Hire/start Amazon Account Manager agent,32x32,PNG,yes,1617,a_clean_high_gloss_gradient_style_app_icon_on_tr.png
+ibcore-logo.png,Ibcore mark,32x32,PNG,yes,1868,a_clean_high_resolution_modern_glossy_3d_style.png
+columns.png,Choose/manage table columns,32x32,PNG,yes,1225,a_clean_minimal_high_resolution_icon_style_graph.png

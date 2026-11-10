@@ -1,0 +1,7 @@
+<!doctype html><html xmlns:th="http://www.thymeleaf.org"><body><th:block th:fragment="editor">
+    <dialog id="packing-name-dialog" aria-labelledby="packing-name-title">
+      <header><h2 id="packing-name-title">Rename package</h2><button type="button" data-name-cancel aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+      <div class="packing-name-body"><label><span>Package name</span><span class="packing-name-combo"><input id="packing-rename-value" aria-label="Package name" maxlength="120" required role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="packing-name-options" autocomplete="off"><button type="button" id="packing-name-toggle" aria-label="Choose existing package" aria-controls="packing-name-options"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button></span></label><div id="packing-name-options" class="location-picker-popup standard-choice-popup" role="listbox" aria-label="Existing packages" hidden></div><p id="packing-name-summary"></p></div>
+      <footer><p id="packing-name-error" role="alert"></p><div><button type="button" data-name-cancel>Cancel</button><button type="button" id="packing-name-confirm" class="primary-button">Review</button></div></footer>
+    </dialog>
+</th:block></body></html>

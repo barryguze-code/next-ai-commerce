@@ -2,6 +2,8 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
 <meta charset="utf-8">
+<link rel="stylesheet" th:href="@{/css/catalog-removal.css(v=${buildVersion})}" href="/css/catalog-removal.css">
+<meta name="_csrf" th:content="${_csrf.token}"><meta name="_csrf_header" th:content="${_csrf.headerName}">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Global Catalogue | Next AI Commerce</title>
 <link rel="icon" type="image/png" href="/images/next-ai-mark-transparent.png">
@@ -86,7 +88,7 @@
 <span th:text="${product.status}">ACTIVE</span>
 </span>
 </td>
-<td><div data-context-menu data-title="Global product actions"><button class="secondary-button compact-button" type="button" th:attr="data-target=|global-edit-${product.id}|" onclick="document.getElementById(this.dataset.target).showModal()">Edit</button></div></td>
+<td><div data-context-menu data-title="Global product actions"><button class="secondary-button compact-button" type="button" th:attr="data-target=|global-edit-${product.id}|" onclick="document.getElementById(this.dataset.target).showModal()">Edit</button><button class="secondary-button compact-button" type="button" data-catalog-removal data-action-description="Review deletion or retained status" th:attr="data-removal-url=|/app/platform/catalog/products/${product.id}|,data-removal-image=|/app/platform/catalog/products/${product.id}/image|,data-removal-identifier=${product.identifier ?: ''}">Remove product</button></div></td>
 </tr>
 <tr th:if="${#lists.isEmpty(products)}">
 <td colspan="7">
@@ -118,5 +120,5 @@
 </dialog>
 </main>
 
-<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block></body>
+<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block><script defer th:src="@{/js/catalog-removal.js(v=${buildVersion})}" src="/js/catalog-removal.js"></script></body>
 </html>

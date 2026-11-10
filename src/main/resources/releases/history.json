@@ -1,475 +1,1029 @@
 [
-{
-  "version": "1.13.0",
-  "title": "FBA stock review and suggested purchase orders",
-  "sections": [
-    {
-      "title": "FBA shipment stock review",
-      "items": [
-        "Filter shipments by warehouse and status, review discrepancies, and hide or restore shipments without deleting Amazon records.",
-        "Review shipment quantities and eligible warehouse allocations before confirming stock deduction. Existing reservations and Amazon quantities stay unchanged. Automatic deduction stays off unless separately enabled."
-      ]
-    },
-    {
-      "title": "Suggested purchase orders",
-      "items": [
-        "Start with suggested case quantities, adjust the working basket, filter by vendor, and download an itemized CSV.",
-        "Name, save, reopen or delete drafts, then submit internal vendor POs when ready. Nothing is sent to vendors automatically.",
-        "Quantity edits update the basket automatically, with a brief confirmation after leaving the field."
-      ]
-    },
-    {
-      "title": "Consistent workspace tools",
-      "items": [
-        "Manage warehouses from the shared selector and use consistent inventory ledger controls.",
-        "Find in-stock Amazon SKUs with recent sales and a lower Buy Box reference through Buybox Lost.",
-        "Use Carrier Rate Change to maintain effective-dated package cost estimates. Collaboration source links and task visibility refresh consistently."
-      ]
-    }
-  ]
-},
-{
-  "version": "1.12.0",
-  "title": "Warehouses and clearer FBA shipments",
-  "sections": [
-    {
-      "title": "Warehouses and storage locations",
-      "items": [
-        "Organize each account’s storage locations under warehouses, with optional addresses and contacts. Existing locations remain in Default Warehouse.",
-        "Filter Available Inventory by warehouse, find stock using mapped marketplace SKUs, and retain your current page when switching accounts.",
-        "Unused warehouses can be deleted; warehouses with operational history become inactive while stock and historical records are preserved."
-      ]
-    },
-    {
-      "title": "FBA shipment visibility",
-      "items": [
-        "Review shipment SKU counts, shipped and Amazon-received units, ship-from postal codes and date-only shipment dates.",
-        "See transport, placement, total and per-unit charges with currency symbols and two decimal places. Missing Amazon charges remain unknown.",
-        "Open shipment collaboration from the shared record controls. FBA shipment reads do not deduct warehouse stock or alter reservations."
-      ]
-    }
-  ]
-},
-{
-  "version": "1.11.0",
-  "title": "Personal collaboration and clearer account workspaces",
-  "sections": [
-    {"title":"Mapping and shared inventory views","items":["Mapping saves keep your current table position. Same-ASIN Amazon listings share compatible mappings, with confirmation before replacing existing choices.","Mapped Shopify listings show warehouse availability and open the shared inventory ledger. Receiving and marketplace views share the same ledger controls.","Upload controls use the platform button style, and empty private collaborations close cleanly."]},
-    {"title":"Conversation completion and final UAT refinements","items":["Completed conversations notify their participants. Duplicate closes are protected, and one delivery failure does not stop remaining recipients.","Empty date groups are hidden; Older loads 25 more tasks at a time. Replies send without collapsing the dialog. New tasks explain self-assignment when nobody else is included."]},
-    {"title": "Collaboration finishing touches", "items": ["Red conversation icons identify tasks assigned to you. Other conversations use the blue icon.", "Choose and remember how many tasks to show first. Date groups use the shared centered expand control, and subjects have more room.", "Create record and platform tasks with one conversation dialog, including assignment, due dates and teammate mentions. Edit a saved subject with the pen control."]},
-    {"title": "Marketplace and cache follow-up", "items": ["Marketplace summary reads avoid repeated query compilation. Picture reads retain display caches, and unchanged order states no longer cause redundant publication work; live order locking remains in place."]},
-    {"title": "Receipt and inventory responsiveness", "items": ["Saving a receipt briefly waits for concurrent inventory work and retains duplicate-save protection.", "Inventory views reuse a scoped listing projection; background inventory selection avoids repeated query-compilation overhead."]},
-    {
-      "title": "Receiving upload reliability",
-      "items": ["Document uploads briefly wait for another inventory operation instead of failing immediately. Existing products can also match an exact account SKU when no supplier binding exists. Duplicate checks and complete rollback remain in place."]
-    },
-    {
-      "title": "Performance and expiration entry",
-      "items": [
-        "Collaboration views load without repeatedly reconciling personal priorities; task details are fetched together with current access checks.",
-        "Inventory expiration corrections accept two-digit years; the redundant shelf summary cards have been removed."
-      ]
-    },
-    {
-      "title": "Conversations and personal priorities",
-      "items": [
-        "Find active, assigned and closed conversations in the shared collaboration table, with original product pictures or the owning account logo.",
-        "Drag Priority or Subject handles in @Me to save your own task order across sign-ins and restarts. Other teammates keep their own order.",
-        "Browse additional conversations by creation date: This week, Last week, Last month and older groups.",
-        "Open task details directly from every conversation tab and follow the original source when your account access permits."
-      ]
-    },
-    {
-      "title": "Account and connection clarity",
-      "items": [
-        "Review accounts with consistent table styling and compact workspace headers.",
-        "See marketplace providers in Channel and edit a store’s display name without changing its connection credentials.",
-        "Completed setup notices no longer remain across unrelated pages; connection warnings remain available in Marketplace Connections."
-      ]
-    }
-  ]
-},
-{
-  "version": "1.10.0",
-  "title": "Shopify orders and shared warehouse operations",
-  "sections": [
-    {
-      "title": "Shopify workspace",
-      "items": [
-        "Connect your Shopify store, synchronize products and orders, and map variants to account catalogue products.",
-        "Review Shopify orders using the shared order, packing and inventory workflows."
-      ]
-    },
-    {
-      "title": "Warehouse operations",
-      "items": [
-        "Review stock, reservations and marketplace movements in the shared inventory ledger.",
-        "Configure inventory publication from explicitly selected account warehouse locations to the verified Shopify location; uncertain stock changes require reconciliation."
-      ]
-    },
-    {
-      "title": "Cost estimates",
-      "items": [
-        "Review mapped product costs and planning shipping costs, with an editable Other cost per sold SKU unit.",
-        "Missing cost evidence remains visible; estimates exclude payment fees, taxes and refunds."
-      ]
-    }
-  ]
-},
-{
-  "version": "1.9.0",
-  "title": "Clear catalogue identity and safer supplier imports",
-  "sections": [
-    {
-      "title": "Catalogue safeguards",
-      "items": [
-        "Conflicting vendor item codes are flagged before an import or supplier update can assign them to another product. Existing stock, saved mappings and history remain unchanged.",
-        "Vendor item codes and Account SKUs are labelled separately when reviewing product mappings; barcode search matches are explained."
-      ]
-    },
-    {
-      "title": "Workspace refinements",
-      "items": [
-        "Mapping pictures stay within their frames and picture menus fit their content. Shared action menus use consistent left-aligned labels.",
-        "Catalogue tables retain their sorting controls, Marketplace priorities remain readable, and mapped products link to their Inventory Ledger."
-      ]
-    }
-  ]
-},
-{
-  "version": "1.8.0",
-  "title": "Preparing clearer Amazon fee reviews",
-  "sections": [
-    {
-      "title": "Controlled fee review rollout",
-      "items": [
-        "A new fee review foundation is ready for controlled rollout. Fee collection and acceptance remain disabled until separately enabled.",
-        "When enabled with verified evidence, fee comparisons keep fulfillment and referral charges separate and preserve earlier differences. Missing evidence stays unavailable rather than appearing as zero."
-      ]
-    },
-    {
-      "title": "Prospective fees and preserved history",
-      "items": [
-        "When authorized, accepting an actual fee applies to the matching SKU basis for future estimates. Historical orders and fee differences remain available.",
-        "Existing inventory quantities, product mappings and historical source records are preserved."
-      ]
-    }
-  ]
-},
-{"version":"1.7.3","title":"Readable help after resizing","sections":[{"title":"Tooltip correction","items":["Column help remains readable when switching from desktop to a narrow screen.","Keyboard focus, Escape dismissal and column sorting remain independent."]}]},
-{"version":"1.7.2","title":"Clear product pictures and catalogue help","sections":[{"title":"Catalogue corrections","items":["Global Catalogue opens correctly and preserves existing product identifiers.","Product pictures retain their proportions without added inset padding in operational tables.","Buying-cost help stays readable and separate from column sorting."]}]},
-{"version":"1.7.1","title":"Reliable delivery of released workspace assets","sections":[{"title":"Browser cache correction","items":["Updated asset versions ensure ordinary page refresh loads the released workspace scripts and styles, including mobile Columns controls, CSV export and cost details.","Feature behavior, inventory quantities and integration settings are unchanged."]}]},
-{"version":"1.7.0","title":"Precision Workspace and clearer warehouse operations","sections":[{"title":"Marketplace workspace","items":["Review listings in a compact workspace with clearer product identity, status, stock and sales.","Search mapped account item codes and export separate spreadsheet fields.","Verified variation families remain distinct from independent offers; unavailable relationship evidence stays unresolved."]},{"title":"Warehouse and profitability","items":["See case equivalents alongside each quantities without adding row height.","Review dated FBA cost estimates and distinguish known costs from missing information.","Receiving retains a reachable Save Receipt action and clear case, loose-unit and exception quantities."]},{"title":"Shared controls","items":["Use platform navigation and the Columns panel on smaller screens.","Order filtering preserves accurate merchant-fulfilled inventory and price comparisons."]}]},
-{"version":"1.6.10","title":"Upcoming update notice","sections":[{"title":"Release notice","items":["A planned update notice shows a provisional estimate and can be collapsed or reopened. Existing commerce workflows remain unchanged."]}]},
-{
- "version":"1.6.9",
- "title":"Reachable Save Receipt action",
- "sections":[{"title":"Receiving hotfix","items":["Save Receipt stays in the receiving drawer footer while the form scrolls, including on shorter laptop screens.","Existing receipt validation, draft handling and duplicate-save protection are preserved."]}]
-},
-{
- "version":"1.6.8",
- "title":"Faster Orders totals",
- "sections":[{"title":"Orders performance hotfix","items":["Order status totals avoid repeated inventory and status calculations when filtering, sorting, or locking identifiers.","Inventory availability remains live and account-scoped; existing totals and fulfillment rules are preserved."]}]
-},
-{
- "version":"1.6.7",
- "title":"Orders caching performance hotfix",
- "sections":[{"title":"Less repeated page-loading work","items":["Browsers can reuse unchanged public scripts, styles and icons after checking for updates.","The server reuses parsed page templates. Private order pages, inventory values and account permissions are not cached by this change."]}]
-},
-{
- "version":"1.6.6",
- "title":"Clearer collaboration and inventory workflows",
- "sections":[{"title":"Collaboration and shared controls","items":["Readable conversation timelines, per-user read states, accurate message counters, contextual discussions and clearer actionable-item icons.","Consistent dialogs, tooltips, search controls, page-size choices and compact laptop-friendly Orders layouts."]},{"title":"Orders and inventory","items":["Open mapped-item inventory ledgers directly. Bundle-level clicks ask which item's ledger to inspect; individual item codes remain direct links.","Inventory transfers show full destination codes and aligned quantity controls. Buy Box Lost excludes out-of-stock SKUs, and Order ID & Status sorts by order date.","Download matching Orders across pages with separate product, order, financial, stock, sales and refund CSV fields.","Review invoice cost evidence before accepting changes to saved catalogue defaults. No automatic Amazon price publishing is introduced."]}]
-},
-{
- "version":"1.6.5",
- "title":"Reliable invoice matching",
- "sections":[{"title":"Receiving hotfix","items":["Invoices reuse existing vendor item mappings without attempting to change catalogue product identity or requiring a duplicate-product merge. Invoice costs remain separate from saved default costs."]}]
-},
-{
- "version":"1.6.4",
- "title":"Order details and reliable cost defaults",
- "sections":[{"title":"Orders hotfix","items":["Switch reliably between All, FBM and FBA without a previous saved filter overriding your selection.","Order item prices not yet supplied by Amazon display Pending rather than a misleading zero-dollar sale.","Click SKU refund totals, weekly refund bars or the 30-day refund summary to review imported refunded orders in a paginated side panel, without leaving your table. Refund amounts and unknown units remain separate from profit estimates."]},{"title":"Catalogue and calculator costs","items":["Search receiving documents by invoice item code.","Missing catalogue buying costs are initialized from confirmed received invoice lines, preserving existing vendor prices and historical receipt costs.","Edit required per-each catalogue costs or save SKU-specific calculator overrides. Mapped pack costs recalculate from item quantities; use catalogue costs to remove an override. Cost saves do not publish Amazon prices."]}]
-},
-{
- "version":"1.6.3",
- "title":"Consistent profit and refund insights",
- "sections":[{"title":"Profit and refunds","items":["Orders, Marketplace SKUs and replenishment share compact price, Buy Box, profit and estimated-cost views with SKU cost editing.","Review 30-day sales, order and unit totals, estimated profit before refunds, and imported refund amounts with distinct order counts.","Four-week SKU refund history appears in Orders and Marketplace SKUs. Refunds use posting dates; imported records may be incomplete and are shown separately from estimated profit."]},{"title":"Everyday workflow","items":["Keep table page sizes and your position when changing row counts. Cancelled order rows omit financial and fulfillment actions.","Use compact price and scheduled-sale dialogs, standard inventory-adjustment choices, and consistent calculator icons. Amazon publishing still requires explicit confirmation and existing permissions."]}]
-},
-{
- "version":"1.6.2",
- "title":"Persistent replenishment baskets",
- "sections":[{"title":"Replenishment hotfix","items":["Your basket survives pagination, refreshes and menu navigation in the same browser tab, separated by user and account. Closing the tab ends this browser-session basket; no purchase order is submitted.","Case-size changes save in place without returning to page one or resetting the table. Recommendations recalculate while basket each quantities stay unchanged."]}]
-},
-{
- "version":"1.6.1",
- "title":"Reliable FBM inventory queue processing",
- "sections":[{"title":"Inventory synchronization","items":["New stock updates no longer wait behind routine checks of confirmed zero-stock listings. Overdue updates are processed oldest-first while fresh zero-stock changes retain priority.","Active accounts receive fair processing turns under the shared Amazon request limit. Order freshness, inventory holds and Amazon quantity verification remain required.","Inventory sync errors now identify the Amazon HTTP status and whether submission or verification failed, without exposing credentials."]}]
-},
-{
- "version": "1.6.0",
- "title": "Replenishment planning and estimated profit",
- "sections": [
   {
-   "title": "Replenishment",
-   "items": [
-    "Replenishment graduates from its draft label with red out-of-stock and orange low-inventory tabs, compact stock quantities and clearer basket confirmations.",
-    "Review product pictures, edit cases or whole each quantities with automatic conversion, and see estimated catalogue-cost totals in the basket. Whole cases display without decimals; calculated fractional cases display two decimals.",
-    "Account-specific case sizes can be edited without changing master packaging. Download replenishment from Basket Preview. Baskets remain page-only plans, not saved purchase orders or vendor submissions."
-   ]
+    "version": "1.14.0",
+    "title": "Package rates and consistent inventory workspaces",
+    "sections": [
+      {
+        "title": "Packages and planning costs",
+        "items": [
+          "Manage packages from Orders and Marketplace SKUs, rename or merge them, and maintain separate effective-dated planning rates with history.",
+          "Print the selected package and storage location on packing slips."
+        ]
+      },
+      {
+        "title": "Catalogue and purchase plans",
+        "items": [
+          "Remove unused catalogue products safely, with inactive or archive alternatives when records have dependencies.",
+          "Add Account Catalogue products to purchase plans with case quantities, searchable selection and editable draft names."
+        ]
+      },
+      {
+        "title": "Consistent workspace controls",
+        "items": [
+          "Use consistent optimized icons, table actions and anchored table tools across operational pages.",
+          "Review mapped inventory movements and warehouse availability by location before confirming FBA stock deductions. Missing shipment evidence remains protected."
+        ]
+      }
+    ]
   },
   {
-   "title": "Estimated profit",
-   "items": [
-    "Review estimated FBM profit beside Item Sales and across Marketplace SKUs, related listings and Replenishment, with compact price and Buy Box calculators.",
-    "Apply $1 other cost per sold SKU unit, 8% referral fees up to $15 and 15% above $15, and effective-dated FedEx/UPS shipping defaults from January 1, 2025.",
-    "Reuse packing information, account for multiple packages and flag missing costs. Estimates use current catalogue costs and are not historical accounting results; FBA calculations remain unavailable.",
-    "Buy Box prices differing from your listing price appear red in Replenishment. Price equality does not confirm Buy Box ownership. Existing Amazon publishing policies remain unchanged; price submission requires separately enabled, explicitly confirmed access."
-   ]
-  }
- ]
-},
-{
- "version":"1.5.0",
- "title":"Replenishment draft available in production",
- "sections":[{"title":"Draft replenishment planning","items":["Open Replenishment from Inventory to review account-wide item demand, stock coverage, vendor planning and suggested case quantities.","Configure account stock-day targets and vendor lead times, refresh forecasts, and download suggestions using existing account permissions.","Forecasts refresh on a separate background worker and retain the last completed snapshot. Initial preparation starts after application startup.","Basket and draft purchase orders remain previews only: they are not saved or submitted. No supplier orders or Amazon updates are sent by this module."]}]
-},
-{
- "version":"1.4.3",
- "title":"Compact collaboration and inline due dates",
- "sections":[{"title":"Collaboration","items":["Edit optional due dates directly in the table or conversation toolbar, with automatic date separators, save and cancel controls, and no extra modal.","Compact conversation headers, blue toolbar controls and smaller visibility tabs match the workspace in both themes.","Consistent search-field height and a themed record-type chooser replace oversized and system-native controls.","Isolated teammate styles keep the small green online indicator beside the name instead of inside an avatar box."]}]
-},
-{
- "version":"1.4.2",
- "title":"Clearer collaboration icons and teammate presence",
- "sections":[{"title":"Workspace polish","items":["Use the supplied collaboration artwork for new tasks and original-record links, with a transparent sidebar shortcut in both themes.","Compact teammate rows show a small green online indicator, with search and offline teammates still available.","Seller Central links use Seller Central artwork; Amazon product-page links use the brown Amazon box."]}]
-},
-{
- "version":"1.4.1",
- "title":"Live chat connectivity and searchable teammates",
- "sections":[{"title":"Team collaboration","items":["Restore production live-chat connections through the existing secure proxy, including online presence and huddle messages across platform pages.","The compact teammate picker opens on Online by default. Switch to All teammates and search names or email addresses to see offline teammates from your shared accounts. Offline follow-up remains available through saved collaboration tasks.","Keep existing authentication, account access, publishing and notification settings unchanged."]}]
-},
-{
- "version":"1.4.0",
- "title":"A consistent workspace and better team collaboration",
- "sections":[
-  {"title":"Platform experience","items":["Consistent table typography, search controls, record visuals and action menus across the workspace, with improved front-end caching and steadier inventory layouts.","Type date numbers without separators: fields insert slashes automatically and display two-digit years. Inventory totals use compact labels, with details available on hover."]},
-  {"title":"Collaboration","items":["Create store-wide tasks from Collaboration or the sidebar, assign teammates and optionally set due dates. Overdue active tasks are highlighted and record conversations show related product pictures.","Updated floating huddles, compact message composers, teammate mentions and attachments. New conversations keep the composer focused on messaging; optional task deadlines remain available in task controls.","Share suggestions for new actions with the platform team from record action menus."]},
-  {"title":"Inventory and account controls","items":["Improved inventory adjustments, hold and removal actions, saved-plan details and ledger history. Donation and disposal remove the selected batch; returns remain pending until marked complete.","Unmapped seller-fulfilled listings calculate zero publishable inventory. Existing account publication settings continue to control whether changes are sent to Amazon.","Improved member access management and profile pictures. Existing account, marketplace and mail publication policies are preserved."]}
- ]
-},
-{
- "version":"1.3.14",
- "title":"Cross-site invitation sign-in continuity",
- "sections":[{"title":"Email invitations","items":["Carry the invitation through sign-in and password retries even when strict browser cookies withhold the original session after opening an email link.","Keep strict cookies, CSRF protection, invited-email verification and explicit acceptance. No pending invitation is automatically accepted."]}]
-},
-{
- "version":"1.3.13",
- "title":"Email invitation sign-in recovery",
- "sections":[{"title":"Account access","items":["Invitation links opened from email clients now return to the acceptance page after sign-in even when browser navigation headers are unavailable.","Users must still sign in with the invited email and explicitly accept. Existing memberships, pending invitations, and store permissions are not automatically changed."]}]
-},
-{
- "version":"1.3.12",
- "title":"Invitation access and manual Amazon SKU sync",
- "sections":[{"title":"Account invitations","items":["Invitation acceptance links now survive sign-in, so existing users can accept access to another account without losing the invitation.","Existing account memberships and store permissions remain unchanged until the invitation is accepted."]},{"title":"Marketplace SKUs","items":["Authorized users can request an Amazon listing refresh from Marketplace SKUs.","Refresh requests run through the background scheduler, prevent duplicate requests, and respect a five-minute cooldown after completion. This action imports Amazon listings; it does not publish prices or inventory."]}]
-},
-{
- "version":"1.3.11",
- "title":"Branch-aware global catalogue identity",
- "sections":[{"title":"Safe supplier imports","items":["Match equivalent UPC/EAN/GTIN barcodes globally while scoping supplier item codes and case packs to their distribution center. Different DCs may reuse a code for different products without mixing account catalogues.","Add an optional supplier DC field to import review. Ambiguous branch codes request review; existing vendor history cannot silently move to another branch.","Assign Ibcore KEHE catalogue identity to DC 41 without changing product IDs, stock, receipts or marketplace mappings. Preserve account-specific buying prices and branch packaging.","Use indexed batch matching with transaction safeguards and a 25,845-row regression test. Existing Amazon publishing settings remain unchanged."]}]
-},
-{
- "version":"1.3.10",
- "title":"Shared catalogue barcode import fix",
- "sections":[{"title":"Catalogue imports","items":["Preserve an existing global product's primary barcode when another account imports a known alternate barcode. Do not create duplicate products.","Flag changed barcodes with the affected row and vendor item code instead of silently merging unrelated products or showing a database error. Failed imports roll back safely for review and retry.","Includes a 25,845-row import regression test. No marketplace publishing settings are changed."]}]
-},
-{
- "version":"1.3.9",
- "title":"Account administrator logo uploads",
- "sections":[{"title":"Company identity","items":["Allow account OWNER and ADMIN members to upload the logo for their own active account without requiring platform-superadmin access.","Keep tenant-specific authorization at the controller boundary. Operators and viewers remain unable to change company identity, and normal account admins return to their workspace after saving."]}]
-},
-{
- "version":"1.3.8",
- "title":"New marketplace connection setup",
- "sections":[{"title":"Connection creation","items":["Initialize the required inventory start timestamp when creating a marketplace connection, fixing the database error during Amazon US setup.","New connections remain pending authorization. Existing connection timestamps and inventory/price publishing permissions are unchanged."]}]
-},
-{
- "version":"1.3.7",
- "title":"Receiving case-size defaults",
- "sections":[{"title":"Faster receiving","items":["First receiving prefills the remaining invoiced quantity using the case size. Additional receiving starts with zero cases while retaining units per case and focusing expiration date.","Update catalogue case size is a compact secondary button. Its confirmation explains the change; redundant inline guidance is removed. Exception clear actions still reset both values to zero."]}]
-},
-{
- "version":"1.3.6",
- "title":"Unshipped invoice line consolidation",
- "sections":[{"title":"Vendor invoice accuracy","items":["Combine paired vendor status rows for the same invoice line so a partially shipped item shows one shortage, not two. Distinct invoice line numbers remain separate.","Includes v1.3.5 receiving zero-default safeguards, SKU-count confirmation and prompt shelf-life sale reconciliation. No receipt or stock quantities are changed by this informational summary."]}]
-},
-{
-  "version": "1.3.5",
-  "title": "Receiving defaults and prompt shelf-life updates",
-  "sections": [
-    {"title":"Receiving safeguards","items":["Exception tabs start at zero and show a plus until a positive quantity is entered. Clearing resets cases and units per case. Previously received items start with zero sellable quantity; Save requires a positive total.","Show vendor-reported unshipped source rows below the receiving invoice, informational only. New imports retain these rows without adding inventory or expected receipts. Older imports explicitly identify unavailable unshipped history."]},
-    {"title":"Shelf-life automation","items":["Confirm the number of mapped SKUs to re-evaluate before saving global shelf-life rules. Matching automatic sales follow saved defaults; explicit product/SKU exceptions remain in place.","Stock, reservations, policy and mapping changes promptly queue related sale reviews, prioritizing managed discounts. Remove discounts when eligible batches sell out or become reserved; end dates remain bounded by the stop-selling cutoff. Amazon acceptance and propagation can take longer than one minute.","Production-only pricing, The Keto Storehouse connection scope, regular-price protection and existing-promotion ownership safeguards remain unchanged."]}
-  ]
-},
-{
-  "version": "1.3.4",
-  "title": "Shelf-life publication queue correction",
-  "sections": [
-    {
-      "title": "Production rollout safety",
-      "items": [
-        "Correct nullable error-state persistence in the sale publication queue. Add a database regression test covering idle, intent, confirmation, retry and removal transitions.",
-        "The initial sale rollout was paused after verification detected the queue error. Inventory quantity publishing and Orders ledger links remain separate. Production-only connection restrictions and promotion ownership protections are unchanged."
-      ]
-    }
-  ]
-},
-{
-  "version": "1.3.3",
-  "title": "Production shelf-life discounts and item ledger links",
-  "sections": [
-    {
-      "title": "Amazon shelf-life discounts",
-      "items": [
-        "Publish temporary sale prices for eligible near-expiry stock on the explicitly approved production connection. Default discount follows the shelf-life policy (10% initially). Local never publishes prices.",
-        "Switch account-wide publishing on or off from the sale-plan dialog. Remove only managed discounts when stock is exhausted or reserved, the sale window ends, or the shelf-life cutoff is reached.",
-        "Keep regular prices and unrelated Amazon promotions unchanged. Use durable ownership, finite schedules, retries and read-back verification."
-      ]
-    },
-    {
-      "title": "Orders inventory history",
-      "items": [
-        "Click a mapped item code on Orders to open the inventory ledger scoped to that exact catalogue item. SKU mapping and order-filter controls remain separate."
-      ]
-    }
-  ]
-},
+    "version": "1.13.0",
+    "title": "FBA stock review and suggested purchase orders",
+    "sections": [
+      {
+        "title": "FBA shipment stock review",
+        "items": [
+          "Filter shipments by warehouse and status, review discrepancies, and hide or restore shipments without deleting Amazon records.",
+          "Review shipment quantities and eligible warehouse allocations before confirming stock deduction. Existing reservations and Amazon quantities stay unchanged. Automatic deduction stays off unless separately enabled."
+        ]
+      },
+      {
+        "title": "Suggested purchase orders",
+        "items": [
+          "Start with suggested case quantities, adjust the working basket, filter by vendor, and download an itemized CSV.",
+          "Name, save, reopen or delete drafts, then submit internal vendor POs when ready. Nothing is sent to vendors automatically.",
+          "Quantity edits update the basket automatically, with a brief confirmation after leaving the field."
+        ]
+      },
+      {
+        "title": "Consistent workspace tools",
+        "items": [
+          "Manage warehouses from the shared selector and use consistent inventory ledger controls.",
+          "Find in-stock Amazon SKUs with recent sales and a lower Buy Box reference through Buybox Lost.",
+          "Use Carrier Rate Change to maintain effective-dated package cost estimates. Collaboration source links and task visibility refresh consistently."
+        ]
+      }
+    ]
+  },
   {
-  "version": "1.3.2",
-  "title": "Editable case sizes with explicit catalogue updates",
-  "sections": [
-    {
-      "title": "Receiving hotfix",
-      "items": [
-        "Enter cases and units per case independently for sellable stock, exceptions and expiration batches. Total units are calculated and read-only.",
-        "Remove loose units. Receipt entry does not change catalogue defaults.",
-        "Update the shared catalogue case size only through the explicit action and confirmation dialog. Existing invoice quantities remain unchanged."
-      ]
-    }
-  ]
-},
+    "version": "1.12.0",
+    "title": "Warehouses and clearer FBA shipments",
+    "sections": [
+      {
+        "title": "Warehouses and storage locations",
+        "items": [
+          "Organize each account\u2019s storage locations under warehouses, with optional addresses and contacts. Existing locations remain in Default Warehouse.",
+          "Filter Available Inventory by warehouse, find stock using mapped marketplace SKUs, and retain your current page when switching accounts.",
+          "Unused warehouses can be deleted; warehouses with operational history become inactive while stock and historical records are preserved."
+        ]
+      },
+      {
+        "title": "FBA shipment visibility",
+        "items": [
+          "Review shipment SKU counts, shipped and Amazon-received units, ship-from postal codes and date-only shipment dates.",
+          "See transport, placement, total and per-unit charges with currency symbols and two decimal places. Missing Amazon charges remain unknown.",
+          "Open shipment collaboration from the shared record controls. FBA shipment reads do not deduct warehouse stock or alter reservations."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.11.0",
+    "title": "Personal collaboration and clearer account workspaces",
+    "sections": [
+      {
+        "title": "Mapping and shared inventory views",
+        "items": [
+          "Mapping saves keep your current table position. Same-ASIN Amazon listings share compatible mappings, with confirmation before replacing existing choices.",
+          "Mapped Shopify listings show warehouse availability and open the shared inventory ledger. Receiving and marketplace views share the same ledger controls.",
+          "Upload controls use the platform button style, and empty private collaborations close cleanly."
+        ]
+      },
+      {
+        "title": "Conversation completion and final UAT refinements",
+        "items": [
+          "Completed conversations notify their participants. Duplicate closes are protected, and one delivery failure does not stop remaining recipients.",
+          "Empty date groups are hidden; Older loads 25 more tasks at a time. Replies send without collapsing the dialog. New tasks explain self-assignment when nobody else is included."
+        ]
+      },
+      {
+        "title": "Collaboration finishing touches",
+        "items": [
+          "Red conversation icons identify tasks assigned to you. Other conversations use the blue icon.",
+          "Choose and remember how many tasks to show first. Date groups use the shared centered expand control, and subjects have more room.",
+          "Create record and platform tasks with one conversation dialog, including assignment, due dates and teammate mentions. Edit a saved subject with the pen control."
+        ]
+      },
+      {
+        "title": "Marketplace and cache follow-up",
+        "items": [
+          "Marketplace summary reads avoid repeated query compilation. Picture reads retain display caches, and unchanged order states no longer cause redundant publication work; live order locking remains in place."
+        ]
+      },
+      {
+        "title": "Receipt and inventory responsiveness",
+        "items": [
+          "Saving a receipt briefly waits for concurrent inventory work and retains duplicate-save protection.",
+          "Inventory views reuse a scoped listing projection; background inventory selection avoids repeated query-compilation overhead."
+        ]
+      },
+      {
+        "title": "Receiving upload reliability",
+        "items": [
+          "Document uploads briefly wait for another inventory operation instead of failing immediately. Existing products can also match an exact account SKU when no supplier binding exists. Duplicate checks and complete rollback remain in place."
+        ]
+      },
+      {
+        "title": "Performance and expiration entry",
+        "items": [
+          "Collaboration views load without repeatedly reconciling personal priorities; task details are fetched together with current access checks.",
+          "Inventory expiration corrections accept two-digit years; the redundant shelf summary cards have been removed."
+        ]
+      },
+      {
+        "title": "Conversations and personal priorities",
+        "items": [
+          "Find active, assigned and closed conversations in the shared collaboration table, with original product pictures or the owning account logo.",
+          "Drag Priority or Subject handles in @Me to save your own task order across sign-ins and restarts. Other teammates keep their own order.",
+          "Browse additional conversations by creation date: This week, Last week, Last month and older groups.",
+          "Open task details directly from every conversation tab and follow the original source when your account access permits."
+        ]
+      },
+      {
+        "title": "Account and connection clarity",
+        "items": [
+          "Review accounts with consistent table styling and compact workspace headers.",
+          "See marketplace providers in Channel and edit a store\u2019s display name without changing its connection credentials.",
+          "Completed setup notices no longer remain across unrelated pages; connection warnings remain available in Marketplace Connections."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.10.0",
+    "title": "Shopify orders and shared warehouse operations",
+    "sections": [
+      {
+        "title": "Shopify workspace",
+        "items": [
+          "Connect your Shopify store, synchronize products and orders, and map variants to account catalogue products.",
+          "Review Shopify orders using the shared order, packing and inventory workflows."
+        ]
+      },
+      {
+        "title": "Warehouse operations",
+        "items": [
+          "Review stock, reservations and marketplace movements in the shared inventory ledger.",
+          "Configure inventory publication from explicitly selected account warehouse locations to the verified Shopify location; uncertain stock changes require reconciliation."
+        ]
+      },
+      {
+        "title": "Cost estimates",
+        "items": [
+          "Review mapped product costs and planning shipping costs, with an editable Other cost per sold SKU unit.",
+          "Missing cost evidence remains visible; estimates exclude payment fees, taxes and refunds."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.9.0",
+    "title": "Clear catalogue identity and safer supplier imports",
+    "sections": [
+      {
+        "title": "Catalogue safeguards",
+        "items": [
+          "Conflicting vendor item codes are flagged before an import or supplier update can assign them to another product. Existing stock, saved mappings and history remain unchanged.",
+          "Vendor item codes and Account SKUs are labelled separately when reviewing product mappings; barcode search matches are explained."
+        ]
+      },
+      {
+        "title": "Workspace refinements",
+        "items": [
+          "Mapping pictures stay within their frames and picture menus fit their content. Shared action menus use consistent left-aligned labels.",
+          "Catalogue tables retain their sorting controls, Marketplace priorities remain readable, and mapped products link to their Inventory Ledger."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.8.0",
+    "title": "Preparing clearer Amazon fee reviews",
+    "sections": [
+      {
+        "title": "Controlled fee review rollout",
+        "items": [
+          "A new fee review foundation is ready for controlled rollout. Fee collection and acceptance remain disabled until separately enabled.",
+          "When enabled with verified evidence, fee comparisons keep fulfillment and referral charges separate and preserve earlier differences. Missing evidence stays unavailable rather than appearing as zero."
+        ]
+      },
+      {
+        "title": "Prospective fees and preserved history",
+        "items": [
+          "When authorized, accepting an actual fee applies to the matching SKU basis for future estimates. Historical orders and fee differences remain available.",
+          "Existing inventory quantities, product mappings and historical source records are preserved."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.7.3",
+    "title": "Readable help after resizing",
+    "sections": [
+      {
+        "title": "Tooltip correction",
+        "items": [
+          "Column help remains readable when switching from desktop to a narrow screen.",
+          "Keyboard focus, Escape dismissal and column sorting remain independent."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.7.2",
+    "title": "Clear product pictures and catalogue help",
+    "sections": [
+      {
+        "title": "Catalogue corrections",
+        "items": [
+          "Global Catalogue opens correctly and preserves existing product identifiers.",
+          "Product pictures retain their proportions without added inset padding in operational tables.",
+          "Buying-cost help stays readable and separate from column sorting."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.7.1",
+    "title": "Reliable delivery of released workspace assets",
+    "sections": [
+      {
+        "title": "Browser cache correction",
+        "items": [
+          "Updated asset versions ensure ordinary page refresh loads the released workspace scripts and styles, including mobile Columns controls, CSV export and cost details.",
+          "Feature behavior, inventory quantities and integration settings are unchanged."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.7.0",
+    "title": "Precision Workspace and clearer warehouse operations",
+    "sections": [
+      {
+        "title": "Marketplace workspace",
+        "items": [
+          "Review listings in a compact workspace with clearer product identity, status, stock and sales.",
+          "Search mapped account item codes and export separate spreadsheet fields.",
+          "Verified variation families remain distinct from independent offers; unavailable relationship evidence stays unresolved."
+        ]
+      },
+      {
+        "title": "Warehouse and profitability",
+        "items": [
+          "See case equivalents alongside each quantities without adding row height.",
+          "Review dated FBA cost estimates and distinguish known costs from missing information.",
+          "Receiving retains a reachable Save Receipt action and clear case, loose-unit and exception quantities."
+        ]
+      },
+      {
+        "title": "Shared controls",
+        "items": [
+          "Use platform navigation and the Columns panel on smaller screens.",
+          "Order filtering preserves accurate merchant-fulfilled inventory and price comparisons."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.10",
+    "title": "Upcoming update notice",
+    "sections": [
+      {
+        "title": "Release notice",
+        "items": [
+          "A planned update notice shows a provisional estimate and can be collapsed or reopened. Existing commerce workflows remain unchanged."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.9",
+    "title": "Reachable Save Receipt action",
+    "sections": [
+      {
+        "title": "Receiving hotfix",
+        "items": [
+          "Save Receipt stays in the receiving drawer footer while the form scrolls, including on shorter laptop screens.",
+          "Existing receipt validation, draft handling and duplicate-save protection are preserved."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.8",
+    "title": "Faster Orders totals",
+    "sections": [
+      {
+        "title": "Orders performance hotfix",
+        "items": [
+          "Order status totals avoid repeated inventory and status calculations when filtering, sorting, or locking identifiers.",
+          "Inventory availability remains live and account-scoped; existing totals and fulfillment rules are preserved."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.7",
+    "title": "Orders caching performance hotfix",
+    "sections": [
+      {
+        "title": "Less repeated page-loading work",
+        "items": [
+          "Browsers can reuse unchanged public scripts, styles and icons after checking for updates.",
+          "The server reuses parsed page templates. Private order pages, inventory values and account permissions are not cached by this change."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.6",
+    "title": "Clearer collaboration and inventory workflows",
+    "sections": [
+      {
+        "title": "Collaboration and shared controls",
+        "items": [
+          "Readable conversation timelines, per-user read states, accurate message counters, contextual discussions and clearer actionable-item icons.",
+          "Consistent dialogs, tooltips, search controls, page-size choices and compact laptop-friendly Orders layouts."
+        ]
+      },
+      {
+        "title": "Orders and inventory",
+        "items": [
+          "Open mapped-item inventory ledgers directly. Bundle-level clicks ask which item's ledger to inspect; individual item codes remain direct links.",
+          "Inventory transfers show full destination codes and aligned quantity controls. Buy Box Lost excludes out-of-stock SKUs, and Order ID & Status sorts by order date.",
+          "Download matching Orders across pages with separate product, order, financial, stock, sales and refund CSV fields.",
+          "Review invoice cost evidence before accepting changes to saved catalogue defaults. No automatic Amazon price publishing is introduced."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.5",
+    "title": "Reliable invoice matching",
+    "sections": [
+      {
+        "title": "Receiving hotfix",
+        "items": [
+          "Invoices reuse existing vendor item mappings without attempting to change catalogue product identity or requiring a duplicate-product merge. Invoice costs remain separate from saved default costs."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.4",
+    "title": "Order details and reliable cost defaults",
+    "sections": [
+      {
+        "title": "Orders hotfix",
+        "items": [
+          "Switch reliably between All, FBM and FBA without a previous saved filter overriding your selection.",
+          "Order item prices not yet supplied by Amazon display Pending rather than a misleading zero-dollar sale.",
+          "Click SKU refund totals, weekly refund bars or the 30-day refund summary to review imported refunded orders in a paginated side panel, without leaving your table. Refund amounts and unknown units remain separate from profit estimates."
+        ]
+      },
+      {
+        "title": "Catalogue and calculator costs",
+        "items": [
+          "Search receiving documents by invoice item code.",
+          "Missing catalogue buying costs are initialized from confirmed received invoice lines, preserving existing vendor prices and historical receipt costs.",
+          "Edit required per-each catalogue costs or save SKU-specific calculator overrides. Mapped pack costs recalculate from item quantities; use catalogue costs to remove an override. Cost saves do not publish Amazon prices."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.3",
+    "title": "Consistent profit and refund insights",
+    "sections": [
+      {
+        "title": "Profit and refunds",
+        "items": [
+          "Orders, Marketplace SKUs and replenishment share compact price, Buy Box, profit and estimated-cost views with SKU cost editing.",
+          "Review 30-day sales, order and unit totals, estimated profit before refunds, and imported refund amounts with distinct order counts.",
+          "Four-week SKU refund history appears in Orders and Marketplace SKUs. Refunds use posting dates; imported records may be incomplete and are shown separately from estimated profit."
+        ]
+      },
+      {
+        "title": "Everyday workflow",
+        "items": [
+          "Keep table page sizes and your position when changing row counts. Cancelled order rows omit financial and fulfillment actions.",
+          "Use compact price and scheduled-sale dialogs, standard inventory-adjustment choices, and consistent calculator icons. Amazon publishing still requires explicit confirmation and existing permissions."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.2",
+    "title": "Persistent replenishment baskets",
+    "sections": [
+      {
+        "title": "Replenishment hotfix",
+        "items": [
+          "Your basket survives pagination, refreshes and menu navigation in the same browser tab, separated by user and account. Closing the tab ends this browser-session basket; no purchase order is submitted.",
+          "Case-size changes save in place without returning to page one or resetting the table. Recommendations recalculate while basket each quantities stay unchanged."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.1",
+    "title": "Reliable FBM inventory queue processing",
+    "sections": [
+      {
+        "title": "Inventory synchronization",
+        "items": [
+          "New stock updates no longer wait behind routine checks of confirmed zero-stock listings. Overdue updates are processed oldest-first while fresh zero-stock changes retain priority.",
+          "Active accounts receive fair processing turns under the shared Amazon request limit. Order freshness, inventory holds and Amazon quantity verification remain required.",
+          "Inventory sync errors now identify the Amazon HTTP status and whether submission or verification failed, without exposing credentials."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.6.0",
+    "title": "Replenishment planning and estimated profit",
+    "sections": [
+      {
+        "title": "Replenishment",
+        "items": [
+          "Replenishment graduates from its draft label with red out-of-stock and orange low-inventory tabs, compact stock quantities and clearer basket confirmations.",
+          "Review product pictures, edit cases or whole each quantities with automatic conversion, and see estimated catalogue-cost totals in the basket. Whole cases display without decimals; calculated fractional cases display two decimals.",
+          "Account-specific case sizes can be edited without changing master packaging. Download replenishment from Basket Preview. Baskets remain page-only plans, not saved purchase orders or vendor submissions."
+        ]
+      },
+      {
+        "title": "Estimated profit",
+        "items": [
+          "Review estimated FBM profit beside Item Sales and across Marketplace SKUs, related listings and Replenishment, with compact price and Buy Box calculators.",
+          "Apply $1 other cost per sold SKU unit, 8% referral fees up to $15 and 15% above $15, and effective-dated FedEx/UPS shipping defaults from January 1, 2025.",
+          "Reuse packing information, account for multiple packages and flag missing costs. Estimates use current catalogue costs and are not historical accounting results; FBA calculations remain unavailable.",
+          "Buy Box prices differing from your listing price appear red in Replenishment. Price equality does not confirm Buy Box ownership. Existing Amazon publishing policies remain unchanged; price submission requires separately enabled, explicitly confirmed access."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.5.0",
+    "title": "Replenishment draft available in production",
+    "sections": [
+      {
+        "title": "Draft replenishment planning",
+        "items": [
+          "Open Replenishment from Inventory to review account-wide item demand, stock coverage, vendor planning and suggested case quantities.",
+          "Configure account stock-day targets and vendor lead times, refresh forecasts, and download suggestions using existing account permissions.",
+          "Forecasts refresh on a separate background worker and retain the last completed snapshot. Initial preparation starts after application startup.",
+          "Basket and draft purchase orders remain previews only: they are not saved or submitted. No supplier orders or Amazon updates are sent by this module."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.4.3",
+    "title": "Compact collaboration and inline due dates",
+    "sections": [
+      {
+        "title": "Collaboration",
+        "items": [
+          "Edit optional due dates directly in the table or conversation toolbar, with automatic date separators, save and cancel controls, and no extra modal.",
+          "Compact conversation headers, blue toolbar controls and smaller visibility tabs match the workspace in both themes.",
+          "Consistent search-field height and a themed record-type chooser replace oversized and system-native controls.",
+          "Isolated teammate styles keep the small green online indicator beside the name instead of inside an avatar box."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.4.2",
+    "title": "Clearer collaboration icons and teammate presence",
+    "sections": [
+      {
+        "title": "Workspace polish",
+        "items": [
+          "Use the supplied collaboration artwork for new tasks and original-record links, with a transparent sidebar shortcut in both themes.",
+          "Compact teammate rows show a small green online indicator, with search and offline teammates still available.",
+          "Seller Central links use Seller Central artwork; Amazon product-page links use the brown Amazon box."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.4.1",
+    "title": "Live chat connectivity and searchable teammates",
+    "sections": [
+      {
+        "title": "Team collaboration",
+        "items": [
+          "Restore production live-chat connections through the existing secure proxy, including online presence and huddle messages across platform pages.",
+          "The compact teammate picker opens on Online by default. Switch to All teammates and search names or email addresses to see offline teammates from your shared accounts. Offline follow-up remains available through saved collaboration tasks.",
+          "Keep existing authentication, account access, publishing and notification settings unchanged."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.4.0",
+    "title": "A consistent workspace and better team collaboration",
+    "sections": [
+      {
+        "title": "Platform experience",
+        "items": [
+          "Consistent table typography, search controls, record visuals and action menus across the workspace, with improved front-end caching and steadier inventory layouts.",
+          "Type date numbers without separators: fields insert slashes automatically and display two-digit years. Inventory totals use compact labels, with details available on hover."
+        ]
+      },
+      {
+        "title": "Collaboration",
+        "items": [
+          "Create store-wide tasks from Collaboration or the sidebar, assign teammates and optionally set due dates. Overdue active tasks are highlighted and record conversations show related product pictures.",
+          "Updated floating huddles, compact message composers, teammate mentions and attachments. New conversations keep the composer focused on messaging; optional task deadlines remain available in task controls.",
+          "Share suggestions for new actions with the platform team from record action menus."
+        ]
+      },
+      {
+        "title": "Inventory and account controls",
+        "items": [
+          "Improved inventory adjustments, hold and removal actions, saved-plan details and ledger history. Donation and disposal remove the selected batch; returns remain pending until marked complete.",
+          "Unmapped seller-fulfilled listings calculate zero publishable inventory. Existing account publication settings continue to control whether changes are sent to Amazon.",
+          "Improved member access management and profile pictures. Existing account, marketplace and mail publication policies are preserved."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.14",
+    "title": "Cross-site invitation sign-in continuity",
+    "sections": [
+      {
+        "title": "Email invitations",
+        "items": [
+          "Carry the invitation through sign-in and password retries even when strict browser cookies withhold the original session after opening an email link.",
+          "Keep strict cookies, CSRF protection, invited-email verification and explicit acceptance. No pending invitation is automatically accepted."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.13",
+    "title": "Email invitation sign-in recovery",
+    "sections": [
+      {
+        "title": "Account access",
+        "items": [
+          "Invitation links opened from email clients now return to the acceptance page after sign-in even when browser navigation headers are unavailable.",
+          "Users must still sign in with the invited email and explicitly accept. Existing memberships, pending invitations, and store permissions are not automatically changed."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.12",
+    "title": "Invitation access and manual Amazon SKU sync",
+    "sections": [
+      {
+        "title": "Account invitations",
+        "items": [
+          "Invitation acceptance links now survive sign-in, so existing users can accept access to another account without losing the invitation.",
+          "Existing account memberships and store permissions remain unchanged until the invitation is accepted."
+        ]
+      },
+      {
+        "title": "Marketplace SKUs",
+        "items": [
+          "Authorized users can request an Amazon listing refresh from Marketplace SKUs.",
+          "Refresh requests run through the background scheduler, prevent duplicate requests, and respect a five-minute cooldown after completion. This action imports Amazon listings; it does not publish prices or inventory."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.11",
+    "title": "Branch-aware global catalogue identity",
+    "sections": [
+      {
+        "title": "Safe supplier imports",
+        "items": [
+          "Match equivalent UPC/EAN/GTIN barcodes globally while scoping supplier item codes and case packs to their distribution center. Different DCs may reuse a code for different products without mixing account catalogues.",
+          "Add an optional supplier DC field to import review. Ambiguous branch codes request review; existing vendor history cannot silently move to another branch.",
+          "Assign Ibcore KEHE catalogue identity to DC 41 without changing product IDs, stock, receipts or marketplace mappings. Preserve account-specific buying prices and branch packaging.",
+          "Use indexed batch matching with transaction safeguards and a 25,845-row regression test. Existing Amazon publishing settings remain unchanged."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.10",
+    "title": "Shared catalogue barcode import fix",
+    "sections": [
+      {
+        "title": "Catalogue imports",
+        "items": [
+          "Preserve an existing global product's primary barcode when another account imports a known alternate barcode. Do not create duplicate products.",
+          "Flag changed barcodes with the affected row and vendor item code instead of silently merging unrelated products or showing a database error. Failed imports roll back safely for review and retry.",
+          "Includes a 25,845-row import regression test. No marketplace publishing settings are changed."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.9",
+    "title": "Account administrator logo uploads",
+    "sections": [
+      {
+        "title": "Company identity",
+        "items": [
+          "Allow account OWNER and ADMIN members to upload the logo for their own active account without requiring platform-superadmin access.",
+          "Keep tenant-specific authorization at the controller boundary. Operators and viewers remain unable to change company identity, and normal account admins return to their workspace after saving."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.8",
+    "title": "New marketplace connection setup",
+    "sections": [
+      {
+        "title": "Connection creation",
+        "items": [
+          "Initialize the required inventory start timestamp when creating a marketplace connection, fixing the database error during Amazon US setup.",
+          "New connections remain pending authorization. Existing connection timestamps and inventory/price publishing permissions are unchanged."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.7",
+    "title": "Receiving case-size defaults",
+    "sections": [
+      {
+        "title": "Faster receiving",
+        "items": [
+          "First receiving prefills the remaining invoiced quantity using the case size. Additional receiving starts with zero cases while retaining units per case and focusing expiration date.",
+          "Update catalogue case size is a compact secondary button. Its confirmation explains the change; redundant inline guidance is removed. Exception clear actions still reset both values to zero."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.6",
+    "title": "Unshipped invoice line consolidation",
+    "sections": [
+      {
+        "title": "Vendor invoice accuracy",
+        "items": [
+          "Combine paired vendor status rows for the same invoice line so a partially shipped item shows one shortage, not two. Distinct invoice line numbers remain separate.",
+          "Includes v1.3.5 receiving zero-default safeguards, SKU-count confirmation and prompt shelf-life sale reconciliation. No receipt or stock quantities are changed by this informational summary."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.5",
+    "title": "Receiving defaults and prompt shelf-life updates",
+    "sections": [
+      {
+        "title": "Receiving safeguards",
+        "items": [
+          "Exception tabs start at zero and show a plus until a positive quantity is entered. Clearing resets cases and units per case. Previously received items start with zero sellable quantity; Save requires a positive total.",
+          "Show vendor-reported unshipped source rows below the receiving invoice, informational only. New imports retain these rows without adding inventory or expected receipts. Older imports explicitly identify unavailable unshipped history."
+        ]
+      },
+      {
+        "title": "Shelf-life automation",
+        "items": [
+          "Confirm the number of mapped SKUs to re-evaluate before saving global shelf-life rules. Matching automatic sales follow saved defaults; explicit product/SKU exceptions remain in place.",
+          "Stock, reservations, policy and mapping changes promptly queue related sale reviews, prioritizing managed discounts. Remove discounts when eligible batches sell out or become reserved; end dates remain bounded by the stop-selling cutoff. Amazon acceptance and propagation can take longer than one minute.",
+          "Production-only pricing, The Keto Storehouse connection scope, regular-price protection and existing-promotion ownership safeguards remain unchanged."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.4",
+    "title": "Shelf-life publication queue correction",
+    "sections": [
+      {
+        "title": "Production rollout safety",
+        "items": [
+          "Correct nullable error-state persistence in the sale publication queue. Add a database regression test covering idle, intent, confirmation, retry and removal transitions.",
+          "The initial sale rollout was paused after verification detected the queue error. Inventory quantity publishing and Orders ledger links remain separate. Production-only connection restrictions and promotion ownership protections are unchanged."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.3",
+    "title": "Production shelf-life discounts and item ledger links",
+    "sections": [
+      {
+        "title": "Amazon shelf-life discounts",
+        "items": [
+          "Publish temporary sale prices for eligible near-expiry stock on the explicitly approved production connection. Default discount follows the shelf-life policy (10% initially). Local never publishes prices.",
+          "Switch account-wide publishing on or off from the sale-plan dialog. Remove only managed discounts when stock is exhausted or reserved, the sale window ends, or the shelf-life cutoff is reached.",
+          "Keep regular prices and unrelated Amazon promotions unchanged. Use durable ownership, finite schedules, retries and read-back verification."
+        ]
+      },
+      {
+        "title": "Orders inventory history",
+        "items": [
+          "Click a mapped item code on Orders to open the inventory ledger scoped to that exact catalogue item. SKU mapping and order-filter controls remain separate."
+        ]
+      }
+    ]
+  },
+  {
+    "version": "1.3.2",
+    "title": "Editable case sizes with explicit catalogue updates",
+    "sections": [
+      {
+        "title": "Receiving hotfix",
+        "items": [
+          "Enter cases and units per case independently for sellable stock, exceptions and expiration batches. Total units are calculated and read-only.",
+          "Remove loose units. Receipt entry does not change catalogue defaults.",
+          "Update the shared catalogue case size only through the explicit action and confirmation dialog. Existing invoice quantities remain unchanged."
+        ]
+      }
+    ]
+  },
   {
     "version": "1.3.1",
     "title": "Faster receiving with shared pictures and clearer quantities",
     "sections": [
-      {"title":"Receiving checklist","items":["Show existing catalogue pictures with the shared centered picture editor, collaboration rail, action artwork and table styling.","Open stock adjustments and zero-cost overshipped receiving from the item actions. Expected units must be accounted for before a separate zero-cost receipt."]},
-      {"title":"Receipt entry","items":["Focus expiration date when receiving opens and return focus to checklist search after a successful receipt.","Enter cases, units per case and any loose units. Total units are calculated and read-only across sellable stock, exceptions and expiration batches.","Keep invoice quantities, original costs, reservation protection and receipt audit history intact."]}
+      {
+        "title": "Receiving checklist",
+        "items": [
+          "Show existing catalogue pictures with the shared centered picture editor, collaboration rail, action artwork and table styling.",
+          "Open stock adjustments and zero-cost overshipped receiving from the item actions. Expected units must be accounted for before a separate zero-cost receipt."
+        ]
+      },
+      {
+        "title": "Receipt entry",
+        "items": [
+          "Focus expiration date when receiving opens and return focus to checklist search after a successful receipt.",
+          "Enter cases, units per case and any loose units. Total units are calculated and read-only across sellable stock, exceptions and expiration batches.",
+          "Keep invoice quantities, original costs, reservation protection and receipt audit history intact."
+        ]
+      }
     ]
   },
   {
     "version": "1.3.0",
     "title": "Shared inventory, safer order checks and consistent tables",
     "sections": [
-      {"title":"Inventory synchronization","items":["Calculate affected seller-fulfilled SKU quantities from shared catalogue stock, including multipacks, bundles, reservations, adjustments and shelf-life rules.","Queue quantity changes durably, prioritize zero stock and verify Amazon responses. Inventory sync shows calculated quantities, retry status and local simulation results.","Add informational ledger notes when nearby orders through different SKUs share the same catalogue item."]},
-      {"title":"Pending orders and cancellations","items":["Recheck unresolved orders individually, including payment-pending orders older than 30 days. Missing orders remain reserved and are flagged for review; age alone never releases stock.","Confirmed cancellations release reservations with a ledger explanation, without adding physical stock. Older status responses cannot overwrite a newer cancellation.","Partial shipments deduct only the newly shipped portion and keep the remainder reserved. Missing shipment stock history holds related SKUs at zero until the remaining stock is counted."]},
-      {"title":"Consistent operational tables","items":["Use the shared picture, collaboration, action and mapping design across Orders, Marketplace SKUs, inventory, catalogue, vendors and receiving.","Save account-based tagged smart filters with dynamic dates and show filtered order, unit and sales totals without expanding summary cards.","Use shared picture editing and vendor logos, compact mapping dialogs, four-week sales summaries and consistent currency formatting.","Keep packing-slip reprints available and use the approved action artwork."]}
+      {
+        "title": "Inventory synchronization",
+        "items": [
+          "Calculate affected seller-fulfilled SKU quantities from shared catalogue stock, including multipacks, bundles, reservations, adjustments and shelf-life rules.",
+          "Queue quantity changes durably, prioritize zero stock and verify Amazon responses. Inventory sync shows calculated quantities, retry status and local simulation results.",
+          "Add informational ledger notes when nearby orders through different SKUs share the same catalogue item."
+        ]
+      },
+      {
+        "title": "Pending orders and cancellations",
+        "items": [
+          "Recheck unresolved orders individually, including payment-pending orders older than 30 days. Missing orders remain reserved and are flagged for review; age alone never releases stock.",
+          "Confirmed cancellations release reservations with a ledger explanation, without adding physical stock. Older status responses cannot overwrite a newer cancellation.",
+          "Partial shipments deduct only the newly shipped portion and keep the remainder reserved. Missing shipment stock history holds related SKUs at zero until the remaining stock is counted."
+        ]
+      },
+      {
+        "title": "Consistent operational tables",
+        "items": [
+          "Use the shared picture, collaboration, action and mapping design across Orders, Marketplace SKUs, inventory, catalogue, vendors and receiving.",
+          "Save account-based tagged smart filters with dynamic dates and show filtered order, unit and sales totals without expanding summary cards.",
+          "Use shared picture editing and vendor logos, compact mapping dialogs, four-week sales summaries and consistent currency formatting.",
+          "Keep packing-slip reprints available and use the approved action artwork."
+        ]
+      }
     ]
   },
   {
     "version": "1.2.7",
     "title": "Approved Orders table and action design",
     "sections": [
-      {"title":"Orders table","items":["Keep product pictures and collaboration/actions together in the Overview column, with the approved status and SKU mapping artwork.","Reorder columns with a clear drop indicator and read centered, larger numeric values and currency symbols.","Use clearer empty states and compact Orders/Units counts."]},
-      {"title":"Actions and attention","items":["Stock Shortage and Unmapped use attention colors and short reason tags. Buy Box Lost remains a regular review tab without alerts or priority sorting.","Use consistent optimized action artwork and platform confirmation dialogs. Amazon product links remain shortcuts outside the Actions menu.","Hide the platform-only awaiting-pickup notice once Amazon confirms shipment."]}
+      {
+        "title": "Orders table",
+        "items": [
+          "Keep product pictures and collaboration/actions together in the Overview column, with the approved status and SKU mapping artwork.",
+          "Reorder columns with a clear drop indicator and read centered, larger numeric values and currency symbols.",
+          "Use clearer empty states and compact Orders/Units counts."
+        ]
+      },
+      {
+        "title": "Actions and attention",
+        "items": [
+          "Stock Shortage and Unmapped use attention colors and short reason tags. Buy Box Lost remains a regular review tab without alerts or priority sorting.",
+          "Use consistent optimized action artwork and platform confirmation dialogs. Amazon product links remain shortcuts outside the Actions menu.",
+          "Hide the platform-only awaiting-pickup notice once Amazon confirms shipment."
+        ]
+      }
     ]
   },
   {
     "version": "1.2.6",
     "title": "Clearer order icons and connected conversations",
     "sections": [
-      {"title":"Orders workspace","items":["Recognize order status faster with larger consistent icons and orange Pending and Unshipped badges.","Open SKU mapping through a clearer button beside item codes, with separate mapped and unmapped artwork.","Use product-picture actions, Amazon shortcuts and a more visible packing-slip action while retaining the existing row colors and image layout."]},
-      {"title":"Connected collaboration","items":["Conversation icons distinguish empty, active and personally related conversations, with counts for open conversations.","Order conversations remain linked to their origin and appear in gray on related SKU, catalogue and inventory records."]}
+      {
+        "title": "Orders workspace",
+        "items": [
+          "Recognize order status faster with larger consistent icons and orange Pending and Unshipped badges.",
+          "Open SKU mapping through a clearer button beside item codes, with separate mapped and unmapped artwork.",
+          "Use product-picture actions, Amazon shortcuts and a more visible packing-slip action while retaining the existing row colors and image layout."
+        ]
+      },
+      {
+        "title": "Connected collaboration",
+        "items": [
+          "Conversation icons distinguish empty, active and personally related conversations, with counts for open conversations.",
+          "Order conversations remain linked to their origin and appear in gray on related SKU, catalogue and inventory records."
+        ]
+      }
     ]
   },
   {
     "version": "1.2.5",
     "title": "Clearer receiving quantities and expiration batches",
     "sections": [
-      {"title":"Receiving improvements","items":["Receive multiple expiration batches and independent damaged, short-shipped and mispick quantities in one save.","Compact quantity summaries, progress colors and standard warning dialogs make receiving easier to review.","Item fees return to the receiving draft, and location creation uses the shared storage-location dialog."]},
-      {"title":"Accurate inventory and catalogue updates","items":["Overage requires confirmation and remains separate at zero acquisition cost. Undo preserves history and correctly restores expected quantities.","Case-pack changes now require an explicit catalogue update; editing receipt quantities does not change the shared product case pack."]}
+      {
+        "title": "Receiving improvements",
+        "items": [
+          "Receive multiple expiration batches and independent damaged, short-shipped and mispick quantities in one save.",
+          "Compact quantity summaries, progress colors and standard warning dialogs make receiving easier to review.",
+          "Item fees return to the receiving draft, and location creation uses the shared storage-location dialog."
+        ]
+      },
+      {
+        "title": "Accurate inventory and catalogue updates",
+        "items": [
+          "Overage requires confirmation and remains separate at zero acquisition cost. Undo preserves history and correctly restores expected quantities.",
+          "Case-pack changes now require an explicit catalogue update; editing receipt quantities does not change the shared product case pack."
+        ]
+      }
     ]
   },
   {
     "version": "1.2.4",
     "title": "Smoother receiving and exception handling",
     "sections": [
-      {"title":"Receiving workspace","items":["Receive all open documents when none are selected, or receive multiple selected documents together.","Document and receipt colors distinguish open, partial, closed, short-shipped and damaged stock. Received expiration dates follow your configured shelf-life warning rules.","Review and undo eligible receipt decisions, including shortages, with audit history preserved. Closed documents remain read-only."]},
-      {"title":"Faster receipt entry","items":["Use a compact form with cases, units per case, total units, location and expiration. Case size and expiration requirements are saved to the catalogue for future receiving.","Add an unmatched item to the catalogue from receiving. Use the standard collaboration icon instead of a separate Notes field."]}
+      {
+        "title": "Receiving workspace",
+        "items": [
+          "Receive all open documents when none are selected, or receive multiple selected documents together.",
+          "Document and receipt colors distinguish open, partial, closed, short-shipped and damaged stock. Received expiration dates follow your configured shelf-life warning rules.",
+          "Review and undo eligible receipt decisions, including shortages, with audit history preserved. Closed documents remain read-only."
+        ]
+      },
+      {
+        "title": "Faster receipt entry",
+        "items": [
+          "Use a compact form with cases, units per case, total units, location and expiration. Case size and expiration requirements are saved to the catalogue for future receiving.",
+          "Add an unmatched item to the catalogue from receiving. Use the standard collaboration icon instead of a separate Notes field."
+        ]
+      }
     ]
   },
   {
     "version": "1.2.3",
     "title": "Movement history for sold-out items",
-    "sections": [{"title":"Inventory hotfix","items":["Open the same sliding inventory detail by clicking a sold-out catalogue item’s title in Available Inventory, and review its complete movement history even when no current stock batch remains."]}]
+    "sections": [
+      {
+        "title": "Inventory hotfix",
+        "items": [
+          "Open the same sliding inventory detail by clicking a sold-out catalogue item\u2019s title in Available Inventory, and review its complete movement history even when no current stock batch remains."
+        ]
+      }
+    ]
   },
   {
     "version": "1.2.2",
     "title": "Faster catalogue inventory actions",
     "sections": [
-      {"title":"Inventory hotfix","items":["Adjust inventory from Marketplace SKUs, Account Catalogue, and Available Inventory using one expiration-aware, location-aware action.","Search Available Inventory for catalogue items with no stock and add their first inventory position without leaving the page.","Receive any catalogue item from Invoices & packing lists with a required explanation and a permanent zero-cost receipt in the inventory ledger."]},
-      {"title":"Pictures and speed","items":["Upload or change an item picture from its inventory details using a small picture-overlay action.","Catalogue and mapping pickers show product pictures and use focused item queries that remain fast with large catalogues."]}
+      {
+        "title": "Inventory hotfix",
+        "items": [
+          "Adjust inventory from Marketplace SKUs, Account Catalogue, and Available Inventory using one expiration-aware, location-aware action.",
+          "Search Available Inventory for catalogue items with no stock and add their first inventory position without leaving the page.",
+          "Receive any catalogue item from Invoices & packing lists with a required explanation and a permanent zero-cost receipt in the inventory ledger."
+        ]
+      },
+      {
+        "title": "Pictures and speed",
+        "items": [
+          "Upload or change an item picture from its inventory details using a small picture-overlay action.",
+          "Catalogue and mapping pickers show product pictures and use focused item queries that remain fast with large catalogues."
+        ]
+      }
     ]
   },
   {
     "version": "1.2.1",
     "title": "Receiving closure and inventory pictures",
-    "sections": [{"title":"Inventory hotfix","items":["Close receiving documents containing historical undated receipts that are already recorded in inventory. New stock still requires an expiration date when applicable.","Upload or change a product picture directly from Available Inventory details. Pictures are saved to your Account Catalogue."]}]
+    "sections": [
+      {
+        "title": "Inventory hotfix",
+        "items": [
+          "Close receiving documents containing historical undated receipts that are already recorded in inventory. New stock still requires an expiration date when applicable.",
+          "Upload or change a product picture directly from Available Inventory details. Pictures are saved to your Account Catalogue."
+        ]
+      }
+    ]
   },
   {
     "version": "1.2.0",
     "title": "Inventory that follows your warehouse",
     "sections": [
-      {"title":"Shelf counts and order reservations","items":["Upload shelf counts excluding packed orders. Open-order reservations are recalculated, and shipped orders no longer appear as actionable stock shortages.","Missing inventory records for shipped orders are explained in the ledger without reducing newly counted stock.","Physical count offers your latest three uploads and supports dates such as 5/16/27."]},
-      {"title":"Easier inventory corrections","items":["Edit expiration dates beside inventory rows. Matching item, location and date positions combine, with correction history preserved and reservations refreshed.","Order inventory adjustments use the expiration date you enter, creating that date’s stock position when needed.","Manage vendors and locations from Available Inventory. Edit or delete unused locations, with detailed explanations when records prevent changes."]},
-      {"title":"Clearer everyday tools","items":["Right-click product pictures to sync Amazon’s main image into Account and Global Catalogue.","Dates display as MM/DD/YY, while native date pickers follow browser settings.","Order action menus remain visible on short tables. Physical-count reviews scroll with accessible approval controls, and inventory dialogs use consistent styling."]}
+      {
+        "title": "Shelf counts and order reservations",
+        "items": [
+          "Upload shelf counts excluding packed orders. Open-order reservations are recalculated, and shipped orders no longer appear as actionable stock shortages.",
+          "Missing inventory records for shipped orders are explained in the ledger without reducing newly counted stock.",
+          "Physical count offers your latest three uploads and supports dates such as 5/16/27."
+        ]
+      },
+      {
+        "title": "Easier inventory corrections",
+        "items": [
+          "Edit expiration dates beside inventory rows. Matching item, location and date positions combine, with correction history preserved and reservations refreshed.",
+          "Order inventory adjustments use the expiration date you enter, creating that date\u2019s stock position when needed.",
+          "Manage vendors and locations from Available Inventory. Edit or delete unused locations, with detailed explanations when records prevent changes."
+        ]
+      },
+      {
+        "title": "Clearer everyday tools",
+        "items": [
+          "Right-click product pictures to sync Amazon\u2019s main image into Account and Global Catalogue.",
+          "Dates display as MM/DD/YY, while native date pickers follow browser settings.",
+          "Order action menus remain visible on short tables. Physical-count reviews scroll with accessible approval controls, and inventory dialogs use consistent styling."
+        ]
+      }
     ]
   },
   {
     "version": "1.1.1",
     "title": "Help opening Seller Central",
-    "sections": [{"title": "Packing-slip hotfix", "items": ["If your browser blocks the second tab, the packing page now shows step-by-step Chrome instructions for allowing this site and a direct link to open your Seller Central order."]}]
+    "sections": [
+      {
+        "title": "Packing-slip hotfix",
+        "items": [
+          "If your browser blocks the second tab, the packing page now shows step-by-step Chrome instructions for allowing this site and a direct link to open your Seller Central order."
+        ]
+      }
+    ]
   },
   {
     "version": "1.1.0",
     "title": "Easier fulfilment and email invitations",
     "sections": [
-      {"title": "Invite your team", "items": ["Send store invitations from info@nextaicommerce.com. Invitations identify who invited you, and replies go to info@nextaicommerce.com."]},
-      {"title": "Pack and complete orders", "items": ["Open the packing label and Seller Central order together from the packing-slip button. Allow pop-ups for this site to open both tabs; if a tab is blocked, the packing page explains how to open Seller Central.", "Mark an order shipped from the packing page to place it in Waiting for pickup in this platform. The packing tab closes after saving, and Orders refreshes when you return while keeping your place. This does not confirm shipment in Amazon.", "When completing the last matching orders, exhausted search and column filters clear so you can continue with other orders in the same tab."]},
-      {"title": "Clearer order tools", "items": ["Copy SKUs with the familiar copy icon and see full SKU, ASIN and item-code values immediately on hover.", "Spot missing SKU mappings in the warning menu and open mapping directly from the table.", "Read four-week sales in refreshed colored bar charts. Clear Filters stays disabled until a filter is active."]}
+      {
+        "title": "Invite your team",
+        "items": [
+          "Send store invitations from info@nextaicommerce.com. Invitations identify who invited you, and replies go to info@nextaicommerce.com."
+        ]
+      },
+      {
+        "title": "Pack and complete orders",
+        "items": [
+          "Open the packing label and Seller Central order together from the packing-slip button. Allow pop-ups for this site to open both tabs; if a tab is blocked, the packing page explains how to open Seller Central.",
+          "Mark an order shipped from the packing page to place it in Waiting for pickup in this platform. The packing tab closes after saving, and Orders refreshes when you return while keeping your place. This does not confirm shipment in Amazon.",
+          "When completing the last matching orders, exhausted search and column filters clear so you can continue with other orders in the same tab."
+        ]
+      },
+      {
+        "title": "Clearer order tools",
+        "items": [
+          "Copy SKUs with the familiar copy icon and see full SKU, ASIN and item-code values immediately on hover.",
+          "Spot missing SKU mappings in the warning menu and open mapping directly from the table.",
+          "Read four-week sales in refreshed colored bar charts. Clear Filters stays disabled until a filter is active."
+        ]
+      }
     ]
   },
   {
     "version": "1.0.5",
     "title": "More reliable Amazon order recovery",
-    "sections": [{
-      "title": "Complete order history",
-      "items": [
-        "Guarded startup recovery refreshes the last 30 days of orders when no recent full check has completed.",
-        "Finished setup jobs no longer block scheduled history refreshes, and unsuccessful imports no longer advance the successful sync position.",
-        "History reports and live order updates reuse matching items to prevent duplicate sales. Amazon inventory, listing and pricing changes remain disabled."
-      ]
-    }]
+    "sections": [
+      {
+        "title": "Complete order history",
+        "items": [
+          "Guarded startup recovery refreshes the last 30 days of orders when no recent full check has completed.",
+          "Finished setup jobs no longer block scheduled history refreshes, and unsuccessful imports no longer advance the successful sync position.",
+          "History reports and live order updates reuse matching items to prevent duplicate sales. Amazon inventory, listing and pricing changes remain disabled."
+        ]
+      }
+    ]
   },
   {
     "version": "1.0.4",
     "title": "Accurate order times and clearer shortcuts",
-    "sections": [{
-      "title": "Orders",
-      "items": [
-        "Amazon US order and last-sync times now show Pacific time, including the PDT or PST label.",
-        "Click an Amazon order number to open that order in Seller Central. The Amazon Seller icon opens Manage Inventory for the item's ASIN."
-      ]
-    }]
+    "sections": [
+      {
+        "title": "Orders",
+        "items": [
+          "Amazon US order and last-sync times now show Pacific time, including the PDT or PST label.",
+          "Click an Amazon order number to open that order in Seller Central. The Amazon Seller icon opens Manage Inventory for the item's ASIN."
+        ]
+      }
+    ]
   },
   {
     "version": "1.0.3",
@@ -521,7 +1075,7 @@
       {
         "title": "Packing made simpler",
         "items": [
-          "Choose and save packaging for an ASIN and quantity combination, then print a compact 2 × 1 label with up to two items per page.",
+          "Choose and save packaging for an ASIN and quantity combination, then print a compact 2 \u00d7 1 label with up to two items per page.",
           "Labels show product brand, packaging, quantities, item details, expiry and location without unnecessary footer links.",
           "For UPS, Medium and OMBox packaging, open Veeqo directly and automatically copy the order ID, ready to paste."
         ]

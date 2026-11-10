@@ -89,7 +89,7 @@ function orderAdjustmentPayload(position,values){
       const response=await fetch('/app/inventory/adjustment-positions?'+params,{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();
       const positions=await response.json();list().replaceChildren(...components.map(component=>cardFor(component,positions.filter(position=>position.itemId===component.itemId))));
       list().hidden=false;window.NextAiPlatformControls?.enhance(list());
-      const art=modal.querySelector('.order-inline-adjust-title>span');if(art){const image=document.createElement('img');image.src='/images/platform/table/adjust-inventory.png';image.alt='';image.style.cssText='width:36px;height:36px;object-fit:contain';art.replaceChildren(image);}
+      const art=modal.querySelector('.order-inline-adjust-title>span');if(art){const image=document.createElement('img');image.src='/images/platform/optimized32/adjust-inventory.png?v=20261109-icons32-1';image.alt='';image.style.cssText='width:36px;height:36px;object-fit:contain';art.replaceChildren(image);}
     }catch(_){feedback().classList.add('error');feedback().textContent='Inventory positions could not be loaded. Nothing was changed.';feedback().hidden=false}
     finally{document.querySelector('[data-inline-adjust-loading]').hidden=true}
   };

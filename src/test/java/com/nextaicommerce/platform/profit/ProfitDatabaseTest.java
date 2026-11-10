@@ -43,6 +43,112 @@ class ProfitDatabaseTest {
   jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,fulfillment_channel,currency) VALUES (?,?,'ATVPDKIKX0DER','ORDER','2025-06-01T12:00:00Z','MFN','USD')",tenant,connection);
   jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered,item_price,currency) VALUES (?,?,'ORDER','LINE','SKU',3,45,'USD')",tenant,connection);
  });}
+
+ @Test void independentRatesHaveDateBoundariesAndDoNotChangeSharedCarrier(){tx.executeWithoutResult(s->{
+  packageFixture();var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);
+  names.saveRate(tenant,"Pak",java.time.LocalDate.of(2025,6,1),new BigDecimal("15.00"),"tester");
+  names.saveRate(tenant,"Pak",java.time.LocalDate.of(2025,7,1),new BigDecimal("16.00"),"tester");
+  assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").packages().getFirst().amount()).isEqualByComparingTo("15.00");
+  var costs=new ProfitCostRepository(jdbc);var batch=costs.packageRates(tenant,List.of("Pak","Medium"));
+  assertThat(batch.cost("Pak",java.time.LocalDate.of(2025,5,31),new BigDecimal("12.08"))).isEqualByComparingTo("12.08");
+  assertThat(batch.cost("Pak",java.time.LocalDate.of(2025,7,1),null)).isEqualByComparingTo("16.00");
+  assertThat(ProfitShippingRates.cost(costs.rates(tenant),ProfitShippingRates.PackageType.FEDEX_PAK,java.time.LocalDate.of(2025,7,1))).isEqualByComparingTo("12.08");
+  assertThat(jdbc.queryForObject("SELECT packaging FROM temporary_order_packaging_lookup WHERE tenant_id=?",String.class,tenant)).isEqualTo("Pak");
+ });}
+ @Test void customNamesAreUnpricedEvenWithCarrierWordsAndRenameKeepsTheirRate(){tx.executeWithoutResult(s->{
+  var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);names.registerCustom(tenant,"UPS custom padded");
+  var costs=new ProfitCostRepository(jdbc);var date=java.time.LocalDate.of(2025,6,1);
+  assertThat(names.choices(tenant,costs.rates(tenant),date).stream().filter(c->c.name().equals("UPS custom padded")).findFirst().orElseThrow().cost()).isNull();
+  names.saveRate(tenant,"UPS custom padded",date,new BigDecimal("5.50"),"tester");
+  var p=names.preview(tenant,"UPS custom padded","Any description");names.apply(tenant,p.source(),p.destination(),p.revision(),p.affectedAssignments(),"tester");
+  assertThat(names.history(tenant,"Any description",costs.rates(tenant),date).rates().getFirst().amount()).isEqualByComparingTo("5.50");
+  var p2=names.preview(tenant,"Any description","Pak");names.saveRate(tenant,"Pak",date,new BigDecimal("6.50"),"tester");names.apply(tenant,p2.source(),p2.destination(),p2.revision(),p2.affectedAssignments(),"tester");
+  assertThat(names.history(tenant,"Pak",costs.rates(tenant),date).rates().getFirst().amount()).isEqualByComparingTo("6.50");
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM packing_package_rates WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
+ });}
+ @Test void datedRateRenameKeepsOrderProfitAndMergeUsesDestinationDatedRate(){tx.executeWithoutResult(s->{
+  packageFixture();var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);var date=java.time.LocalDate.of(2025,6,1);
+  names.saveRate(tenant,"Pak",date,new BigDecimal("6.00"),"tester");names.saveRate(tenant,"UPS OMBox",date,new BigDecimal("8.00"),"tester");
+  var before=repo.orders(tenant,connection,List.of("ORDER")).get("ORDER");assertThat(before.packages().getFirst().amount()).isEqualByComparingTo("6.00");
+  var p=names.preview(tenant,"Pak","My own label");names.apply(tenant,p.source(),p.destination(),p.revision(),p.affectedAssignments(),"tester");
+  assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").totals().profit()).isEqualByComparingTo(before.totals().profit());
+  p=names.preview(tenant,"My own label","UPS OMBox");names.apply(tenant,p.source(),p.destination(),p.revision(),p.affectedAssignments(),"tester");
+  assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").packages().getFirst().amount()).isEqualByComparingTo("8.00");
+  assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").totals().profit()).isEqualByComparingTo(before.totals().profit().subtract(new BigDecimal("2.00")));
+ });}
+ @Test void independentRateValidationAndManualOverridesRemain(){tx.executeWithoutResult(s->{
+  packageFixture();var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);var date=java.time.LocalDate.of(2025,6,1);
+  assertThatThrownBy(()->names.saveRate(tenant,"Pak",null,BigDecimal.ONE,"tester")).isInstanceOf(IllegalArgumentException.class);
+  assertThatThrownBy(()->names.saveRate(tenant,"Pak",date,new BigDecimal("1.001"),"tester")).isInstanceOf(IllegalArgumentException.class);
+  assertThatThrownBy(()->names.saveRate(tenant,"foreign",date,BigDecimal.ONE,"tester")).isInstanceOf(IllegalArgumentException.class);
+  names.saveRate(tenant,"Pak",date,new BigDecimal("5.50"),"tester");
+  assertThatThrownBy(()->names.saveRate(tenant,"Pak",date,new BigDecimal("7.50"),"tester")).isInstanceOf(IllegalArgumentException.class);
+  repo.savePackages(tenant,connection,"ORDER",List.of(new ProfitRepository.PackageCost("Manual",new BigDecimal("3.00"))),"tester");
+  assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").packages().getFirst().amount()).isEqualByComparingTo("3.00");
+ });}
+ @Test void independentRatesEnforceTenantRls(){
+  String role="rates_rls_"+UUID.randomUUID().toString().replace("-","");jdbc.execute("CREATE ROLE "+role+" NOLOGIN NOSUPERUSER NOBYPASSRLS");
+  try{jdbc.execute("GRANT USAGE ON SCHEMA "+schema+" TO "+role);jdbc.execute("GRANT SELECT,INSERT ON packing_package_rates TO "+role);
+   tx.executeWithoutResult(s->{var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);names.saveRate(tenant,"Pak",java.time.LocalDate.of(2025,6,1),BigDecimal.ONE,"tester");jdbc.execute("SET LOCAL ROLE "+role);jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,UUID.randomUUID().toString());assertThat(jdbc.queryForObject("SELECT count(*) FROM packing_package_rates",Integer.class)).isZero();});
+  }finally{jdbc.execute("DROP OWNED BY "+role);jdbc.execute("DROP ROLE "+role);}
+ }
+ private void packageFixture(){jdbc.update("INSERT INTO temporary_order_packaging_lookup(tenant_id,marketplace_connection_id,amazon_order_id,order_item_summary,packaging,order_sku_qty_list) VALUES (?,?,'ORDER','ASIN-3','Pak','SKU-3')",tenant,connection);}
+ @Test void packageRenamePreservesProfitAndRawHistory(){tx.executeWithoutResult(s->{
+  packageFixture();var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);
+  var before=repo.orders(tenant,connection,List.of("ORDER")).get("ORDER");
+  var preview=names.preview(tenant,"Pak","My insulated bag");assertThat(preview.affectedAssignments()).isEqualTo(1);
+  names.apply(tenant,preview.source(),preview.destination(),preview.revision(),preview.affectedAssignments(),"tester");
+  var after=repo.orders(tenant,connection,List.of("ORDER")).get("ORDER");
+  assertThat(after.totals().profit()).isEqualByComparingTo(before.totals().profit());
+  assertThat(after.packages()).isEqualTo(before.packages());assertThat(names.names(tenant)).contains("My insulated bag").doesNotContain("Pak");
+  assertThat(jdbc.queryForObject("SELECT packaging FROM temporary_order_packaging_lookup WHERE tenant_id=?",String.class,tenant)).isEqualTo("Pak");
+ });}
+ @Test void packageMergeUsesDestinationCostAndLeavesSourceOrdersUntouched(){tx.executeWithoutResult(s->{
+  packageFixture();var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);
+  var before=repo.orders(tenant,connection,List.of("ORDER")).get("ORDER");
+  var preview=names.preview(tenant,"Pak","UPS OMBox");assertThat(preview.operation()).isEqualTo("MERGE");
+  names.apply(tenant,preview.source(),preview.destination(),preview.revision(),preview.affectedAssignments(),"tester");
+  var after=repo.orders(tenant,connection,List.of("ORDER")).get("ORDER");
+  assertThat(after.packages().getFirst().amount()).isEqualByComparingTo("14.20");
+  assertThat(after.totals().profit()).isEqualByComparingTo(before.totals().profit().subtract(new BigDecimal("2.12")));
+  assertThat(jdbc.queryForObject("SELECT packaging FROM temporary_order_packaging_lookup WHERE tenant_id=?",String.class,tenant)).isEqualTo("Pak");
+  assertThat(names.names(tenant)).doesNotContain("Pak");
+ });}
+ @Test void equalDestinationRateLeavesProfitUnchanged(){tx.executeWithoutResult(s->{
+  packageFixture();jdbc.update("INSERT INTO profit_shipping_rates(tenant_id,package_type,effective_from,amount,created_by) VALUES (?,'UPS','2025-01-01',12.08,'tester')",tenant);
+  var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);var before=repo.orders(tenant,connection,List.of("ORDER")).get("ORDER");
+  var p=names.preview(tenant,"Pak","UPS OMBox");names.apply(tenant,p.source(),p.destination(),p.revision(),p.affectedAssignments(),"tester");
+  assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").totals().profit()).isEqualByComparingTo(before.totals().profit());
+ });}
+ @Test void stalePackageConfirmationAndForeignAccountCannotApply(){tx.executeWithoutResult(s->{
+  packageFixture();var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);var p=names.preview(tenant,"Pak","Bag");
+  var other=names.preview(tenant,"Large","Large box");names.apply(tenant,other.source(),other.destination(),other.revision(),other.affectedAssignments(),"tester");
+  assertThatThrownBy(()->names.apply(tenant,p.source(),p.destination(),p.revision(),p.affectedAssignments(),"tester")).isInstanceOf(IllegalArgumentException.class);
+  UUID foreign=UUID.randomUUID();assertThat(jdbc.queryForObject("SELECT packing_package_display(?,?)",String.class,foreign,"Large")).isEqualTo("Large");
+ });}
+ @Test void chainedRenameThenMergeStillRoutesOriginalNames(){tx.executeWithoutResult(s->{
+  packageFixture();var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);var p=names.preview(tenant,"Pak","Bag");names.apply(tenant,p.source(),p.destination(),p.revision(),p.affectedAssignments(),"tester");
+  p=names.preview(tenant,"Bag","UPS OMBox");names.apply(tenant,p.source(),p.destination(),p.revision(),p.affectedAssignments(),"tester");
+  assertThat(jdbc.queryForObject("SELECT packing_package_cost(?,?)",String.class,tenant,"Pak")).isEqualTo("UPS OMBox");
+  assertThat(names.names(tenant)).doesNotContain("Pak","Bag");
+ });}
+
+ @Test void mergeUpdatesDerivedSkuCostDespitePreviousPackageTypeSelection(){tx.executeWithoutResult(s->{
+  packageFixture();jdbc.update("UPDATE temporary_order_packaging_lookup SET order_sku_qty_list='SKU-1' WHERE tenant_id=?",tenant);
+  var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);var p=names.preview(tenant,"Pak","UPS OMBox");names.apply(tenant,p.source(),p.destination(),p.revision(),p.affectedAssignments(),"tester");
+  assertThat(repo.skus(tenant,connection,List.of("SKU")).get("SKU").packages().getFirst().amount()).isEqualByComparingTo("14.20");
+ });}
+ @Test void packageAliasesEnforceRowLevelIsolationForOrdinaryRole(){
+  String role="packing_rls_"+UUID.randomUUID().toString().replace("-","");
+  jdbc.execute("CREATE ROLE "+role+" NOLOGIN NOSUPERUSER NOBYPASSRLS");
+  try{jdbc.execute("GRANT USAGE ON SCHEMA "+schema+" TO "+role);jdbc.execute("GRANT SELECT ON packing_package_aliases,packing_package_name_events TO "+role);
+   tx.executeWithoutResult(s->{packageFixture();var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);var p=names.preview(tenant,"Pak","Bag");names.apply(tenant,p.source(),p.destination(),p.revision(),p.affectedAssignments(),"tester");
+    jdbc.execute("SET LOCAL ROLE "+role);jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,UUID.randomUUID().toString());
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM packing_package_aliases",Integer.class)).isZero();
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM packing_package_name_events",Integer.class)).isZero();
+   });
+  }finally{jdbc.execute("DROP OWNED BY "+role);jdbc.execute("DROP ROLE "+role);}
+ }
  @Test void skuOverridePersistsAndResetUsesCatalogueWithoutChangingItemOrSale(){tx.executeWithoutResult(s->{
   repo.saveDefaults(tenant,connection,"SKU","SKU",List.of(new ProfitRepository.SkuCostChange("SKU",new BigDecimal("6.25"))),List.of(),null,BigDecimal.ONE,"FEDEX_XSMALL","tester");
   assertThat(repo.skus(tenant,connection,List.of("SKU")).get("SKU").lines().getFirst().productCost()).isEqualByComparingTo("6.25");
@@ -187,4 +293,15 @@ class ProfitDatabaseTest {
   assertThat(repo.skus(UUID.randomUUID(),connection,List.of("SKU"))).isEmpty();
   assertThat(jdbc.queryForObject("SELECT count(*) FROM amazon_fee_estimates WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(5);
  });}
+ @Test void packageManagementCostUsesAliasIdentityAndDatedAccountPlanningRate(){tx.executeWithoutResult(s->{
+  var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);
+  var rates=new ProfitCostRepository(jdbc).rates(tenant);
+  var date=java.time.LocalDate.of(2026,11,9);
+  var initial=names.choices(tenant,rates,date).stream().filter(c->c.name().equals("Pak")).findFirst().orElseThrow();
+  assertThat(initial.cost()).isEqualByComparingTo("12.08");assertThat(initial.currency()).isEqualTo("USD");assertThat(initial.date()).isEqualTo(date);
+  var review=names.preview(tenant,"Pak","Insulated bag");names.apply(tenant,review.source(),review.destination(),review.revision(),review.affectedAssignments(),"test");
+  var renamed=names.choices(tenant,rates,date).stream().filter(c->c.name().equals("Insulated bag")).findFirst().orElseThrow();assertThat(renamed.cost()).isEqualByComparingTo("12.08");
+  assertThat(names.choices(UUID.randomUUID(),rates,date).stream().map(c->c.name())).doesNotContain("Insulated bag");
+ });}
+
 }

@@ -60,7 +60,7 @@
     if(form||row.dataset.canEditPicture==='true'){
      if(form){form.addEventListener('click',e=>{if(e.target.closest('label'))e.preventDefault()});form.querySelectorAll('input[type=file]').forEach(el=>el.disabled=true);}
      if(form){form.querySelectorAll('i').forEach(el=>el.hidden=true)}
-     const button=node('button','standard-picture-edit');button.type='button';button.setAttribute('aria-label','Edit picture');button.title='Edit picture';button.innerHTML='<svg viewBox="0 0 24 24"><path d="m5 16-1 4 4-1L20 7l-3-3Z M14 7l3 3"/></svg>';holder.append(button);holder.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();imageMenu(button,holder,url,Boolean(product||global))};button.onclick=e=>{e.stopPropagation();imageMenu(button,holder,url,Boolean(product||global))};
+     const button=node('button','standard-picture-edit');button.type='button';button.setAttribute('aria-label','Edit picture');button.title='Edit picture';button.append(window.NextAiIcons.create('edit-image'));holder.append(button);holder.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();imageMenu(button,holder,url,Boolean(product||global))};button.onclick=e=>{e.stopPropagation();imageMenu(button,holder,url,Boolean(product||global))};
     }
    }
    row.querySelectorAll('td').forEach(cell=>{
@@ -69,8 +69,8 @@
     const walker=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode())){if(text.parentElement.closest('input,select,button,script,style'))continue;const value=text.nodeValue.replace(/\bUSD\s+(?=[\d-])/g,'$').replace(/^USD$/,'$');if(value!==text.nodeValue)text.nodeValue=value}
    });
   });
-  document.querySelectorAll('.table-action-icon:not([data-art-ready])').forEach(icon=>{icon.dataset.artReady='true';icon.replaceChildren(window.NextAiIcons.create(artwork(icon.parentElement.textContent)));});
-  document.querySelectorAll('#inventory-action-menu button:not([data-suggest-action])>span,#inventory-action-menu a>span').forEach(icon=>{if(icon.dataset.artReady)return;icon.dataset.artReady='true';icon.replaceChildren(window.NextAiIcons.create(artwork(icon.parentElement.textContent)))});
+  document.querySelectorAll('.table-action-icon:not([data-art-ready])').forEach(icon=>{icon.dataset.artReady='true';const art=window.NextAiIcons.create(artwork(icon.parentElement.textContent));if(/hold|remov/i.test(icon.parentElement.textContent)){delete art.dataset.platformIcon;art.src='/images/platform/table/adjust-inventory.png?v=20261109-icons32-1';}icon.replaceChildren(art);});
+  document.querySelectorAll('#inventory-action-menu button:not([data-suggest-action])>span,#inventory-action-menu a>span').forEach(icon=>{if(icon.dataset.artReady)return;icon.dataset.artReady='true';const art=window.NextAiIcons.create(artwork(icon.parentElement.textContent));if(/hold|remov/i.test(icon.parentElement.textContent)){delete art.dataset.platformIcon;art.src='/images/platform/table/adjust-inventory.png?v=20261109-icons32-1';}icon.replaceChildren(art)});
  }
  window.NextAiStandardTables={enhance,editPicture:(trigger,holder,url)=>imageMenu(trigger,holder,url,true)};
  document.addEventListener('DOMContentLoaded',()=>requestAnimationFrame(enhance));

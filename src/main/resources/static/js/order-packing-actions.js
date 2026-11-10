@@ -12,6 +12,17 @@
     button.setAttribute('aria-label',button.title);
     button.closest('.order-action-tip')?.setAttribute('data-tooltip',button.title);
   }
+  let copyNoticeTimer;
+  function copyOrderId(orderId){
+    const report=message=>{
+      let notice=document.querySelector('[data-packing-copy-notice]');
+      if(!notice){notice=document.createElement('div');notice.className='stream-toast';notice.dataset.packingCopyNotice='';notice.setAttribute('role','status');document.body.append(notice);}
+      notice.textContent=message;notice.className='stream-toast show';clearTimeout(copyNoticeTimer);copyNoticeTimer=setTimeout(()=>notice.className='stream-toast',3500);
+    };
+    // Begin in the click gesture, but never await clipboard permission before opening print tabs.
+    try{Promise.resolve(navigator.clipboard.writeText(orderId)).then(()=>report('Order ID copied'),()=>report('Could not copy order ID.'));}
+    catch(_){report('Could not copy order ID.');}
+  }
   function addPackingSlipActions(){
     document.querySelectorAll('[data-packing-slip-order]').forEach(shipping=>{
       if(shipping.closest('[data-tooltip]'))shipping.removeAttribute('title');
@@ -45,6 +56,7 @@
         }
       };
       button.addEventListener('click',()=>{
+        copyOrderId(orderRow.querySelector('.order-number')?.textContent?.trim()||orderId);
         if(provider==='Seller Central'&&amazonFedEx&&window.openOrderChoiceMenu){
           window.openOrderChoiceMenu(button,'Buy shipping',[
             {label:'Amazon Seller Central',description:'Open packing slip and Seller Central',image:'/images/channels/amazon-seller.png',onSelect:openPacking},

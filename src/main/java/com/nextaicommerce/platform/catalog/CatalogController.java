@@ -45,6 +45,32 @@ public class CatalogController {
     @Autowired(required=false)
     void configureCollaboration(CollaborationRepository repository){this.collaboration=repository;}
 
+    @Autowired private CatalogRemovalService removals;
+    @Autowired private com.nextaicommerce.platform.config.PlatformReadCache readCache;
+
+    @PostMapping(value={"/app/catalog/products/{id}/removal-review","/app/platform/catalog/products/{id}/removal-review"})
+    @ResponseBody
+    ResponseEntity<?> removalReview(@PathVariable UUID id,HttpSession session,Authentication authentication,jakarta.servlet.http.HttpServletRequest request){
+        boolean global=request.getServletPath().startsWith("/app/platform/");
+        requireRemovalAccess(global,session,authentication);
+        try{return ResponseEntity.ok(removals.review(global?null:requiredTenantId(session),id,global));}
+        catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
+    }
+    @PostMapping(value={"/app/catalog/products/{id}/remove","/app/platform/catalog/products/{id}/remove"})
+    @ResponseBody
+    ResponseEntity<?> removeProduct(@PathVariable UUID id,@RequestParam String operation,HttpSession session,Authentication authentication,jakarta.servlet.http.HttpServletRequest request){
+        boolean global=request.getServletPath().startsWith("/app/platform/");
+        requireRemovalAccess(global,session,authentication);
+        try{String message=removals.remove(global?null:requiredTenantId(session),id,global,operation);readCache.invalidate();return ResponseEntity.ok(Map.of("message",message));}
+        catch(IllegalArgumentException e){return ResponseEntity.status(409).body(Map.of("error",e.getMessage()));}
+        catch(org.springframework.dao.DataIntegrityViolationException e){return ResponseEntity.status(409).body(Map.of("error","This product has linked records. Review removal again; nothing was changed."));}
+    }
+    private void requireRemovalAccess(boolean global,HttpSession session,Authentication authentication){
+        boolean role=authentication!=null&&authentication.getAuthorities().stream().anyMatch(a->global?"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()):java.util.Set.of("ROLE_PLATFORM_ADMIN","ROLE_OWNER","ROLE_ADMIN","ROLE_OPERATOR").contains(a.getAuthority()));
+        if(!role||(!global&&!workspaceAccess.canOperateAccount(requiredTenantId(session),authentication.getName())))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+    }
+
     @GetMapping("/app/platform/catalog")
     String globalCatalog(Authentication authentication,HttpSession session,Model model,
             @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="0") int page,
@@ -327,7 +353,13 @@ public class CatalogController {
     }
 
     @GetMapping("/app/catalog/warehouse-options") @ResponseBody
-    List<CatalogRepository.WarehouseView> warehouseOptions(HttpSession session){return catalog.listWarehouses(requiredTenantId(session));}
+    List<CatalogRepository.WarehouseView> warehouseOptions(HttpSession session,jakarta.servlet.http.HttpServletResponse response,org.springframework.security.web.csrf.CsrfToken csrf){
+        UUID tenant=requiredTenantId(session);
+        response.setHeader("Cache-Control","no-store");
+        response.setHeader("X-CSRF-TOKEN",csrf.getToken());
+        response.setHeader("X-Workspace-Account",tenant.toString());
+        return catalog.listWarehouses(tenant);
+    }
     @GetMapping("/app/catalog/warehouse-options/{id}") @ResponseBody
     ResponseEntity<CatalogRepository.WarehouseDetails> warehouseDetails(HttpSession session,@PathVariable UUID id){
         var value=catalog.warehouseDetails(requiredTenantId(session),id);return value==null?ResponseEntity.notFound().build():ResponseEntity.ok(value);
@@ -337,7 +369,10 @@ public class CatalogController {
             @RequestParam(defaultValue="") String addressLine1,@RequestParam(defaultValue="") String addressLine2,
             @RequestParam(defaultValue="") String city,@RequestParam(defaultValue="") String stateOrProvince,
             @RequestParam(defaultValue="") String postalCode,@RequestParam(defaultValue="") String countryCode,
-            @RequestParam(required=false) List<String> contactName,@RequestParam(required=false) List<String> contactPhone){
+            @RequestParam(required=false) List<String> contactName,@RequestParam(required=false) List<String> contactPhone,
+            @RequestParam(required=false) UUID warehouseAccount){
+        if(warehouseAccount!=null&&!warehouseAccount.equals(requiredTenantId(session)))
+            return ResponseEntity.status(409).body(Map.of("error","The selected account changed. Return to the warehouse account before saving. Your changes are kept."));
         try{return ResponseEntity.ok(catalog.saveWarehouse(requiredTenantId(session),id,name,addressLine1,addressLine2,city,stateOrProvince,postalCode,countryCode,contactName,contactPhone));}
         catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
         catch(org.springframework.dao.DataIntegrityViolationException e){return ResponseEntity.badRequest().body(Map.of("error","Warehouse nickname already exists or the details are invalid. Nothing changed."));}

@@ -40,7 +40,7 @@ public class FbaShipmentsController {
     public record SelectedItems(java.util.List<String> shipments){}
     public record BatchConfirmation(UUID requestId,String revision,java.util.List<FbaBatchDeduction.Choice> choices){}
     @GetMapping("/app/inventory/fba-shipments/depletion/batch") @ResponseBody
-    Object batch(@RequestParam java.util.List<String> shipments,@RequestParam UUID connection,HttpSession session){requireManual();var scope=selection(session,connection);return batches.preview(scope.tenant(),scope.connection(),shipments);}
+    Object batch(@RequestParam java.util.List<String> shipments,@RequestParam UUID connection,HttpSession session){requireManual();var scope=selection(session,connection);var value=batches.preview(scope.tenant(),scope.connection(),shipments);return java.util.Map.of("plans",value.plans(),"blockers",value.blockers(),"revision",value.revision(),"presentation",depletion.presentation(scope.tenant(),scope.connection(),value.plans().stream().flatMap(p->p.shipment().lines().stream()).map(FbaDepletionRepository.Line::sku).distinct().toList()));}
     @PostMapping("/app/inventory/fba-shipments/depletion/batch-confirm") @ResponseBody
     Object batchConfirm(@RequestBody BatchConfirmation request,Authentication auth,@RequestParam UUID connection,HttpSession session){requireManual();var scope=selection(session,connection);return java.util.Map.of("ids",batches.confirm(scope.tenant(),scope.connection(),auth.getName(),request.requestId(),request.revision(),request.choices()),"message","Stock deducted for the complete selection.");}
     @PostMapping("/app/inventory/fba-shipments/depletion/refresh-items") @ResponseBody

@@ -35,13 +35,7 @@ public class PackingSlipRepository {
     @Transactional(readOnly=true)
     public List<String> packageNames(UUID tenantId){
         setTenant(tenantId);
-        return jdbc.queryForList("""
-            SELECT DISTINCT ON (lower(btrim(regexp_replace(packaging,'[[:space:]]+',' ','g'))))
-              btrim(regexp_replace(packaging,'[[:space:]]+',' ','g'))
-            FROM temporary_order_packaging_lookup
-            WHERE tenant_id=? AND nullif(btrim(regexp_replace(packaging,'[[:space:]]+',' ','g')),'') IS NOT NULL
-            ORDER BY lower(btrim(regexp_replace(packaging,'[[:space:]]+',' ','g'))),imported_at DESC,packaging
-            """,String.class,tenantId);
+        return new PackingPackageNames(jdbc).names(tenantId);
     }
 
     @Transactional(readOnly=true)
@@ -56,7 +50,7 @@ public class PackingSlipRepository {
         if(order.isEmpty())return null;
         String orderSummary=signature(tenantId,connectionId,orderId,"asin");
         String packageName=jdbc.query("""
-            SELECT packaging FROM temporary_order_packaging_lookup
+            SELECT packing_package_display(tenant_id,packaging) FROM temporary_order_packaging_lookup
             WHERE tenant_id=? AND marketplace_connection_id=?
               AND (amazon_order_id=? OR order_item_summary=?)
             ORDER BY CASE WHEN amazon_order_id=? THEN 0 ELSE 1 END,imported_at DESC LIMIT 1
@@ -122,6 +116,7 @@ public class PackingSlipRepository {
         String orderSummary=signature(tenantId,connectionId,orderId,"asin");
         String skuSummary=signature(tenantId,connectionId,orderId,"seller_sku");
         if(orderSummary.isBlank())throw new IllegalArgumentException("This order has no items to package.");
+        new PackingPackageNames(jdbc).registerCustom(tenantId,clean);
         jdbc.update("""
             INSERT INTO temporary_order_packaging_lookup(tenant_id,marketplace_connection_id,amazon_order_id,order_item_summary,packaging,order_sku_qty_list,source_note)
             VALUES (?,?,?,?,?,?,'Saved from local packing-slip workspace')
@@ -129,7 +124,7 @@ public class PackingSlipRepository {
               order_item_summary=EXCLUDED.order_item_summary,packaging=EXCLUDED.packaging,
               order_sku_qty_list=EXCLUDED.order_sku_qty_list,source_note=EXCLUDED.source_note,imported_at=now()
             """,tenantId,connectionId,orderId,orderSummary,clean,skuSummary);
-        return clean;
+        return jdbc.queryForObject("SELECT packing_package_display(?,?)",String.class,tenantId,clean);
     }
 
     private String signature(UUID tenantId,UUID connectionId,String orderId,String field){

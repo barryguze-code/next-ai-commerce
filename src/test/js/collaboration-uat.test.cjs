@@ -14,7 +14,7 @@ test('only actual assignees are red; visible initial count persists across a new
  });
  await page.goto('https://uat.test/');await page.locator('tr[data-card-id]').first().waitFor();
  assert.equal(await page.locator('#REVIEWr0 .collaboration-row-button').getAttribute('data-assigned-to-me'),'false');
- assert.match(await page.locator('#REVIEWr0 .collaboration-row-button img').getAttribute('src'),/collaboration-blue/);
+ assert.match(await page.locator('#REVIEWr0 .collaboration-row-button img').getAttribute('src'),/optimized32\/collaboration-default/);
  assert.equal(await page.locator('#REVIEWr1 .collaboration-row-button').getAttribute('data-assigned-to-me'),'true');
  const size=page.getByLabel('Show first tasks');await size.fill('8');await size.press('Tab');
  await page.waitForFunction(()=>document.querySelectorAll('tr[data-card-id]').length===8);

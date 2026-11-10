@@ -100,6 +100,7 @@ test('receiving tabs, expiration batches, fee navigation and overage confirmatio
   assert.equal(await page.locator('[name=cases]').inputValue(),'0');assert.equal(await page.locator('[name=pack]').inputValue(),'6');
   await page.waitForFunction(()=>document.activeElement?.name==='expiration');
   await page.locator('[name=cases]').fill('1');
+  await page.waitForFunction(()=>document.querySelector('[name=quantity]').value==='6');
   assert.equal(await page.locator('[name=quantity]').inputValue(),'6');
   await page.locator('[name=cases]').fill('0');
   assert.equal(await page.getByRole('button',{name:'Save receipt',exact:true}).isEnabled(),false);

@@ -166,17 +166,19 @@ public class ShopifyOrderPacking {
             WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.order_id=? ORDER BY l.line_gid,r.expiration_date NULLS LAST,r.id
             """,(rs,n)->new PackingSlipRepository.Line(rs.getString(1),rs.getString(2),rs.getBigDecimal(3).intValueExact(),rs.getObject(4,LocalDate.class),rs.getString(5),rs.getString(6),rs.getObject(7,UUID.class),null,!"—".equals(rs.getString(5))),tenant,connection,id);
         String gid=(String)o.get("order_gid"),name=(String)o.get("package_name");
-        return new PackingSlipRepository.Slip(id.toString(),"https://"+domain+"/admin/orders/"+gid.substring(gid.lastIndexOf('/')+1),(String)o.get("order_name"),name==null?"Package to confirm":name,name!=null,lines);
+        return new PackingSlipRepository.Slip(id.toString(),"https://"+domain+"/admin/orders/"+gid.substring(gid.lastIndexOf('/')+1),(String)o.get("order_name"),name==null?"Package to confirm":jdbc.queryForObject("SELECT packing_package_display(?,?)",String.class,tenant,name),name!=null,lines);
     }
     @Transactional(readOnly=true)
     public List<String> packageNames(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());
-        return jdbc.queryForList("SELECT DISTINCT ON (lower(name)) name FROM (SELECT btrim(regexp_replace(raw,'[[:space:]]+',' ','g')) name FROM (SELECT packaging raw FROM temporary_order_packaging_lookup WHERE tenant_id=? UNION ALL SELECT package_name FROM shopify_orders WHERE tenant_id=?) source) p WHERE nullif(name,'') IS NOT NULL ORDER BY lower(name),name",String.class,tenant,tenant);}
+        return new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc).names(tenant);}
+
     @Transactional(readOnly=true)
     public boolean marked(UUID tenant,UUID connection,UUID id){return Boolean.TRUE.equals(order(tenant,connection,id,false).get("platform_waiting_for_pickup"));}
     @Transactional
     public String savePackage(UUID tenant,UUID connection,UUID id,String name){
         order(tenant,connection,id,true);String clean=name==null?"":name.trim().replaceAll("\\s+"," ");
         if(clean.isBlank()||clean.length()>120)throw new IllegalArgumentException("Choose a package name of up to120 characters.");
+        new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc).registerCustom(tenant,clean);
         jdbc.update("UPDATE shopify_orders SET package_name=? WHERE tenant_id=? AND marketplace_connection_id=? AND id=?",clean,tenant,connection,id);return clean;
     }
 }

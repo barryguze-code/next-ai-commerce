@@ -27,7 +27,7 @@ function orderSkuProfit(view,sku){
  const base='/app/inventory/profit',views=new WeakMap(),labels={FEDEX_XSMALL:'FedEx XSmall',FEDEX_PAK:'FedEx Pak',FEDEX_SMALL:'FedEx Small',FEDEX_MEDIUM:'FedEx Medium',FEDEX_LARGE:'FedEx Large',FEDEX_XLARGE:'FedEx XLarge',UPS:'UPS · any packaging'};
  const currencySymbol=currency=>new Intl.NumberFormat('en-US',{style:'currency',currency:currency||'USD'}).formatToParts(0).find(part=>part.type==='currency').value;
  const money=(v,currency=current?.currency||'USD')=>v==null?'Pending':new Intl.NumberFormat('en-US',{style:'currency',currency}).format(v);
- const calculator=()=>{const image=document.createElement('img');image.src='/images/platform/table/profit-calculator.png';image.alt='';image.className='profit-calculator-art';return image;};
+ const calculator=()=>{const image=document.createElement('img');image.src='/images/platform/optimized32/profit-calculator.png?v=20261109-icons32-1';image.alt='';image.className='profit-calculator-art';return image;};
  const field=s=>dialog.querySelector(s),editable=dialog.dataset.canEdit==='true';let rates=[],current,trigger,request=0,publishEnabled=false,publishRevision=0,defaults=[];
  const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n};
  const costEvidence=(summary,details=summary)=>{const note=el('small',summary,'profit-cost-evidence');note.dataset.tooltip=details;note.tabIndex=0;return note};

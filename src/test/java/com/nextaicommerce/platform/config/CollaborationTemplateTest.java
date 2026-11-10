@@ -150,8 +150,8 @@ class CollaborationTemplateTest {
         String workspace=Files.readString(Path.of("src/main/resources/templates/collaboration.html"));
         String styles=Files.readString(Path.of("src/main/resources/static/css/general-task.css"));
         assertThat(modal).contains("/images/platform/table/collaboration-original-redirect.png?v=", "aria-label=\"Go to original source\"");
-        assertThat(navigation).contains("/images/platform/table/collaboration-create-lightning.png", "aria-label=\"Create a store task\"");
-        assertThat(workspace).contains("/images/platform/table/collaboration-create-lightning.png");
+        assertThat(navigation).contains("/images/platform/optimized32/collaboration-new.png", "aria-label=\"Create a store task\"");
+        assertThat(workspace).contains("/images/platform/optimized32/collaboration-new.png");
         assertThat(styles).contains(".collaborate-nav-row .sidebar-create-task{", "border:0;background:transparent;box-shadow:none",
             ".sidebar-create-task:focus-visible");
         for(String asset:List.of("table/collaboration-original-redirect","table/collaboration-create-lightning","table/actionable-items")) {

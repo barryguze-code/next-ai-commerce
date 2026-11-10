@@ -18,6 +18,7 @@ public class OrderProfitSummary {
     public record Result(Total today,Total filtered,Total thirtyDays,List<SkuRefundHistory.RefundTotal> refundsThirtyDays,OrderRepository.FilteredSummary volumeThirtyDays){}
     private final ConcurrentHashMap<Key,Cached> cache=new ConcurrentHashMap<>();
     public OrderProfitSummary(OrderRepository orders,ProfitRepository profit,SkuRefundHistory refunds){this.orders=orders;this.profit=profit;this.refunds=refunds;}
+    public void invalidate(UUID tenant){cache.keySet().removeIf(k->k.tenant().equals(tenant));}
     public Result get(UUID tenant,UUID store,String status,String query,Map<String,String> filters){
         var normalized=new HashMap<>(filters);normalized.remove("smartSort");normalized.remove("q");normalized.remove("status");
         var key=new Key(tenant,store,status,query,Map.copyOf(normalized));

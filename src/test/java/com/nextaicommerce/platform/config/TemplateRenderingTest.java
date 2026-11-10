@@ -193,9 +193,8 @@ class TemplateRenderingTest {
             "Item Sales","USD 42.50","Buy Box","USD 39.95","Shipping","USD 6.99","SKU mapping","63792 × 2",
             "Showing 1–1 of 1","data-order-stream","Sync now","Last Amazon order check",
             "New Amazon orders just arrived","Open this order in Seller Central","Open the Amazon product page",
-            "aria-label=\"Subject\"","amazon.com/dp/B012345678","Orders/Units","Unmapped",
+            "aria-label=\"Subject\"","amazon.com/dp/B012345678","Unmapped",
             "data-copy-sku=","has-issues","aria-current=\"page\"","12 orders / 15 units","status=UNSHIPPED").doesNotContain("order-day",">Historical<","Reporting only","status=PENDING","Stock readiness","data-fedex-shipping","openFedExShipping(this)","Buy shipping label");
-        assertThat(renderEvidence("orders",context)).doesNotContain("status=WAITING_FOR_PICKUP");
         context.setVariable("orderTabs",List.of(new com.nextaicommerce.platform.orders.OrderRepository.OrderTab("WAITING_FOR_PICKUP","Waiting for pickup",false,1,1)));
         context.setVariable("selectedStatus","WAITING_FOR_PICKUP");
         context.setVariable("pickupOverrides",java.util.Set.of(order.amazonOrderId()));
@@ -245,7 +244,7 @@ class TemplateRenderingTest {
 
         context.setVariable("items",List.of(new AccountItemView(UUID.randomUUID(),UUID.randomUUID(),
             "Donuts Vanilla Glazed","Drumroll",null,null,null,"2302326",0,null,"USD",false,"ACTIVE","COMPLETE")));
-        assertThat(engine.process("account-catalog",context)).contains("Vendor item code unavailable","Account SKU 2302326","Account SKU<input name=\"accountSku\" value=\"2302326\"")
+        assertThat(engine.process("account-catalog",context)).contains("Vendor item code unavailable","Account SKU 2302326","Account SKU<input aria-description=\"Your account’s internal product code\" name=\"accountSku\" value=\"2302326\"")
             .doesNotContain("Not assigned");
         var globalContext = webContext();
         globalContext.setVariables(Map.ofEntries(
@@ -393,9 +392,9 @@ class TemplateRenderingTest {
         UUID ledgerItem=UUID.randomUUID(),secondItem=UUID.randomUUID();
         var component=new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.MappingComponentView(ledgerItem,"Mapped product","CODE","ACCOUNT",BigDecimal.ONE);
         context.setVariable("mappingComponents",Map.of("IB-TEST-SKU",List.of(component)));
-        assertThat(renderEvidence("marketplace-skus",context)).contains("href=\"/app/inventory/ledger?itemId="+ledgerItem+"\"");
+        assertThat(renderEvidence("marketplace-skus",context)).contains("data-movement-sku=\"IB-TEST-SKU\"","sku-movements-trigger");
         context.setVariable("mappingComponents",Map.of("IB-TEST-SKU",List.of(component,new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.MappingComponentView(secondItem,"Second product","OTHER","OTHER",BigDecimal.ONE))));
-        assertThat(renderEvidence("marketplace-skus",context)).contains("Inventory Ledgers:","itemId="+ledgerItem,"itemId="+secondItem);
+        assertThat(renderEvidence("marketplace-skus",context)).contains("data-movement-sku=\"IB-TEST-SKU\"","/js/marketplace-inventory-movements.js");
         context.setVariable("mappingComponents",Map.of());
 
         context.setVariable("listingSync",new com.nextaicommerce.platform.sync.AmazonManualListingSync.Availability(false,"Already running",true,Instant.parse("2026-10-18T12:00:00Z")));
@@ -405,9 +404,8 @@ class TemplateRenderingTest {
         assertThat(rendered).contains("Marketplace SKUs","Marketplace listings","IB-TEST-SKU","B012345678",
             "4w sales","1 | 2 | 3 | 4","Profit","Review costs","Catalogue","Unmapped","Price (+ shipping)","Buy Box",
             "Available","Shipping template","data-column-control=\"marketplace-skus\"",
-            "Store overview · all listings","Amazon-active listings · price comparison",
             "data-table-min-width=\"1240\"","data-layout-version=\"orders-aligned-20261005\"",
-            "Buy Box price match","/images/channels/amazon-seller.png","/images/channels/amazon-seller.png",
+            "/images/channels/amazon-seller.png","/images/channels/amazon-seller.png",
             "https://www.amazon.com/dp/B012345678","sellercentral.amazon.com")
             .doesNotContain(">Seller SKU <","Seller SKU &amp; links","SKU Mapping <small>Planned");
         String tabs=rendered.substring(rendered.indexOf("<nav class=\"sku-filter-bar\""));
@@ -544,7 +542,7 @@ class TemplateRenderingTest {
         var review=new com.nextaicommerce.platform.collaboration.CollaborationRepository.Review(UUID.randomUUID(),"PLATFORM","GENERAL","Team task",null,"CONVERSATION","Check inventory","ACTIVE","barry@example.test","Barry","barry@example.test",null,now,now,null,1,0,"Barry","{}","/app/collaboration",false);
         context.setVariables(Map.ofEntries(Map.entry("canViewOperations",true),Map.entry("canManageConnections",true),Map.entry("canManageUsers",true),Map.entry("canEditCatalog",true),Map.entry("isSuperAdmin",true),Map.entry("signedInEmail","barry@example.test"),Map.entry("selectedAccountName","Local account"),Map.entry("selectedView","ACTIVE"),Map.entry("currentReturnTo","/app/collaboration"),Map.entry("reviews",List.of(review)),Map.entry("members",List.of(new com.nextaicommerce.platform.collaboration.CollaborationRepository.Member(UUID.randomUUID(),"Barry","barry@example.test","barry")))));
         var html=templateEngine().process("collaboration",context);
-        assertThat(html).contains("Assigned to","collaboration-assigned-dots.png","Create follow-up task","data-assign-review","Assign teammates","data-context-menu","collaboration-message-count");
+        assertThat(html).contains("Assigned to","optimized32/collaboration-assigned-red.png","Create follow-up task","data-assign-review","Assign teammates","data-context-menu","collaboration-message-count");
         assertThat(html).doesNotContain("class=\"collaboration-context\"");
         assertThat(html).contains("data-column=\"due\"","No due date","Create task");
     }
@@ -676,7 +674,9 @@ class TemplateRenderingTest {
     private static WebContext webContext() {
         MockServletContext servletContext = new MockServletContext();
         var application = JakartaServletWebApplication.buildApplication(servletContext);
-        return new WebContext(application.buildExchange(
+        var context = new WebContext(application.buildExchange(
             new MockHttpServletRequest(servletContext), new MockHttpServletResponse()));
+        context.setVariable("_csrf", new org.springframework.security.web.csrf.DefaultCsrfToken("X-CSRF-TOKEN", "_csrf", "test-token"));
+        return context;
     }
 }

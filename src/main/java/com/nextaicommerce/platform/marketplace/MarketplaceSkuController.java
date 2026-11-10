@@ -224,6 +224,19 @@ public class MarketplaceSkuController {
             .toList();
     }
 
+    @Autowired private MarketplaceInventoryMovements inventoryMovements;
+    @GetMapping("/app/marketplace-skus/inventory-movements") @ResponseBody
+    org.springframework.http.ResponseEntity<MarketplaceInventoryMovements.Result> inventoryMovements(
+            @RequestParam String sku,@RequestParam(required=false) UUID component,
+            @RequestParam(defaultValue="false") boolean fba,@RequestParam(defaultValue="0") int page,
+            @org.springframework.web.bind.annotation.RequestHeader("X-Workspace-Account") UUID account,
+            @org.springframework.web.bind.annotation.RequestHeader("X-Workspace-Store") UUID store,HttpSession session){
+        UUID tenant=requiredTenant(session),connection=requiredAmazonConnection(tenant,session);
+        if(!tenant.equals(account)||!connection.equals(store))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,"Workspace changed. Reopen inventory movements.");
+        try{return org.springframework.http.ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(inventoryMovements.read(tenant,connection,sku,component,fba,page));}
+        catch(IllegalArgumentException error){throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,"Mapping changed. Reopen inventory movements.");}
+    }
+
     @GetMapping("/app/marketplace-skus/mappings/components")
     @ResponseBody
     List<MarketplaceSkuRepository.MappingComponentView> mappingComponents(@RequestParam String sku,HttpSession session){

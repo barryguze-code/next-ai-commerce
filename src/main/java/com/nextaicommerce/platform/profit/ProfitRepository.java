@@ -82,7 +82,7 @@ public class ProfitRepository {
                 AND (sale.owned_discount#>>'{0,schedule,0,end_at}')::timestamptz>now()
                 THEN (sale.owned_discount#>>'{0,schedule,0,value_with_tax}')::numeric END,l.price) price,
               coalesce(nullif(trim(l.currency),''),md.currency_code) currency,l.fulfillment_channel,l.other_cost_per_sku,
-              l.profit_package_type,coalesce(l.product_cost_override,product.cost) cost,coalesce(profile.name,packing.packaging) package_name,profile.preferred_carrier carrier
+              CASE WHEN packing_package_merged(l.tenant_id,coalesce(profile.name,packing.packaging)) THEN '' ELSE l.profit_package_type END profit_package_type,packing_package_merged(l.tenant_id,coalesce(profile.name,packing.packaging)) package_merged,coalesce(l.product_cost_override,product.cost) cost,packing_package_cost(l.tenant_id,coalesce(profile.name,packing.packaging)) package_name,CASE WHEN packing_package_merged(l.tenant_id,coalesce(profile.name,packing.packaging)) THEN '' ELSE profile.preferred_carrier END carrier
             FROM amazon_listings l
             JOIN marketplace_connections mc ON mc.tenant_id=l.tenant_id AND mc.id=l.marketplace_connection_id
             LEFT JOIN marketplace_definitions md ON md.channel=mc.channel AND md.marketplace_identifier=mc.marketplace_identifier
@@ -98,7 +98,7 @@ public class ProfitRepository {
             ) packing ON true
             """+COST_JOIN+" WHERE l.tenant_id=:tenant AND l.marketplace_connection_id=:connection AND l.seller_sku IN (:keys)",
             Map.of("tenant",tenant,"connection",connection,"keys",keys));
-        var rates=costs.rates(tenant);var result=new LinkedHashMap<String,View>();
+        var rates=costs.rates(tenant);var independent=costs.packageRates(tenant,rows.stream().flatMap(r->java.util.stream.Stream.of(text(r,"package_name"),text(r,"order_package"))).toList());var result=new LinkedHashMap<String,View>();
         Map<String,List<PackageCost>> skuPackages=new HashMap<>();
         for(var saved:named.queryForList("SELECT seller_sku,description,amount FROM profit_sku_packages WHERE tenant_id=:tenant AND marketplace_connection_id=:connection AND seller_sku IN (:keys) ORDER BY sequence",Map.of("tenant",tenant,"connection",connection,"keys",keys)))
             skuPackages.computeIfAbsent(text(saved,"seller_sku"),k->new ArrayList<>()).add(new PackageCost(text(saved,"description"),decimal(saved,"amount")));
@@ -106,8 +106,8 @@ public class ProfitRepository {
         for(var r:rows){
             String key=text(r,"seller_sku"),currency=text(r,"currency");
             var type=packageType(text(r,"profit_package_type"),text(r,"package_name"),text(r,"carrier"));
-            BigDecimal amount=ProfitShippingRates.cost(rates,type,today);
-            var packages=skuPackages.getOrDefault(key,amount==null?List.<PackageCost>of():List.of(new PackageCost(type.name(),amount)));
+            BigDecimal amount=independent.cost(text(r,"package_name"),today,ProfitShippingRates.cost(rates,type,today));
+            var packages=(Boolean.TRUE.equals(r.get("package_merged"))?Map.<String,List<PackageCost>>of():skuPackages).getOrDefault(key,amount==null?List.<PackageCost>of():List.of(new PackageCost(type==null?text(r,"package_name"):type.name(),amount)));
             var lines=List.of(new Line(key,text(r,"item_name"),1,decimal(r,"price"),decimal(r,"cost"),decimal(r,"other_cost_per_sku"),BigDecimal.ZERO));
             result.put(key,view(key,"SKU",text(r,"item_name"),currency,today,lines,packages,text(r,"fulfillment_channel"),type));
         }
@@ -124,7 +124,7 @@ public class ProfitRepository {
               (i.item_price-coalesce(i.promotion_discount,0))/nullif(i.quantity_ordered,0) unit_price,
               coalesce(i.shipping_price,0)-coalesce(i.shipping_discount,0) customer_shipping,
               coalesce(l.other_cost_per_sku,1.00) other_cost_per_sku,coalesce(l.product_cost_override,product.cost) cost,
-              l.profit_package_type,profile.name package_name,profile.preferred_carrier carrier,packing.packaging order_package
+              CASE WHEN packing_package_merged(o.tenant_id,coalesce(packing.packaging,profile.name)) THEN '' ELSE l.profit_package_type END profit_package_type,packing_package_merged(o.tenant_id,coalesce(packing.packaging,profile.name)) package_merged,packing_package_cost(l.tenant_id,profile.name) package_name,CASE WHEN packing_package_merged(o.tenant_id,coalesce(packing.packaging,profile.name)) THEN '' ELSE profile.preferred_carrier END carrier,packing_package_cost(o.tenant_id,packing.packaging) order_package
             FROM amazon_orders o JOIN amazon_order_items i ON i.tenant_id=o.tenant_id
               AND i.marketplace_connection_id=o.marketplace_connection_id AND i.amazon_order_id=o.amazon_order_id
             JOIN marketplace_connections mc ON mc.tenant_id=o.tenant_id AND mc.id=o.marketplace_connection_id
@@ -145,7 +145,7 @@ public class ProfitRepository {
         for(var r:saved)packageMap.computeIfAbsent(text(r,"amazon_order_id"),k->new ArrayList<>()).add(new PackageCost(text(r,"description"),decimal(r,"amount")));
         Map<String,List<Map<String,Object>>> grouped=new LinkedHashMap<>();
         rows.forEach(r->grouped.computeIfAbsent(text(r,"amazon_order_id"),k->new ArrayList<>()).add(r));
-        var rates=costs.rates(tenant);var result=new LinkedHashMap<String,View>();
+        var rates=costs.rates(tenant);var independent=costs.packageRates(tenant,rows.stream().flatMap(r->java.util.stream.Stream.of(text(r,"package_name"),text(r,"order_package"))).toList());var result=new LinkedHashMap<String,View>();
         for(var entry:grouped.entrySet()){
             var first=entry.getValue().getFirst();Object date=first.get("purchase_day");
             LocalDate day=date instanceof java.sql.Date d?d.toLocalDate():date instanceof LocalDate d?d:null;
@@ -155,13 +155,15 @@ public class ProfitRepository {
                 if(quantity<1)continue;
                 lines.add(new Line(text(r,"seller_sku"),text(r,"title"),quantity,decimal(r,"unit_price"),decimal(r,"cost"),decimal(r,"other_cost_per_sku"),decimal(r,"customer_shipping")));
             }
-            var packages=packageMap.getOrDefault(entry.getKey(),List.of());
+            var packages=Boolean.TRUE.equals(first.get("package_merged"))?List.<PackageCost>of():packageMap.getOrDefault(entry.getKey(),List.of());
             var type=packageType(text(first,"profit_package_type"),text(first,"package_name"),text(first,"carrier"));
             var orderType=packageType("",text(first,"order_package"),"");
             if(orderType!=null)type=orderType;
-            if(packages.isEmpty()&&(orderType!=null||(lines.size()==1&&lines.getFirst().quantity()==1))){
-                var amount=ProfitShippingRates.cost(rates,type,day);
-                if(amount!=null)packages=List.of(new PackageCost(type.name(),amount));
+            if(packages.isEmpty()&&(!text(first,"order_package").isBlank()||orderType!=null||(lines.size()==1&&lines.getFirst().quantity()==1))){
+                String identity=text(first,"order_package").isBlank()?text(first,"package_name"):text(first,"order_package");
+                var inherited=(orderType!=null||(lines.size()==1&&lines.getFirst().quantity()==1))?ProfitShippingRates.cost(rates,type,day):null;
+                var amount=independent.cost(identity,day,inherited);
+                if(amount!=null)packages=List.of(new PackageCost(type==null?identity:type.name(),amount));
             }
             var estimate=view(entry.getKey(),"ORDER",entry.getKey(),text(first,"currency"),day,lines,packages,text(first,"fulfillment_channel"),type);
             String status=text(first,"order_status").replaceAll("[^A-Za-z]","").toUpperCase(Locale.ROOT);
@@ -412,7 +414,7 @@ public class ProfitRepository {
             else saveSku(tenant,connection,key,type,other);
         }
     }
-    static ProfitShippingRates.PackageType packageType(String explicit,String name,String carrier){
+    public static ProfitShippingRates.PackageType packageType(String explicit,String name,String carrier){
         if(!explicit.isBlank())return ProfitShippingRates.PackageType.valueOf(explicit);
         String value=name.toUpperCase(Locale.ROOT).replaceAll("[^A-Z]","");
         if(carrier.equalsIgnoreCase("UPS")||name.toUpperCase(Locale.ROOT).contains("UPS"))return ProfitShippingRates.PackageType.UPS;

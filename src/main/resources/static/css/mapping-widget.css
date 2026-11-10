@@ -5,7 +5,7 @@ dialog.mapping-widget{box-sizing:border-box;position:fixed;inset:0;width:min(860
 .mapping-widget *{box-sizing:border-box}
 .mapping-widget>form{display:flex;flex-direction:column;height:auto;min-height:0;max-height:calc(100dvh - 42px);margin:0}
 .mapping-widget header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex:none;padding:20px 24px;border-bottom:1px solid var(--line)}
-.mapping-widget .mw-eyebrow{display:block;color:var(--blue);font-family:inherit;font-weight:700;font-size:.75rem;line-height:1.4;letter-spacing:.02em;text-transform:none}
+:is(.mapping-widget,.rp-dialog,.rp-settings) .mw-eyebrow{display:block;color:var(--blue);font-family:inherit;font-weight:700;font-size:.75rem;line-height:1.4;letter-spacing:.02em;text-transform:none}
 .mapping-widget h2{margin:6px 0;font-size:1.2rem;line-height:1.35;font-weight:750;letter-spacing:-.02em;overflow-wrap:anywhere}
 .mapping-widget header p{margin:0;font-size:.85rem;line-height:1.5;color:var(--muted)}
 .mapping-widget .mw-close{flex:none;width:34px;height:34px;border:1px solid var(--line);border-radius:50%;background:var(--white);color:var(--muted);font-size:24px;cursor:pointer}

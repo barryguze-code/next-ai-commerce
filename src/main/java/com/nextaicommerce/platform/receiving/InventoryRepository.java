@@ -143,6 +143,7 @@ public class InventoryRepository {
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())return "Physical count";
             return switch(entryType){
             case "RECEIPT" -> "Received";
+            case "FBA_DEPLETION" -> "FBA shipment deducted";
             case "INVENTORY_PLAN" -> "Plan updated";
             case "SALE","SHIPMENT" -> "Order shipped";
             case "SHIPMENT_UNRECORDED" -> "Shipped";
@@ -160,6 +161,7 @@ public class InventoryRepository {
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())return "Physical count";
             return switch(sourceType){
             case "RECEIVING" -> "Invoice receiving";
+            case "FBA_SHIPMENT" -> "FBA shipment";
             case "AMAZON_ORDER" -> "Amazon order";
             case "WALMART_ORDER" -> "Walmart order";
             case "SHOPIFY_ORDER" -> "Shopify order";
@@ -183,6 +185,7 @@ public class InventoryRepository {
             if("RETURN".equals(entryType)&&notes!=null&&notes.startsWith("Packing mark undone"))return notes;
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())
                 return quantity.signum()<0?"Physical count reduced the recorded stock.":"Physical count confirmed stock on hand.";
+            if("FBA_SHIPMENT".equals(sourceType))return "Warehouse stock deducted for this FBA shipment.";
             if("AMAZON_ORDER".equals(sourceType))return "Stock left the warehouse for this Amazon order.";
             if("SHOPIFY_ORDER".equals(sourceType)){if("PACKING_REVERSAL".equals(entryType))return "Local packing undone; stock returned to the previous location.";if(notes!=null&&notes.startsWith("Local packing handoff"))return "Packed locally — awaiting pickup. Shopify fulfillment is unchanged.";return "Stock left the warehouse for this Shopify order.";}
             if("WALMART_ORDER".equals(sourceType))return "Stock left the warehouse for this Walmart order.";
@@ -1154,6 +1157,8 @@ public class InventoryRepository {
             LEFT JOIN shopify_orders shopify_order ON ledger.source_type='SHOPIFY_ORDER'
                 AND shopify_order.tenant_id=ledger.tenant_id AND shopify_order.marketplace_connection_id=ledger.marketplace_connection_id
                 AND shopify_order.id=ledger.source_id
+            LEFT JOIN fba_shipment_depletions fba_depletion ON ledger.source_type='FBA_SHIPMENT'
+                AND fba_depletion.tenant_id=ledger.tenant_id AND fba_depletion.marketplace_connection_id=ledger.marketplace_connection_id AND fba_depletion.id=ledger.source_id
             LEFT JOIN physical_count_imports physical_count ON ledger.source_type='PHYSICAL_COUNT'
                 AND physical_count.tenant_id=ledger.tenant_id AND physical_count.id=ledger.source_id
             LEFT JOIN app_users actor ON actor.id=ledger.created_by
@@ -1179,7 +1184,7 @@ public class InventoryRepository {
             SELECT ledger.id,item.id,ledger.occurred_at,coalesce(item.display_name,product.canonical_name),
                    item.account_sku,identifier.identifier_value,ledger.entry_type,ledger.quantity,
                    ledger.expiration_date,ledger.unit_cost,ledger.currency,ledger.source_type,
-                   coalesce(po.po_number,document.document_number,amazon_order.amazon_order_id,shopify_order.order_name,physical_count.id::text),
+                   coalesce(po.po_number,document.document_number,amazon_order.amazon_order_id,shopify_order.order_name,fba_depletion.shipment_id,physical_count.id::text),
                    ledger.notes,actor.email,ledger.cost_status
             """+joins+" ORDER BY ledger.occurred_at DESC,ledger.created_at DESC,ledger.id DESC LIMIT ? OFFSET ?",
             (rs,row)->new LedgerView(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getTimestamp(3).toInstant(),rs.getString(4),
@@ -1212,7 +1217,7 @@ public class InventoryRepository {
             SELECT ledger.id,item.id,ledger.occurred_at,coalesce(item.display_name,product.canonical_name),
                    item.account_sku,identifier.identifier_value,ledger.entry_type,ledger.quantity,
                    ledger.expiration_date,ledger.unit_cost,ledger.currency,ledger.source_type,
-                   coalesce(po.po_number,document.document_number,amazon_order.amazon_order_id,shopify_order.order_name,physical_count.id::text),
+                   coalesce(po.po_number,document.document_number,amazon_order.amazon_order_id,shopify_order.order_name,fba_depletion.shipment_id,physical_count.id::text),
                    ledger.notes,actor.email,ledger.cost_status
             FROM movements ledger
             JOIN account_catalog_items item ON item.tenant_id=ledger.tenant_id AND item.id=ledger.account_catalog_item_id
@@ -1231,6 +1236,8 @@ public class InventoryRepository {
             LEFT JOIN shopify_orders shopify_order ON ledger.source_type='SHOPIFY_ORDER'
                 AND shopify_order.tenant_id=ledger.tenant_id AND shopify_order.marketplace_connection_id=ledger.marketplace_connection_id
                 AND shopify_order.id=ledger.source_id
+            LEFT JOIN fba_shipment_depletions fba_depletion ON ledger.source_type='FBA_SHIPMENT'
+                AND fba_depletion.tenant_id=ledger.tenant_id AND fba_depletion.marketplace_connection_id=ledger.marketplace_connection_id AND fba_depletion.id=ledger.source_id
             LEFT JOIN physical_count_imports physical_count ON ledger.source_type='PHYSICAL_COUNT'
                 AND physical_count.tenant_id=ledger.tenant_id AND physical_count.id=ledger.source_id
             LEFT JOIN app_users actor ON actor.id=ledger.created_by

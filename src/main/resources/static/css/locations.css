@@ -11,3 +11,33 @@ html[data-theme="dark"] .location-chip small{color:#8f9eaf}
 .location-directory-list article>.location-actions{grid-column:2 / -1;display:flex;gap:8px}.location-actions button,.location-edit-panel button{border:1px solid var(--line,#d7e0ec);border-radius:8px;background:var(--surface,#fff);color:var(--ink,#17253b);padding:6px 10px;font:inherit;font-size:.7rem;cursor:pointer}.location-actions button:last-child{color:#b42336}.location-directory-list article>.location-edit-panel{grid-column:1 / -1;display:block;padding:12px;background:var(--surface,#fff);border:1px solid var(--line);border-radius:10px}.location-edit-panel p{font-size:.75rem;line-height:1.5;white-space:normal}.location-edit-panel label{display:grid;gap:4px;font-size:.75rem;margin-bottom:10px}.location-edit-panel input{width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit;background:var(--surface,#fff);color:var(--ink)}.location-edit-panel button{margin-right:8px}.location-edit-panel [role=status]{color:#b42336}.location-edit-panel button:disabled{opacity:.5;cursor:wait}
 html[data-theme="dark"] .location-directory{background:#101b27}html[data-theme="dark"] .location-directory>header,html[data-theme="dark"] .location-create-panel{background:#152335}html[data-theme="dark"] .location-code{background:#1d3450;color:#a9caff}html[data-theme="dark"] .location-status{background:#17392c;color:#76d6ab}
 @media(max-width:760px){.location-manager-dialog .dialog-body{grid-template-columns:1fr}.location-directory>header{display:grid}.location-directory>header small{text-align:left}.location-directory-list{max-height:230px}.location-directory-list article{grid-template-columns:64px minmax(0,1fr)}.location-status{grid-column:2;justify-self:start}}
+/* Shared warehouse editor: approved contact-first layout; scoped to the existing dialog. */
+#warehouse-dialog .location-create-panel{border:0;background:transparent;padding:0;gap:16px}
+#warehouse-dialog [hidden]{display:none!important}
+#warehouse-dialog #warehouse-address{border:0;padding:0;margin:0;min-width:0;display:grid;gap:14px}
+#warehouse-dialog #warehouse-address:disabled{opacity:.6}
+#warehouse-dialog .warehouse-contact-section{display:grid;gap:10px}
+#warehouse-dialog .warehouse-contact-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#warehouse-dialog .warehouse-contact-row{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface,#fff)}
+#warehouse-dialog .warehouse-contact-summary{display:flex;align-items:center;gap:10px}
+#warehouse-dialog .warehouse-contact-summary>div{display:grid;gap:3px;min-width:0;flex:1}
+#warehouse-dialog .warehouse-contact-summary strong,#warehouse-dialog .warehouse-contact-summary small{font-size:.75rem;overflow-wrap:anywhere}
+#warehouse-dialog .warehouse-contact-summary small{color:var(--muted)}
+#warehouse-dialog .warehouse-contact-fields{display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px;flex:1;min-width:0}
+#warehouse-dialog .warehouse-contact-fields>.form-pair{display:grid;grid-template-columns:minmax(180px,1fr) minmax(140px,220px);flex:1 1 360px;min-width:0}
+#warehouse-dialog .warehouse-contact-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 0 auto;margin:0}
+#warehouse-dialog .warehouse-contact-actions>button{flex:0 0 auto;white-space:nowrap}
+@media(max-width:520px){#warehouse-dialog .warehouse-contact-fields>.form-pair{grid-template-columns:minmax(0,1fr);flex-basis:100%}}
+#warehouse-dialog .warehouse-contact-edit svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;display:block}
+.warehouse-save-toast{position:fixed;right:24px;bottom:24px;z-index:50;padding:12px 16px;border-radius:11px;background:#142a42;color:#fff;box-shadow:0 12px 30px rgba(11,27,44,.24);font-size:.75rem;font-weight:750;opacity:0;transform:translateY(12px);pointer-events:none;transition:opacity .2s,transform .2s}
+.warehouse-save-toast.show{opacity:1;transform:translateY(0)}
+@media(prefers-reduced-motion:reduce){.warehouse-save-toast{transition:none}}
+
+/* Save feedback stays with the fixed action area, outside the scrolling fields. */
+#warehouse-dialog .dialog-actions{display:flex;flex-direction:column;align-items:stretch;gap:10px}
+#warehouse-dialog .dialog-actions>[data-warehouse-feedback]{margin:0;overflow-wrap:anywhere}
+#warehouse-dialog .warehouse-footer-buttons{display:flex;justify-content:flex-end;gap:10px}
+
+#warehouse-dialog .warehouse-save-control{display:inline-flex;align-items:center;border-radius:10px}
+#warehouse-dialog .warehouse-save-control[data-tooltip]>button:disabled{pointer-events:none}
+#warehouse-dialog .warehouse-save-control:focus-visible{outline:2px solid var(--blue,#2b6ce6);outline-offset:3px}

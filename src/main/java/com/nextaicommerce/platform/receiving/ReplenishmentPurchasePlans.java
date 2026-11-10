@@ -43,6 +43,13 @@ public class ReplenishmentPurchasePlans {
   // Retain the idempotency identity so a delayed create retry cannot resurrect a deleted draft.
   jdbc.update("UPDATE replenishment_purchase_plans SET request_hash='DELETED',revision=revision+1,updated_at=now() WHERE tenant_id=? AND id=?",tenant,id);
  }
+ /** Resolve picker candidates with the same authoritative terms as quote/save. No quantities are selected. */
+ @Transactional(readOnly=true)
+ public List<Line> catalogueChoices(UUID tenant,List<UUID> ids,String vendor){
+  if(ids.isEmpty())return List.of();if(ids.size()>20)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+  scope(tenant);return resolve(tenant,ids.stream().distinct().map(id->new InputLine(id,0)).toList()).stream()
+   .filter(line->vendor==null||vendor.isBlank()||vendor.equals(line.vendor())).toList();
+ }
  public record Quote(List<Line> lines,String revision){}
  @Transactional(readOnly=true)
  public Quote quote(UUID tenant,List<InputLine> input){validate(new Command(UUID.randomUUID(),0,"Quote",input,null));scope(tenant);var lines=resolve(tenant,input);return new Quote(lines,termsHash(lines));}

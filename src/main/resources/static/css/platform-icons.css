@@ -1,0 +1,17 @@
+/* Owner-supplied compact artwork: preserve the existing hitbox, not the baseline. */
+html body.app-page img[src*="/images/platform/optimized32/"]{display:block;flex:none;object-fit:contain;max-width:32px!important;max-height:32px!important;vertical-align:middle}
+html body.app-page .platform-art-only{display:inline-flex!important;align-items:center!important;justify-content:center!important;padding:0!important;gap:0!important}
+html body.app-page .platform-art-only>img[src*="/images/platform/optimized32/"]{position:static!important;inset:auto!important;transform:none!important;margin:0!important;padding:0!important;align-self:center}
+html body.app-page .platform-art-slot{display:inline-flex;align-items:center;justify-content:center}
+html body.app-page .platform-art-slot>img[src*="/images/platform/optimized32/"]{position:static!important;inset:auto!important;transform:none!important;margin:0!important;padding:0!important}
+/* Menus keep their left slot and copy; inline icons align with the whole label. */
+html body.app-page .table-action-icon:has(img[src*="/optimized32/"]),html body.app-page .order-picture-symbol:has(img[src*="/optimized32/"]){display:grid;place-items:center}
+html body.app-page .table-column-control>summary:has(.table-columns-art){display:inline-flex!important;align-items:center!important;justify-content:center!important;width:40px;height:40px;padding:0!important}
+html body.app-page .table-column-control .table-columns-art{display:block;width:20px;height:20px;margin:0!important;flex:none;object-fit:contain}
+html body.app-page .thread-status-line:has(img[src*="/optimized32/"]),html body.app-page .huddle-top-icon{align-items:center;justify-content:center}
+/* Orders' legacy absolute-image rule must not offset compact centered artwork. */
+html body.app-page .orders-workspace .order-list .order-engagement>.platform-art-only>img.platform-icon[src*="/optimized32/"]{position:static!important;inset:auto!important;transform:none!important;margin:0!important;padding:0!important}
+
+/* A calculator is inline with its amount; multi-row profit previews retain their grid. */
+html body.app-page .profit-price-link:has(>img[src*="/optimized32/"]){display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+html body.app-page .profit-price-link>img[src*="/optimized32/"]{margin:0}

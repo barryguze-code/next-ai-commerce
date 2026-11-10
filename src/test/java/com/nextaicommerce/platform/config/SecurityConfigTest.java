@@ -47,6 +47,23 @@ import org.springframework.test.web.servlet.MockMvc;
 class SecurityConfigTest {
     private static final UUID TENANT_ID = UUID.randomUUID();
     @Autowired MockMvc mvc;
+    @Test void warehouseEditorRefreshesOnlyCurrentSessionTokenAndPreservesWritePermissions() throws Exception {
+        mvc.perform(get("/app/catalog/warehouse-options").with(user("owner@example.test").roles("OWNER"))
+                .sessionAttr("selectedTenantId",TENANT_ID))
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().exists("X-CSRF-TOKEN"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("X-Workspace-Account",TENANT_ID.toString()))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Cache-Control","no-store"));
+        mvc.perform(post("/app/catalog/warehouse-options").with(user("owner@example.test").roles("OWNER"))
+                .sessionAttr("selectedTenantId",TENANT_ID).param("name","Fixture"))
+            .andExpect(status().isForbidden());
+        mvc.perform(post("/app/catalog/warehouse-options").with(user("owner@example.test").roles("OWNER")).with(csrf())
+                .sessionAttr("selectedTenantId",TENANT_ID).param("name","Fixture").param("warehouseAccount",UUID.randomUUID().toString()))
+            .andExpect(status().isConflict());
+        mvc.perform(post("/app/catalog/warehouse-options").with(user("viewer@example.test").roles("VIEWER")).with(csrf())
+                .sessionAttr("selectedTenantId",TENANT_ID).param("name","Fixture"))
+            .andExpect(status().isForbidden());
+    }
     @Test void originalSourceNavigationRequiresCsrfAndRetainsViewerReadAccess() throws Exception {
         mvc.perform(post("/app/collaboration/personal/open-source").with(user("viewer@example.test").roles("VIEWER")))
             .andExpect(status().isForbidden());
@@ -107,6 +124,11 @@ class SecurityConfigTest {
     @TestConfiguration
     static class StubConfig {
         static final UUID MAPPING_STORE=UUID.fromString("00000000-0000-0000-0000-000000000123");
+        @Bean com.nextaicommerce.platform.catalog.CatalogRemovalService catalogRemovalService(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.catalog.CatalogRemovalService.class);}
+        @Bean com.nextaicommerce.platform.config.PlatformReadCache platformReadCache(){return new PlatformReadCache(false,java.time.Duration.ofSeconds(10),10);}
+        @Bean com.nextaicommerce.platform.marketplace.MarketplaceInventoryMovements marketplaceInventoryMovements(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.marketplace.MarketplaceInventoryMovements.class);}
+        @Bean com.nextaicommerce.platform.orders.PackingPackageNames packingPackageNames(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.PackingPackageNames.class);}
+        @Bean com.nextaicommerce.platform.profit.ProfitCostRepository packageCosts(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.profit.ProfitCostRepository.class);}
         @Bean com.nextaicommerce.platform.marketplace.MarketplaceMappingDraft marketplaceMappingDraft(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.marketplace.MarketplaceMappingDraft.class);}
         @Bean com.nextaicommerce.platform.catalog.CatalogPictureService catalogPictureService(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.catalog.CatalogPictureService.class);}
         @Bean com.nextaicommerce.platform.web.ShopifyConnectionService shopifyConnectionService(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.web.ShopifyConnectionService.class);}
@@ -164,6 +186,7 @@ class SecurityConfigTest {
                 @Override public GlobalProductPage pageGlobalProducts(UUID tenant,String search,int page,int size,String sort,String direction){return new GlobalProductPage(List.of(),0,0,size);}
                 @Override public AccountItemPage pageAccountItems(UUID tenant,String search,int page,int size,String sort,String direction,String status){return new AccountItemPage(List.of(),0,0,size);}
                 @Override public List<LocationView> listLocations(UUID tenantId){return List.of();}
+                @Override public List<WarehouseView> listWarehouses(UUID tenantId){return List.of();}
                 @Override public List<MarketplaceSkuRef> listMarketplaceSkus(UUID tenantId,List<UUID> ids){return List.of();}
                 @Override public List<GlobalProductView> listGlobalProducts() { return List.of(); }
                 @Override public GlobalProductPage pageGlobalProducts(String search,int page,int size,String sort,String direction){return new GlobalProductPage(List.of(),0,0,size);}

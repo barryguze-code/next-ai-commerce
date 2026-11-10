@@ -1,0 +1,9 @@
+/* Removal is deliberately text-only until an approved semantic asset is supplied. */
+[data-catalog-removal]>.table-action-icon{visibility:hidden}
+[data-catalog-removal]{border-top:1px solid var(--line)!important;margin-top:6px}
+html body.app-page dialog.catalog-removal-dialog{width:520px;max-width:calc(100vw - 32px)}
+.catalog-removal-identity{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.catalog-removal-identity>div{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}
+.catalog-removal-identity small{color:var(--muted)}
+.catalog-removal-art{position:relative;display:grid;place-items:center;width:52px;height:52px;flex:none;border:1px solid var(--line);border-radius:8px;color:var(--muted)}
+.catalog-removal-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--white);border-radius:8px}

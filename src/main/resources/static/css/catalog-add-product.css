@@ -46,3 +46,17 @@ html body.app-page .catalog-product-dialog .dialog-actions{flex:none;position:st
 /* Duplicate creation recovery reuses the compact selected-product summary. */
 #product-dialog #catalog-global-feedback.catalog-feedback-error{color:var(--danger,#c73547);border-left:3px solid currentColor;padding:6px 10px;background:var(--danger-soft,#fff1f2)}
 #product-dialog input[aria-invalid=true]{border-color:var(--danger,#c73547)}
+
+/* CD-approved account editor: compact identity above account-owned fields. */
+html body.app-page dialog.catalog-edit-dialog{width:720px}
+.catalog-edit-dialog .catalog-shared-reference{display:flex;gap:12px;align-items:start}
+.catalog-edit-dialog .catalog-reference-picture{width:52px;height:52px;flex:none;object-fit:contain;border-radius:8px}
+.catalog-edit-dialog .catalog-reference-copy{display:grid;gap:4px;min-width:0}
+.catalog-edit-dialog .catalog-reference-copy>small{color:var(--muted);font-size:12px}
+.catalog-edit-dialog .catalog-reference-copy>strong{display:block;font-size:15px;overflow-wrap:anywhere}
+.catalog-edit-dialog .catalog-reference-grid{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:4px}
+.catalog-edit-dialog .catalog-reference-grid>div:first-child{grid-column:1/-1}
+.catalog-edit-dialog [data-edit-vendor-feedback]:empty{display:none}
+@media(max-width:480px){.catalog-edit-dialog .catalog-reference-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.catalog-edit-dialog .catalog-reference-initial{display:grid;place-items:center;border:1px solid var(--line);font-weight:600;color:var(--muted)}

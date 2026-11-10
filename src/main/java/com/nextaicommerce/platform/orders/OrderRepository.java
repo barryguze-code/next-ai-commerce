@@ -444,7 +444,8 @@ CASE
                 'RECENT_ORDER_RECONCILIATION','ORDER_LIFECYCLE')
             """,rs->rs.next()?rs.getString(1):null,tenantId,connectionId);
         String local=jdbc.queryForObject("SELECT coalesce(max(platform_pickup_changed_at)::text,'') FROM amazon_orders WHERE tenant_id=? AND marketplace_connection_id=?",String.class,tenantId,connectionId);
-        return (version==null?"waiting":version)+":"+local;
+        String packages=jdbc.queryForObject("SELECT coalesce(max(changed)::text,'') FROM (SELECT created_at changed FROM packing_package_name_events WHERE tenant_id=? UNION ALL SELECT created_at FROM packing_package_rates WHERE tenant_id=?) changes",String.class,tenantId,tenantId);
+        return (version==null?"waiting":version)+":"+local+":"+packages;
     }
 
     @Transactional(readOnly=true)

@@ -119,7 +119,7 @@ public class ShopifyOrderReadRepository {
         return jdbc.query("SELECT i.id,coalesce(i.display_name,g.canonical_name),i.account_sku,c.quantity,g.brand FROM shopify_order_components c JOIN account_catalog_items i ON i.tenant_id=c.tenant_id AND i.id=c.account_catalog_item_id JOIN global_catalog_products g ON g.id=i.global_product_id WHERE c.tenant_id=? AND c.marketplace_connection_id=? AND c.order_line_id=? ORDER BY i.id",(rs,n)->new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository.MappingComponentView(rs.getObject(1,UUID.class),rs.getString(2),null,rs.getString(3),rs.getBigDecimal(4),rs.getString(5)),tenant,connection,line);
     }
     @Transactional(readOnly=true)
-    public String localVersion(UUID tenant,UUID connection){scope(tenant);return jdbc.queryForObject("SELECT coalesce(max(updated_at)::text,'') FROM shopify_order_lines WHERE tenant_id=? AND marketplace_connection_id=?",String.class,tenant,connection);}
+    public String localVersion(UUID tenant,UUID connection){scope(tenant);return jdbc.queryForObject("SELECT coalesce(max(updated_at)::text,'') FROM shopify_order_lines WHERE tenant_id=? AND marketplace_connection_id=?",String.class,tenant,connection)+":"+jdbc.queryForObject("SELECT coalesce(max(changed)::text,'') FROM (SELECT created_at changed FROM packing_package_name_events WHERE tenant_id=? UNION ALL SELECT created_at FROM packing_package_rates WHERE tenant_id=?) changes",String.class,tenant,tenant);}
     @Transactional(readOnly=true)
     public Map<UUID,String> weekly(UUID tenant,UUID connection,List<UUID> variants){
         scope(tenant);if(variants.isEmpty())return Map.of();

@@ -327,7 +327,7 @@ function init(root){
     panel.style.top=Math.max(top+margin,Math.min(boundedSheet?top+height-margin-panelHeight:opensUp?trigger.top-panelHeight-8:trigger.bottom+8,top+height-panelHeight-margin))+'px';
   }
   if(host){
-    host.innerHTML='<details class="table-column-control"><summary class="secondary-button compact-button" title="Choose table columns"><span aria-hidden="true">☷</span> Columns</summary><div class="table-column-panel"><header><div><strong>Table columns</strong><small>Show, hide, or arrange columns.</small></div><button type="button">Reset default</button></header><label class="table-column-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m15 15 5 5"></path></svg><input type="search" placeholder="Find a column"></label><div class="table-column-list"></div><small class="table-column-footnote">Required columns always stay visible. Saved in this browser.</small></div></details>';
+    host.innerHTML='<details class="table-column-control"><summary class="secondary-button compact-button" title="Columns" aria-label="Columns"><svg class="table-columns-art" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16M15 4v16"></path></svg></summary><div class="table-column-panel"><header><div><strong>Table columns</strong><small>Show, hide, or arrange columns.</small></div><button type="button">Reset default</button></header><label class="table-column-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="m15 15 5 5"></path></svg><input type="search" placeholder="Find a column"></label><div class="table-column-list"></div><small class="table-column-footnote">Required columns always stay visible. Saved in this browser.</small></div></details>';
     const details=host.querySelector('details');
     details.addEventListener('toggle',()=>{if(details.open){document.querySelectorAll('.table-column-control[open]').forEach(other=>{if(other!==details)other.open=false});render();requestAnimationFrame(()=>placePanel(details))}});
     document.addEventListener('pointerdown',event=>{if(details.open&&!details.contains(event.target))details.open=false});
@@ -382,7 +382,46 @@ function prepareTabOverflow(){
   requestAnimationFrame(()=>update(true));
  });
 }
-function boot(){prepareTabOverflow();document.querySelectorAll('.desk-table:not([data-table-widget])').forEach(root=>{root.dataset.tableWidget='shipping-ready';root.dataset.gridRow='.candidate-row';const header=root.querySelector('.desk-table-head');header?.classList.add('table-grid-header');[...header.children].forEach((cell,index)=>{cell.dataset.column=['record-context','select','product','order','package','shipping','action'][index];cell.dataset.columnRequired=String(index===0||index===1||index===2||index===6);if(index===1)cell.dataset.title='Select'})});document.querySelectorAll('.data-card table:not([data-table-widget])').forEach((root,index)=>{if(root.tHead&&!root.closest('dialog'))root.dataset.tableWidget=location.pathname.replace(/\W+/g,'-')+'-'+index});document.querySelectorAll('[data-table-widget]:not([data-table-widget-ready])').forEach(root=>{root.dataset.tableWidgetReady='true';init(root)});document.querySelectorAll('[data-page-jump]').forEach(initPageJump);window.NextAiTableDataTools?.refresh();window.NextAiStandardTables?.enhance()}
+// Keep the existing widget chrome in place while only its records scroll.
+// No cloned controls, requests, or page-level scroll interception.
+const recordScrollFrames=new Map();
+let recordScrollScheduled=false;
+function sizeRecordScrollFrames(){
+ recordScrollScheduled=false;
+ const viewport=window.visualViewport?.height||innerHeight;
+ const measurements=[];
+ recordScrollFrames.forEach((card,scroller)=>{
+  if(!scroller.isConnected){recordScrollObserver?.unobserve(card);recordScrollFrames.delete(scroller);return;}
+  const chrome=Math.max(0,card.getBoundingClientRect().height-scroller.getBoundingClientRect().height);
+  const available=Math.floor(viewport-chrome-48);
+  measurements.push([scroller,innerWidth>760&&available>=240?available:null]);
+ });
+ measurements.forEach(([scroller,height])=>{
+  if(height===null)scroller.style.removeProperty('--table-records-height');
+  else scroller.style.setProperty('--table-records-height',height+'px');
+ });
+}
+function scheduleRecordScrollFrames(){if(!recordScrollScheduled){recordScrollScheduled=true;requestAnimationFrame(sizeRecordScrollFrames);}}
+const recordScrollObserver=typeof ResizeObserver==='function'?new ResizeObserver(scheduleRecordScrollFrames):null;
+addEventListener('resize',scheduleRecordScrollFrames,{passive:true});
+window.visualViewport?.addEventListener('resize',scheduleRecordScrollFrames,{passive:true});
+function prepareRecordScrollFrames(){
+ document.querySelectorAll('[data-table-widget]').forEach(root=>{
+  if(root.closest('dialog')||root.parentElement?.closest('[data-table-widget]'))return;
+  const card=root.closest('.data-card');
+  const scroller=root.matches('table')?root.parentElement:root.matches('.order-list')?root:null;
+  if(!card||!scroller||(!scroller.classList.contains('table-wrap')&&scroller!==root))return;
+  // A composite/embedded table needs its own explicit layout contract.
+  if([...card.querySelectorAll('[data-table-widget]')].filter(t=>!t.closest('dialog')&&!t.parentElement?.closest('[data-table-widget]')).length!==1)return;
+  if(!recordScrollFrames.has(scroller)){
+   scroller.classList.add('table-data-scroll');recordScrollFrames.set(scroller,card);
+   recordScrollObserver?.observe(card);
+   scroller.addEventListener('scroll',()=>scroller.querySelectorAll('.order-stage-actions[open]').forEach(menu=>{menu.open=false;}),{passive:true});
+  }
+ });
+ scheduleRecordScrollFrames();
+}
+function boot(){prepareTabOverflow();document.querySelectorAll('.desk-table:not([data-table-widget])').forEach(root=>{root.dataset.tableWidget='shipping-ready';root.dataset.gridRow='.candidate-row';const header=root.querySelector('.desk-table-head');header?.classList.add('table-grid-header');[...header.children].forEach((cell,index)=>{cell.dataset.column=['record-context','select','product','order','package','shipping','action'][index];cell.dataset.columnRequired=String(index===0||index===1||index===2||index===6);if(index===1)cell.dataset.title='Select'})});document.querySelectorAll('.data-card table:not([data-table-widget])').forEach((root,index)=>{if(root.tHead&&!root.closest('dialog'))root.dataset.tableWidget=location.pathname.replace(/\W+/g,'-')+'-'+index});document.querySelectorAll('[data-table-widget]:not([data-table-widget-ready])').forEach(root=>{root.dataset.tableWidgetReady='true';init(root)});document.querySelectorAll('[data-page-jump]').forEach(initPageJump);window.NextAiTableDataTools?.refresh();window.NextAiStandardTables?.enhance();prepareRecordScrollFrames()}
 function prepareMetricTables(){document.querySelectorAll('[data-rp-sales]').forEach(prepareSalesBars);}
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>{boot();prepareMetricTables();}):(boot(),prepareMetricTables());window.NextAiTableWidget={refresh:boot};
 })();

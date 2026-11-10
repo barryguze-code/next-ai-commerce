@@ -1,6 +1,6 @@
 .available-inventory-table .product-cell .inventory-product-detail-link{display:block!important;width:100%;white-space:normal!important;overflow:visible!important;text-overflow:clip;overflow-wrap:anywhere;line-height:1.4;text-align:left}
 .available-inventory-table .product-cell .product-position-total{white-space:normal}
-.available-inventory-table .table-location-badge{display:grid;place-items:center;width:34px!important;min-width:34px!important;max-width:34px;height:34px;padding:0;border:1px solid var(--line);border-radius:9px;background:var(--surface,#fff)}
+.available-inventory-table .table-location-badge{display:grid;place-items:center;width:max-content!important;min-width:44px!important;max-width:none;height:34px;padding:0 8px;white-space:nowrap;border:1px solid var(--line);border-radius:9px;background:var(--surface,#fff)}
 .available-inventory-table th[data-column=location]{letter-spacing:0;font-size:.5625rem;white-space:nowrap}
 .inventory-view-switch {
   display: inline-flex;
@@ -637,9 +637,9 @@ html[data-theme="dark"] .reservation-sku{color:#d9e5f3}
 
 
 .inventory-warehouse-filter .warehouse-choice-label{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.inventory-warehouse-filter .standard-choice-trigger:after{flex:0 0 auto;color:inherit}
 
-.inventory-warehouse-filter .sku-choice-chevron{flex:0 0 auto;margin-left:auto;color:inherit}
+
+
 .inventory-warehouse-filter[hidden]{display:none!important}
 @media(min-width:761px){.table-standard-toolbar>.table-widget-tools:has(>.inventory-warehouse-filter){flex:0 0 auto;flex-wrap:nowrap;width:max-content}.table-standard-toolbar>.table-widget-tools .inventory-warehouse-filter{flex:0 1 180px;width:180px}}
 .warehouse-contact-row{display:flex;gap:10px;align-items:end;margin:10px 0}.warehouse-contact-row>.form-pair{flex:1;min-width:0}.warehouse-contact-row>button{margin-bottom:0}

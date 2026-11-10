@@ -67,4 +67,10 @@ class ReplenishmentPurchasePlansDatabaseTest {
   assertThatThrownBy(()->tx.executeWithoutResult(t->repo.deleteDraft(tenant,submitted,1))).hasMessageContaining("cannot be deleted");
   assertThat(tx.execute(t->repo.get(tenant,submitted)).pos()).hasSize(1);
  }
+ @Test void manualCandidatesUseAccountTermsWithoutForecastOrInventoryMutation(){
+ var choices=tx.execute(s->repo.catalogueChoices(tenant,List.of(item2),"Fixture vendor"));assertThat(choices).hasSize(1);assertThat(choices.getFirst().each()).isZero();assertThat(choices.getFirst().pack()).isEqualByComparingTo("12");assertThat(choices.getFirst().cost()).isEqualByComparingTo("2");assertThat(choices.getFirst().code()).isEqualTo("000123");
+ var filtered=tx.execute(s->repo.catalogueChoices(tenant,List.of(item2),"Other vendor"));assertThat(filtered).isEmpty();
+ UUID foreign=tx.execute(s->product(other,"foreign"));assertThatThrownBy(()->tx.execute(s->repo.catalogueChoices(tenant,List.of(foreign),""))).hasMessageContaining("unavailable in this account");
+ var plan=save(command(UUID.randomUUID(),0,List.of(new InputLine(item2,36)),null),false);assertThat(plan.lines().getFirst().each()).isEqualTo(36);assertThat(plan.lines().getFirst().vendorId()).isEqualTo(vendor);
+ }
 }

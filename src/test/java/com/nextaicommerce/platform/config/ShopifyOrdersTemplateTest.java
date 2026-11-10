@@ -33,7 +33,7 @@ class ShopifyOrdersTemplateTest {
         String partiallyShippedHtml=engine.process("fragments/shopify-orders",context);
         assertThat(partiallyShippedHtml.split("data-fedex-shipping",-1)).hasSize(2);
         assertThat(partial.sandboxShippingEligible()).isTrue();
-        assertThat(html).contains("data-table-widget=\"orders\"","order-pagination","order-product-stage","#1001","000001-EAx3","Pizza · Brand","Pending","Orders/Units","data-profit-kind=\"SHOPIFY_ORDER\"","1 | 2 | 3 | 4","data-provider=\"SHOPIFY\"","data-tone=\"pending\"","state-ready_to_ship","data-fedex-shipping","window.openFedExShipping(this)")
+        assertThat(html).contains("data-table-widget=\"orders\"","order-pagination","order-product-stage","#1001","000001-EAx3","Pizza · Brand","Pending","data-profit-kind=\"SHOPIFY_ORDER\"","1 | 2 | 3 | 4","data-provider=\"SHOPIFY\"","data-tone=\"pending\"","state-ready_to_ship","data-fedex-shipping","window.openFedExShipping(this)")
             .doesNotContain("Buy Box","FBA","Seller Central","data-profit-kind=\"ORDER\"","null ×","Payment:","Historical");
         var unmapped=new ShopifyOrderReadRepository.Line(UUID.randomUUID(),variant,"a".repeat(64),"MISSING","Unmapped product",null,1,1,BigDecimal.ONE,"USD","NEEDS_MAPPING","LIVE",null,List.of(),null,null);
         var missing=new ShopifyOrderReadRepository.Order(order.id(),order.gid(),order.name(),order.created(),"PAID","UNFULFILLED","USD",BigDecimal.ONE,true,false,null,order.adminUrl(),List.of(unmapped));

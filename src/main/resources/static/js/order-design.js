@@ -1,6 +1,6 @@
 (()=>{
  const base='/images/platform/';
- function icon(name){const vector=['05-unlocked','06-locked','01-pending','02-unshipped-truck','03-waiting-for-pickup','04-shipped','collaboration','edit-image','human-ai'].includes(name);if(!vector&&window.NextAiIcons)return window.NextAiIcons.create(name);const image=document.createElement('img');image.src=vector?base+name+'.svg':base+'table/'+name+'.png?v=20260919-13';image.alt='';image.decoding='async';image.className='platform-icon';return image;}
+ function icon(name){const vector=['05-unlocked','06-locked','01-pending','02-unshipped-truck','03-waiting-for-pickup','04-shipped','collaboration','edit-image','human-ai'].includes(name);if((!vector||['collaboration','edit-image','human-ai'].includes(name))&&window.NextAiIcons)return window.NextAiIcons.create(name);const image=document.createElement('img');image.src=vector?base+name+'.svg':base+'table/'+name+'.png?v=20260919-13';image.alt='';image.decoding='async';image.className='platform-icon';return image;}
  function statusIcon(name){const frame=document.createElement('span');frame.className='order-status-art';frame.dataset.asset=name;frame.setAttribute('aria-hidden','true');frame.append(icon(name));return frame;}
  function filterButton(value){const b=document.createElement('button');b.type='button';b.className='order-identifier-lock';const active=new URL(location.href).searchParams.get('q')===value;b.setAttribute('aria-pressed',String(active));b.setAttribute('aria-label',(active?'Clear filter for ':'Filter orders by ')+value);b.title=active?'Filter locked — click to clear':'Not locked — click to filter';b.append(icon(active?'06-locked':'05-unlocked'));b.onclick=()=>{const url=new URL(location.href);if(active)url.searchParams.delete('q');else url.searchParams.set('q',value);url.searchParams.delete('page');url.searchParams.delete('goToPage');location.assign(url);};return b;}
  function identifierCopy(value){const b=copyButton(value);b.className='order-identifier-copy';b.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>';return b;}
@@ -45,6 +45,7 @@
     else if(normalized==='unshipped'||normalized==='partiallyshipped'){kind='unshipped';file='unshipped-final';}
     else if(/cancel|issue|exception|undeliver/.test(normalized))kind='issue';
     else if(normalized.startsWith('shipped')||['delivered','intransit','pickedup'].includes(normalized)){kind='shipped';file='shipped-final';}
+    if(normalized==='delivered'||normalized.includes('deliveredtobuyer'))file='delivered';else if(normalized==='deliveryexception')file='delivery-exception';
     const compact=normalized==='delivered'||normalized.includes('deliveredtobuyer')?'Delivered':normalized.includes('waitingforpickup')||normalized==='readyforpickup'?'Waiting for Pickup':label;if(compact!==label){status.textContent=compact;status.title=label;status.dataset.tooltip=label;status.setAttribute('aria-label',label);status.tabIndex=0;}status.dataset.tone=kind;if(file&&!status.querySelector('.order-status-art'))status.prepend(statusIcon(file));status.dataset.designReady='true';
    }
    const pickup=row.querySelector('.platform-pickup-label');
@@ -59,7 +60,7 @@
      const pack=b.classList.contains('packing-slip'),ship=!!b.closest('.platform-pickup-action');
      if(!pack&&!ship){const tip=b.closest('.order-action-tip');if(tip&&!tip.hidden)tip.hidden=true;return;}
      if(b.dataset.designIcon)return;b.dataset.designIcon='true';
-     b.replaceChildren(icon(pack?(b.dataset.packingClicked?'printClicked':'print'):b.closest('form')?.querySelector('[name="waiting"]')?.value==='false'?'undoShipped':'shipped'));
+     b.replaceChildren(icon(pack?(b.dataset.packingClicked?'printClicked':'print'):b.closest('form')?.querySelector('[name="waiting"]')?.value==='false'?'undoShipped':'mark-as-shipped'));
      b.title=pack?(b.dataset.packingClicked?'Packing slip opened — click to reprint':'Print packing slip'):b.getAttribute('aria-label');
     });
    }
@@ -99,7 +100,7 @@
    const ledger=row.querySelector('a[href*="/mappings/ledger"]'),available=row.querySelector('[data-column="available"] strong');
    if(ledger&&available&&!available.closest('.fba-stock')&&!available.dataset.ledgerReady){const link=document.createElement('a');const url=new URL(ledger.href);url.searchParams.delete('code');link.href=url.href;link.title='Inventory Ledger';link.setAttribute('aria-label','Inventory Ledger · Available '+available.textContent.trim());link.className='inventory-ledger-link';available.replaceWith(link);link.append(available);available.dataset.ledgerReady='true';}
   });
-  for(const [selector,name] of [['.order-picture-edit','edit'],['.order-picture-more','actions-ai-human']])find(selector+':not([data-library-icon])').forEach(button=>{button.dataset.libraryIcon='true';button.querySelector('svg')?.remove();const stage=button.closest('.order-item')?.querySelector('[data-picture-actions]'),alert=button.matches('.order-picture-more')&&stage?.dataset.actionRequired==='true';button.prepend(icon(alert?'actions-ai-human-alert':name));if(button.matches('.order-picture-more')){button.setAttribute('aria-label','Actions');button.title=alert?'Actions — '+stage.dataset.actionSummary:'Actions';}});
+  for(const [selector,name] of [['.order-picture-edit','edit-image'],['.order-picture-more','actions-ai-human']])find(selector+':not([data-library-icon])').forEach(button=>{button.dataset.libraryIcon='true';button.querySelector('svg')?.remove();const stage=button.closest('.order-item')?.querySelector('[data-picture-actions]'),alert=button.matches('.order-picture-more')&&stage?.dataset.actionRequired==='true';button.prepend(icon(alert?'actions-ai-human-alert':name));if(button.matches('.order-picture-more')){button.setAttribute('aria-label','Actions');button.title=alert?'Actions — '+stage.dataset.actionSummary:'Actions';}});
   find('.orders-workspace .order-list[data-table-widget-ready]').forEach(root=>{root.dataset.orderDesignReady='true';});
  }
  const tip=document.createElement('div');tip.className='order-design-tooltip';tip.setAttribute('role','tooltip');tip.id='order-design-tooltip';tip.hidden=true;document.body.append(tip);

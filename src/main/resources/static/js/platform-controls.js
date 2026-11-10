@@ -39,22 +39,24 @@
     const popup=document.createElement('div');popup.className='location-picker-popup';popup.hidden=true;
     if(select.hasAttribute('data-standard-choice')){trigger.classList.add('standard-choice-trigger');popup.classList.add('standard-choice-popup');}
     let managed=select.dataset.choiceManager;
-    if(managed){popup.setAttribute('aria-label',managed==='warehouse'?'Choose warehouse':'Choose location');trigger.setAttribute('aria-haspopup','dialog');}
+    if(managed){popup.setAttribute('aria-label',managed==='warehouse'?'Choose warehouse':managed==='vendor'?'Choose vendor':'Choose location');trigger.setAttribute('aria-haspopup','dialog');}
     const conditionChoice=select.matches('[data-standard-choice][data-sku-view-filter="f_condition"]');
     if(conditionChoice){trigger.classList.add('sku-condition-choice-trigger');popup.classList.add('sku-condition-choice-popup');}
     popup.setAttribute('role',managed?'dialog':'listbox');popup.id='location-picker-'+(++locationPicker.counter);
     trigger.setAttribute('aria-haspopup',managed?'dialog':'listbox');trigger.setAttribute('aria-controls',popup.id);trigger.setAttribute('aria-expanded','false');
     const close=(focus=false)=>{popup.hidden=true;trigger.setAttribute('aria-expanded','false');if(activePicker?.trigger===trigger)activePicker=null;if(focus)trigger.focus();};
+    const warehouseChoice=Boolean(select.closest('.inventory-warehouse-filter'));
+    const warehouseTooltip=()=>{if(!warehouseChoice)return;const text=trigger.querySelector('.warehouse-choice-label');trigger.removeAttribute('title');if(text&&text.scrollWidth>text.clientWidth+1)trigger.dataset.tooltip=text.textContent;else delete trigger.dataset.tooltip;};
+    if(warehouseChoice){trigger.addEventListener('pointerover',warehouseTooltip);trigger.addEventListener('focus',warehouseTooltip);if(typeof ResizeObserver!=='undefined')new ResizeObserver(warehouseTooltip).observe(trigger);}
     const sync=()=>{
       const label=select.selectedOptions[0]?.textContent.trim()||'Choose location';
-      const code=label.split(' · ')[0];trigger.textContent=compact?code.toUpperCase():label;
-      if(select.closest('.inventory-warehouse-filter')){const text=document.createElement('span');text.className='warehouse-choice-label';text.textContent=label;trigger.replaceChildren(text);}
-      if(conditionChoice||select.closest('.inventory-warehouse-filter')||select.hasAttribute('data-choice-chevron')){const chevron=document.createElement('span');chevron.className='sku-choice-chevron';chevron.setAttribute('aria-hidden','true');chevron.textContent='⌄';trigger.append(chevron);}
-      trigger.dataset.tooltip=label;trigger.disabled=select.disabled;
+      const code=label.split(' · ')[0],text=document.createElement('span');text.className='location-choice-label'+(warehouseChoice?' warehouse-choice-label':'');text.textContent=compact?code.toUpperCase():label;
+      const chevron=document.createElementNS('http://www.w3.org/2000/svg','svg');chevron.classList.add('location-choice-chevron');chevron.setAttribute('viewBox','0 0 16 16');chevron.setAttribute('aria-hidden','true');chevron.setAttribute('focusable','false');const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d','m4 6 4 4 4-4');chevron.append(path);trigger.replaceChildren(text,chevron);
+      if(warehouseChoice){delete trigger.dataset.tooltip;requestAnimationFrame(warehouseTooltip);}else trigger.dataset.tooltip=label;trigger.disabled=select.disabled;
       trigger.setAttribute('aria-label',(select.getAttribute('aria-label')||'Storage location')+': '+label);
     };
     const open=()=>{
-      managed=select.dataset.choiceManager;if(managed)popup.setAttribute('aria-label',managed==='warehouse'?'Choose warehouse':'Choose location');popup.setAttribute('role',managed?'dialog':'listbox');trigger.setAttribute('aria-haspopup',managed?'dialog':'listbox');
+      managed=select.dataset.choiceManager;if(managed)popup.setAttribute('aria-label',managed==='warehouse'?'Choose warehouse':managed==='vendor'?'Choose vendor':'Choose location');popup.setAttribute('role',managed?'dialog':'listbox');trigger.setAttribute('aria-haspopup',managed?'dialog':'listbox');
       activePicker?.close();popup.replaceChildren();
       [...select.options].filter(option=>!option.hidden).forEach(option=>{
         const choice=document.createElement('button');choice.type='button';choice.setAttribute('role',managed?'button':'option');if(managed){choice.dataset.choiceOption='';choice.setAttribute('aria-pressed',String(option.selected));}
@@ -62,9 +64,9 @@
         const badge=document.createElement('span');badge.className='location-option-code';badge.textContent=option.textContent.trim().split(' · ')[0].toUpperCase();
         const label=document.createElement('span');label.textContent=option.textContent.trim();if(!select.hasAttribute('data-standard-choice'))choice.append(badge);choice.append(label);if(conditionChoice){const check=document.createElement('span');check.className='sku-choice-check';check.setAttribute('aria-hidden','true');check.textContent='✓';choice.append(check);}
         choice.onclick=()=>{select.value=option.value;sync();close(true);select.dispatchEvent(new Event('change',{bubbles:true}));};
-        if(managed&&option.value){const row=document.createElement('div');row.className='managed-choice-row';row.append(choice);const edit=document.createElement('button');edit.type='button';edit.className='managed-choice-edit';edit.textContent='Edit';edit.setAttribute('aria-label','Edit '+option.textContent.trim());edit.onclick=()=>manage('edit',option.value);row.append(edit);popup.append(row);}else popup.append(choice);
+        if(managed&&option.value&&option.dataset.choiceNoEdit!=='true'){const row=document.createElement('div');row.className='managed-choice-row';row.append(choice);const edit=document.createElement('button');edit.type='button';edit.className='managed-choice-edit';edit.textContent='Edit';edit.setAttribute('aria-label','Edit '+option.textContent.trim());edit.onclick=()=>manage('edit',option.value);row.append(edit);popup.append(row);}else popup.append(choice);
       });
-      if(managed){const footer=document.createElement('div');footer.className='managed-choice-footer';const add=document.createElement('button');add.type='button';add.textContent=managed==='warehouse'?'+ Add warehouse':'+ Add location';add.onclick=()=>manage('add','');footer.append(add);popup.append(footer);}
+      if(managed){const footer=document.createElement('div');footer.className='managed-choice-footer';const add=document.createElement('button');add.type='button';add.textContent=managed==='warehouse'?'+ Add warehouse':managed==='vendor'?'+ Add vendor':'+ Add location';add.onclick=()=>manage('add','');footer.append(add);popup.append(footer);}
       (select.closest('dialog')||document.body).append(popup);popup.hidden=false;
       const rect=trigger.getBoundingClientRect(),width=Math.min(300,window.innerWidth-24);
       popup.style.width=width+'px';popup.style.left=Math.max(12,Math.min(rect.left,window.innerWidth-width-12))+'px';

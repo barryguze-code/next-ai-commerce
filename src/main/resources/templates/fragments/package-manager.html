@@ -1,0 +1,12 @@
+<!doctype html><html xmlns:th="http://www.thymeleaf.org"><body><th:block th:fragment="runtime">
+<link rel="stylesheet" th:href="@{/css/platform-controls.css(v=${buildVersion})}"><link rel="stylesheet" th:href="@{/css/package-manager.css(v=${buildVersion})}">
+<dialog id="package-manager" class="invite-dialog" aria-labelledby="package-manager-title"><section>
+<header><h2 id="package-manager-title">Packages</h2><button type="button" class="dialog-close" data-packages-close aria-label="Close packages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+<div class="package-manager-body"><label class="package-search">Search packages<input type="search" data-package-search placeholder="Search packages"></label><div class="package-list"><div class="package-list-heading"><span>Package</span><span data-tooltip="Planning rate for the shown date and carrier; order or SKU overrides may differ.">Planning cost</span><span>Effective from</span><span>Edit</span></div><div data-package-rows></div></div></div>
+<footer><div><p data-package-context></p><p id="packing-status" role="status"></p></div><button type="button" class="secondary-button" data-packages-close>Close</button></footer>
+</section></dialog>
+<select id="packing-package" hidden></select><button id="rename-package" type="button" hidden></button>
+<th:block th:replace="~{fragments/package-name-editor :: editor}"></th:block>
+<input id="packing-slip-csrf" th:if="${_csrf != null}" type="hidden" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
+<script defer th:src="@{/js/package-name-editor.js(v=${buildVersion})}"></script><script defer th:src="@{/js/package-manager.js(v=${buildVersion})}"></script>
+</th:block></body></html>

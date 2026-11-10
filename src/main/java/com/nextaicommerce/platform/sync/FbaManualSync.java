@@ -68,6 +68,26 @@ public class FbaManualSync {
         UUID job = tx.execute(status -> {
             scope(tenant);
             lockActiveStore(tenant, connection);
+            // Explicit item refresh can recover an abandoned, dedicated FBA run after
+            // its lease and cooldown expire. Never retire a live lease, retry wait,
+            // or a run containing other synchronization jobs. Checkpoints are retained.
+            var abandoned = jdbc.query("""
+                SELECT j.id,j.sync_run_id FROM marketplace_sync_jobs j
+                JOIN marketplace_sync_runs r ON r.tenant_id=j.tenant_id AND r.id=j.sync_run_id
+                WHERE j.tenant_id=? AND j.marketplace_connection_id=? AND j.job_type='FBA_INBOUND'
+                  AND j.status='RUNNING' AND r.status='RUNNING'
+                  AND r.sync_profile IN ('FBA_INBOUND','FBA_MANUAL')
+                  AND j.lease_expires_at<clock_timestamp()-interval '5 minutes'
+                  AND j.available_at<=clock_timestamp()
+                  AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs sibling
+                    WHERE sibling.tenant_id=j.tenant_id AND sibling.sync_run_id=j.sync_run_id AND sibling.id<>j.id)
+                FOR UPDATE OF j,r
+                """,(r,n)->new UUID[]{r.getObject(1,UUID.class),r.getObject(2,UUID.class)},tenant,connection);
+            for(var stale:abandoned){
+                if(worker.running(stale[0]))continue;
+                jdbc.update("UPDATE marketplace_sync_jobs SET status='SKIPPED',completed_at=now(),lease_owner=NULL,lease_expires_at=NULL,error_message='Expired FBA worker superseded by explicit shipment-item refresh' WHERE tenant_id=? AND id=?",tenant,stale[0]);
+                jdbc.update("UPDATE marketplace_sync_runs SET status='COMPLETED_WITH_WARNINGS',completed_at=now(),user_message='Expired FBA worker superseded by explicit shipment-item refresh' WHERE tenant_id=? AND id=?",tenant,stale[1]);
+            }
             boolean busy = Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS(SELECT 1 FROM marketplace_sync_jobs j
                   JOIN marketplace_sync_runs r ON r.tenant_id=j.tenant_id AND r.id=j.sync_run_id

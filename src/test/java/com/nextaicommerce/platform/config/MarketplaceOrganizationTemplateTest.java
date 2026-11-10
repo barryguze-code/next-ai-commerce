@@ -20,7 +20,7 @@ class MarketplaceOrganizationTemplateTest {
   c.setVariable("selectedStore",new com.nextaicommerce.platform.web.WorkspaceAccessRepository.ConnectionView(UUID.randomUUID(),UUID.randomUUID(),"KARACA","KARACA","AMAZON","fixture","ATVPDKIKX0DER","Amazon US","US","ACTIVE",Instant.parse("2026-10-22T15:56:00Z"),true));
   c.setVariable("listingSync",new com.nextaicommerce.platform.sync.AmazonManualListingSync.Availability(false,"Amazon SKU sync is queued or running. Refresh to see updated listings.",true,Instant.parse("2026-10-20T21:11:00Z")));
   String html=engine.process("marketplace-skus",c);
-  assertThat(html.split("data-family-heading",-1)).hasSize(3);assertThat(html).contains("Parent SKU","Parent ASIN","Condition","All conditions","Store-wide counts");
+  assertThat(html.split("data-family-heading",-1)).hasSize(3);assertThat(html).contains("Parent SKU","Parent ASIN","Condition","All conditions");
   assertThat(html).doesNotContain("data-sku=\"000PARENT","Associated child variations","sku-parent-label");
   for(String fragment:html.split("<tr class=\"sku-family-heading\"")){if(!fragment.startsWith(" data-family-heading"))continue;assertThat(fragment.substring(0,fragment.indexOf("</tr>"))).doesNotContain("button","price","profit","sales","Available");}
   Path out=Path.of("/tmp/marketplace-organization-review");Files.createDirectories(out);Files.writeString(out.resolve("marketplace.html"),html);

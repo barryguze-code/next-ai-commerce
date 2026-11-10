@@ -12,7 +12,7 @@
    card.querySelectorAll('[data-orders-clear-status]').forEach(link=>{const url=new URL(location.href);url.searchParams.set('status','ALL');url.searchParams.delete('page');url.searchParams.delete('goToPage');link.href=url.href;});
    const toolbar=card.querySelector('.table-standard-toolbar'),tabs=card.querySelector('.order-tab-panel');
    if(toolbar&&tabs&&!card.querySelector('.orders-filter-anchor')){
-    const anchor=document.createElement('div');anchor.className='orders-filter-anchor';toolbar.before(anchor);anchor.append(toolbar,tabs);
+    const anchor=document.createElement('div');anchor.className='orders-filter-anchor';toolbar.before(anchor);anchor.append(...(card.hasAttribute('data-table-composition')?[tabs,toolbar]:[toolbar,tabs]));
    }
   });
   workspace.querySelectorAll('.order-identifier-line .order-copy-value,.order-identifier-line .order-sku-copy,.item-product-copy>strong').forEach(el=>{if(!el.title)el.title=el.textContent.trim();});

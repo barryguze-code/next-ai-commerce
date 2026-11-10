@@ -167,6 +167,43 @@ public class OrderController {
         catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
     }
 
+    @Autowired private PackingPackageNames packageNames;
+    @Autowired private com.nextaicommerce.platform.profit.ProfitCostRepository packageCosts;
+    @GetMapping("/app/orders/packing-packages") @ResponseBody
+    java.util.List<PackingPackageNames.Choice> packageChoices(HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        return packageNames.choices(tenant(session),packageCosts.rates(tenant(session)),java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")));
+    }
+
+    @GetMapping("/app/orders/packing-packages/history") @ResponseBody
+    PackingPackageNames.History packageHistory(@RequestParam String name,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{return packageNames.history(tenant(session),name,packageCosts.rates(tenant(session)),java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")));}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+    @PostMapping("/app/orders/packing-packages/rates") @ResponseBody
+    Map<String,String> savePackageRate(@RequestParam String name,@RequestParam @org.springframework.format.annotation.DateTimeFormat(iso=org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate effectiveFrom,@RequestParam java.math.BigDecimal amount,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{packageNames.saveRate(tenant(session),name,effectiveFrom,amount,auth.getName());profitSummary.invalidate(tenant(session));return Map.of("status","saved");}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
+    private void requirePackageManagement(HttpSession session,Authentication auth){
+        UUID account=tenant(session);
+        boolean admin=auth!=null&&auth.getAuthorities().stream().anyMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));
+        if(auth==null||!workspace.canOperateAccount(account,auth.getName()))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        var visible=workspace.listAccountOptions(auth.getName(),admin).stream().filter(a->a.id().equals(account)).flatMap(a->a.stores().stream()).map(store->store.id()).collect(java.util.stream.Collectors.toSet());
+        if(!workspace.listConnections(account,"").stream().allMatch(c->visible.contains(c.id())))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Managing account-wide packages requires access to all its stores.");
+    }
+    @PostMapping("/app/orders/packing-packages/review") @ResponseBody
+    PackingPackageNames.Change reviewPackageName(@RequestParam String source,@RequestParam String destination,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{return packageNames.preview(tenant(session),source,destination);}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+    @PostMapping("/app/orders/packing-packages/apply") @ResponseBody
+    PackingPackageNames.Change applyPackageName(@RequestParam String source,@RequestParam String destination,@RequestParam String revision,@RequestParam int affectedAssignments,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{return packageNames.apply(tenant(session),source,destination,revision,affectedAssignments,auth.getName());}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.CONFLICT,e.getMessage());}
+    }
+
     private boolean mayEditPacking(UUID tenantId,UUID connection,Authentication auth){
         if(auth==null||!workspace.canOperateAccount(tenantId,auth.getName()))return false;
         boolean admin=auth.getAuthorities().stream().anyMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));

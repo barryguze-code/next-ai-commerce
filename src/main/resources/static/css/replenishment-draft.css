@@ -121,3 +121,64 @@ body.app-page .rp-heading h2{margin:0;white-space:nowrap}
 .rp-po-quantity input.rp-quantity-updated{border-color:var(--green,#16875c);background-color:color-mix(in srgb,var(--green,#16875c) 12%,var(--panel,#fff))}
 .rp-sr-status{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 @media(prefers-reduced-motion:reduce){.rp-po-quantity input{transition:none}}
+
+/* CD: reuse shared dialog type and surfaces, one compact vendor row per policy. */
+#rp-basket .rp-plan-toolbar{align-items:center;flex-wrap:wrap}
+#rp-basket .rp-vendor-filter{display:flex;align-items:center;gap:10px;flex:1;min-width:220px;font-size:var(--ui-label,12px)}
+#rp-basket .rp-vendor-filter .location-picker-trigger{flex:1;min-width:180px}
+#rp-basket [data-plan-name]:read-only{border:1px solid var(--line);border-radius:12px;padding:6px 12px;background:var(--white)}
+#rp-settings{width:min(1020px,calc(100vw - 32px))}
+#rp-settings .rp-settings-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+#rp-settings .rp-vendor-table{border:1px solid var(--line);border-radius:14px;overflow:auto}
+#rp-settings .rp-vendor-table table{width:100%;border-collapse:collapse;min-width:740px}
+#rp-settings .rp-vendor-table th{text-align:left;white-space:nowrap;background:var(--soft,#f5f7fb);font-size:var(--ui-label,12px);padding:12px}
+#rp-settings .rp-vendor-table td{padding:10px 12px;border-top:1px solid var(--line);vertical-align:middle}
+#rp-settings .rp-vendor-table input{width:100%;min-width:70px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink)}
+.rp-vendor-identity{display:flex;gap:12px;align-items:center;min-width:200px}
+.rp-vendor-identity strong,.rp-vendor-identity small{display:block}.rp-vendor-identity small{color:var(--muted);font-size:var(--ui-note,12px)}
+.rp-vendor-identity .table-overview-picture{display:grid;place-items:center;position:relative;width:48px;height:48px;flex:none;border:1px solid var(--line);border-radius:12px;background:var(--white)}
+.rp-vendor-identity .table-overview-picture>img{width:100%;height:100%;object-fit:contain;border-radius:12px}
+#rp-vendor-directory{width:min(680px,calc(100vw - 32px))}#rp-vendor-editor{width:min(720px,calc(100vw - 32px))}
+#rp-vendor-directory .dialog-shell,#rp-vendor-editor .dialog-shell{display:flex;flex-direction:column;min-height:0;max-height:calc(100dvh - 34px)}
+#rp-vendor-directory .dialog-body,#rp-vendor-editor .dialog-body{overflow:auto;min-height:0}
+#rp-vendor-directory .dialog-actions,#rp-vendor-editor .dialog-actions{flex-wrap:wrap;flex:none}
+#rp-vendor-directory [data-vendor-feedback],.rp-vendor-save-error{flex-basis:100%;margin:0;color:var(--red,#bd3644)}
+.rp-vendor-directory-table{width:100%;border-collapse:collapse}.rp-vendor-directory-table td{padding:12px 0;border-bottom:1px solid var(--line)}.rp-vendor-directory-table td:last-child{text-align:right}
+@media(max-width:600px){#rp-settings .rp-settings-grid{grid-template-columns:1fr}.rp-plan-toolbar>div{flex-wrap:wrap}}
+#rp-settings{margin:auto;height:fit-content;max-height:calc(100dvh - 32px);border-radius:20px}
+#rp-settings .dialog-shell{height:auto;max-height:calc(100dvh - 34px)}
+#rp-settings .rp-vendor-identity .table-overview-picture,#rp-vendor-directory .rp-vendor-identity .table-overview-picture{width:48px;height:48px;min-width:48px}
+
+#rp-vendor-directory table.rp-vendor-directory-table{min-width:0;width:100%;table-layout:auto}
+#rp-vendor-directory .rp-vendor-directory-table td:last-child{width:80px;white-space:nowrap}
+#rp-vendor-editor{height:fit-content;min-height:0}
+#rp-vendor-editor .dialog-body.catalog-form{display:block;flex:0 1 auto;min-height:0;height:auto}
+#rp-vendor-editor .vendor-form-grid{height:auto;min-height:0;align-content:start;grid-auto-rows:auto;gap:12px 14px}
+#rp-vendor-editor .vendor-form-grid>label{min-height:0;height:auto;margin:0;align-content:start;gap:7px}
+#rp-settings .cell-note{font-size:var(--ui-note,12px);margin:6px 0}
+/* Override platform-wide full-page table minima inside the compact modal only. */
+html body.app-page #rp-vendor-directory table.rp-vendor-directory-table{min-width:0!important}
+html body.app-page #rp-settings .rp-vendor-identity .table-overview-picture,html body.app-page #rp-vendor-directory .rp-vendor-identity .table-overview-picture{width:48px!important;height:48px!important;flex:0 0 48px;overflow:visible}
+#rp-vendor-editor .vendor-form-grid>label{display:flex;flex-direction:column;justify-content:start;align-items:stretch;text-align:left}
+#rp-vendor-editor .vendor-form-grid>label>span{text-align:left;align-self:flex-start}
+
+#rp-basket [data-plan-display]{display:block;min-width:0;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:12px;padding:6px 12px;background:var(--white)}
+#rp-basket [data-plan-display][hidden],#rp-basket [data-plan-name][hidden]{display:none!important}
+#rp-basket .dialog-header>div{min-width:0}
+#rp-basket [data-plan-rename]{flex:none}
+@media(max-width:700px){#rp-basket .rp-basket-line{grid-template-columns:repeat(2,minmax(0,1fr))}#rp-basket .rp-basket-line input{min-inline-size:80px;width:100%}#rp-basket [data-plan-name]{width:100%;max-width:100%}}
+html[data-theme=dark] #rp-settings .rp-vendor-table th{background:var(--bg);color:var(--muted)}
+html[data-theme=dark] #rp-settings input::placeholder{color:var(--muted);opacity:1}
+/* Existing Replenishment fallbacks used light surfaces for dark rows. Keep this correction local. */
+html[data-theme=dark] .app-page [data-replenishment-row]>td{background:var(--white)}
+html[data-theme=dark] .app-page .rp-detail-row>td{background:var(--bg)}
+html[data-theme=dark] .rp-po-quantity input,html[data-theme=dark] .rp-vendor-badge,html[data-theme=dark] .rp-toggle-row .rp-sku-toggle{background:var(--white)}
+
+/* Account Catalogue additions reuse PO quantity rows inside the existing scroll body. */
+.rp-po-add{margin-bottom:16px}.rp-po-add-trigger{display:inline-flex;align-items:center;gap:10px;padding:4px 0;border:0;background:transparent;color:var(--blue);font:inherit;font-weight:700;box-shadow:none}.rp-po-add-trigger>span:first-child{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:var(--bg);font-size:24px}.rp-po-add-controls{display:flex;align-items:center;gap:12px}.rp-po-add-controls>label{display:flex;align-items:center;flex:1;gap:12px;min-width:0;font-size:14px;white-space:nowrap}.rp-po-add-controls>label input{flex:1;min-width:120px}.rp-po-add-controls>button{flex:none;white-space:nowrap}.rp-po-add-status{font-size:var(--ui-meta,12px);color:var(--muted);margin-left:12px}.rp-po-add-panel>.cell-note:empty{display:none}.rp-po-add-panel input[type=search]{width:100%;box-sizing:border-box}.rp-po-product-results{display:grid;gap:4px;max-height:320px;overflow:auto;margin:8px 0}.rp-po-product-option{display:flex;align-items:center;gap:12px;width:100%;padding:10px;text-align:left;border:1px solid transparent;border-radius:8px;background:transparent;color:inherit;font:inherit;box-shadow:none}.rp-po-product-option:hover,.rp-po-product-option:focus-visible{border-color:var(--blue);background:var(--blue-soft)}.rp-po-product-option img{width:40px;height:40px;object-fit:contain}.rp-po-product-option>span{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}.rp-po-product-option small{color:var(--muted);font-size:12px}.rp-po-add [hidden]{display:none!important}
+
+.rp-po-picture{display:grid;place-items:center;width:48px;height:48px;border:1px solid var(--line);border-radius:10px;color:var(--muted);font-size:14px;font-weight:700;overflow:hidden}.rp-po-picture img{width:100%;height:100%;object-fit:contain}.rp-po-product-option .rp-po-picture{flex:0 0 40px;width:40px;height:40px}
+
+.rp-po-announcement{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+
+#rp-basket .rp-po-selected{grid-template-columns:48px minmax(140px,1fr) 90px 90px 105px max-content;align-items:end}#rp-basket .rp-po-selected>.primary-button{white-space:nowrap;flex-shrink:0;width:auto;min-width:max-content;height:36px;padding:6px 14px;align-self:end}#rp-basket .rp-po-selected>.rp-basket-product,#rp-basket .rp-po-selected>.rp-po-picture,#rp-basket .rp-po-selected>strong{align-self:center}@media(max-width:700px){.rp-po-add-controls{align-items:end}.rp-po-add-controls>label{display:grid;white-space:normal;gap:6px}#rp-basket .rp-po-selected{grid-template-columns:repeat(2,minmax(0,1fr))}#rp-basket .rp-po-selected>.rp-basket-product{min-width:0;overflow-wrap:anywhere}}

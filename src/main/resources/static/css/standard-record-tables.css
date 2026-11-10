@@ -15,7 +15,7 @@
 .platform-standard-tables .table-overview-picture i{display:none}
 .platform-standard-tables .table-overview-rail{gap:10px}
 .platform-standard-tables .table-standard-search input{font-size:.85rem!important;line-height:1.5!important;min-height:26px;caret-color:var(--ink)}
-.platform-standard-tables .table-overview-picture .standard-picture-edit{position:absolute;inset:0;margin:auto;width:32px;height:32px;padding:5px;border:0;border-radius:50%;background:#20364bcc;color:white;opacity:0;cursor:pointer;z-index:2}
+.platform-standard-tables .table-overview-picture .standard-picture-edit{position:absolute;inset:0;margin:auto;width:32px;height:32px;padding:5px;border:0;border-radius:50%;background:transparent;color:var(--blue,#2864d7);opacity:0;cursor:pointer;z-index:2}
 .standard-picture-edit svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8}
 .platform-standard-tables .table-overview-picture:hover .standard-picture-edit,.platform-standard-tables .standard-picture-edit:focus-visible{opacity:1}
 .standard-picture-menu{margin:0;height:fit-content;min-height:0}

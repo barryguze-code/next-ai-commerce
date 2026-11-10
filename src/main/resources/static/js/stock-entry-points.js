@@ -32,7 +32,7 @@
   const legacy=document.querySelector('#inventory-action-menu [onclick^="openInventoryAdjustment"]');
   if(legacy)legacy.onclick=()=>{const item=document.getElementById('quick-action-item').value,location=document.getElementById('quick-action-location').value,expiration=document.getElementById('quick-action-expiration').value;window.openSharedInventoryAdjustment({dataset:{item,location,expiration}})};
   const toolbar=[...document.querySelectorAll('.card-toolbar')].find(t=>t.querySelector('h2')?.textContent==='Invoices & packing lists');
-  if(toolbar){const button=document.createElement('button');button.type='button';button.className='secondary-button compact-button';button.textContent='＋ Receive item';button.onclick=()=>window.openSharedInventoryReceipt();toolbar.append(button)}
+  if(toolbar){const button=document.createElement('button');button.type='button';button.className='secondary-button compact-button';button.dataset.tableCommand='';button.textContent='＋ Receive item';button.onclick=()=>window.openSharedInventoryReceipt();(toolbar.closest('[data-table-composition]')?.querySelector('.table-command-group')||toolbar).append(button)}
   const input=document.getElementById('inventory-search'),table=document.querySelector('.available-inventory-table');
   if(!input||!table)return;
   let timer,controller;

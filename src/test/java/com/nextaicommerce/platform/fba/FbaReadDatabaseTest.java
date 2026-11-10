@@ -27,8 +27,16 @@ class FbaReadDatabaseTest {
         jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,entry_type,quantity,location_id,expiration_date,unit_cost,currency,source_type,occurred_at,idempotency_key) VALUES (?,?,?,'RECEIVED',10,?,current_date+30,2,'USD','FIXTURE',now()-interval '1 day',?)",layer,tenant,item,location,layer.toString());
         return new DepletionFixture(new FbaDepletionRepository(jdbc,new tools.jackson.databind.ObjectMapper()),item,warehouse,location,layer,email);
     }
+    @Test void nullableAccountNameUsesGlobalIdentityForCompositionAndStock(){tx.executeWithoutResult(s->{
+        var f=depletionFixture();jdbc.update("UPDATE account_catalog_items SET display_name=NULL WHERE id=?",f.item);
+        assertThat(f.operations.presentation(tenant,store,List.of("000-SKU")).getFirst().products().getFirst().name()).isEqualTo("Fixture product");
+        assertThat(f.operations.preview(tenant,store,"FBA-TEST").stock().getFirst().product()).isEqualTo("Fixture product");
+    });}
     @Test void depletionIsAtomicIdempotentAndPreservesAmazonAndHistoricalReceipts(){tx.executeWithoutResult(s->{
-        var f=depletionFixture();var p=f.operations.preview(tenant,store,"FBA-TEST");assertThat(p.blockers()).isEmpty();assertThat(p.allocations()).hasSize(1);assertThat(p.allocations().getFirst().layer()).isEqualTo(f.layer);assertThat(p.allocations().getFirst().quantity()).isEqualByComparingTo("6");
+        var f=depletionFixture();
+        var display=f.operations.presentation(tenant,store,List.of("000-SKU"));assertThat(display).hasSize(1);assertThat(display.getFirst().products()).hasSize(1);assertThat(display.getFirst().products().getFirst().eachPerSku()).isEqualByComparingTo("3");
+        assertThat(f.operations.presentation(other,store,List.of("000-SKU")).getFirst().products()).isEmpty();assertThat(f.operations.presentation(tenant,UUID.randomUUID(),List.of("000-SKU")).getFirst().products()).isEmpty();
+        var p=f.operations.preview(tenant,store,"FBA-TEST");assertThat(p.blockers()).isEmpty();assertThat(p.allocations()).hasSize(1);assertThat(p.allocations().getFirst().layer()).isEqualTo(f.layer);assertThat(p.allocations().getFirst().quantity()).isEqualByComparingTo("6");
         UUID request=UUID.randomUUID();UUID operation=f.operations.deplete(tenant,store,"FBA-TEST",f.email,request,p.revision(),p.allocations());
         assertThat(f.operations.deplete(tenant,store,"FBA-TEST",f.email,request,p.revision(),p.allocations())).isEqualTo(operation);
         assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",java.math.BigDecimal.class,tenant,f.item)).isEqualByComparingTo("4");
@@ -36,6 +44,19 @@ class FbaReadDatabaseTest {
         assertThat(jdbc.queryForObject("SELECT quantity_shipped FROM amazon_fba_shipment_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
         assertThat(f.operations.preview(tenant,store,"FBA-TEST").depleted()).isTrue();
+        var history=new com.nextaicommerce.platform.marketplace.MarketplaceInventoryMovements(jdbc);
+        var result=history.read(tenant,store,"000-SKU",null,true,0);
+        assertThat(result.components()).hasSize(1);assertThat(result.components().getFirst().quantity()).isEqualByComparingTo("3");
+        assertThat(result.movements()).hasSize(1);var movement=result.movements().getFirst();
+        assertThat(movement.shipment()).isEqualTo("FBA-TEST");assertThat(movement.quantity()).isEqualByComparingTo("-6");
+        var productHistory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc).movements(tenant,f.item,null,null,true,0,false);
+        assertThat(productHistory.stream().filter(m->m.entryType().equals("FBA_DEPLETION")).findFirst().orElseThrow().sourceReference()).isEqualTo("FBA-TEST");
+        assertThat(movement.item()).isEqualTo(f.item);assertThat(movement.location()).isEqualTo("MAIN");assertThat(movement.expiration()).isNotNull();
+        assertThat(history.read(tenant,store,"000-SKU",f.item,false,0).movements()).hasSize(2);
+        assertThat(history.read(other,store,"000-SKU",null,true,0).movements()).isEmpty();
+        assertThat(history.read(tenant,UUID.randomUUID(),"000-SKU",null,true,0).movements()).isEmpty();
+        assertThatThrownBy(()->history.read(tenant,store,"000-SKU",UUID.randomUUID(),true,0)).isInstanceOf(IllegalArgumentException.class);
+
         assertThatThrownBy(()->f.operations.deplete(tenant,store,"FBA-TEST",f.email,request,p.revision(),java.util.List.of(new FbaDepletionRepository.Allocation(f.layer,new java.math.BigDecimal("1"))))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("different allocations");
         assertThatThrownBy(()->f.operations.preview(other,store,"FBA-TEST")).isInstanceOf(IllegalArgumentException.class);
     });}
@@ -465,6 +486,37 @@ class FbaReadDatabaseTest {
         assertThat(scoped.toString()).doesNotContain("CA");
         array.addObject().put("transactionType","ServiceFee").put("description","FBAInboundConvenience");
         assertThatThrownBy(()->normalizer.scopedShipmentFinances(job,rows)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test void explicitItemRefreshReplacesOnlyExpiredStandaloneFbaRun(){
+        jdbc.update("INSERT INTO marketplace_connection_credentials(tenant_id,marketplace_connection_id,encrypted_payload,encryption_nonce) VALUES (?,?,?,?)",tenant,store,new byte[]{1},new byte[]{2});
+        tx.executeWithoutResult(s->depletionFixture());
+        var worker=mock(FbaManualWorker.class);var manual=new FbaManualSync(jdbc,tx,worker,true);
+        UUID run=UUID.randomUUID(),old=UUID.randomUUID();
+        jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,status,window_start,window_end) VALUES (?,?,?,'RECONCILIATION','FBA_INBOUND','RUNNING',now(),now())",run,tenant,store);
+        jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,status,lease_owner,lease_expires_at,cursor) VALUES (?,?,?,?,'FBA_INBOUND',1,'RUNNING','old-worker',now()+interval '3 minutes','{\"checkpoint\":1}')",old,tenant,store,run);
+        assertThatThrownBy(()->manual.requestItems(tenant,store,List.of("FBA-TEST"))).isInstanceOf(IllegalStateException.class);
+        jdbc.update("UPDATE marketplace_sync_jobs SET lease_expires_at=now()-interval '10 minutes' WHERE id=?",old);
+        UUID fresh=manual.requestItems(tenant,store,List.of("FBA-TEST"));assertThat(fresh).isNotEqualTo(old);
+        assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,old)).isEqualTo("SKIPPED");
+        assertThat(jdbc.queryForObject("SELECT cursor->>'checkpoint' FROM marketplace_sync_jobs WHERE id=?",String.class,old)).isEqualTo("1");
+        assertThat(jdbc.queryForObject("SELECT cursor->>'itemsRefreshOnly' FROM marketplace_sync_jobs WHERE id=?",String.class,fresh)).isEqualTo("true");
+        verify(worker).start(tenant,store,fresh);
+        assertThatThrownBy(()->manual.requestItems(tenant,store,List.of("FBA-TEST"))).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test void itemRefreshNeverRetiresSharedRunOrLiveLocalWorker(){
+        jdbc.update("INSERT INTO marketplace_connection_credentials(tenant_id,marketplace_connection_id,encrypted_payload,encryption_nonce) VALUES (?,?,?,?)",tenant,store,new byte[]{1},new byte[]{2});
+        tx.executeWithoutResult(s->depletionFixture());var worker=mock(FbaManualWorker.class);var manual=new FbaManualSync(jdbc,tx,worker,true);
+        UUID old=manual.request(tenant,store),run=jdbc.queryForObject("SELECT sync_run_id FROM marketplace_sync_jobs WHERE id=?",UUID.class,old);
+        jdbc.update("UPDATE marketplace_sync_jobs SET status='RUNNING',lease_expires_at=now()-interval '10 minutes' WHERE id=?",old);
+        jdbc.update("UPDATE marketplace_sync_runs SET status='RUNNING' WHERE id=?",run);when(worker.running(old)).thenReturn(true);
+        assertThatThrownBy(()->manual.requestItems(tenant,store,List.of("FBA-TEST"))).isInstanceOf(IllegalStateException.class);
+        when(worker.running(old)).thenReturn(false);
+        jdbc.update("INSERT INTO marketplace_sync_jobs(tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,status) VALUES (?,?,?,'ORDERS_API_DELTA',2,'COMPLETED')",tenant,store,run);
+        assertThatThrownBy(()->manual.requestItems(tenant,store,List.of("FBA-TEST"))).isInstanceOf(IllegalStateException.class);
+        assertThat(jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,old)).isEqualTo("RUNNING");
+        assertThatThrownBy(()->manual.requestItems(other,store,List.of("FBA-TEST"))).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test void manualFbaQueueIsExplicitScopedAndDeduplicated(){

@@ -121,7 +121,7 @@ public class ShopifyOrderProfitRepository {
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());
         var args=new HashMap<String,Object>();args.put("tenant",tenant);args.put("connection",connection);args.put("ids",ids);
         var rows=named.queryForList("""
-            SELECT o.id order_id,o.order_name,o.currency,o.package_name,o.cancelled_at,o.evidence_complete,
+            SELECT o.id order_id,o.order_name,o.currency,packing_package_cost(o.tenant_id,o.package_name) package_name,o.cancelled_at,o.evidence_complete,
               l.id line_id,l.variant_id,l.seller_sku,l.title,l.ordered_quantity,l.line_total,l.currency line_currency,
               part.item,part.quantity,offer.cost,variant.profit_other_cost,variant.profit_other_currency
             FROM shopify_orders o JOIN marketplace_connections mc ON mc.tenant_id=o.tenant_id AND mc.id=o.marketplace_connection_id AND mc.channel='SHOPIFY'
@@ -151,7 +151,8 @@ public class ShopifyOrderProfitRepository {
         var grouped=new LinkedHashMap<String,List<Map<String,Object>>>();for(var r:rows)grouped.computeIfAbsent(text(r,"order_id"),k->new ArrayList<>()).add(r);
         var origins=origins(tenant,connection,ids);
         var candidates=candidates(tenant); // One bounded batch for the page, never one query per row.
-        var rates=costs.rates(tenant);LocalDate today=LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"));
+        var packageIdentities=new java.util.ArrayList<String>();rows.forEach(r->packageIdentities.add(text(r,"package_name")));candidates.forEach(c->packageIdentities.add(c.name()));
+        var independent=costs.packageRates(tenant,packageIdentities);var rates=costs.rates(tenant);LocalDate today=LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"));
         var result=new LinkedHashMap<String,ProfitRepository.View>();
         for(var entry:grouped.entrySet()){
             var first=entry.getValue().getFirst();var byLine=new LinkedHashMap<UUID,List<Map<String,Object>>>();
@@ -168,7 +169,7 @@ public class ShopifyOrderProfitRepository {
             var basis=new Basis(complete?composition:Map.of(),origins.getOrDefault(entry.getKey(),Map.of()));
             if(packageName.isBlank())for(var candidate:candidates)if(basis.matches(candidate.basis())){packageName=candidate.name();source="Reused saved package · "+candidate.source()+" · exact mapped quantities and warehouse locations";break;}
             var type=ProfitRepository.packageType("",packageName,"");
-            BigDecimal shipping="USD".equals(first.get("currency"))?ProfitShippingRates.cost(rates,type,today):null;
+            BigDecimal shipping="USD".equals(first.get("currency"))?independent.cost(packageName,today,ProfitShippingRates.cost(rates,type,today)):null;
             var packages=shipping==null?List.<ProfitRepository.PackageCost>of():List.of(new ProfitRepository.PackageCost(packageName,shipping));
             String note="Mapped catalogue costs are current estimates. "+(packageName.isBlank()?"No compatible saved package with complete composition and origin evidence was found in the latest 500 saved orders.":source+". Package: "+packageName+". ")+" Shipping uses the account planning-rate schedule as of "+today+"; this is not a carrier quote. Estimated profit before payment fees = item sales − product cost − planning shipping − other cost. Other cost defaults to USD 1 per sold SKU unit for insulation/ice. Payment fees, customer shipping, taxes and refund effects are excluded; this is not settled net profit.";
             var totals=first.get("cancelled_at")!=null||!Boolean.TRUE.equals(first.get("evidence_complete"))?null:totals(lines,shipping);
@@ -198,7 +199,7 @@ public class ShopifyOrderProfitRepository {
               WHERE p.tenant_id=:tenant AND nullif(btrim(p.packaging),'') IS NOT NULL AND o.order_status NOT IN ('Canceled','Cancelled')
               ORDER BY p.imported_at DESC,p.amazon_order_id LIMIT 500
             )
-            SELECT s.marketplace_connection_id,s.amazon_order_id,s.packaging,s.imported_at,i.id line_id,i.quantity_ordered,
+            SELECT s.marketplace_connection_id,s.amazon_order_id,packing_package_cost(:tenant,s.packaging) packaging,s.imported_at,i.id line_id,i.quantity_ordered,
               c.account_catalog_item_id item,c.quantity,
               r.location_id,r.stock_quantity,
               EXISTS(SELECT 1 FROM order_inventory_reservations extra WHERE extra.tenant_id=i.tenant_id AND extra.marketplace_connection_id=i.marketplace_connection_id AND extra.amazon_order_item_id=i.id AND extra.status IN ('ACTIVE','SHIPPED')

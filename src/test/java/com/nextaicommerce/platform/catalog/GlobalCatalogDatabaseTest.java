@@ -46,4 +46,13 @@ class GlobalCatalogDatabaseTest {
         assertThat(rows.getLast().identifier()).isNull();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers",Integer.class)).isEqualTo(2);
     }
+    @Test void unusedGlobalRemovalUsesFullMigratedSchemaSafely(){
+        var transaction=new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.getDataSource()));
+        UUID id=UUID.randomUUID();jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Disposable removal fixture')",id);
+        jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) VALUES (?,'UPC','850017604087',true)",id);
+        var service=new CatalogRemovalService(jdbc);
+        assertThat(transaction.execute(state->service.review(null,id,true)).operation()).isEqualTo("DELETE");
+        transaction.executeWithoutResult(state->service.remove(null,id,true,"DELETE"));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_catalog_products WHERE id=?",Integer.class,id)).isZero();
+    }
 }
