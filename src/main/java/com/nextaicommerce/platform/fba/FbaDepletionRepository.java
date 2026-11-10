@@ -39,6 +39,17 @@ public class FbaDepletionRepository {
   var grouped=new LinkedHashMap<String,List<Display>>();rows.forEach(r->grouped.computeIfAbsent(r.sku(),k->new ArrayList<>()).add(r));
   return grouped.entrySet().stream().map(e->new LinePresentation(e.getKey(),e.getValue().getFirst().image(),e.getValue().stream().filter(r->r.item()!=null).map(r->new ProductPresentation(r.item(),r.name(),r.quantity())).toList())).toList();
  }
+ public record Composition(String sku,UUID item,BigDecimal quantity,boolean active){}
+ List<Composition> composition(UUID tenant,UUID connection,List<String> skus){
+  if(skus.isEmpty())return List.of();
+  return jdbc.query("""
+   SELECT m.marketplace_sku,c.account_catalog_item_id,c.quantity,a.status='ACTIVE'
+   FROM marketplace_sku_mappings m JOIN marketplace_sku_mapping_components c ON c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id
+   JOIN account_catalog_items a ON a.tenant_id=c.tenant_id AND a.id=c.account_catalog_item_id
+   WHERE m.tenant_id=? AND m.marketplace_connection_id=? AND m.status='ACTIVE' AND m.marketplace_sku=ANY(?::text[])
+   ORDER BY m.marketplace_sku,c.account_catalog_item_id
+   """,(r,n)->new Composition(r.getString(1),r.getObject(2,UUID.class),r.getBigDecimal(3).stripTrailingZeros(),r.getBoolean(4)),tenant,connection,skus.toArray(String[]::new));
+ }
  private record Source(UUID id,String status,String postal,String country,String revision,boolean complete){}
  private Source source(UUID tenant,UUID connection,String shipment){
   var rows=jdbc.query("""
@@ -113,7 +124,7 @@ public class FbaDepletionRepository {
   boolean automatic=warehouse!=null&&Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM fba_warehouse_depletion_settings WHERE tenant_id=? AND marketplace_connection_id=? AND warehouse_id=? AND automatic_enabled)",Boolean.class,tenant,connection,warehouse));
   return new Preview(shipment,warehouse,name,source.postal(),hash(evidence.toString()),lines,stock,allocations,List.copyOf(new LinkedHashSet<>(blockers)),depleted,automatic,source.complete()&&memberCount!=null&&memberCount==lines.size());
  }
- private List<Stock> stock(UUID tenant,UUID warehouse,Set<UUID> items){
+ List<Stock> stock(UUID tenant,UUID warehouse,Set<UUID> items){
   // Existing consumers attribute batch debits FIFO. Never skip a reserved receipt layer.
   return jdbc.query("""
    WITH layers AS (
@@ -159,7 +170,7 @@ public class FbaDepletionRepository {
   // Location overrides are allowed, but never skip a receipt layer inside the chosen position.
   for(var lot:current.stock()){var key=position(lot);var remaining=totals.getOrDefault(key,BigDecimal.ZERO);var expected=remaining.min(lot.available());if(desired.getOrDefault(lot.layer(),BigDecimal.ZERO).compareTo(expected)!=0)throw new IllegalArgumentException("Use the oldest receipt first within each location and expiration batch.");totals.put(key,remaining.subtract(expected));}
   UUID id=UUID.randomUUID(),actor=actor(email);
-  String approval=json.writeValueAsString(Map.of("lines",current.lines(),"allocations",chosen,"policy","FEFO_FIFO_UNRESERVED_POSITION_V1","batch",batch));
+  String approval=json.writeValueAsString(Map.of("lines",current.lines(),"allocations",chosen,"policy","FEFO_FIFO_UNRESERVED_POSITION_V1","batch",batch,"composition",composition(tenant,connection,current.lines().stream().map(Line::sku).toList())));
   jdbc.update("INSERT INTO fba_shipment_depletions(id,tenant_id,marketplace_connection_id,shipment_id,warehouse_id,request_id,source_revision,approval,created_by) VALUES (?,?,?,?,?,?,?,?::jsonb,?)",id,tenant,connection,shipment,current.warehouse(),requestId,revision,approval,actor);
   for(var a:chosen){var lot=lots.get(a.layer());UUID entry=UUID.randomUUID();
    jdbc.update("""

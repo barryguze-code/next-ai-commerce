@@ -35,7 +35,7 @@ public class MarketplaceInventoryMovements {
   var rows=jdbc.query("""
    WITH entries AS (SELECT e.* FROM inventory_ledger_entries e
     WHERE e.tenant_id=? AND e.account_catalog_item_id=ANY(?::uuid[])
-   """+(fba?" AND e.entry_type='FBA_DEPLETION' AND e.source_type='FBA_SHIPMENT' AND e.marketplace_connection_id=? ":"")+"""
+   """+(fba?" AND e.entry_type IN ('FBA_DEPLETION','FBA_DEPLETION_ADJUSTMENT') AND e.source_type='FBA_SHIPMENT' AND e.marketplace_connection_id=? ":"")+"""
     ORDER BY e.occurred_at DESC,e.created_at DESC,e.id DESC LIMIT 101 OFFSET ?)
    SELECT e.id,e.account_catalog_item_id,e.occurred_at,e.entry_type,e.quantity,d.shipment_id,coalesce(d.shipment_id,ao.amazon_order_id,so.order_name,po.po_number,doc.document_number),l.code,e.expiration_date
    FROM entries e LEFT JOIN fba_shipment_depletions d ON e.source_type='FBA_SHIPMENT'

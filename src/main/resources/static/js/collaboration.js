@@ -193,7 +193,7 @@
       catch(ex){error.textContent=ex.message;error.hidden=false;}
       finally{save.disabled=false;leave.disabled=false;delete view().start.dataset.saving;}
     };
-    root.addEventListener('close',()=>{config.remember({title:input.value,people:current.draftPeople,due:current.draftDue});delete root.dataset.huddleFinalize;save.remove();leaveGroup.remove();cancel.textContent='Done';input.onblur=null;current.huddleFinalize=null;config.returnToRoom();},{once:true});
+    root.addEventListener('close',()=>{config.remember({title:input.value,people:current.draftPeople,due:current.draftDue});delete root.dataset.huddleFinalize;save.remove();leaveGroup.remove();cancel.textContent='Close';input.onblur=null;current.huddleFinalize=null;config.returnToRoom();},{once:true});
     input.focus();input.select();
   };
   function handleHuddleEvent(event){lastPong=Date.now();window.LiveHuddleUI?.event(event,sendHuddle);}

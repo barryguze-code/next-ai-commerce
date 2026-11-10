@@ -45,6 +45,13 @@ public class FbaShipmentsController {
     Object batchConfirm(@RequestBody BatchConfirmation request,Authentication auth,@RequestParam UUID connection,HttpSession session){requireManual();var scope=selection(session,connection);return java.util.Map.of("ids",batches.confirm(scope.tenant(),scope.connection(),auth.getName(),request.requestId(),request.revision(),request.choices()),"message","Stock deducted for the complete selection.");}
     @PostMapping("/app/inventory/fba-shipments/depletion/refresh-items") @ResponseBody
     Object refreshItems(@RequestBody SelectedItems request,@RequestParam UUID connection,HttpSession session){requireManual();var scope=selection(session,connection);try{if(sync==null)throw new IllegalStateException("Shipment item refresh is unavailable.");return org.springframework.http.ResponseEntity.accepted().body(java.util.Map.of("job",sync.requestItems(scope.tenant(),scope.connection(),request.shipments())));}catch(IllegalStateException e){return org.springframework.http.ResponseEntity.status(409).body(java.util.Map.of("error",e.getMessage()));}}
+    @org.springframework.beans.factory.annotation.Autowired private FbaDeductionAdjustments adjustments;
+    @GetMapping("/app/inventory/fba-shipments/depletion/adjustment") @ResponseBody
+    Object deductionHistory(@RequestParam String shipment,@RequestParam UUID connection,HttpSession session){requireManual();var scope=selection(session,connection);return adjustments.review(scope.tenant(),scope.connection(),shipment,null);}
+    @PostMapping("/app/inventory/fba-shipments/depletion/adjustment-review") @ResponseBody
+    Object reviewAdjustment(@RequestBody FbaDeductionAdjustments.Request request,@RequestParam UUID connection,HttpSession session){requireManual();var scope=selection(session,connection);return adjustments.review(scope.tenant(),scope.connection(),request.shipment(),request.quantities());}
+    @PostMapping("/app/inventory/fba-shipments/depletion/adjustment-confirm") @ResponseBody
+    Object confirmAdjustment(@RequestBody FbaDeductionAdjustments.Request request,Authentication auth,@RequestParam UUID connection,HttpSession session){requireManual();var scope=selection(session,connection);var id=adjustments.confirm(scope.tenant(),scope.connection(),auth.getName(),request);return java.util.Map.of("id",id,"message","Adjustment recorded","review",adjustments.review(scope.tenant(),scope.connection(),request.shipment(),null));}
     public record SettingsRequest(UUID warehouse,boolean automatic,long revision){}
     @GetMapping("/app/inventory/fba-shipments/depletion/settings") @ResponseBody
     Object settings(@RequestParam UUID connection,HttpSession session){requireManual();var scope=selection(session,connection);return java.util.Map.of("enabled",automatic.enabled(),"warehouses",automatic.settings(scope.tenant(),scope.connection()));}
@@ -92,6 +99,7 @@ public class FbaShipmentsController {
         model.addAttribute("fbaTabs",views.tabs(tenant,connection,auth.getName()));
         model.addAttribute("fbaWarehouses",catalog.listWarehouses(tenant));
         model.addAttribute("selectedWarehouse",warehouse);model.addAttribute("selectedStatus",status);
+        if(warehouse!=null)model.addAttribute("selectedWarehouseDetails",catalog.warehouseDetails(tenant,warehouse));
         model.addAttribute("manualDepletionEnabled",manualEnabled);model.addAttribute("automaticDepletionEnabled",automatic.enabled());model.addAttribute("depletableShipments",views.depletable(tenant,connection));model.addAttribute("depletionStates",views.states(tenant,connection));
         model.addAttribute("query",q.trim());
         model.addAttribute("fbaSync",sync==null?new com.nextaicommerce.platform.sync.FbaManualSync.State(false,false,"NOT_STARTED","",null):sync.state(tenant,connection));

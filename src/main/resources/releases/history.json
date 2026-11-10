@@ -1,5 +1,24 @@
 [
   {
+    "version": "1.14.1",
+    "title": "Audited FBA deduction adjustments",
+    "sections": [
+      {
+        "title": "Warehouse stock review",
+        "items": [
+          "Review and confirm changes to previously deducted FBA shipment quantities, with an immutable adjustment history.",
+          "See missing warehouse country information when shipments cannot match."
+        ]
+      },
+      {
+        "title": "Collaboration",
+        "items": [
+          "Keep long collaboration subjects and header controls readable."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.0",
     "title": "Package rates and consistent inventory workspaces",
     "sections": [

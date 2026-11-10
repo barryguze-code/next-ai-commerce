@@ -144,6 +144,7 @@ public class InventoryRepository {
             return switch(entryType){
             case "RECEIPT" -> "Received";
             case "FBA_DEPLETION" -> "FBA shipment deducted";
+            case "FBA_DEPLETION_ADJUSTMENT" -> "FBA deduction adjusted";
             case "INVENTORY_PLAN" -> "Plan updated";
             case "SALE","SHIPMENT" -> "Order shipped";
             case "SHIPMENT_UNRECORDED" -> "Shipped";

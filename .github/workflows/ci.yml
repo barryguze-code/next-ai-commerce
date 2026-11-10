@@ -125,8 +125,8 @@ jobs:
         if: github.ref == 'refs/heads/codex/frontend-standardization-hotfix'
         uses: actions/upload-artifact@v4
         with:
-          name: workspace-packages-1-14-package
+          name: workspace-packages-1-14-1-package
           path: |
-            target/next-ai-commerce-1.14.0.jar
+            target/next-ai-commerce-1.14.1.jar
             target/surefire-reports/
           if-no-files-found: error

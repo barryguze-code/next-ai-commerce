@@ -22,6 +22,12 @@ class FbaTemplateTest {
         assertThat(html).contains("table-pagination","data-page=\"0\"","data-page-max=\"2\"","data-page-size=\"25\"","Total: 50 shipments");
         assertThat(html).contains("data-column=\"fba-shipment-date\"","title=\"FBA shipment date\"").doesNotContain("Last imported");
     }
+    @Test void warehouseFilteredEmptyStateDoesNotClaimNoImports(){
+        var context=context();context.setVariable("query","");context.setVariable("amazonStore",true);
+        context.setVariable("selectedWarehouse",UUID.randomUUID());
+        context.setVariable("shipments",new FbaReadRepository.ShipmentPage(List.of(),0,0,25));
+        assertThat(engine().process("fba-shipments",context)).contains("No shipments match this warehouse").doesNotContain("No FBA shipments imported yet","Inventory snapshots alone");
+    }
     @Test void stockRendersUnknownZeroAndFeesWithoutInventingTransfers()throws Exception{
         var context=context();context.setVariable("sku","KARACA <test>");
         context.setVariable("stock",new FbaReadRepository.Stock("KARACA",0,0,100,2,3,0,Instant.now(),new BigDecimal("12"),new BigDecimal("26.23"),"USD",Instant.now(),3));

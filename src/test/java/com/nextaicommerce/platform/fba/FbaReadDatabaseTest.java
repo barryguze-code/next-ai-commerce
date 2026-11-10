@@ -27,6 +27,65 @@ class FbaReadDatabaseTest {
         jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,entry_type,quantity,location_id,expiration_date,unit_cost,currency,source_type,occurred_at,idempotency_key) VALUES (?,?,?,'RECEIVED',10,?,current_date+30,2,'USD','FIXTURE',now()-interval '1 day',?)",layer,tenant,item,location,layer.toString());
         return new DepletionFixture(new FbaDepletionRepository(jdbc,new tools.jackson.databind.ObjectMapper()),item,warehouse,location,layer,email);
     }
+    private FbaDeductionAdjustments adjustmentService(DepletionFixture f){var access=mock(com.nextaicommerce.platform.web.MemberAccessService.class);when(access.current(tenant,f.email)).thenReturn(new com.nextaicommerce.platform.web.MemberAccessService.Access("OWNER",false,Set.of()));return new FbaDeductionAdjustments(jdbc,f.operations,access);}
+    @Test void adjustmentsReturnAndDeductOnlySignedDeltasAndPreserveHistory(){tx.executeWithoutResult(st->{
+        var f=depletionFixture();var initial=f.operations.preview(tenant,store,"FBA-TEST");f.operations.deplete(tenant,store,"FBA-TEST",f.email,UUID.randomUUID(),initial.revision(),initial.allocations());
+        var service=adjustmentService(f);var smaller=service.review(tenant,store,"FBA-TEST",Map.of("000-SKU",1));assertThat(smaller.blockers()).isEmpty();assertThat(smaller.deltas()).hasSize(1);assertThat(smaller.deltas().getFirst().quantity()).isEqualByComparingTo("3");
+        var request=new FbaDeductionAdjustments.Request("FBA-TEST",Map.of("000-SKU",1),"Only one packed",UUID.randomUUID(),smaller.revision());var id=service.confirm(tenant,store,f.email,request);assertThat(service.confirm(tenant,store,f.email,request)).isEqualTo(id);
+        assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=?",java.math.BigDecimal.class,tenant)).isEqualByComparingTo("7");
+        var bigger=service.review(tenant,store,"FBA-TEST",Map.of("000-SKU",3));assertThat(bigger.blockers()).isEmpty();assertThat(bigger.deltas().stream().map(FbaDeductionAdjustments.Delta::quantity).reduce(java.math.BigDecimal.ZERO,java.math.BigDecimal::add)).isEqualByComparingTo("-6");
+        service.confirm(tenant,store,f.email,new FbaDeductionAdjustments.Request("FBA-TEST",Map.of("000-SKU",3),"One more packed",UUID.randomUUID(),bigger.revision()));
+        assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=?",java.math.BigDecimal.class,tenant)).isEqualByComparingTo("1");
+        assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND entry_type='FBA_DEPLETION'",java.math.BigDecimal.class,tenant)).isEqualByComparingTo("-6");
+        assertThat(jdbc.queryForObject("SELECT quantity_shipped FROM amazon_fba_shipment_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
+        assertThat(service.review(tenant,store,"FBA-TEST",null).lines().getFirst().current()).isEqualTo(3);
+        assertThat(service.confirm(tenant,store,f.email,request)).isEqualTo(id);
+    });}
+    @Test void adjustmentsRejectStaleMappingStockAndCrossStore(){tx.executeWithoutResult(st->{
+        var f=depletionFixture();var p=f.operations.preview(tenant,store,"FBA-TEST");f.operations.deplete(tenant,store,"FBA-TEST",f.email,UUID.randomUUID(),p.revision(),p.allocations());var service=adjustmentService(f);
+        assertThatThrownBy(()->service.review(other,store,"FBA-TEST",null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->service.review(tenant,UUID.randomUUID(),"FBA-TEST",null)).isInstanceOf(IllegalArgumentException.class);
+        var review=service.review(tenant,store,"FBA-TEST",Map.of("000-SKU",1));
+        jdbc.update("UPDATE account_catalog_items SET status='INACTIVE' WHERE id=?",f.item);
+        assertThat(service.review(tenant,store,"FBA-TEST",Map.of("000-SKU",1)).blockers()).anyMatch(v->v.contains("mapping"));
+        assertThatThrownBy(()->service.confirm(tenant,store,f.email,new FbaDeductionAdjustments.Request("FBA-TEST",Map.of("000-SKU",1),"Return",UUID.randomUUID(),review.revision()))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_deduction_adjustments",Integer.class)).isZero();
+    });}
+    @Test void adjustmentReversesLastAllocationWithOriginalCostNotRandomUuid(){tx.executeWithoutResult(st->{
+        var f=depletionFixture();jdbc.update("UPDATE inventory_ledger_entries SET quantity=3 WHERE id=?",f.layer);UUID second=UUID.randomUUID();
+        jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,entry_type,quantity,location_id,expiration_date,unit_cost,currency,source_type,occurred_at,idempotency_key) SELECT ?,tenant_id,account_catalog_item_id,'RECEIVED',7,location_id,expiration_date,9,currency,'FIXTURE',now()-interval '12 hours',? FROM inventory_ledger_entries WHERE id=?",second,second.toString(),f.layer);
+        var p=f.operations.preview(tenant,store,"FBA-TEST");assertThat(p.allocations()).hasSize(2);f.operations.deplete(tenant,store,"FBA-TEST",f.email,UUID.randomUUID(),p.revision(),p.allocations());
+        var review=adjustmentService(f).review(tenant,store,"FBA-TEST",Map.of("000-SKU",1));assertThat(review.blockers()).isEmpty();assertThat(review.deltas()).hasSize(1);assertThat(review.deltas().getFirst().receiptLayer()).isEqualTo(second);assertThat(review.deltas().getFirst().unitCost()).isEqualByComparingTo("9");
+    });}
+    @Test void adjustmentCannotInventMappingForOriginallyZeroUnmappedSku(){tx.executeWithoutResult(st->{
+        var f=depletionFixture();jdbc.update("INSERT INTO amazon_fba_shipment_items(tenant_id,marketplace_connection_id,shipment_id,seller_sku,quantity_shipped,quantity_received) VALUES (?,?,'FBA-TEST','UNMAPPED',0,0)",tenant,store);
+        jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=jsonb_set(raw_payload,'{itemEvidence}',(raw_payload->'itemEvidence')||'[{\"SellerSKU\":\"UNMAPPED\",\"QuantityShipped\":0,\"QuantityReceived\":0}]'::jsonb) WHERE tenant_id=? AND shipment_id='FBA-TEST'",tenant);
+        var p=f.operations.preview(tenant,store,"FBA-TEST");assertThat(p.ready()).isTrue();f.operations.deplete(tenant,store,"FBA-TEST",f.email,UUID.randomUUID(),p.revision(),p.allocations());
+        var review=adjustmentService(f).review(tenant,store,"FBA-TEST",Map.of("000-SKU",2,"UNMAPPED",1));assertThat(review.blockers()).anyMatch(v->v.contains("Complete active original mapping"));
+    });}
+    @Test void adjustmentBlocksFractionalLayersBeforeConfirmation(){tx.executeWithoutResult(st->{
+        var f=depletionFixture();var p=f.operations.preview(tenant,store,"FBA-TEST");f.operations.deplete(tenant,store,"FBA-TEST",f.email,UUID.randomUUID(),p.revision(),p.allocations());
+        jdbc.update("UPDATE inventory_ledger_entries SET quantity=6 WHERE id=?",f.layer);
+        for(int n=0;n<2;n++){UUID layer=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,entry_type,quantity,location_id,expiration_date,unit_cost,currency,source_type,occurred_at,idempotency_key) SELECT ?,tenant_id,account_catalog_item_id,'RECEIVED',1.5,location_id,expiration_date,2,currency,'FIXTURE',now(),? FROM inventory_ledger_entries WHERE id=?",layer,layer.toString(),f.layer);}
+        var review=adjustmentService(f).review(tenant,store,"FBA-TEST",Map.of("000-SKU",3));assertThat(review.blockers()).anyMatch(v->v.contains("fractional eaches"));
+        assertThatThrownBy(()->adjustmentService(f).confirm(tenant,store,f.email,new FbaDeductionAdjustments.Request("FBA-TEST",Map.of("000-SKU",3),"More packed",UUID.randomUUID(),review.revision()))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("fractional eaches");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_deduction_adjustments WHERE tenant_id=?",Integer.class,tenant)).isZero();
+    });}
+    @Test void adjustmentRequiresReasonAndFreshStock(){tx.executeWithoutResult(st->{
+        var f=depletionFixture();var p=f.operations.preview(tenant,store,"FBA-TEST");f.operations.deplete(tenant,store,"FBA-TEST",f.email,UUID.randomUUID(),p.revision(),p.allocations());var service=adjustmentService(f);
+        var review=service.review(tenant,store,"FBA-TEST",Map.of("000-SKU",3));assertThat(review.blockers()).isEmpty();
+        assertThatThrownBy(()->service.confirm(tenant,store,f.email,new FbaDeductionAdjustments.Request("FBA-TEST",Map.of("000-SKU",3)," ",UUID.randomUUID(),review.revision()))).isInstanceOf(IllegalArgumentException.class);
+        UUID extra=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,entry_type,quantity,location_id,expiration_date,source_type,occurred_at,idempotency_key) SELECT ?,tenant_id,account_catalog_item_id,'ADJUSTMENT',1,location_id,expiration_date,'FIXTURE',now(),? FROM inventory_ledger_entries WHERE id=?",extra,extra.toString(),f.layer);
+        assertThatThrownBy(()->service.confirm(tenant,store,f.email,new FbaDeductionAdjustments.Request("FBA-TEST",Map.of("000-SKU",3),"More packed",UUID.randomUUID(),review.revision()))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Review again");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_deduction_adjustments WHERE tenant_id=?",Integer.class,tenant)).isZero();
+    });}
+    @Test void adjustmentTablesAreImmutableAndRowSecurityIsTenantScoped(){tx.executeWithoutResult(st->{
+        var f=depletionFixture();var p=f.operations.preview(tenant,store,"FBA-TEST");f.operations.deplete(tenant,store,"FBA-TEST",f.email,UUID.randomUUID(),p.revision(),p.allocations());var service=adjustmentService(f);var review=service.review(tenant,store,"FBA-TEST",Map.of("000-SKU",1));service.confirm(tenant,store,f.email,new FbaDeductionAdjustments.Request("FBA-TEST",Map.of("000-SKU",1),"Return",UUID.randomUUID(),review.revision()));
+        String role="adjust_rls_"+UUID.randomUUID().toString().replace("-","");jdbc.execute("CREATE ROLE "+role+" NOLOGIN NOSUPERUSER NOBYPASSRLS");jdbc.execute("GRANT USAGE ON SCHEMA "+schema+" TO "+role);jdbc.execute("GRANT SELECT ON fba_deduction_adjustments,fba_deduction_adjustment_entries TO "+role);jdbc.execute("SET LOCAL ROLE "+role);
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,other.toString());for(String table:List.of("fba_deduction_adjustments","fba_deduction_adjustment_entries"))assertThat(jdbc.queryForObject("SELECT count(*) FROM "+table,Integer.class)).isZero();
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_deduction_adjustments",Integer.class)).isEqualTo(1);assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_deduction_adjustment_entries",Integer.class)).isEqualTo(1);jdbc.execute("RESET ROLE");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_trigger WHERE tgname='immutable_audit' AND tgrelid IN ('fba_deduction_adjustments'::regclass,'fba_deduction_adjustment_entries'::regclass)",Integer.class)).isEqualTo(2);
+    });}
     @Test void nullableAccountNameUsesGlobalIdentityForCompositionAndStock(){tx.executeWithoutResult(s->{
         var f=depletionFixture();jdbc.update("UPDATE account_catalog_items SET display_name=NULL WHERE id=?",f.item);
         assertThat(f.operations.presentation(tenant,store,List.of("000-SKU")).getFirst().products().getFirst().name()).isEqualTo("Fixture product");
