@@ -25,7 +25,10 @@ class PackingSlipTemplateTest {
         assertThat(html)
             .contains("Ski Queen","UPS OMBox","53383","12345","67890","Cheese Gjetost","Second product","Third product","06/17/27","MAIN","Seller Central","Save package","Print 2 × 1 slip")
             .doesNotContain("IB-MKH-53383-GJETOST-SKIQUEEN-EA","No historical package match","Order 113-1234567-1234567","Internal packing only");
-        assertThat(html.substring(html.indexOf("<section class=\"packing-labels\"")))
+        int labelsStart=html.indexOf("<section class=\"packing-labels\"");
+        int settingsStart=html.indexOf("<section class=\"packing-controls\"",labelsStart);
+        assertThat(settingsStart).isGreaterThan(labelsStart);
+        assertThat(html.substring(labelsStart,settingsStart))
             .doesNotContain("Seller Central", "<footer", "<a ");
     }
 }
