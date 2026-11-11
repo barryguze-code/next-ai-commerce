@@ -75,13 +75,13 @@ test('blocked clipboard access keeps Veeqo reachable and shows the order ID',asy
   assert.equal(w.status.textContent,'Write a package name first.');
  });
 
-test('current default location previews and prints only on matching unreserved product rows',()=>{
+test('selected print location updates matching reserved and unreserved rows without moving stock',()=>{
  const w=workspace('Pak',{withLocations:true});
  w.locationChoice.selectedOptions=[{dataset:{locationCode:'F13'}}];w.locationChoice.listeners.change();
- assert.deepEqual(w.locationRows.map(r=>r.querySelector().textContent),['F13','F2','FX']);
+ assert.deepEqual(w.locationRows.map(r=>r.querySelector().textContent),['F13','F13','FX']);
  w.locationChoice.selectedOptions=[{dataset:{locationCode:'R1'}}];w.nodes['#print-slip'].listeners.click();
  assert.equal(w.locationRows[0].querySelector().textContent,'R1');
- assert.equal(w.locationRows[1].querySelector().textContent,'F2');
+ assert.equal(w.locationRows[1].querySelector().textContent,'R1');
  w.locationChoice.selectedOptions=[{dataset:{}}];w.locationChoice.listeners.change();
  assert.equal(w.locationRows[0].querySelector().textContent,'MAIN');
 });

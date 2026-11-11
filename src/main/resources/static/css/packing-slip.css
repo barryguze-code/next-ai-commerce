@@ -90,3 +90,13 @@ html[data-theme=dark] #packing-name-dialog{background:#182838;border-color:#3448
 .packing-name-combo{position:relative;display:block}.packing-name-combo input{padding-right:44px!important}.packing-name-combo #packing-name-toggle{position:absolute;right:2px;top:2px;bottom:2px;width:40px;padding:0;border:0;background:transparent;display:grid;place-items:center}.packing-name-combo svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7}#packing-name-options{margin:0}#packing-name-options button{font-size:14px}.packing-name-combo:has(input[readonly]) #packing-name-toggle{display:none}
 
 #packing-name-options button{border:0;background:transparent;border-radius:9px;box-shadow:none;color:inherit;font-weight:400}#packing-name-options button:hover,#packing-name-options button[aria-selected="true"]{background:#edf4ff}html[data-theme=dark] #packing-name-options button:hover,html[data-theme=dark] #packing-name-options button[aria-selected="true"]{background:#213752}
+
+/* Approved compact screen composition; physical label and print rules remain unchanged. */
+@media screen{
+ .packing-product-form textarea{font:400 14px/1.4 Inter,Arial,sans-serif}
+ .packing-preview{grid-column:2}
+ .packing-preview>.packing-controls{min-width:0}
+ .packing-preview .packing-package-controls{gap:8px}
+ .packing-preview .packing-control-actions{gap:8px}
+}
+@media screen and (max-width:900px){.packing-preview{grid-column:auto}}

@@ -1,0 +1,36 @@
+<!doctype html><html xmlns:th="http://www.thymeleaf.org"><head>
+<th:block th:fragment="head">
+<link rel="stylesheet" href="/css/table-widget.css" th:href="@{/css/table-widget.css(v=${buildVersion})}">
+<style>
+/* No intermediate legacy toolbar: JS-disabled pages retain their original controls. */
+html.table-composing [data-table-first-paint]:not([data-table-composed]) [data-table-command],
+html.table-composing [data-table-first-paint]:not([data-table-composed]) [data-table-command-group],
+html.table-composing [data-table-first-paint]:not([data-table-composed]) [data-table-search-submit]{display:none!important}
+html.table-composing [data-table-first-paint]>.card-toolbar>.table-header-copy{min-height:40px}
+[data-table-first-paint]>.card-toolbar>[data-table-legacy-toolbar]:empty{display:none}
+</style>
+<script data-table-first-paint-bootstrap>
+(()=>{
+ if(window.NextAiTableFirstPaint)return;
+ document.documentElement.classList.add('table-composing');
+ const pending=new Map();
+ window.NextAiTableFirstPaint={
+  capture(card){
+   if(!card.hasAttribute('data-table-first-paint')||pending.has(card))return;
+   const nodes=[...card.querySelectorAll('[data-table-command],[data-table-command-group],.order-sync-status>form,.sku-sync-status>form,.fba-sync-utility>form')].filter(node=>!node.parentElement.closest('[data-table-command],[data-table-command-group]'));
+   pending.set(card,nodes.map(node=>{const marker=document.createComment('table-command-home');node.before(marker);return {node,marker};}));
+  },
+  complete(card){const entries=pending.get(card)||[];entries.forEach(entry=>entry.marker.remove());pending.delete(card);}
+ };
+ window.addEventListener('load',()=>{
+  // Recover real originals, including sync forms, after partial initialization failure.
+  pending.forEach((entries,card)=>{
+   if(card.hasAttribute('data-table-composed'))return;
+   entries.forEach(({node,marker})=>{if(marker.isConnected)marker.replaceWith(node);});
+   card.querySelectorAll('.table-command-menu,.table-action-shortcuts,.table-sync-actions,.table-header-commands').forEach(node=>node.remove());
+  });
+  pending.clear();document.documentElement.classList.remove('table-composing');
+ },{once:true});
+})();
+</script>
+</th:block></head></html>

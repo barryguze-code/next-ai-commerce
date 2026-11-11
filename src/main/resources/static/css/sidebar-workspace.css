@@ -1,0 +1,57 @@
+@media(min-width:761px){
+.app-page{grid-template-columns:var(--sidebar-width,260px) minmax(0,1fr)}
+.sidebar{min-width:0;overflow:visible}
+.sidebar-edge-toggle{position:absolute;right:-16px;top:96px;width:32px;height:40px;border:1px solid #dbe3ef;border-radius:20px;background:#fff;color:#245fac;font-size:26px;display:grid;place-items:center;z-index:5;cursor:pointer}
+.sidebar-resize{position:absolute;right:-4px;top:144px;bottom:0;width:8px;cursor:col-resize;z-index:4}
+.sidebar-resize:focus-visible{outline:2px solid #2d6be7;background:#2d6be744}
+.sidebar-resizing{cursor:col-resize;user-select:none}
+.app-page.sidebar-collapsed{grid-template-columns:64px minmax(0,1fr)}
+.sidebar-collapsed .sidebar{padding-left:10px;padding-right:10px}
+.sidebar-collapsed .sidebar .brand{overflow:hidden;width:44px;min-width:44px}
+.sidebar-collapsed .sidebar .brand img{max-width:none;object-fit:contain;object-position:left;width:44px}
+.sidebar-collapsed .nav-item-label,.sidebar-collapsed .nav-chevron,.sidebar-collapsed .product-nav details>div,.sidebar-collapsed .sidebar-user-copy,.sidebar-collapsed .sidebar-build-info,.sidebar-collapsed .sidebar-create-task{display:none!important}
+.sidebar-collapsed .product-nav a,.sidebar-collapsed .product-nav summary{padding:10px;justify-content:center;min-height:44px}
+.sidebar-collapsed .sidebar-user{flex-wrap:wrap;justify-content:center}
+.sidebar-collapsed .sidebar-resize{display:none}
+}
+.store-shortcuts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:224px}
+.store-shortcut{position:relative;display:inline-flex}
+.store-shortcut>button:first-child,.store-shortcut-add{width:40px;height:40px;display:grid;place-items:center;border:1px solid #dbe3ef;border-radius:12px;background:#fff;color:#2d6be7;cursor:pointer;padding:6px}
+.store-shortcut img{width:28px;height:28px;object-fit:contain}
+.store-shortcut-add{border-style:dashed;padding:0;line-height:1}.store-shortcut-add svg{display:block;pointer-events:none}
+.store-shortcut-remove{position:absolute;right:-5px;top:-5px;width:20px;height:20px;border:1px solid #dbe3ef;border-radius:50%;background:white;color:#547093;display:grid;place-items:center;padding:0;cursor:pointer}
+.store-shortcut-hint{display:none;margin:8px 12px;color:#61748f;font-size:13px}
+.store-shortcut-managing .store-shortcut-hint{display:block}
+.store-shortcut-managing form:has([name=storeId]) button[aria-pressed=true]{outline:2px solid #2d6be7;background:#edf4ff}
+@media(max-width:760px){.sidebar-edge-toggle,.sidebar-resize{display:none}.store-shortcuts{max-width:100%;gap:6px}}
+[data-theme=dark] .store-shortcuts button,[data-theme=dark] .sidebar-edge-toggle{background:#14273d;border-color:#3a4d66;color:#a7c5ff}
+@media(min-width:761px){.sidebar-collapsed .brand-wordmark{display:none}.sidebar-collapsed .sidebar-user>form{display:block}.sidebar-collapsed .sidebar-user>form button{min-width:36px}.sidebar-collapsed .collaborate-nav-row{justify-content:center}}
+.store-shortcut>button:first-child{position:relative}.store-shortcut img.store-shortcut-channel{position:absolute;bottom:1px;right:1px;width:13px;height:13px;border-radius:3px;background:white}
+.store-shortcut-more{position:relative}.store-shortcut-more>summary{list-style:none;width:40px;height:40px;display:grid;place-items:center;border:1px solid #dbe3ef;border-radius:12px;cursor:pointer}.store-shortcut-more:not([open])>.store-shortcut{display:none}.store-shortcut-more[open]{display:flex;flex-wrap:wrap;gap:8px}
+@media(min-width:761px){.app-page.sidebar-collapsed .sidebar .sidebar-user{display:flex!important;flex-direction:column;align-items:center;gap:8px;height:auto}.app-page.sidebar-collapsed .sidebar-user-avatar{position:relative!important;grid-area:auto!important;width:36px!important;height:36px!important}.app-page.sidebar-collapsed .sidebar-user>.text-size-control,.app-page.sidebar-collapsed .sidebar-user>.theme-toggle,.app-page.sidebar-collapsed .sidebar-user>form{position:relative;grid-area:auto!important}.app-page.sidebar-collapsed .collaborate-nav-row>[data-new-task]{display:none!important}}
+.store-shortcut-managing form:has([name=storeId]) button::after{content:'+';margin-left:auto;color:#2d6be7;font-size:20px}.store-shortcut-managing form:has([name=storeId]) button[data-shortcut-pinned=true]::after{content:'✓'}
+@media(min-width:761px){.sidebar .product-nav,.sidebar .sidebar-user{min-width:0;max-width:100%}.sidebar .nav-group-label{min-width:0}.sidebar .nav-item-label{white-space:normal;overflow-wrap:anywhere}.sidebar-collapsed .nav-current-module>summary{background:#ffffff12;box-shadow:inset 2px 0 #b8e625;border-radius:10px}.sidebar .product-nav{overflow-x:clip}}
+
+/* CD-directed owner artwork: a slim visual inside the accessible border control. */
+@media(min-width:761px){
+.app-page .sidebar-edge-toggle{height:44px;background:transparent;border:0;border-radius:8px;font-size:0;color:transparent}
+.app-page:not(.sidebar-collapsed) .sidebar-edge-toggle::before{content:"";display:block;width:18px;height:44px;background:url('../images/platform/sidebar-collapse-transparent.png') 50% 50% / auto 52px no-repeat;border-radius:7px}
+.sidebar-edge-toggle:focus-visible{outline:2px solid #2d6be7;outline-offset:2px}
+}
+/* Store-shortcut removal stays quiet until the matching shortcut is engaged. */
+@media(hover:hover) and (pointer:fine){
+.store-shortcut-remove{opacity:0;pointer-events:none}
+.store-shortcut:hover .store-shortcut-remove,.store-shortcut:focus-within .store-shortcut-remove{opacity:1;pointer-events:auto}
+}
+
+@media(min-width:761px){.app-page.sidebar-collapsed .sidebar-edge-toggle::before{content:"";display:block;width:18px;height:44px;background:url('../images/platform/sidebar-expand-transparent.png') 50% 50% / auto 50px no-repeat;border-radius:7px}}
+
+details.context-menu.store-shortcut-managing .context-popover>.context-footer{display:none}
+
+/* Shortcuts consume the remaining header width; only real overflow uses More. */
+.workspace-has-store-shortcuts .store-shortcuts{flex:1 1 0;min-width:88px;max-width:none;flex-wrap:nowrap;justify-content:flex-end}
+.store-shortcuts>.store-shortcut,.store-shortcuts>.store-shortcut-add,.store-shortcuts>.store-shortcut-more{flex:0 0 40px}
+.store-shortcut-more:not([open])>.store-shortcut-more-list{display:none}
+.store-shortcuts .store-shortcut-more[open]{display:block}
+.store-shortcut-more-list{position:absolute;right:0;top:48px;display:flex;flex-wrap:wrap;gap:8px;width:184px;padding:12px;background:var(--surface,#fff);border:1px solid var(--line,#dbe3ef);border-radius:12px;z-index:20}
+@media(min-width:761px){body.app-page .workspace-has-store-shortcuts{flex-wrap:nowrap}body.app-page .workspace-has-store-shortcuts>.header-actions{flex:1 1 0;min-width:400px;flex-wrap:nowrap}body.app-page .workspace-has-store-shortcuts>div:first-child:not(.header-actions){flex:0 1 320px}.workspace-has-store-shortcuts .header-actions>.context-menu,.workspace-has-store-shortcuts .huddle-launcher{flex-shrink:0}}

@@ -110,3 +110,47 @@
 
 #fba-adjustment-dialog .fba-adjustment-component-heading,#fba-adjustment-dialog .phone-label{display:none}
 @media(max-width:600px){#fba-adjustment-dialog .fba-adjustment-component-heading{display:table-row}#fba-adjustment-dialog .phone-label{display:inline}#fba-adjustment-dialog .desktop-label{display:none}#fba-adjustment-dialog thead th:first-child,#fba-adjustment-dialog tbody tr:not(.fba-adjustment-component-heading) td:first-child{display:none}#fba-adjustment-dialog .table-wrap{overflow-x:auto}#fba-adjustment-dialog th{white-space:nowrap}#fba-adjustment-dialog td{word-break:normal;overflow-wrap:normal}#fba-adjustment-dialog .fba-adjustment-component-heading th{white-space:normal}#fba-adjustment-dialog td:nth-child(2),#fba-adjustment-dialog td:nth-child(3){white-space:nowrap}}
+
+/* CD: location decisions live beside their SKU, never in a second bottom table. */
+#fba-depletion-dialog .fba-depletion-line{grid-template-columns:48px minmax(0,1fr) minmax(390px,480px)}
+#fba-depletion-dialog .fba-deduction-quantities{grid-template-columns:minmax(140px,1fr) 100px 110px}
+.fba-location-choices{display:grid;gap:8px}.fba-location-choices select{width:100%;min-height:38px;font:inherit}.fba-location-choices small{font-size:12px;line-height:1.4;color:var(--muted)}
+@media(max-width:600px){#fba-depletion-dialog .fba-deduction-quantities{grid-column:1/-1;grid-template-columns:1fr 1fr}#fba-depletion-dialog .fba-location-choices{grid-column:1/-1}}
+#fba-depletion-dialog .fba-deduction-group+.fba-deduction-group{border-top:0}
+@media(max-width:600px){#fba-depletion-dialog .fba-depletion-line{grid-template-columns:48px minmax(0,1fr)}#fba-depletion-dialog .fba-deduction-identity{min-width:0;width:100%}}
+#fba-depletion-dialog .location-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;height:38px;min-height:38px;padding:6px 10px;font-size:14px}
+#fba-depletion-dialog .location-choice-chevron{width:14px;height:14px;flex:0 0 14px;fill:none;stroke:currentColor;stroke-width:1.5}
+#fba-depletion-dialog .fba-component-label{display:flex;align-items:center;gap:6px;color:var(--ink)}
+#fba-depletion-dialog .fba-component-label .fba-deduction-picture{width:28px;height:28px;border-radius:6px}
+#fba-depletion-dialog [data-location-summary]{font-size:13px;font-weight:600;color:var(--ink)}
+#fba-depletion-dialog .location-picker-trigger[hidden],#fba-depletion-dialog [data-location-summary][hidden]{display:none}
+
+#fba-depletion-dialog [data-location-cue][data-invalid=true]{color:#b42335}html[data-theme=dark] #fba-depletion-dialog [data-location-cue][data-invalid=true]{color:#ffb0b5}
+.fba-decrease-edit{display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;padding:4px;background:transparent;border:0}.fba-decrease-edit img{width:28px;height:28px;object-fit:contain}
+/* Shared source-location split controls, scoped to the stock-decrease dialog. */
+#fba-depletion-dialog .fba-component-allocation{display:grid;gap:8px;min-width:0}
+#fba-depletion-dialog .fba-split-row{display:grid;grid-template-columns:minmax(0,1fr) 72px 36px;gap:8px;align-items:start}
+#fba-depletion-dialog .fba-split-row input{width:100%;min-width:0}
+#fba-depletion-dialog [data-allocation-total][data-invalid="true"]{color:#b42335}
+@media(max-width:600px){#fba-depletion-dialog .fba-split-row{grid-template-columns:minmax(0,1fr) 80px 36px}#fba-depletion-dialog .fba-component-label{white-space:normal}}
+
+#fba-depletion-dialog .fba-split-remove{width:36px;min-width:36px;margin-top:24px;padding:4px;min-height:38px}
+#fba-depletion-dialog .fba-split-row label{min-width:0}
+#fba-depletion-dialog .fba-deduction-quantities{grid-template-columns:minmax(280px,1fr) 100px 110px}
+#fba-depletion-dialog .fba-depletion-line{grid-template-columns:48px minmax(0,1fr) minmax(530px,560px)}
+@media(max-width:600px){#fba-depletion-dialog .fba-depletion-line{grid-template-columns:48px minmax(0,1fr)}#fba-depletion-dialog .fba-deduction-quantities{grid-template-columns:1fr 1fr}}
+
+/* Reuse warehouse Add contact's compact secondary action without grid stretching. */
+#fba-depletion-dialog [data-fba-add-location]{justify-self:start;width:auto}
+
+/* Owner art replaces row action labels without changing the review handlers. */
+html body .fba-shipment-table .fba-row-icon{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:34px;min-width:34px;height:34px;margin:0 2px;padding:0;border:0;border-radius:9px;background:transparent;color:var(--blue);vertical-align:middle;cursor:pointer}
+html body .fba-shipment-table .fba-row-icon img{display:block;width:24px;height:24px;object-fit:contain;margin:0;padding:0}
+html body .fba-shipment-table .fba-row-icon:disabled{opacity:.45;cursor:default}
+
+html body .fba-shipment-table [data-fba-visibility][data-removed="false"]{width:auto;padding-inline:12px}
+
+html body.app-page .data-card table.fba-shipment-table td.fba-row-actions{white-space:nowrap;min-width:96px}
+
+/* Match Orders visible artwork (19–21px): owner art needs a 24px canvas; retain 34px controls. */
+html body .fba-shipment-table .fba-row-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}

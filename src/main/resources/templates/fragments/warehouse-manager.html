@@ -12,7 +12,7 @@
     <fieldset id="warehouse-address" aria-describedby="warehouse-save-reason" disabled><legend class="sr-only">Warehouse address</legend>
      <label>Address line 1<input name="addressLine1" maxlength="240" autocomplete="address-line1"></label><label>Address line 2<input name="addressLine2" maxlength="240" autocomplete="address-line2"></label>
      <div class="form-pair"><label>City<input name="city" maxlength="120" autocomplete="address-level2"></label><label>State / province<input name="stateOrProvince" maxlength="80" autocomplete="address-level1"></label></div>
-     <div class="form-pair"><label>Postal code<input name="postalCode" maxlength="32" autocomplete="postal-code"></label><label>Country code<input name="countryCode" maxlength="2" pattern="[A-Za-z]{2}" placeholder="Country code" autocomplete="country"></label></div>
+     <div class="form-pair"><label>Postal code<input name="postalCode" required maxlength="32" autocomplete="postal-code"></label><label>Country code<input name="countryCode" required maxlength="2" pattern="[A-Za-z]{2}" placeholder="Country code" autocomplete="country"></label></div>
     </fieldset>
    </section>
   </div>

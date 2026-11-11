@@ -33,7 +33,9 @@
     for(const [value,label] of [['online','Online'],['all','All teammates']]){const tab=button(label,()=>{peopleTab=value;renderPeople();loadDirectory();});tab.dataset.peopleTab=value;tabs.append(tab);}
     const search=node('input');search.type='search';search.placeholder='Search teammates';search.setAttribute('aria-label','Search teammates');search.addEventListener('input',()=>{peopleQuery=search.value;renderPeople();});
     peopleList=node('div',null,'huddle-people-list');peopleList.setAttribute('role','region');peopleList.setAttribute('aria-label','Teammate results');
-    startChat=button('Select teammate',startSelected);startChat.className='primary-button huddle-start-chat';menu.append(heading,peopleHint,tabs,search,peopleList,startChat);
+    startChat=button('Select teammate',startSelected);startChat.className='primary-button huddle-start-chat';const footer=node('div',null,'huddle-people-footer');
+    if(document.querySelector('.sidebar-create-task[data-new-task]')){const createTask=button('Create a store task',()=>{closePeople();window.openGeneralTask?.(trigger);});createTask.className='secondary-button huddle-create-store-task';footer.append(createTask);}
+    footer.append(startChat);menu.append(heading,peopleHint,tabs,search,peopleList,footer);
     launcher.append(trigger,menu);
     const picker=header.querySelector('.context-menu');
     if(picker)picker.before(launcher);else (header.querySelector('.header-actions')||header).append(launcher);

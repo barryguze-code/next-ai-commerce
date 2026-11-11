@@ -73,3 +73,8 @@ test('header presence opens a floating huddle, protects text, minimizes, and sen
   assert.equal(await page.getByRole('button',{name:'Send',exact:true}).isDisabled(),true);
  }finally{await browser.close();}
 });
+test('Store task entry reuses shared dialog without online selection and respects server permission',async()=>{
+ const browser=await chromium.launch({headless:true});try{
+ for(const permitted of [true,false]){const page=await browser.newPage();await page.route('**/app/collaboration/teammates',r=>r.fulfill({contentType:'application/json',body:'[]'}));await page.setContent('<body><header class="workspace-header"></header>'+(permitted?'<button class="sidebar-create-task" data-new-task>Existing task entry</button>':''));await page.addScriptTag({path:path.resolve('src/main/resources/static/js/huddle-floating.js')});await page.evaluate(()=>{window.taskCalls=0;window.openGeneralTask=trigger=>{window.taskCalls++;window.taskOpener=trigger.getAttribute('aria-label');};LiveHuddleUI.event({type:'WELCOME',self:{id:'me',name:'Me'},canHuddle:false,online:[],huddles:[]},()=>false);});await page.getByRole('button',{name:'Open huddle and online teammates'}).click();const task=page.getByRole('button',{name:'Create a store task',exact:true});assert.equal(await task.count(),permitted?1:0);if(permitted){assert.equal(await page.getByRole('button',{name:'Select teammate',exact:true}).isDisabled(),true);await task.click();assert.equal(await page.evaluate(()=>window.taskCalls),1);assert.equal(await page.evaluate(()=>window.taskOpener),'Open huddle and online teammates');assert.equal(await page.locator('#huddle-teammates').evaluate(e=>e.hidden),true);}await page.close();}
+ }finally{await browser.close();}
+});

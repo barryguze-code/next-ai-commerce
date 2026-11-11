@@ -21,7 +21,7 @@
   const plus=document.querySelector('.smart-tag-add');
   if(plus&&!plus.parentElement.querySelector('.order-fulfillment-tabs')){
    const nav=document.createElement('nav');nav.className='order-fulfillment-tabs';nav.setAttribute('aria-label','Fulfillment channel');
-   for(const [value,label] of [['','All'],['FBM','FBM'],['FBA','FBA']]){const link=document.createElement('a'),next=new URL(location.href);next.searchParams.set('f_channel',value);next.searchParams.delete('page');next.searchParams.delete('goToPage');link.href=next;link.textContent=label;if(value===selected)link.setAttribute('aria-current','page');link.onclick=()=>{document.cookie=cookie+'='+value+'; Max-Age=31536000; Path=/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');};nav.append(link);}plus.before(nav);
+   for(const [value,label] of [['','All'],['FBA','FBA'],['FBM','FBM']]){const link=document.createElement('a'),next=new URL(location.href);next.searchParams.set('f_channel',value);next.searchParams.delete('page');next.searchParams.delete('goToPage');link.href=next;link.textContent=label;if(value===selected)link.setAttribute('aria-current','page');link.onclick=()=>{document.cookie=cookie+'='+value+'; Max-Age=31536000; Path=/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');};nav.append(link);}plus.after(nav);
   }
 
  }

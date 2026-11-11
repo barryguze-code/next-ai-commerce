@@ -20,14 +20,14 @@ public class FbaDepletionRepository {
  public record Stock(UUID layer,UUID item,UUID location,String product,String locationName,LocalDate expiration,BigDecimal available,BigDecimal unitCost,String currency,Instant received){}
  public record Allocation(UUID layer,BigDecimal quantity){}
  public record Preview(String shipment,UUID warehouse,String warehouseName,String postal,String revision,List<Line> lines,List<Stock> stock,List<Allocation> allocations,List<String> blockers,boolean depleted,boolean automatic,boolean itemsVerified){public boolean ready(){return !depleted&&blockers.isEmpty();}}
- public record ProductPresentation(UUID item,String name,BigDecimal eachPerSku){}
+ public record ProductPresentation(UUID item,String name,BigDecimal eachPerSku,String itemCode){}
  public record LinePresentation(String sku,String imageUrl,List<ProductPresentation> products){}
  /** Read-only display metadata, deliberately excluded from stock revision and immutable approval. */
  @Transactional(readOnly=true) public List<LinePresentation> presentation(UUID tenant,UUID connection,List<String> skus){
   scope(tenant);if(skus.isEmpty())return List.of();
-  record Display(String sku,String image,UUID item,String name,BigDecimal quantity){}
+  record Display(String sku,String image,UUID item,String name,BigDecimal quantity,String itemCode){}
   var rows=jdbc.query("""
-   SELECT names.sku,listing.image_url,c.account_catalog_item_id,coalesce(nullif(a.display_name,''),g.canonical_name,a.account_sku,'Component details unavailable'),c.quantity
+   SELECT names.sku,listing.image_url,c.account_catalog_item_id,coalesce(nullif(a.display_name,''),g.canonical_name,a.account_sku,'Component details unavailable'),c.quantity,a.account_sku
    FROM unnest(?::text[]) names(sku)
    LEFT JOIN LATERAL(SELECT image_url FROM amazon_listings l WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.seller_sku=names.sku AND image_url IS NOT NULL ORDER BY l.updated_at DESC LIMIT 1) listing ON true
    LEFT JOIN marketplace_sku_mappings m ON m.tenant_id=? AND m.marketplace_connection_id=? AND m.marketplace_sku=names.sku AND m.status='ACTIVE'
@@ -35,9 +35,9 @@ public class FbaDepletionRepository {
    LEFT JOIN account_catalog_items a ON a.tenant_id=c.tenant_id AND a.id=c.account_catalog_item_id
    LEFT JOIN global_catalog_products g ON g.id=a.global_product_id
    ORDER BY names.sku,c.account_catalog_item_id
-   """,(r,n)->new Display(r.getString(1),r.getString(2),r.getObject(3,UUID.class),r.getString(4),r.getBigDecimal(5)),skus.toArray(String[]::new),tenant,connection,tenant,connection);
+   """,(r,n)->new Display(r.getString(1),r.getString(2),r.getObject(3,UUID.class),r.getString(4),r.getBigDecimal(5),r.getString(6)),skus.toArray(String[]::new),tenant,connection,tenant,connection);
   var grouped=new LinkedHashMap<String,List<Display>>();rows.forEach(r->grouped.computeIfAbsent(r.sku(),k->new ArrayList<>()).add(r));
-  return grouped.entrySet().stream().map(e->new LinePresentation(e.getKey(),e.getValue().getFirst().image(),e.getValue().stream().filter(r->r.item()!=null).map(r->new ProductPresentation(r.item(),r.name(),r.quantity())).toList())).toList();
+  return grouped.entrySet().stream().map(e->new LinePresentation(e.getKey(),e.getValue().getFirst().image(),e.getValue().stream().filter(r->r.item()!=null).map(r->new ProductPresentation(r.item(),r.name(),r.quantity(),r.itemCode())).toList())).toList();
  }
  public record Composition(String sku,UUID item,BigDecimal quantity,boolean active){}
  List<Composition> composition(UUID tenant,UUID connection,List<String> skus){

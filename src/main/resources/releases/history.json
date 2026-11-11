@@ -1,5 +1,25 @@
 [
   {
+    "version": "1.14.2",
+    "title": "Consistent tables and faster workspace rendering",
+    "sections": [
+      {
+        "title": "Workspace controls",
+        "items": [
+          "Use consistent table actions, filters, compact icons and store shortcuts.",
+          "Collapse or resize the sidebar and switch stores from saved shortcuts."
+        ]
+      },
+      {
+        "title": "Packing and warehouse review",
+        "items": [
+          "Print the location and package selected in the packing-slip preview.",
+          "Review shipment stock by warehouse location and use marketplace country defaults when editing warehouses."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.1",
     "title": "Audited FBA deduction adjustments",
     "sections": [

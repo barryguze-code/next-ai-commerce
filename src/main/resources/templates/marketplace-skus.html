@@ -8,7 +8,7 @@
   <script defer src="/js/theme.js?v=20260905-1" th:src="@{/js/theme.js(v=${buildVersion})}"></script><script defer src="/js/table-preferences.js?v=20261002-perf1" th:src="@{/js/table-preferences.js(v=${buildVersion})}"></script><script defer src="/js/platform-icons.js?v=1.6.6" th:src="@{/js/platform-icons.js(v=${buildVersion})}"></script><script defer src="/js/marketplace-sku-design.js?v=1.7.1" th:src="@{/js/marketplace-sku-design.js(v=${buildVersion})}"></script><script defer src="/js/table-widget.js?v=1.11.0" th:src="@{/js/table-widget.js(v=${buildVersion})}"></script><script defer src="/js/collaboration.js?v=1.11.8" th:src="@{/js/collaboration.js(v=${buildVersion})}"></script>
 <link rel="stylesheet" href="/css/order-smart-filters.css?v=20260919-22" th:href="@{/css/order-smart-filters.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/marketplace-sku-design.css?v=1.9.0" th:href="@{/css/marketplace-sku-design.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/confirm-dialog.css" th:href="@{/css/confirm-dialog.css(v=${buildVersion})}"><script defer src="/js/confirm-dialog.js?v=1.11.8" th:src="@{/js/confirm-dialog.js(v=${buildVersion})}"></script><script th:if="${shopifySetup == null}" defer src="/js/order-smart-filters.js?v=1.7.1" th:src="@{/js/order-smart-filters.js(v=${buildVersion})}"></script><link rel="stylesheet" href="/css/mapping-widget.css?v=1.9.2" th:href="@{/css/mapping-widget.css(v=${buildVersion})}"><script src="/js/mapping-widget.js?v=1.9.1" th:src="@{/js/mapping-widget.js(v=${buildVersion})}"></script><link rel="stylesheet" href="/css/order-pictures.css?v=20260922-30" th:href="@{/css/order-pictures.css(v=${buildVersion})}">
 <link rel="stylesheet" href="/css/platform-ui.css?v=20261002-5" th:href="@{/css/platform-ui.css(v=${buildVersion})}"><script defer src="/js/platform-ui.js?v=1.8.1" th:src="@{/js/platform-ui.js(v=${buildVersion})}"></script><link rel="stylesheet" href="/css/marketplace-sku-responsive.css?v=20261022-family2" th:href="@{/css/marketplace-sku-responsive.css(v=${buildVersion})}"><script defer src="/js/marketplace-sku-families.js?v=20261021-1" th:src="@{/js/marketplace-sku-families.js(v=${buildVersion})}"></script>
-</head>
+<th:block th:replace="~{fragments/table-first-paint :: head}"></th:block></head>
 <body class="app-page">
 <link rel="stylesheet" href="/css/fba.css?v=20261015-layout" th:href="@{/css/fba.css(v=${buildVersion})}">
 <script defer src="/js/fba-stock.js?v=1" th:src="@{/js/fba-stock.js(v=${buildVersion})}"></script>
@@ -44,28 +44,29 @@
   </section>
 
   <div th:if="${summary != null and skuPage != null}">
-    <section data-table-composition data-table-shortcuts="marketplace-skus" class="data-card sku-card"><button type="button" data-table-command data-command-id="packages" data-open-packages th:if="${canEditCatalog}" data-action-image="/images/platform/table/manage-packages-owner.png" data-action-description="Rename or merge package choices">Packages</button>
+    <section data-table-composition data-table-first-paint data-table-shortcuts="marketplace-skus" class="data-card sku-card table-filter-standard"><button type="button" data-table-command data-command-id="packages" data-open-packages th:if="${canEditCatalog}" data-action-image="/images/platform/table/manage-packages-owner.png" data-action-description="Rename or merge package choices">Shipping Packages</button>
       <div class="card-toolbar sku-toolbar">
-        <div class="sku-sync-heading"><div class="sku-sync-title"><h2>Marketplace listings</h2><span th:if="${listingSync != null}" class="sku-sync-indicator" th:classappend="${listingSync.running()?'syncing':(listingSync.lastCompleted()==null?'not-synced':'')}" role="status" th:text="${listingSync.statusLabel()}" th:title="${listingSync.message()}"></span></div>
-          <div class="sku-sync-status" th:if="${listingSync != null}"><small th:text="${listingSync.lastCheck()}"></small><form method="post" th:action="@{/app/marketplace-skus/sync}">
-            <button type="submit" class="sku-sync-button" th:disabled="${!listingSync.allowed()}" th:title="${listingSync.message()}" th:attr="aria-describedby=${!listingSync.allowed() ? 'sku-sync-reason' : null}"><span aria-hidden="true">↻</span><span th:text="${listingSync.running()?'Syncing…':'Sync now'}">Sync now</span></button>
-          </form><small class="sku-sync-reason" th:classappend="${listingSync.running() ? 'sku-visually-hidden' : ''}" id="sku-sync-reason" th:if="${!listingSync.allowed()}" th:text="${listingSync.message()}"></small></div>
+        <div class="sku-sync-heading table-header-copy"><div class="sku-sync-title"><h2>Marketplace listings</h2><span th:if="${listingSync != null}" class="sku-sync-indicator" th:classappend="${listingSync.running()?'syncing':(listingSync.lastCompleted()==null?'not-synced':'')}" role="status" th:text="${listingSync.statusLabel()}" th:title="${listingSync.message()}"></span></div>
+
         </div>
-        <div class="sku-toolbar-actions table-widget-tools"><form class="sku-search" method="get" action="/app/marketplace-skus">
+
+      <div class="sku-sync-status" th:if="${listingSync != null}"><small th:text="${listingSync.lastCheck()}"></small><form method="post" th:action="@{/app/marketplace-skus/sync}">
+            <button type="submit" class="sku-sync-button" th:disabled="${!listingSync.allowed()}" th:title="${listingSync.message()}" th:attr="aria-describedby=${!listingSync.allowed() ? 'sku-sync-reason' : null}"><span aria-hidden="true">↻</span><span th:text="${listingSync.running()?'Syncing…':'Sync now'}">Sync now</span></button>
+          </form><small class="sku-sync-reason" th:classappend="${listingSync.running() ? 'sku-visually-hidden' : ''}" id="sku-sync-reason" th:if="${!listingSync.allowed()}" th:text="${listingSync.message()}"></small></div></div>
+
+      <div class="sku-toolbar-actions table-standard-toolbar table-widget-tools" data-table-toolbar><form class="sku-search" method="get" action="/app/marketplace-skus">
           <input type="hidden" name="status" th:value="${selectedStatus}">
           <input type="hidden" name="f_condition" th:value="${selectedCondition ?: 'NEW'}"><input th:if="${selectedFulfillment != null and !#strings.isEmpty(selectedFulfillment)}" type="hidden" name="f_channel" th:value="${selectedFulfillment}">
           <input type="hidden" name="sort" th:value="${selectedSort}"><input type="hidden" name="direction" th:value="${sortDirection}">
-          <label class="search-field"><span>⌕</span><input name="q" type="search" th:value="${query}" placeholder="Search SKU, ASIN, or product" aria-label="Search marketplace SKUs"></label>
-          <button class="secondary-button" type="submit">Search</button>
+          <label class="search-field table-standard-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input name="q" type="search" th:value="${query}" placeholder="Search SKU, ASIN, or product" aria-label="Search marketplace SKUs"></label>
+          <button data-table-search-submit class="secondary-button" type="submit">Search</button>
         </form><div class="sku-view-filters" role="group" aria-label="Listing filters">
           <div class="sku-fulfillment-segments" role="group" aria-label="Fulfillment">
             <button type="button" data-sku-channel="" th:attr="aria-pressed=${selectedFulfillment == null or selectedFulfillment == ''}">All</button><button type="button" data-sku-channel="FBA" th:attr="aria-pressed=${selectedFulfillment == 'FBA'}">FBA</button><button type="button" data-sku-channel="FBM" th:attr="aria-pressed=${selectedFulfillment == 'FBM'}">FBM</button>
           </div>
           <div class="sku-condition-preset"><label><select data-standard-choice data-sku-view-filter="f_condition" aria-label="Condition"><option value="ALL" th:selected="${selectedCondition == 'ALL'}">All conditions</option><option th:each="option:${conditionOptions ?: {'NEW':'New'}}" th:value="${option.key}" th:text="${option.value}" th:selected="${option.key == (selectedCondition ?: 'NEW')}"></option></select></label><button type="button" data-sku-clear-condition aria-label="Clear condition filter" th:hidden="${selectedCondition == 'ALL'}">×</button></div>
         </div><div data-column-control="marketplace-skus"></div></div>
-      </div>
-
-      <div class="table-wrap sku-table-wrap" tabindex="0" role="region" aria-label="Marketplace listings">
+<div class="table-wrap sku-table-wrap" tabindex="0" role="region" aria-label="Marketplace listings">
       <nav class="sku-filter-bar" aria-label="Filter marketplace SKUs" aria-describedby="sku-count-scope"><span id="sku-count-scope" class="sku-visually-hidden">Status counts cover all conditions and fulfillment methods, independently of filtered listing totals.</span>
         <a th:classappend="${selectedStatus == 'ALL' ? 'active' : ''}" th:href="@{/app/marketplace-skus(q=${query},status='ALL',sort=${selectedSort},direction=${sortDirection})}">All <b th:text="${summary.total}">0</b></a>
         <a th:classappend="${selectedStatus == 'ACTIVE' ? 'active' : ''}" th:href="@{/app/marketplace-skus(q=${query},status='ACTIVE',sort=${selectedSort},direction=${sortDirection})}">Active <b th:text="${summary.active}">0</b></a>

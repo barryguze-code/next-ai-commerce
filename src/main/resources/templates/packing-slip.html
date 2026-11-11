@@ -8,8 +8,32 @@
 </head>
 <body>
 <main class="packing-workspace" th:attr="data-order-id=${slip.orderId}">
+  <section class="packing-controls packing-product-editor" th:if="${canEditPacking == true and !#lists.isEmpty(slip.editableLines())}" aria-label="Account product details">
+    <h2>Account product details</h2>
+    <form th:each="line:${slip.editableLines()}" class="packing-product-form" method="post" th:action="@{/app/orders/{order}/packing-slip/products/{item}(order=${slip.orderId},item=${line.accountItemId})}" th:attr="data-account-item-id=${line.accountItemId}">
+      <strong th:text="${line.sku+(#strings.isEmpty(line.brand)?(shopifyPacking != true and !#strings.isEmpty(slip.brandName)?' · '+slip.brandName:''):' · '+line.brand)}">Item code · Brand</strong>
+      <label><span>Account description</span><textarea name="description" maxlength="500" required rows="2" th:text="${line.title}"></textarea></label>
+      <div class="packing-product-save"><label><span>Default location</span><select name="locationId">
+        <option value="">Keep current default</option>
+        <option th:each="location:${packingLocations}" th:if="${location.status=='ACTIVE' or location.id==line.defaultLocationId}" th:value="${location.id}" th:attr="data-location-code=${location.code}" th:selected="${location.id==line.defaultLocationId}" th:disabled="${location.status!='ACTIVE'}" th:text="${location.code+' · '+location.name+(location.status=='ACTIVE'?'':' (inactive)')}">Location</option>
+      </select></label><button type="submit" class="primary-button">Save product details</button></div>
+      <p class="packing-product-status" role="status"></p>
+    </form>
+  </section>
+  <section class="packing-preview" aria-label="Label preview and account details">
+  <section class="packing-labels" aria-label="Internal packing slips">
+    <section class="packing-slip" th:each="page:${slip.pages}" aria-label="Internal packing slip">
+      <header><span data-printed-package th:text="${slip.packageName}">Package</span></header>
+      <section class="lines">
+        <article th:each="line:${page}" th:attr="data-account-item-id=${line.accountItemId},data-reserved-location=${line.reservedLocation}">
+          <b class="quantity" th:text="${line.quantity}">1</b>
+          <div><strong th:text="${line.sku+(#strings.isEmpty(line.brand)?(shopifyPacking != true and !#strings.isEmpty(slip.brandName)?' · '+slip.brandName:''):' · '+line.brand)}">SKU</strong><span class="packing-line-description" th:text="${line.title}">Product name</span></div>
+          <small><b th:text="${line.expirationDate == null ? 'No expiry' : #temporals.format(line.expirationDate,'MM/dd/yy')}">09/15/26</b><span class="packing-line-location" th:text="${!line.reservedLocation and #strings.startsWith(line.location,'Default ') ? #strings.substring(line.location,8) : line.location}">MAIN</span></small>
+        </article>
+      </section>
+    </section>
+  </section>
   <section class="packing-controls" aria-label="Packing-slip settings">
-    <nav class="packing-steps" aria-label="Fulfilment steps"><a href="#packing-package" aria-current="page">1 · Packing label</a><a th:href="${slip.sellerCentralUrl}" target="_blank" rel="noopener noreferrer" th:text="${shopifyPacking == true ? '2 · Shopify ↗' : '2 · Seller Central ↗'}">2 · Seller Central ↗</a></nav>
     <aside id="packing-popup-help" class="packing-popup-help" aria-labelledby="popup-help-title" hidden>
       <strong id="popup-help-title" th:text="${shopifyPacking == true ? 'Shopify did not open?' : 'Seller Central didn’t open?'}">Seller Central didn’t open?</strong>
       <p>Your browser blocked the second tab. Your packing label is ready. You can open the order separately now.</p>
@@ -27,7 +51,7 @@
         <a href="https://support.google.com/chrome/answer/95472?co=GENIE.Platform%3DDesktop" target="_blank" rel="noopener noreferrer">Chrome’s official instructions ↗</a>
       </details>
     </aside>
-    <div><span class="eyebrow">Internal fulfilment</span><h1>Packing slip</h1><p th:text="${shopifyPacking == true ? 'Choose the package for this order, then print the internal 2 × 1 packing label.' : 'Choose the package, save the decision for this ASIN and quantity combination, then print the 2 × 1 label.'}"></p><p class="packing-status" th:if="${packingBlockedReason != null}" th:text="${packingBlockedReason}"></p></div>
+    <div><span class="eyebrow">Internal fulfilment</span><h1>Packing slip</h1><p class="packing-status" th:if="${packingBlockedReason != null}" th:text="${packingBlockedReason}"></p></div>
     <div class="packing-package-controls"><label><span>Package</span><select id="packing-package"><option th:each="packageName:${packageNames}" th:value="${packageName}" th:text="${packageName}">Saved package</option><option value="__custom">Write a package name…</option></select></label><button th:if="${canEditPacking == true}" type="button" class="secondary-button" id="rename-package" aria-label="Rename package"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-1 5 5-1L20 8l-4-4L4 16Zm10-10 4 4"/></svg></button>
     <label id="custom-package-field" hidden><span>Package name</span><input id="custom-package" maxlength="120" placeholder="e.g. Cold box · Large"></label>
     <div class="packing-control-actions"><button type="button" class="secondary-button" id="save-package" th:disabled="${canEditPacking != true}">Save package</button><button type="button" class="primary-button" id="print-slip">Print 2 × 1 slip</button></div></div>
@@ -37,32 +61,7 @@
     <a id="veeqo-shortcut" class="seller-central-shortcut" href="https://app.veeqo.com/" target="_blank" rel="noopener noreferrer" title="Open Veeqo for shipping"><img src="https://static.veeqo.com/assets/pathfinder_favicon-130f9544f6fc9243713b38d5e21b736360dfac941b1a9585f0482b1577772fd4.ico" referrerpolicy="no-referrer" alt="" onerror="this.hidden=true">Open in Veeqo <span aria-hidden="true">↗</span></a>
     <th:block th:replace="~{fragments/package-name-editor :: editor}"></th:block>
   </section>
-  <section class="packing-preview" aria-label="Label preview and account details">
-  <section class="packing-labels" aria-label="Internal packing slips">
-    <section class="packing-slip" th:each="page:${slip.pages}" aria-label="Internal packing slip">
-      <header><span data-printed-package th:text="${slip.packageName}">Package</span></header>
-      <section class="lines">
-        <article th:each="line:${page}" th:attr="data-account-item-id=${line.accountItemId},data-reserved-location=${line.reservedLocation}">
-          <b class="quantity" th:text="${line.quantity}">1</b>
-          <div><strong th:text="${line.sku+(#strings.isEmpty(line.brand)?(shopifyPacking != true and !#strings.isEmpty(slip.brandName)?' · '+slip.brandName:''):' · '+line.brand)}">SKU</strong><span class="packing-line-description" th:text="${line.title}">Product name</span></div>
-          <small><b th:text="${line.expirationDate == null ? 'No expiry' : #temporals.format(line.expirationDate,'MM/dd/yy')}">09/15/26</b><span class="packing-line-location" th:text="${!line.reservedLocation and #strings.startsWith(line.location,'Default ') ? #strings.substring(line.location,8) : line.location}">MAIN</span></small>
-        </article>
-      </section>
-    </section>
-  </section>
-  <section class="packing-controls packing-product-editor" th:if="${canEditPacking == true and !#lists.isEmpty(slip.editableLines())}" aria-label="Account product details">
-    <h2>Account product details</h2>
-    <p>Save a description and default location for each mapped product. Reserved stock keeps its actual location; this does not move inventory.</p>
-    <form th:each="line:${slip.editableLines()}" class="packing-product-form" method="post" th:action="@{/app/orders/{order}/packing-slip/products/{item}(order=${slip.orderId},item=${line.accountItemId})}" th:attr="data-account-item-id=${line.accountItemId}">
-      <strong th:text="${line.sku+(#strings.isEmpty(line.brand)?(shopifyPacking != true and !#strings.isEmpty(slip.brandName)?' · '+slip.brandName:''):' · '+line.brand)}">Item code · Brand</strong>
-      <label><span>Account description</span><textarea name="description" maxlength="500" required rows="2" th:text="${line.title}"></textarea></label>
-      <div class="packing-product-save"><label><span>Default location</span><select name="locationId">
-        <option value="">Keep current default</option>
-        <option th:each="location:${packingLocations}" th:if="${location.status=='ACTIVE' or location.id==line.defaultLocationId}" th:value="${location.id}" th:attr="data-location-code=${location.code}" th:selected="${location.id==line.defaultLocationId}" th:disabled="${location.status!='ACTIVE'}" th:text="${location.code+' · '+location.name+(location.status=='ACTIVE'?'':' (inactive)')}">Location</option>
-      </select></label><button type="submit" class="primary-button">Save product details</button></div>
-      <p class="packing-product-status" role="status"></p>
-    </form>
-  </section>
+
   </section>
 </main>
 <input id="packing-slip-csrf" th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">

@@ -43,7 +43,7 @@ class FbaTemplateTest {
     @Test void shipmentPageRendersEmptyAndPopulatedStates()throws Exception{
         var context=context();context.setVariable("query","");context.setVariable("amazonStore",true);
         context.setVariable("shipments",new FbaReadRepository.ShipmentPage(List.of(),0,0,25));
-        assertThat(engine().process("fba-shipments",context)).contains("No FBA shipments imported yet","table-pagination","Ship from");
+        assertThat(engine().process("fba-shipments",context)).contains("No FBA shipments imported yet","table-pagination","Ship from","<h2>FBA shipments</h2>").doesNotContain("Replenishment shipments");
         context.setVariable("shipments",new FbaReadRepository.ShipmentPage(List.of(new FbaReadRepository.Shipment("FBA123","<script>bad</script>","SHIPPED","SCK8",null,null,2,30,6)),1,0,25));
         context.setVariable("depletionStates",Map.of("FBA123",new com.nextaicommerce.platform.fba.FbaWorkspaceRepository.DepletionState(false,false,false,null)));
         assertThat(engine().process("fba-shipments",context)).contains("FBA123","SCK8","Not supplied","&lt;script&gt;").doesNotContain("<script>bad</script>");
@@ -58,6 +58,12 @@ class FbaTemplateTest {
         assertThat(html).contains("data-choice-manager=\"warehouse\"","id=\"warehouse-dialog\"","warehouse-manager.js","form=\"fba-search-form\"","name=\"warehouse\"");
         context.setVariable("canEditCatalog",false);html=engine().process("fba-shipments",context);
         assertThat(html).doesNotContain("data-choice-manager=\"warehouse\"","id=\"warehouse-dialog\"").contains("All warehouses");
+    }
+    @Test void decreasedShipmentOffersStandardEditInsteadOfRepeatDecrease(){
+        var c=context();c.setVariable("query","");c.setVariable("amazonStore",true);c.setVariable("manualDepletionEnabled",true);c.setVariable("canEditCatalog",true);c.setVariable("selectedStatus","");c.setVariable("depletableShipments",Set.of());
+        c.setVariable("shipments",new FbaReadRepository.ShipmentPage(List.of(new FbaReadRepository.Shipment("FBA123","Shipment","SHIPPED","SCK8",null,null,2,30,6)),1,0,25));
+        c.setVariable("depletionStates",Map.of("FBA123",new com.nextaicommerce.platform.fba.FbaWorkspaceRepository.DepletionState(false,true,false,null)));
+        String html=engine().process("fba-shipments",c);assertThat(html).contains(">Decreased</span>","aria-label=\"Review stock decrease\"","data-fba-review-deduction","/images/platform/table/edit.png").doesNotContain("data-fba-deplete ");
     }
     private static SpringTemplateEngine engine(){var resolver=new ClassLoaderTemplateResolver();resolver.setPrefix("templates/");resolver.setSuffix(".html");resolver.setTemplateMode("HTML");var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);return engine;}
     private static WebContext context(){var servlet=new MockServletContext();var context=new WebContext(JakartaServletWebApplication.buildApplication(servlet).buildExchange(new MockHttpServletRequest(servlet),new MockHttpServletResponse()));context.setVariable("fbaSync",new com.nextaicommerce.platform.sync.FbaManualSync.State(false,false,"NOT_STARTED","",null));context.setVariable("fbaConnectionId",UUID.randomUUID());return context;}

@@ -120,6 +120,9 @@ class ReceivingWorkflowDatabaseTest {
         var saved=catalog.saveWarehouse(tenant,id,"Tomball","123 Test Road","Suite 2","Tomball","TX","77375","us",List.of("Receiving Lead","Backup Contact"),List.of("+1 (555) 010-1111","555-010-2222"));
         assertThat(saved.name()).isEqualTo("Tomball");assertThat(saved.countryCode()).isEqualTo("US");assertThat(saved.isDefault()).isTrue();assertThat(saved.contacts()).hasSize(2);
         assertThat(catalog.warehouseDetails(tenant,id)).isEqualTo(saved);
+        assertThatThrownBy(()->catalog.saveWarehouse(tenant,id,"Missing ZIP","","","","","","US",List.of(),List.of())).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("postal code");
+        assertThatThrownBy(()->catalog.saveWarehouse(tenant,id,"Missing country","","","","","77377","",List.of(),List.of())).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("country code");
+
         assertThat(catalog.warehouseDetails(UUID.randomUUID(),id)).isNull();
         assertThatThrownBy(()->catalog.saveWarehouse(tenant,id,"Wrong","","","","","","",List.of("Missing phone"),List.of(""))).isInstanceOf(IllegalArgumentException.class);
         assertThat(catalog.warehouseDetails(tenant,id)).isEqualTo(saved);
@@ -130,7 +133,7 @@ class ReceivingWorkflowDatabaseTest {
     @Test void warehouseRemovalDeletesOnlyUnusedAndPreservesDependentHistory(){
         var catalog=context.getBean(CatalogRepository.class);var f=twelve();
         UUID empty=catalog.addWarehouse(tenant,"Empty");UUID unused=catalog.addLocation(tenant,"EMPTY","Unused",empty);
-        catalog.saveWarehouse(tenant,empty,"Empty","","","","","","",List.of("Test Contact"),List.of("555-0100"));
+        catalog.saveWarehouse(tenant,empty,"Empty","","","","","77377","US",List.of("Test Contact"),List.of("555-0100"));
         assertThat(catalog.warehouseRemovalPreview(tenant,empty).outcome()).isEqualTo("DELETED");
         assertThatThrownBy(()->catalog.removeWarehouse(UUID.randomUUID(),empty,"DELETED")).isInstanceOf(IllegalArgumentException.class);
         assertThat(catalog.removeWarehouse(tenant,empty,"DELETED").locationIds()).containsExactly(unused);

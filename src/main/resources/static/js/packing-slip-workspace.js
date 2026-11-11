@@ -14,12 +14,14 @@
   document.querySelectorAll('.packing-product-form').forEach(form=>{
    const choice=form.elements.locationId,code=choice.selectedOptions?.[0]?.dataset.locationCode;
    locationRows.forEach(row=>{
-    if(row.dataset.accountItemId!==form.dataset.accountItemId||row.dataset.reservedLocation==='true')return;
+    // The selected default controls label presentation only; reservations remain untouched.
+    if(row.dataset.accountItemId!==form.dataset.accountItemId)return;
     row.querySelector('.packing-line-location').textContent=code?code:savedLocations.get(row);
    });
   });
  }
  document.querySelectorAll('.packing-product-form select[name=locationId]').forEach(choice=>choice.addEventListener('change',previewLocations));
+ previewLocations();
  const showPackage=()=>{const edit=document.querySelector('#rename-package');if(edit)edit.disabled=select.value==='__custom';customWrap.hidden=select.value!=='__custom';if(packageName())updatePrinted(packageName());};
  select.addEventListener('change',showPackage);custom.addEventListener('input',showPackage);showPackage();
  function preparePrint(){
@@ -42,7 +44,8 @@
   event.preventDefault();const button=form.querySelector('[type=submit]'),feedback=form.querySelector('.packing-product-status');if(button.disabled)return;
   const data=new FormData(form),headers={Accept:'application/json'};if(csrf)headers[csrf.dataset.header||'X-CSRF-TOKEN']=csrf.value;button.disabled=true;feedback.textContent='Saving account details…';
   try{const response=await fetch(form.action,{method:'POST',headers,body:data});if(!response.headers.get('content-type')?.includes('application/json'))throw Error('Please sign in again. Your edits are unchanged.');const result=await response.json();if(!response.ok)throw Error(result.error||'The account details could not be saved.');
-   for(const row of document.querySelectorAll('.packing-slip article'))if(row.dataset.accountItemId===result.itemId){row.querySelector('.packing-line-description').textContent=result.description;if(row.dataset.reservedLocation!=='true'){const location=result.locationCode||'—';savedLocations.set(row,location);row.querySelector('.packing-line-location').textContent=location;}}
+   for(const row of document.querySelectorAll('.packing-slip article'))if(row.dataset.accountItemId===result.itemId){row.querySelector('.packing-line-description').textContent=result.description;const location=result.locationCode||savedLocations.get(row)||'—';savedLocations.set(row,location);row.querySelector('.packing-line-location').textContent=location;}
+   previewLocations();
    const changed=form.elements.description.value!==data.get('description')||form.elements.locationId.value!==data.get('locationId');feedback.textContent=changed?'Saved. Your newer edits still need Save.':'Account details saved. Existing stock and reserved locations are unchanged.';
   }catch(error){feedback.textContent=error.name==='TypeError'?'Could not reach the server. Your edits are unchanged; try again.':error.message;}finally{button.disabled=false;}
  }));

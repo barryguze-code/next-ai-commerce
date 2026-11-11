@@ -254,6 +254,12 @@ public class CatalogRepository {
         return new WarehouseRemoval(outcome,locations);
     }
 
+    @Transactional(readOnly=true)
+    public String warehouseCountryDefault(UUID tenantId,UUID connectionId){
+        if(connectionId==null)return "";
+        setTenant(tenantId);
+        return jdbc.query("SELECT d.country_code FROM marketplace_connections c JOIN marketplace_definitions d ON d.channel=c.channel AND d.marketplace_identifier=c.marketplace_identifier WHERE c.tenant_id=? AND c.id=? AND c.status<>'DISABLED'",rs->rs.next()?java.util.Objects.toString(rs.getString(1),""):"",tenantId,connectionId);
+    }
     public record WarehouseContact(String fullName,String phone) {}
     public record WarehouseDetails(UUID id,String name,boolean isDefault,String addressLine1,String addressLine2,
             String city,String stateOrProvince,String postalCode,String countryCode,List<WarehouseContact> contacts,String status) {}
@@ -271,7 +277,8 @@ public class CatalogRepository {
         setTenant(tenantId);lockWarehouseIdentity(tenantId);
         String clean=warehouseText(name,160,"Warehouse nickname");if(clean.isEmpty())throw new IllegalArgumentException("Enter a warehouse nickname.");
         line1=warehouseText(line1,240,"Address");line2=warehouseText(line2,240,"Address line 2");city=warehouseText(city,120,"City");state=warehouseText(state,80,"State / province");postal=warehouseText(postal,32,"Postal code");country=warehouseText(country,2,"Country code").toUpperCase(Locale.ROOT);
-        if(!country.isEmpty()&&!country.matches("[A-Z]{2}"))throw new IllegalArgumentException("Use a two-letter country code, such as US.");
+        if(postal.isEmpty())throw new IllegalArgumentException("Enter a postal code.");
+        if(!country.matches("[A-Z]{2}"))throw new IllegalArgumentException("Use a two-letter country code, such as US.");
         names=names==null?List.of():names;phones=phones==null?List.of():phones;
         if(names.size()!=phones.size()||names.size()>20)throw new IllegalArgumentException("Add up to 20 complete contacts.");
         var contacts=new java.util.ArrayList<WarehouseContact>();

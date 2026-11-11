@@ -146,6 +146,38 @@ class FbaReadDatabaseTest {
         jdbc.update("UPDATE inventory_ledger_entries SET unit_cost=3 WHERE id=?",f.layer);
         assertThatThrownBy(()->tx.execute(st->service.confirm(tenant,store,f.email,UUID.randomUUID(),p.revision(),p.plans().stream().map(x->new FbaBatchDeduction.Choice(x.shipment().shipment(),x.allocations())).toList()))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("changed");
     }
+    @Test void splitSourcesCommitExactLineageAndReplayWithoutDuplicateLedger(){
+        var f=tx.execute(st->depletionFixture());UUID second=UUID.randomUUID(),layer2=UUID.randomUUID();
+        jdbc.update("INSERT INTO warehouse_locations(id,tenant_id,warehouse_id,code,name) VALUES (?,?,?,'P3','Pallet 3')",second,tenant,f.warehouse);
+        jdbc.update("UPDATE inventory_ledger_entries SET quantity=25 WHERE id=?",f.layer);
+        jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,entry_type,quantity,location_id,expiration_date,unit_cost,currency,source_type,occurred_at,idempotency_key) VALUES (?,?,?,'RECEIVED',20,?,current_date+40,3,'USD','FIXTURE',now(),?)",layer2,tenant,f.item,second,layer2.toString());
+        jdbc.update("UPDATE marketplace_sku_mapping_components SET quantity=1 WHERE tenant_id=?",tenant);
+        jdbc.update("UPDATE amazon_fba_shipment_items SET quantity_shipped=40 WHERE tenant_id=?",tenant);
+        jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=jsonb_set(raw_payload,'{itemEvidence,0,QuantityShipped}','40') WHERE tenant_id=?",tenant);
+        var service=batch(f);var review=tx.execute(st->service.preview(tenant,store,List.of("FBA-TEST")));assertThat(review.blockers()).isEmpty();
+        var allocations=List.of(new FbaDepletionRepository.Allocation(f.layer,new java.math.BigDecimal("25")),new FbaDepletionRepository.Allocation(layer2,new java.math.BigDecimal("15")));var choices=List.of(new FbaBatchDeduction.Choice("FBA-TEST",allocations));UUID request=UUID.randomUUID();
+        var result=tx.execute(st->service.confirm(tenant,store,f.email,request,review.revision(),choices));var replay=tx.execute(st->service.confirm(tenant,store,f.email,request,review.revision(),choices));assertThat(replay).isEqualTo(result);
+        var rows=jdbc.queryForList("SELECT a.receipt_layer_id,a.location_id,a.quantity,a.unit_cost,a.expiration_date,e.quantity debit,e.source_id FROM fba_shipment_depletion_allocations a JOIN inventory_ledger_entries e ON e.id=a.ledger_entry_id WHERE a.tenant_id=? ORDER BY a.quantity DESC",tenant);
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).get("receipt_layer_id")).isEqualTo(f.layer);assertThat(rows.get(0).get("location_id")).isEqualTo(f.location);
+        assertThat((java.math.BigDecimal)rows.get(0).get("quantity")).isEqualByComparingTo("25");assertThat((java.math.BigDecimal)rows.get(0).get("debit")).isEqualByComparingTo("-25");assertThat((java.math.BigDecimal)rows.get(0).get("unit_cost")).isEqualByComparingTo("2");
+        assertThat(rows.get(1).get("receipt_layer_id")).isEqualTo(layer2);assertThat(rows.get(1).get("location_id")).isEqualTo(second);
+        assertThat((java.math.BigDecimal)rows.get(1).get("quantity")).isEqualByComparingTo("15");assertThat((java.math.BigDecimal)rows.get(1).get("debit")).isEqualByComparingTo("-15");assertThat((java.math.BigDecimal)rows.get(1).get("unit_cost")).isEqualByComparingTo("3");
+        assertThat(rows).allSatisfy(r->{assertThat(r.get("source_id")).isEqualTo(result.getFirst());assertThat(r.get("expiration_date")).isEqualTo(jdbc.queryForObject("SELECT expiration_date FROM inventory_ledger_entries WHERE id=?",java.sql.Date.class,r.get("receipt_layer_id")));});
+        assertThat(jdbc.queryForObject("SELECT quantity FROM inventory_ledger_entries WHERE id=?",java.math.BigDecimal.class,f.layer)).isEqualByComparingTo("25");assertThat(jdbc.queryForObject("SELECT quantity FROM inventory_ledger_entries WHERE id=?",java.math.BigDecimal.class,layer2)).isEqualByComparingTo("20");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletion_allocations WHERE tenant_id=? AND currency='USD'",Integer.class,tenant)).isEqualTo(2);
+
+        assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=?",java.math.BigDecimal.class,tenant)).isEqualByComparingTo("5");
+    }
+    @Test void batchPermissionAndTenantDenialNeverWriteStock(){
+        var f=tx.execute(st->depletionFixture());var access=mock(com.nextaicommerce.platform.web.MemberAccessService.class);var service=new FbaBatchDeduction(f.operations,jdbc,access);var review=tx.execute(st->service.preview(tenant,store,List.of("FBA-TEST")));var choices=review.plans().stream().map(p->new FbaBatchDeduction.Choice(p.shipment().shipment(),p.allocations())).toList();
+        when(access.current(tenant,f.email)).thenReturn(new com.nextaicommerce.platform.web.MemberAccessService.Access("VIEWER",false,Set.of()));
+        assertThatThrownBy(()->tx.execute(st->service.confirm(tenant,store,f.email,UUID.randomUUID(),review.revision(),choices))).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        when(access.current(tenant,f.email)).thenReturn(new com.nextaicommerce.platform.web.MemberAccessService.Access("OPERATOR",true,Set.of(UUID.randomUUID())));
+        assertThatThrownBy(()->tx.execute(st->service.confirm(tenant,store,f.email,UUID.randomUUID(),review.revision(),choices))).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThatThrownBy(()->tx.execute(st->service.preview(other,store,List.of("FBA-TEST")))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM fba_shipment_depletions WHERE tenant_id=?",Integer.class,tenant)).isZero();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=?",java.math.BigDecimal.class,tenant)).isEqualByComparingTo("10");
+    }
     @Test void legacyCompletedShipmentStillShowsItsImportedLinesForManualReview(){tx.executeWithoutResult(st->{
         var f=depletionFixture();jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=(raw_payload-'itemEvidence'-'itemEvidenceVersion')||jsonb_build_object('itemsCheckedAt',now()::text) WHERE tenant_id=?",tenant);
         assertThat(repository.items(tenant,store,"FBA-TEST","",0).rows()).hasSize(1);
@@ -368,7 +400,7 @@ class FbaReadDatabaseTest {
     UUID tenant,other,store;FbaReadRepository repository;
     @BeforeAll static void setup()throws Exception {
         schema="fba_test_"+UUID.randomUUID().toString().replace("-","");String url,password=null;
-        if(Boolean.getBoolean("localTestDatabase")){url="jdbc:postgresql://127.0.0.1:55432/next_ai_commerce_test";password=java.nio.file.Files.readString(java.nio.file.Path.of(".local/database-password")).trim();}
+        if(Boolean.getBoolean("localTestDatabase")){url="jdbc:postgresql://127.0.0.1:55432/next_ai_commerce_test";password=java.nio.file.Files.readString(java.nio.file.Path.of(System.getProperty("testDatabasePasswordFile",".local/database-password"))).trim();}
         else{schema="public"; // This branch owns a disposable cluster; match production function lookup.
         postgres=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();url=postgres.getJdbcUrl("postgres","postgres");}
         var source=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",password);

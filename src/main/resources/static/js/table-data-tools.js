@@ -67,23 +67,27 @@ function composeActionShortcuts(card,setup,cluster,details,close){
  const label=c=>c.querySelector('.table-action-label strong')?.textContent.trim()||c.textContent.trim();
  const usable=c=>c.isConnected&&!c.matches(':disabled,[aria-disabled="true"]')&&!c.closest('[hidden],fieldset[disabled]')&&(!c.matches('a')||c.hasAttribute('href'));
  const persist=()=>{try{localStorage.setItem(key,JSON.stringify(selected));}catch{}};
- const add=id=>{if(!commands.has(id)||selected.includes(id))return;selected.push(id);persist();render();live.textContent='Shortcut added: '+label(commands.get(id));};
+ const add=id=>{if(!commands.has(id)||!usable(commands.get(id))||selected.includes(id))return;selected.push(id);persist();render();live.textContent='Shortcut added: '+label(commands.get(id));};
  let dragging='';
  function render(){
   bar.replaceChildren();for(const id of selected){const original=commands.get(id),wrap=document.createElement('div');wrap.className='table-shortcut-item';
    const invoke=document.createElement('button');invoke.type='button';invoke.className='table-action-shortcut';invoke.dataset.shortcutId=id;invoke.setAttribute('aria-label',label(original));invoke.setAttribute('data-tooltip',label(original));invoke.disabled=!usable(original);
    const image=original.querySelector('.table-action-icon img');if(image)invoke.append(image.cloneNode(true));else invoke.textContent=label(original);
    invoke.addEventListener('click',()=>{if(!usable(original))return;close(false);original.click();});
-   const remove=document.createElement('button');remove.type='button';remove.className='table-shortcut-remove';remove.textContent='×';remove.setAttribute('aria-label','Remove '+label(original)+' shortcut');remove.onclick=()=>{selected=selected.filter(x=>x!==id);persist();render();details.querySelector('summary').focus();};wrap.append(invoke,remove);bar.append(wrap);
+   const remove=document.createElement('button');remove.type='button';remove.className='table-shortcut-remove';remove.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';remove.setAttribute('aria-label','Remove '+label(original)+' shortcut');remove.onclick=()=>{selected=selected.filter(x=>x!==id);persist();render();details.querySelector('summary').focus();};wrap.append(invoke,remove);bar.append(wrap);
   }
-  {const target=document.createElement('button');target.type='button';target.className='table-shortcut-target';target.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';target.setAttribute('aria-label','Add shortcut');target.setAttribute('data-tooltip','Add shortcut');target.setAttribute('aria-controls','table-actions-'+table);target.setAttribute('aria-expanded',String(details.open));const available=[...commands].some(([id,c])=>!selected.includes(id)&&usable(c));target.disabled=!available;if(!available){target.setAttribute('aria-label','All available actions are added');target.setAttribute('data-tooltip','All available actions are added');}target.onclick=()=>{cluster.dataset.shortcutEntry='true';const alreadyOpen=details.open;details.open=true;if(alreadyOpen)setup.querySelector('.table-shortcut-add:not(:disabled)')?.focus();};
+  {const target=document.createElement('button');target.type='button';target.className='table-shortcut-target';target.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';target.setAttribute('aria-label','Add shortcuts menu');target.setAttribute('data-tooltip','Menu');target.setAttribute('aria-controls','table-actions-'+table);target.setAttribute('aria-expanded',String(details.open));const available=[...commands].some(([id,c])=>!selected.includes(id)&&usable(c));target.hidden=!available;target.onclick=()=>{cluster.dataset.shortcutEntry='true';details.classList.add('is-shortcut-add');const alreadyOpen=details.open;details.open=true;if(alreadyOpen)[...commands].find(([id,c])=>!selected.includes(id)&&usable(c))?.[1].focus();};
    target.ondragover=event=>{if(dragging&&commands.has(dragging)){event.preventDefault();event.dataTransfer.dropEffect='copy';target.classList.add('drag-over');}};target.ondragleave=()=>target.classList.remove('drag-over');target.ondrop=event=>{event.preventDefault();event.stopPropagation();if(dragging)add(dragging);dragging='';};bar.prepend(target);
   }
-  setup.querySelectorAll('.table-shortcut-add').forEach(b=>{b.disabled=selected.includes(b.dataset.shortcutAdd);b.setAttribute('aria-label',(b.disabled?'Shortcut added: ':'Add shortcut: ')+label(commands.get(b.dataset.shortcutAdd)));});
+  for(const [id,c] of commands)c.closest('.table-shortcut-command')?.classList.toggle('is-pinned',selected.includes(id));
+  setup.querySelectorAll('.table-shortcut-add').forEach(b=>{b.disabled=selected.includes(b.dataset.shortcutAdd)||!usable(commands.get(b.dataset.shortcutAdd));b.setAttribute('aria-label',(selected.includes(b.dataset.shortcutAdd)?'Shortcut added: ':'Add shortcut: ')+label(commands.get(b.dataset.shortcutAdd)));});
  }
  for(const [id,control] of commands){const row=document.createElement('div');row.className='table-shortcut-command';control.before(row);row.append(control);control.draggable=true;control.addEventListener('dragstart',event=>{dragging=id;event.dataTransfer.setData('text/plain',id);event.dataTransfer.effectAllowed='copy';});control.addEventListener('dragend',()=>{dragging='';bar.querySelector('.drag-over')?.classList.remove('drag-over');});
   const addButton=document.createElement('button');addButton.type='button';addButton.className='table-shortcut-add';addButton.dataset.shortcutAdd=id;addButton.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';addButton.setAttribute('data-shortcut-control','true');addButton.setAttribute('data-tooltip','Add shortcut');addButton.onclick=event=>{event.stopPropagation();add(id);};row.append(addButton);
  }
+ // Capture add-mode activation before an original command's own handlers or delegated actions.
+ setup.addEventListener('click',event=>{if(cluster.dataset.shortcutEntry!=='true')return;const row=event.target.closest('.table-shortcut-command');if(!row&&!event.target.closest('button,a,summary'))return;event.preventDefault();event.stopImmediatePropagation();const control=row?.querySelector('[data-command-id]');if(control)add(control.dataset.commandId);},true);
+ details.querySelector('summary').addEventListener('click',()=>{delete cluster.dataset.shortcutEntry;details.classList.remove('is-shortcut-add');});
  details.addEventListener('toggle',render);
  // Observe originals, never shortcut nodes: permission/busy/count changes remain authoritative.
  for(const c of controls)new MutationObserver(render).observe(c,{attributes:true,childList:true,subtree:true,characterData:true});
@@ -106,7 +110,7 @@ function composeTable(card,toolbar,host,search){
  card.querySelectorAll('[data-table-command]').forEach(node=>{if(!node.parentElement.closest('[data-table-command],.table-command-menu'))setup.append(node)});
  const bulk=document.createElement('div');bulk.className='table-command-group';bulk.setAttribute('role','group');bulk.setAttribute('aria-label','Selected records');
  card.querySelectorAll('[data-table-command-group="bulk"]').forEach(node=>bulk.append(node));
- const heading=document.createElement('header');heading.className='table-action-heading';const copy=document.createElement('div');const title=document.createElement('strong');title.textContent='Actions';copy.append(title);const cue=document.createElement('small');cue.textContent='Choose an action';copy.append(cue);const dismiss=document.createElement('button');dismiss.type='button';dismiss.textContent='×';dismiss.setAttribute('aria-label','Close actions');dismiss.onclick=()=>close(true);heading.append(copy,dismiss);panel.append(heading);
+ const heading=document.createElement('header');heading.className='table-action-heading';const copy=document.createElement('div');const title=document.createElement('strong');title.textContent='Actions';copy.append(title);const dismiss=document.createElement('button');dismiss.type='button';dismiss.textContent='×';dismiss.setAttribute('aria-label','Close actions');dismiss.onclick=()=>close(true);heading.append(copy,dismiss);panel.append(heading);
  if(setup.children.length)panel.append(setup);if(bulk.children.length)panel.append(bulk);
  presentTableCommands(setup);presentTableCommands(bulk);
 
@@ -120,11 +124,11 @@ function composeTable(card,toolbar,host,search){
  if(commands)commands.querySelectorAll(':scope>form').forEach(form=>cluster.append(form));
  cluster.append(details);(commands||host).append(cluster);
  const position=()=>{const box=trigger.getBoundingClientRect(),top=Math.max(12,Math.min(box.bottom+6,innerHeight-Math.min(panel.scrollHeight,innerHeight-24)-12));panel.style.maxHeight=Math.max(0,innerHeight-top-12)+'px';panel.style.left=Math.max(12,Math.min(box.right-panel.offsetWidth,innerWidth-panel.offsetWidth-12))+'px';panel.style.top=top+'px'};
- const close=focus=>{const shortcut=cluster.dataset.shortcutEntry==='true';delete cluster.dataset.shortcutEntry;details.open=false;if(panel.matches(':popover-open'))panel.hidePopover();if(focus)cluster.dataset.restoreCommandFocus=shortcut?'shortcut':'actions'};if(card.dataset.tableShortcuts)panel.id='table-actions-'+card.dataset.tableShortcuts;
+ const close=focus=>{const shortcut=cluster.dataset.shortcutEntry==='true';delete cluster.dataset.shortcutEntry;details.classList.remove('is-shortcut-add');details.open=false;if(panel.matches(':popover-open'))panel.hidePopover();if(focus)cluster.dataset.restoreCommandFocus=shortcut?'shortcut':'actions'};if(card.dataset.tableShortcuts)panel.id='table-actions-'+card.dataset.tableShortcuts;
  composeActionShortcuts(card,setup,cluster,details,close);
- panel.addEventListener('toggle',()=>{if(details.open){position();if(cluster.dataset.shortcutEntry==='true')setup.querySelector('.table-shortcut-add:not(:disabled)')?.focus()}},true);
+ panel.addEventListener('toggle',()=>{if(details.open){position();if(cluster.dataset.shortcutEntry==='true')setup.querySelector('.table-shortcut-command:not(.is-pinned) [data-command-id]:not(:disabled)')?.focus()}},true);
  const panelResize=new ResizeObserver(()=>{if(details.open)position()});panelResize.observe(panel);
- details.addEventListener('toggle',()=>{if(!details.open){if(panel.matches(':popover-open'))panel.hidePopover();const restore=cluster.dataset.restoreCommandFocus;delete cluster.dataset.restoreCommandFocus;if(restore)(restore==='shortcut'?cluster.querySelector('.table-shortcut-target'):trigger)?.focus();return}panel.showPopover();position()});
+ details.addEventListener('toggle',()=>{if(!details.open){if(panel.matches(':popover-open'))panel.hidePopover();const restore=cluster.dataset.restoreCommandFocus;delete cluster.dataset.restoreCommandFocus;if(restore){const target=cluster.querySelector('.table-shortcut-target');(restore==='shortcut'&&target&&!target.hidden?target:trigger)?.focus();}return}panel.showPopover();position()});
  document.addEventListener('pointerdown',event=>{if(details.open&&!details.contains(event.target)&&!cluster.contains(event.target)&&!event.target.closest('.table-action-shortcuts'))close(false)});
  document.addEventListener('keydown',event=>{if(details.open&&event.key==='Escape'){event.preventDefault();event.stopPropagation();close(true)}});
  panel.addEventListener('click',event=>{if(!event.target.closest('[data-shortcut-control]')&&event.target.closest('button:not([disabled]),a[href]'))close(false)});
@@ -293,6 +297,8 @@ function init(root){
   if(!host)return;
   root.dataset.dataToolsReady='true';
   const card=root.closest('.data-card,.receive-lines,.desk-card')||root.parentElement;
+  card.classList.add('table-filter-standard');
+  window.NextAiTableFirstPaint?.capture(card);
   let serverPager=card.querySelector('.table-pagination');
   if(root.dataset.tableWidget==='receiving-lines'){serverPager?.remove();serverPager=null;root.querySelectorAll('tbody tr').forEach(row=>row.hidden=false)}
   const isServer=!!serverPager&&(serverPager.dataset.page!==undefined||!!serverPager.querySelector('a[href],form[data-page-jump]'));
@@ -307,7 +313,7 @@ function init(root){
   const saved=states.get(root.dataset.tableWidget)||{page:1,size:25,query:'',filters:{}};
   saved.size=preferredSize;
   states.set(root.dataset.tableWidget,saved);
-  const toolbar=document.createElement('div');toolbar.className='table-standard-toolbar';
+  const toolbar=card.querySelector(':scope > [data-table-toolbar]')||document.createElement('div');toolbar.className='table-standard-toolbar';
   const container=root.closest('.table-wrap,.receive-table-wrap')||root;
   container.before(toolbar);toolbar.append(host);host.classList.add('table-widget-tools');
   let search=card.querySelector('input[type="search"]:not(.table-column-search input)');
@@ -332,7 +338,7 @@ function init(root){
   searchLabel.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>');
   toolbar.classList.add('table-widget-tools');
   const filters=document.createElement('details');filters.className='table-filter-control';
-  const summary=document.createElement('summary');summary.className='secondary-button compact-button';summary.textContent='Filters';filters.append(summary);
+  const summary=document.createElement('summary');summary.className='secondary-button compact-button';summary.setAttribute('aria-label','Filters');summary.setAttribute('aria-expanded','false');summary.dataset.tooltip='Filters';summary.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-7 8v7l-4 2v-9L3 4"/></svg>';filters.append(summary);
   const panel=document.createElement('div');panel.className='table-filter-panel';filters.append(panel);
   const hint=document.createElement('p');hint.textContent=isServer?'Filter rows on this page. Search above searches all results.':'Match values in one or more columns.';panel.append(hint);
   const filterCols=cols.filter(col=>!['action','actions','record-context','selection','select'].includes(col.id));
@@ -349,20 +355,19 @@ function init(root){
     }panel.append(label);
   });
   const clear=document.createElement('button');clear.type='button';clear.className='secondary-button compact-button';clear.textContent='Clear column filters';
-  clear.onclick=()=>{saved.filters={};panel.querySelectorAll('input').forEach(input=>input.value='');saved.page=1;render()};panel.append(clear);host.prepend(filters);
-  const clearAll=document.createElement('button');clearAll.type='button';clearAll.className='table-clear-active-filters';clearAll.hidden=true;clearAll.setAttribute('aria-label','Clear all table filters');clearAll.title='Clear all filters';clearAll.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-7 8v7l-4 2v-9L3 4m13 12 5 5m0-5-5 5"/></svg>';host.prepend(clearAll);
-  const hasDomainFilter=()=>{const url=new URL(location.href);return !!url.searchParams.get('q')||!!(url.searchParams.get('status')&&url.searchParams.get('status')!=='ALL')};
-  function updateActiveFilterState(){const columnCount=Object.values(saved.filters).filter(Boolean).length;const searchActive=!!search.value.trim();const active=columnCount>0||searchActive||hasDomainFilter();const total=columnCount+(hasDomainFilter()?1:0);toolbar.classList.toggle('table-has-active-filters',active);filters.classList.toggle('has-active-filters',active);summary.textContent='Filters'+(total?' · '+total:'');clearAll.hidden=false;clearAll.disabled=!active;}
-  clearAll.onclick=()=>{saved.filters={};panel.querySelectorAll('input').forEach(input=>input.value='');saved.page=1;if(isServer||hasDomainFilter()){const url=new URL(location.href);url.searchParams.delete('q');url.searchParams.delete('status');url.searchParams.delete('page');location.assign(url);return;}search.value='';saved.query='';search.dispatchEvent(new Event('input',{bubbles:true}));render()};
-  filters.addEventListener('toggle',()=>{if(filters.open){const box=summary.getBoundingClientRect();panel.style.top=Math.min(box.bottom+8,Math.max(12,innerHeight-360))+'px';panel.style.left=Math.max(12,Math.min(box.left,innerWidth-332))+'px'}});
+  clear.onclick=()=>{saved.filters={};panel.querySelectorAll('input').forEach(input=>input.value='');saved.page=1;render()};panel.append(clear);const filterControl=document.createElement('div');filterControl.className='table-filter-icon-control table-generic-filter-control';filterControl.append(filters);host.prepend(filterControl);
+  const clearAll=document.createElement('button');clearAll.type='button';clearAll.className='table-clear-active-filters table-filter-reset';clearAll.hidden=true;clearAll.setAttribute('aria-label','Clear table filters');clearAll.dataset.tooltip='Clear filters';clearAll.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';filterControl.append(clearAll);
+  function updateActiveFilterState(){const active=Object.values(saved.filters).some(value=>typeof value==='object'?!!(value.min||value.max):!!value);toolbar.classList.toggle('table-has-active-filters',active);filters.classList.toggle('has-active-filters',active);summary.setAttribute('aria-label',active?'Filters active':'Filters');summary.dataset.tooltip=active?'Filters active':'Filters';clearAll.hidden=!active;clearAll.disabled=!active;}
+  clearAll.onclick=event=>{event.stopPropagation();event.preventDefault();clear.click()};
+  filters.addEventListener('toggle',()=>{summary.setAttribute('aria-expanded',String(filters.open));if(filters.open){const box=summary.getBoundingClientRect();panel.style.top=Math.min(box.bottom+8,Math.max(12,innerHeight-360))+'px';panel.style.left=Math.max(12,Math.min(box.left,innerWidth-332))+'px'}});
   const close=event=>{if(!root.isConnected){document.removeEventListener('pointerdown',close);return}if(!filters.contains(event.target))filters.open=false};document.addEventListener('pointerdown',close);
   filters.addEventListener('keydown',event=>{if(event.key==='Escape'){filters.open=false;summary.focus()}});
   if(document.body.classList.contains('platform-standard-tables')){
     const drawer=document.createElement('dialog');drawer.className='standard-filter-drawer';drawer.setAttribute('aria-label','Table filters');
     const head=document.createElement('header');head.innerHTML='<h2>Filters</h2><button type="button" aria-label="Close filters">×</button>';drawer.append(head,panel);
     const foot=document.createElement('footer');const done=document.createElement('button');done.type='button';done.className='primary-button';done.textContent='Done';foot.append(clear,done);drawer.append(foot);document.body.append(drawer);
-    const closeDrawer=()=>{drawer.close();summary.focus()};head.querySelector('button').onclick=closeDrawer;done.onclick=closeDrawer;
-    summary.onclick=event=>{event.preventDefault();filters.open=false;drawer.showModal()};
+    const closeDrawer=()=>{drawer.close();summary.setAttribute('aria-expanded','false');summary.focus()};head.querySelector('button').onclick=closeDrawer;done.onclick=closeDrawer;
+    summary.onclick=event=>{event.preventDefault();filters.open=false;drawer.showModal();summary.setAttribute('aria-expanded','true')};
     drawer.addEventListener('cancel',event=>{event.preventDefault();closeDrawer()});
   }
   const exportButton=document.createElement('button');exportButton.type='button';exportButton.className='secondary-button compact-button table-export';
@@ -508,6 +513,8 @@ function init(root){
   const sourceQuery=new URL(location.href).searchParams.get('q');
   if(!isServer&&sourceQuery){saved.query=sourceQuery;search.value=sourceQuery;search.dispatchEvent(new Event('input',{bubbles:true}));}
   render();
+  card.setAttribute('data-table-composed','true');
+  window.NextAiTableFirstPaint?.complete(card);
 }
 function refresh(){document.querySelectorAll('[data-table-widget-ready]').forEach(init)}
 window.NextAiTableDataTools={bindServerSearch,refresh,csvCell,exportColumns,exportValues,resetFilters:key=>{const saved=states.get(key);if(saved){saved.filters={};saved.query='';saved.page=1;}}};

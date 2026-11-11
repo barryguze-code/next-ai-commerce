@@ -78,3 +78,5 @@ html[data-theme=dark] .huddle-people-tabs button[aria-pressed=true]{background:#
 .huddle-people-panel .huddle-start-chat{text-align:center;background:var(--blue,#2e6be6);color:#fff}.huddle-start-chat:disabled{opacity:.55;cursor:default}
 
 .floating-huddle .huddle-mention-options .huddle-directory-person{display:flex;align-items:center;justify-content:space-between;gap:8px;font:inherit;font-size:13px;border-radius:8px}
+
+.huddle-people-footer{display:flex;flex-wrap:wrap;gap:8px}.huddle-people-footer>button{flex:1 1 auto;min-height:40px;margin-top:0;white-space:nowrap}.huddle-people-footer .huddle-start-chat{width:auto}.huddle-people-footer .huddle-create-store-task{background:var(--button-secondary-bg,#edf4ff);color:var(--blue,#2e6be6);border:1px solid var(--button-secondary-border,#c7d9ff);text-align:center}

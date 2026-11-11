@@ -329,7 +329,7 @@ body.app-page [data-table-composition].shopify-listings .sku-filter-bar>.shopify
 .table-command-panel .table-action-icon{background:transparent;flex:0 0 30px;width:30px;height:30px}
 .table-command-panel .table-action-icon img{width:30px;height:30px;object-fit:contain}
 .table-command-panel .table-action-heading>button{width:auto}
-.table-command-panel .table-action-entry strong{font:inherit;font-weight:650}
+.table-command-panel .table-action-entry strong{font-size:.6875rem;line-height:1.35;font-weight:650}
 [data-table-composition] .table-column-control>summary:has(.table-columns-art){display:grid;place-items:center;width:40px;height:40px;padding:4px}
 .table-columns-art{width:20px;height:20px;flex:none}
 [data-table-composition]>.table-status-strip{display:flex;align-items:center;gap:10px;background:#f5f7fb;border-bottom:1px solid var(--line);padding:10px 16px;margin:0;min-width:0}
@@ -401,3 +401,76 @@ html body [data-table-composition] .table-shortcut-target,html body [data-table-
    and viewports with insufficient room retain natural page scrolling. */
 html body .data-card .table-data-scroll{max-height:var(--table-records-height,none);overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable}
 @media(max-width:760px){html body .data-card .table-data-scroll{max-height:none;overflow-y:visible;scrollbar-gutter:auto}}
+
+/* Shared shortcut add mode retains the accepted row action menu and original handlers. */
+html body [data-table-composition] .table-command-menu.is-shortcut-add .table-shortcut-add{display:none!important}
+html body [data-table-composition] .table-shortcut-target[hidden]{display:none!important}
+html body [data-table-composition] .table-shortcut-remove{display:grid!important;place-items:center;width:28px;height:28px;min-width:28px;min-height:28px;padding:8px!important;border:0!important;background:transparent!important;border-radius:50%!important;box-sizing:border-box}
+.table-shortcut-remove::before{content:"";position:absolute;width:18px;height:18px;border:1px solid var(--line);border-radius:50%;background:var(--white);box-sizing:border-box}
+.table-shortcut-remove svg{position:relative;display:block;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.table-command-menu.is-shortcut-add .table-shortcut-command{cursor:pointer}
+.table-command-menu.is-shortcut-add .table-shortcut-command.is-pinned{opacity:.45;cursor:default}
+/* Shortcut mode offers only existing allowlisted commands; bulk execution stays in Actions. */
+.table-command-menu.is-shortcut-add .table-command-group[aria-label="Selected records"],
+.table-command-menu.is-shortcut-add .table-command-group .table-action-entry:not([data-command-id]){display:none!important}
+
+/* FBA settings shortcut uses the adjacent shared Actions frame. */
+html body [data-table-shortcuts="available-inventory"] .table-action-shortcut,
+html body [data-table-composition] .table-action-shortcut[data-shortcut-id="depletion-settings"]{display:inline-flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box;width:40px!important;min-width:40px!important;height:40px!important;min-height:40px!important;padding:0!important;border:1px solid #cbd8e8;border-radius:8px;background:#f4f8fd;line-height:1!important}
+html body [data-table-shortcuts="available-inventory"] .table-action-shortcut>img,
+html body [data-table-composition] .table-action-shortcut[data-shortcut-id="depletion-settings"]>img{display:block!important;width:32px!important;height:32px!important;margin:0!important;padding:0!important;object-fit:contain}
+
+/* CD-approved corner control: 18px circle centered on the shortcut's corner,
+   with a transparent 28px target and room before the next control. */
+html body [data-table-composition] .table-shortcut-item{margin-inline-end:6px}
+html body [data-table-composition] .table-shortcut-remove{top:-14px;right:-14px;padding:0!important;color:var(--muted,#61738a)}
+html body [data-table-composition] .table-shortcut-remove::before{left:50%;top:50%;transform:translate(-50%,-50%);background:var(--surface,var(--white,#fff));border-color:var(--line,#dce4ee)}
+html body [data-table-composition] .table-shortcut-remove svg{margin:0!important;padding:0!important;transform:none!important;box-sizing:content-box}
+html body [data-table-composition] .table-shortcut-remove:focus-visible{outline:2px solid var(--blue,#2864d7);outline-offset:1px;opacity:1}
+html body [data-table-composition] .table-action-shortcut:has(>img){box-sizing:border-box;width:40px;height:40px;padding:0;min-width:40px;min-height:40px;flex:0 0 40px}
+html body [data-table-composition] .table-action-shortcut>img{display:block;position:static;width:32px;height:32px;margin:0;padding:0;transform:none;object-fit:contain}
+
+/* Reuse the platform Actions frame in dark appearance, including Inventory pins. */
+html[data-theme=dark] body [data-table-composition] .table-action-shortcut{background:#1b2b3d;border-color:#4a627c;color:#bfd8f7}
+
+/* Catalogue and vendor sorting retains links, with the accepted table heading skin. */
+.platform-standard-tables [data-table-composition] .table-widget th a{color:inherit;text-decoration:none;font:inherit}
+.platform-standard-tables [data-table-composition] .table-widget th a:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+
+/* Owner-approved shared filter toolbar; domain adapters retain their behavior. */
+html body.app-page .table-filter-standard .table-standard-toolbar{background:var(--white,#fff)}
+.table-filter-standard .table-filter-control[data-smart-replaced=true]{display:none!important}
+html body.app-page .table-filter-standard :is(.sku-fulfillment-segments,.order-fulfillment-tabs){display:inline-flex;align-items:stretch;gap:0;padding:0;height:40px;box-sizing:border-box;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:var(--white);white-space:nowrap}
+html body.app-page .table-filter-standard :is(.sku-fulfillment-segments button,.order-fulfillment-tabs a){display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:44px;height:38px;min-height:38px;margin:0;padding:0 12px;border:0;border-right:1px solid var(--line);border-radius:0;background:transparent;color:var(--ink);font:inherit;font-size:14px!important;font-weight:400!important;text-decoration:none}
+html body.app-page .table-filter-standard :is(.sku-fulfillment-segments button,.order-fulfillment-tabs a):last-child{border-right:0}
+html body.app-page .table-filter-standard :is(.sku-fulfillment-segments button[aria-pressed=true],.order-fulfillment-tabs a[aria-current=page]){background:var(--blue-soft,#eaf1ff);color:var(--blue);font-weight:500!important}
+html body.app-page .table-filter-standard .sku-condition-preset{height:40px;box-sizing:border-box;border:0;background:transparent;gap:2px}
+html body.app-page .table-filter-standard .sku-condition-preset label{padding:0}
+html body.app-page .table-filter-standard .sku-condition-preset :is(select,.sku-condition-choice-trigger){height:40px!important;min-height:40px!important;border:1px solid var(--line);border-radius:9px;padding:0 10px;font-size:14px!important;font-weight:400!important;white-space:nowrap}
+html body.app-page .table-filter-standard .sku-condition-preset [data-sku-clear-condition]{display:none}
+html body.app-page .table-filter-standard .table-filter-icon-control{position:relative;display:inline-flex;flex:none;width:40px;height:40px}
+html body.app-page .table-filter-standard .order-smart-filter-button{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:40px;min-width:40px;height:40px;min-height:40px;padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--white,#fff);color:var(--blue);font-weight:400!important}
+.table-filter-standard .order-smart-filter-button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+html body.app-page .table-filter-standard .has-active-filters .order-smart-filter-button{background:var(--ui-action-soft,#eaf1ff);border-color:var(--ui-action-line,#8fb5e9);color:var(--ui-action-text,#2464ba)}
+html body.app-page .table-filter-standard .table-filter-reset{position:absolute;z-index:1;right:-7px;top:-7px;width:28px;min-width:28px;height:28px;min-height:28px;padding:5px;display:grid;place-items:center;background:transparent;border:0;border-radius:50%;color:var(--blue);cursor:pointer}
+html body.app-page .table-filter-standard .table-filter-reset[hidden]{display:none!important}
+.table-filter-standard .table-filter-reset svg{display:block;box-sizing:border-box;width:18px;height:18px;padding:3px;border:1px solid var(--line);border-radius:50%;background:var(--white,#fff);fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.table-filter-standard :is(.table-filter-reset,.order-smart-filter-button,.order-fulfillment-tabs a):focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+html body.app-page .table-filter-standard .sku-view-filters{gap:8px}
+html body.app-page .table-filter-standard .table-standard-toolbar :is(.table-export,.table-column-trigger,.smart-tag-add){box-sizing:border-box;height:40px;min-height:40px;font-weight:400!important}
+html[data-theme=dark] body.app-page .table-filter-standard .order-smart-filter-button{background:var(--white,#1b2b3d);color:var(--ui-action-text,#a8cbff)}
+html[data-theme=dark] body.app-page .table-filter-standard .has-active-filters .order-smart-filter-button{background:var(--ui-action-soft,#203e61)}
+html body.app-page .table-filter-standard .table-filter-icon-control:not(.has-active-filters) .order-smart-filter-button{background:var(--white,#fff)!important;border-color:var(--line)!important}
+html body.app-page .table-filter-standard .order-smart-filter-button{padding:9px!important}
+html body.app-page .table-filter-standard .has-active-filters .order-smart-filter-button{background:var(--ui-action-soft,#eaf1ff)!important;border-color:var(--ui-action-line,#8fb5e9)!important}
+html body.app-page .table-filter-standard .table-column-control>summary{font-weight:400!important}
+html[data-theme=dark] body.app-page .table-filter-standard :is(.sku-fulfillment-segments button[aria-pressed=true],.order-fulfillment-tabs a[aria-current=page]){background:var(--ui-action-soft);color:var(--ui-action-text)}
+@media(max-width:760px){html body.app-page .table-filter-standard .sku-view-filters{display:contents}}
+
+html body.app-page .table-filter-standard .table-filter-control{position:relative;flex:none;width:40px;height:40px}
+html body.app-page .table-filter-standard .table-filter-control>summary{box-sizing:border-box;width:40px;min-width:40px;height:40px;min-height:40px;padding:9px!important;background:var(--white,#fff)!important;border-color:var(--line)!important;font-weight:400!important}
+.table-filter-standard .table-filter-control>summary svg{display:block;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+html body.app-page .table-filter-standard .table-filter-control.has-active-filters>summary{background:var(--ui-action-soft,#eaf1ff)!important;border-color:var(--ui-action-line,#8fb5e9)!important}
+html body.app-page .table-filter-standard .table-filter-control .table-filter-reset{background:transparent!important;border:0!important;box-shadow:none}
+html body.app-page .table-filter-standard .table-standard-toolbar :is(.standard-choice-trigger,select[data-standard-choice]){box-sizing:border-box;height:40px;min-height:40px;font-size:14px!important;font-weight:400!important}
+html body.app-page .table-filter-standard .table-filter-icon-control[hidden]{display:none!important}

@@ -20,6 +20,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
 import com.nextaicommerce.platform.web.PageController;
+import com.nextaicommerce.platform.web.AccountSelectionController;
 import com.nextaicommerce.platform.collaboration.CollaborationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -358,6 +359,7 @@ public class CatalogController {
         response.setHeader("Cache-Control","no-store");
         response.setHeader("X-CSRF-TOKEN",csrf.getToken());
         response.setHeader("X-Workspace-Account",tenant.toString());
+        response.setHeader("X-Warehouse-Country",catalog.warehouseCountryDefault(tenant,session.getAttribute(AccountSelectionController.STORE_ID) instanceof UUID store?store:null));
         return catalog.listWarehouses(tenant);
     }
     @GetMapping("/app/catalog/warehouse-options/{id}") @ResponseBody

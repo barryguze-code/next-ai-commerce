@@ -49,7 +49,7 @@ for(const theme of ['light','dark'])test('default columns desktop '+theme,async(
 
 test('preset controls precede Filters and clearing condition explicitly selects ALL',async()=>{
  const{page}=await fixture(1440,'light');await page.getByRole('button',{name:'Filters · Active',exact:true}).waitFor();
- assert.equal(await page.locator('.sku-view-filters').evaluate(e=>e.nextElementSibling?.classList.contains('order-smart-filter-button')),true);
+ assert.equal(await page.locator('.sku-view-filters').evaluate(e=>e.nextElementSibling?.classList.contains('table-filter-icon-control')),true);
  await page.getByRole('button',{name:'Clear condition filter',exact:true}).click();await page.waitForURL('**f_condition=ALL**');let u=new URL(page.url());assert.equal(u.searchParams.get('q'),'tea');assert.equal(u.searchParams.get('sort'),'price');assert.equal(u.searchParams.get('f_channel'),'FBA');await page.close();
 });
 test('clear all filters removes presets with explicit ALL and preserves sort',async()=>{
