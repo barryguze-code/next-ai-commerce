@@ -578,7 +578,7 @@ class ReceivingWorkflowDatabaseTest {
     @Test void usedStockCannotBeUndoneButAdjustmentsRemainTraceable(){
         var f=fixture("INVOICE");receive(f,6);UUID receipt=receipt(f);
         inventory.adjustInventory(tenant,actor,f.product(),expiry,f.location(),new BigDecimal("-1"),"DAMAGE","Damaged after receipt");
-        assertThat(work.receipts(tenant,f.line()).getFirst().blockedReason()).contains("adjusted");
+        assertThat(work.receipts(tenant,f.line()).getFirst().blockedReason()).contains("no longer on hand");
         assertThatThrownBy(()->work.undo(tenant,actor,f.line(),receipt,"Cannot rewrite")).isInstanceOf(IllegalArgumentException.class);
         work.adjust(tenant,actor,f.line(),receipt,BigDecimal.ONE,"DECREASE","DONATION","One donated");
         assertThat(stock(f)).isEqualByComparingTo("4");
@@ -909,7 +909,7 @@ class ReceivingWorkflowDatabaseTest {
         assertThatThrownBy(()->work.undo(tenant,actor,f.line(),r,"Blocked")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(()->work.adjust(tenant,actor,f.line(),r,new BigDecimal("6"),"DECREASE","LOSS","Blocked")).isInstanceOf(IllegalArgumentException.class);
         assertThat(stock(f)).isEqualByComparingTo("8");
-        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE order_inventory_reservations SET status='SHIPPED' WHERE tenant_id=? AND id=?",tenant,reservation);});
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE order_inventory_reservations SET status='SHIPPED' WHERE tenant_id=? AND id=?",tenant,reservation);jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,source_type,notes) VALUES (?,?,?,'ADJUSTMENT',-3,?,'MANUAL','Shipped stock fixture')",tenant,f.product(),f.location(),expiry);});
         assertThatThrownBy(()->work.undo(tenant,actor,f.line(),r,"Sold")).isInstanceOf(IllegalArgumentException.class);
     }
     @Test void reservationOnAnotherExpirationBatchDoesNotBlockReceiptAdjustment(){

@@ -290,9 +290,9 @@ public class ReceivingWorkflowRepository {
             """,(rs,n)->{
                 BigDecimal quantity=rs.getBigDecimal(2),onHand=rs.getBigDecimal(9),reserved=rs.getBigDecimal(10);
                 boolean physical=List.of("SELLABLE","SOON_EXPIRED","EXPIRED","OVER_SHIPPED").contains(rs.getString(6));
+                // Undo appends a reversal; other batch activity is safe when the full quantity remains unreserved.
                 String blocked=identity.closed()?"This document is closed. Its receipts are locked; use an inventory adjustment.":
                     rs.getBoolean(12)?"Vendor follow-up has already been submitted or settled. The original receipt must be retained.":
-                    physical&&rs.getBoolean(11)?"Stock in this batch has been shipped, moved, or adjusted. Keep the original receipt and use an adjustment.":
                     physical&&reserved.signum()>0?reserved.stripTrailingZeros().toPlainString()+" units in this batch are committed to active orders. Undo is unavailable.":
                     physical&&onHand.compareTo(quantity)<0?"The original quantity is no longer on hand. Use an adjustment instead.":null;
                 return new Receipt(rs.getObject(1,UUID.class),quantity,rs.getObject(3,LocalDate.class),rs.getObject(4,UUID.class),rs.getString(5),

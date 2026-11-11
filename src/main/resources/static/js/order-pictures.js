@@ -15,7 +15,7 @@
    if(action==='more'){
     const alert=stage.dataset.actionRequired==='true';
     const image=window.NextAiIcons?window.NextAiIcons.create(alert?'alert':'actions'):document.createElement('img');
-    if(!window.NextAiIcons){image.src='/images/platform/table/'+(alert?'actions-ai-human-alert':'actions-ai-human')+'.png?v=20260919-12';image.alt='';image.className='platform-icon';}
+    if(!window.NextAiIcons){image.src='/images/platform/optimized32/actions-owner-20261111.png?v=1.14.4';image.alt='';image.className='platform-icon';}
     button.append(image);button.dataset.libraryIcon='true';
    }else button.innerHTML=svg(icon);
    (action==='more'?(stage.closest('.order-item').querySelector('.order-engagement')||stage):stage).append(button);

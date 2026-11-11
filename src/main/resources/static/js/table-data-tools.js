@@ -104,7 +104,7 @@ function composeTable(card,toolbar,host,search){
  const spinner=document.createElement('span');spinner.className='table-search-spinner';spinner.setAttribute('role','status');spinner.setAttribute('aria-label','Loading results');toolbar.append(spinner);
  const details=document.createElement('details');details.className='table-command-menu table-row-warning';
  const trigger=document.createElement('summary');trigger.className='table-action-trigger';trigger.setAttribute('aria-label','Actions');trigger.setAttribute('data-tooltip','Actions');
- const art=document.createElement('img');art.src='/images/platform/optimized32/ai-action-required.png?v=20261109-icons32-1';art.alt='';trigger.append(art);
+ const art=document.createElement('img');art.src='/images/platform/optimized32/actions-owner-20261111.png?v=1.14.4';art.alt='';trigger.append(art);
  const panel=document.createElement('div');panel.className='table-warning-panel table-command-panel';panel.setAttribute('popover','manual');panel.setAttribute('aria-label','Table actions');
  const setup=document.createElement('div');setup.className='table-command-group';setup.setAttribute('role','group');setup.setAttribute('aria-label','Table commands');
  card.querySelectorAll('[data-table-command]').forEach(node=>{if(!node.parentElement.closest('[data-table-command],.table-command-menu'))setup.append(node)});

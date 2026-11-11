@@ -1,5 +1,23 @@
 [
   {
+    "version": "1.14.4",
+    "title": "Receipt corrections and clearer actions",
+    "sections": [
+      {
+        "title": "Receiving",
+        "items": [
+          "Undo an unreserved receipt when its full quantity remains on hand, retaining an audited correction."
+        ]
+      },
+      {
+        "title": "Actions",
+        "items": [
+          "Use the updated owner artwork across shared table actions."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.3",
     "title": "Compact page headers",
     "sections": [
