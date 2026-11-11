@@ -19,7 +19,7 @@
 <main th:attr="data-basket-scope=${tableShortcutScope}" class="workspace sku-workspace">
 <input th:if="${_csrf != null}" type="hidden" id="buy-shipping-csrf" th:attr="data-header=${_csrf.headerName}" th:value="${_csrf.token}">
   <header class="workspace-header">
-    <div><h1>Marketplace SKUs</h1><p class="page-intro" th:text="${shopifySetup != null ? 'Prepare Shopify products and variants for your account catalogue.' : 'The live Amazon assortment, inventory, and catalogue readiness for the selected store.'}">The live Amazon assortment, inventory, and catalogue readiness for the selected store.</p></div>
+    <div><h1>Marketplace SKUs</h1></div>
     <div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div>
   </header>
   <p class="notice" th:if="${mappingSuccess}" th:text="${mappingSuccess}">Mapping saved.</p>

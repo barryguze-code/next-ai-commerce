@@ -16,7 +16,7 @@
 </aside>
 <main class="workspace receive-work" th:attr="data-can-edit=${canEditCatalog},data-can-add-location=${canAddReceivingLocation}">
   <input id="receiving-csrf" name="_csrf" type="hidden" th:if="${_csrf}" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
-  <header class="workspace-header"><div><a class="rw-back" href="/app/receiving">← Receiving documents</a><h1>Receive together</h1><p class="page-intro">One working view. Separate documents, quantities, and audit histories.</p></div><div th:replace="~{fragments/context-switcher :: switcher}"></div></header>
+  <header class="workspace-header"><div><a class="rw-back" href="/app/receiving">← Receiving documents</a><h1>Receive together</h1></div><div th:replace="~{fragments/context-switcher :: switcher}"></div></header>
   <p class="notice" th:if="${catalogSuccess}" th:text="${catalogSuccess}"></p>
   <p class="notice error" th:if="${catalogError}" th:text="${catalogError}"></p>
   <p id="rw-feedback" class="notice" role="status" hidden></p>

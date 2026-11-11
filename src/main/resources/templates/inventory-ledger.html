@@ -13,7 +13,7 @@
   <div th:replace="~{fragments/sidebar-nav :: nav('inventory-ledger')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div>
 </aside>
 <main class="workspace">
-  <header class="workspace-header"><div><h1>Inventory Ledger</h1><p class="page-intro">The permanent history behind available inventory—receipts, orders, returns, and adjustments.</p><nav class="inventory-view-switch" aria-label="Inventory views"><a href="/app/inventory">Available Inventory</a><a class="active" href="/app/inventory/ledger">Inventory Ledger</a></nav></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
+  <header class="workspace-header"><div><h1>Inventory Ledger</h1><nav class="inventory-view-switch" aria-label="Inventory views"><a href="/app/inventory">Available Inventory</a><a class="active" href="/app/inventory/ledger">Inventory Ledger</a></nav></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
   <section class="catalog-readiness ledger-summary">
     <article><span>M</span><div><strong>Movements</strong><small>Complete inventory history</small></div><b th:text="${movementCount}">0</b></article>
     <article><span>R</span><div><strong>Receiving entries</strong><small>Posted vendor receipts</small></div><b th:text="${receiptCount}">0</b></article>

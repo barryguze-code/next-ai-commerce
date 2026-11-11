@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.14.3",
+    "title": "Compact page headers",
+    "sections": [
+      {
+        "title": "Presentation",
+        "items": [
+          "Remove repeated explanatory subtitles from Orders, Marketplace SKUs, catalogues, Vendors & Pricing, Inventory Ledger, Receiving and Replenishment."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.2",
     "title": "Consistent tables and faster workspace rendering",
     "sections": [

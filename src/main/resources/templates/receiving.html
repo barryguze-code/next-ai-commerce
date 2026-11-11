@@ -15,7 +15,7 @@
   <div th:replace="~{fragments/sidebar-nav :: nav('receiving')}"></div><div th:replace="~{fragments/sidebar-user :: user}"></div>
 </aside>
 <main th:attr="data-basket-scope=${tableShortcutScope}" class="workspace receiving-home">
-  <header class="workspace-header"><div><h1>Receiving</h1><p class="page-intro">Turn supplier documents into accurate, expiration-aware inventory.</p></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
+  <header class="workspace-header"><div><h1>Receiving</h1></div><div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div></header>
   <p class="notice" th:if="${catalogSuccess}" th:text="${catalogSuccess}"></p>
   <p class="notice error" th:if="${catalogError}" th:text="${catalogError}"></p>
 
