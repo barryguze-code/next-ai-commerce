@@ -132,7 +132,7 @@ async function open(trigger){
   const sku=d.querySelector('h2').textContent,r=await fetch(shopify?'/app/marketplace-skus/shopify/components?variantId='+encodeURIComponent(data.variantId):'/app/marketplace-skus/mappings/components?sku='+encodeURIComponent(sku));if(!r.ok)throw Error();const products=await r.json();if(version!==requestNumber||!d.open)return;
   if(products.length){products.forEach(p=>line(p));d.querySelector('.mw-feedback').textContent='';}
   else{let suggestion=null;try{const response=await fetch(shopify?'/app/marketplace-skus/shopify/draft?variantId='+encodeURIComponent(data.variantId):'/app/marketplace-skus/mappings/draft?sku='+encodeURIComponent(sku));if(response.ok)suggestion=await response.json();}catch{}if(version!==requestNumber||!d.open)return;
-   line(suggestion?.product||null,draftQuantity(suggestion),suggestion?.itemCode);d.querySelector('.mw-feedback').textContent=suggestion?.product?'Product suggested from an exact account code. Review and Save mapping.':suggestion?.quantity>1?'Quantity detected from the SKU. Choose a product, then Save mapping.':'';
+   line(data.reviewProduct?JSON.parse(data.reviewProduct):suggestion?.product||null,draftQuantity(suggestion),suggestion?.itemCode);d.querySelector('.mw-feedback').textContent=data.reviewProduct?'Review the product and quantity, then Save mapping.':suggestion?.product?'Product suggested from an exact account code. Review and Save mapping.':suggestion?.quantity>1?'Quantity detected from the SKU. Choose a product, then Save mapping.':'';
   }
   d.querySelector('.mw-clear').disabled=!products.length;update();
  }catch{if(version===requestNumber)d.querySelector('.mw-feedback').textContent='Could not load mapping. Close and try again; nothing has changed.'}

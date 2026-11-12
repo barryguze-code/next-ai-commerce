@@ -31,8 +31,12 @@ public class ReceivingIntakeService {
     public int addDocuments(UUID tenantId, UUID sessionId, String actorEmail, UUID vendorId,
             String documentType, String currency, List<IntakeDocument> documents) {
         for (IntakeDocument document : documents) {
-            receiving.addDocument(tenantId, sessionId, vendorId, documentType, document.filename(),
-                document.sha256(), currency, document.rows(), actorEmail);
+            try {
+                receiving.addDocument(tenantId, sessionId, vendorId, documentType, document.filename(),
+                    document.sha256(), currency, document.rows(), actorEmail);
+            } catch (IllegalArgumentException error) {
+                throw new IllegalArgumentException(document.filename()+": "+error.getMessage(),error);
+            }
         }
         return documents.size();
     }

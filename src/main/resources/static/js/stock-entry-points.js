@@ -2,21 +2,22 @@
   if(!document.getElementById('stock-editor'))return;
   const action=(context)=>{
     const button=document.createElement('button');button.type='button';button.textContent='Adjust Inventory';
-    button.dataset.actionIcon='±';button.dataset.actionDescription='Update individual units, location, and expiration date';
+    button.dataset.actionImage='/images/platform/table/adjust-inventory-owner.png';button.dataset.actionDescription='Change stock, location or expiry';
     Object.assign(button.dataset,context);button.onclick=event=>{event.stopPropagation();window.openSharedInventoryAdjustment(button)};return button;
   };
+  const mapping=context=>{const b=document.createElement('button');b.type='button';b.textContent='Map product';b.dataset.actionImage='/images/platform/table/map-product-owner.png';b.dataset.actionDescription='Map this product';b.dataset.mappingItem=context.item;b.onclick=e=>{e.stopPropagation();window.openProductMappingReview(b)};return b;};
   const menuFor=context=>{
     const trigger=document.createElement('button');trigger.type='button';trigger.className='plan-action-button inventory-stage-menu';trigger.textContent='⋯';trigger.setAttribute('aria-label','Inventory actions');
-    const panel=document.createElement('div');panel.className='stock-action-popover';panel.setAttribute('popover','auto');const button=action(context);button.className='secondary-button compact-button';panel.append(button);document.body.append(panel);
-    trigger.popoverTargetElement=panel;button.addEventListener('click',()=>panel.hidePopover());
+    const panel=document.createElement('div');panel.className='stock-action-popover';panel.setAttribute('popover','auto');const button=action(context);button.className='secondary-button compact-button';panel.append(mapping(context),button);document.body.append(panel);
+    trigger.popoverTargetElement=panel;panel.addEventListener('click',e=>{if(e.target.closest('button'))panel.hidePopover()});
     panel.addEventListener('toggle',()=>{if(!panel.matches(':popover-open'))return;const box=trigger.getBoundingClientRect();panel.style.left=Math.max(12,Math.min(box.left,innerWidth-panel.offsetWidth-12))+'px';panel.style.top=Math.max(12,Math.min(box.bottom+6,innerHeight-panel.offsetHeight-12))+'px'});
     return trigger;
   };
   // Install before the deferred table widget moves context actions into its standard … menu.
   document.querySelectorAll('.catalog-row').forEach(row=>{
     const source=row.querySelector('[data-item-id]');if(!source)return;
-    const menu=document.createElement('div');menu.dataset.contextMenu='';menu.dataset.title=source.dataset.itemName;
-    menu.append(action({item:source.dataset.itemId}));source.parentElement.append(menu);
+    const menu=row.querySelector('[data-context-menu]');if(!menu)return;
+    menu.append(mapping({item:source.dataset.itemId}),action({item:source.dataset.itemId}));
   });
   document.querySelectorAll('.sku-table tbody tr').forEach(row=>{
     const source=row.querySelector('[name="sellerSku"]');if(!source||row.querySelector('.sku-open-actions'))return;
@@ -24,15 +25,16 @@
     menu.append(action({sellerSku:source.value}));cell.append(menu);
   });
   document.querySelectorAll('.inventory-row').forEach(row=>{
-    if(row.querySelector('[data-context-action]'))return;
-    const holder=row.querySelector('.table-overview-rail,.inventory-stage-actions');if(!holder)return;
-    holder.querySelector('.action-unavailable')?.remove();
-    const button=menuFor({...row.dataset});button.dataset.contextAction='';holder.append(button);
+    const existing=row.querySelector('[data-context-action]');
+    const menu=document.createElement('div');menu.dataset.contextMenu='';menu.dataset.title=row.dataset.product;
+    menu.append(mapping({item:row.dataset.item}),action({...row.dataset}));
+    if(existing){const plans=document.createElement('button');plans.type='button';plans.textContent='Stock plan';plans.dataset.actionDescription='Review expiry and stock actions';plans.onclick=e=>{e.stopPropagation();window.openInventoryActionMenu(existing)};menu.append(plans);existing.hidden=true;}
+    row.querySelector('td:last-child')?.append(menu);
   });
   const legacy=document.querySelector('#inventory-action-menu [onclick^="openInventoryAdjustment"]');
   if(legacy)legacy.onclick=()=>{const item=document.getElementById('quick-action-item').value,location=document.getElementById('quick-action-location').value,expiration=document.getElementById('quick-action-expiration').value;window.openSharedInventoryAdjustment({dataset:{item,location,expiration}})};
   const toolbar=[...document.querySelectorAll('.card-toolbar')].find(t=>t.querySelector('h2')?.textContent==='Invoices & packing lists');
-  if(toolbar){const button=document.createElement('button');button.type='button';button.className='secondary-button compact-button';button.dataset.tableCommand='';button.textContent='＋ Receive item';button.onclick=()=>window.openSharedInventoryReceipt();(toolbar.closest('[data-table-composition]')?.querySelector('.table-command-group')||toolbar).append(button)}
+  if(toolbar){const button=document.createElement('button');button.type='button';button.className='secondary-button compact-button';button.dataset.tableCommand='';button.dataset.commandId='receive-item';button.dataset.actionImage='/images/platform/table/receive-item-owner.png';button.dataset.actionDescription='Choose a product and quantity';button.textContent='Receive item';button.onclick=()=>window.openSharedInventoryReceipt();(toolbar.closest('[data-table-composition]')?.querySelector('.table-command-group')||toolbar).append(button)}
   const input=document.getElementById('inventory-search'),table=document.querySelector('.available-inventory-table');
   if(!input||!table)return;
   let timer,controller;

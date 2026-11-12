@@ -55,6 +55,20 @@
       if(warehouseChoice){delete trigger.dataset.tooltip;requestAnimationFrame(warehouseTooltip);}else trigger.dataset.tooltip=label;trigger.disabled=select.disabled;
       trigger.setAttribute('aria-label',(select.getAttribute('aria-label')||'Storage location')+': '+label);
     };
+    const position=()=>{
+      const rect=trigger.getBoundingClientRect(),dialog=select.closest('dialog');
+      const bounds=dialog?.getBoundingClientRect();
+      const left=Math.max(12,(bounds?.left||0)+12),right=Math.min(innerWidth-12,(bounds?.right||innerWidth)-12);
+      const top=Math.max(12,(bounds?.top||0)+12),bottom=Math.min(innerHeight-12,(bounds?.bottom||innerHeight)-12);
+      popup.style.width=Math.min(300,right-left)+'px';popup.style.maxHeight=Math.min(300,bottom-top)+'px';
+      // A dragged dialog establishes a containing block for fixed descendants.
+      // Convert viewport coordinates to that block rather than offsetting twice.
+      popup.style.left='0px';popup.style.top='0px';
+      const origin=popup.getBoundingClientRect(),height=popup.offsetHeight;
+      const targetLeft=Math.max(left,Math.min(rect.left,right-popup.offsetWidth));
+      const targetTop=rect.bottom+6+height<=bottom?rect.bottom+6:Math.max(top,Math.min(rect.top-height-6,bottom-height));
+      popup.style.left=(targetLeft-origin.left)+'px';popup.style.top=(targetTop-origin.top)+'px';
+    };
     const open=()=>{
       managed=select.dataset.choiceManager;if(managed)popup.setAttribute('aria-label',managed==='warehouse'?'Choose warehouse':managed==='vendor'?'Choose vendor':'Choose location');popup.setAttribute('role',managed?'dialog':'listbox');trigger.setAttribute('aria-haspopup',managed?'dialog':'listbox');
       activePicker?.close();popup.replaceChildren();
@@ -68,12 +82,9 @@
       });
       if(managed){const footer=document.createElement('div');footer.className='managed-choice-footer';const add=document.createElement('button');add.type='button';add.textContent=managed==='warehouse'?'+ Add warehouse':managed==='vendor'?'+ Add vendor':'+ Add location';add.onclick=()=>manage('add','');footer.append(add);popup.append(footer);}
       (select.closest('dialog')||document.body).append(popup);popup.hidden=false;
-      const rect=trigger.getBoundingClientRect(),width=Math.min(300,window.innerWidth-24);
-      popup.style.width=width+'px';popup.style.left=Math.max(12,Math.min(rect.left,window.innerWidth-width-12))+'px';
-      popup.style.maxHeight=Math.min(300,window.innerHeight-32)+'px';
-      popup.style.top=Math.max(12,Math.min(rect.bottom+6,window.innerHeight-popup.offsetHeight-12))+'px';
-      trigger.setAttribute('aria-expanded','true');activePicker={trigger,popup,close};
-      (popup.querySelector('[aria-selected=true]:not(:disabled),[aria-pressed=true]:not(:disabled)')||popup.querySelector('button:not(:disabled)'))?.focus();
+      position();
+      trigger.setAttribute('aria-expanded','true');activePicker={trigger,popup,close,position};
+      (popup.querySelector('[aria-selected=true]:not(:disabled),[aria-pressed=true]:not(:disabled)')||popup.querySelector('button:not(:disabled)'))?.focus({preventScroll:true});
     };
     const manage=(action,id)=>{close();select.dispatchEvent(new CustomEvent('platform-choice-manage',{bubbles:true,detail:{kind:managed,action,id,trigger}}));};
     popup.addEventListener('keydown',event=>{
@@ -108,6 +119,6 @@
   window.NextAiMarketplaceShortcuts={enhance:shortcuts};window.NextAiPlatformControls={enhance};
   // One global listener, not one per catalogue row/location picker.
   document.addEventListener('pointerdown',event=>{if(activePicker&&!activePicker.popup.contains(event.target)&&!activePicker.trigger.contains(event.target))activePicker.close();});
-  document.addEventListener('scroll',event=>{if(!event.target.closest?.('.location-picker-popup'))activePicker?.close();},true);window.addEventListener('resize',()=>activePicker?.close());
+  document.addEventListener('scroll',event=>{if(!event.target.closest?.('.location-picker-popup'))(activePicker?.trigger.closest('dialog')?activePicker.position():activePicker?.close());},true);window.addEventListener('resize',()=>activePicker?.close());
   enhance();
 })();

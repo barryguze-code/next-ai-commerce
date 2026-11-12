@@ -328,13 +328,18 @@ public class ReceivingRepository {
             String identifier=find(row,"upc","ean","gtin","barcode","upcean");
             String explicitAccountSku=find(row,"accountsku"),sourceSku=find(row,"sku");
             String accountSku=explicitAccountSku.isBlank()?sourceSku:explicitAccountSku;
-            BigDecimal quantity=number(find(row,"shipquantity","shippedquantity","quantity","qty","orderedquantity","orderqty","shippedqty"));
-            BigDecimal invoicePrice=number(find(row,"neteach","unitcost","unitprice","price","cost"));
+            String quantityText=find(row,"shipquantity","shippedquantity","quantity","qty","orderedquantity","orderqty","shippedqty");
+            BigDecimal quantity;
+            try{quantity=new BigDecimal(quantityText.replace(",","").trim());}
+            catch(NumberFormatException e){throw new IllegalArgumentException("Row "+sourceRowNumber+" needs a valid quantity. Nothing was saved.");}
+            if(quantity.signum()<0)throw new IllegalArgumentException("Row "+sourceRowNumber+" cannot have a negative receiving quantity.");
+            String suppliedCost=find(row,"neteach","unitcost","unitprice","price","cost");
+            BigDecimal invoicePrice=receivingCost(suppliedCost);
             String packSize=find(row,"packsize","casepack","unitspercase");
             BigDecimal unitsPerCase=packUnits(packSize);
             String invoiceUnit=hasHeading(row,"shipquantity")?"EACH":"CASE";
             boolean casePrice="CASE".equalsIgnoreCase(find(row,"pricebasis"));
-            BigDecimal cost=casePrice?invoicePrice.divide(unitsPerCase,4,java.math.RoundingMode.HALF_UP):invoicePrice;
+            BigDecimal cost=invoicePrice==null?null:casePrice?invoicePrice.divide(unitsPerCase,4,java.math.RoundingMode.HALF_UP):invoicePrice;
             if(quantity.signum()<=0) continue;
             if(!explicitAccountSku.isBlank()&&!sourceSku.isBlank()&&!explicitAccountSku.equals(sourceSku))
                 throw new IllegalArgumentException("Row "+sourceRowNumber+" has different Account SKU and SKU values. Review the product identity before uploading.");
@@ -352,8 +357,19 @@ public class ReceivingRepository {
                     FROM account_catalog_items a JOIN global_catalog_products g ON g.id=a.global_product_id
                     WHERE a.tenant_id=? AND a.id=?
                     """,BigDecimal.class,vendorId,tenantId,matched.itemId());
-                if(savedPack!=null&&savedPack.signum()>0){unitsPerCase=savedPack;cost=casePrice?invoicePrice.divide(unitsPerCase,4,java.math.RoundingMode.HALF_UP):invoicePrice;}
+                if(savedPack!=null&&savedPack.signum()>0){unitsPerCase=savedPack;cost=invoicePrice==null?null:casePrice?invoicePrice.divide(unitsPerCase,4,java.math.RoundingMode.HALF_UP):invoicePrice;}
             }
+            if("PACKING_LIST".equals(documentType)){
+                var defaults=jdbc.queryForList("""
+                    SELECT list_cost*(1-discount_rate/100) FROM vendor_catalog_offers
+                    WHERE tenant_id=? AND vendor_id=? AND account_catalog_item_id=? AND currency=?
+                      AND effective_from<=current_date AND (effective_to IS NULL OR effective_to>current_date)
+                    ORDER BY is_default DESC,effective_from DESC LIMIT 1
+                    """,BigDecimal.class,tenantId,vendorId,matched.itemId(),cleanCurrency);
+                if(defaults.isEmpty())throw new IllegalArgumentException("No buying cost for this account/vendor at row "+sourceRowNumber+". Add the default cost before receiving the packing list. Nothing was saved.");
+                cost=defaults.getFirst();invoicePrice=casePrice?cost.multiply(unitsPerCase):cost;
+            }
+            if(cost==null)throw new IllegalArgumentException("Unit cost is missing at row "+sourceRowNumber+". For documents without prices, choose Packing list to use catalogue costs. Otherwise match the invoice cost column. Nothing was saved.");
             if(matched.created()&&identifier.isBlank()) jdbc.update("""
                 UPDATE account_catalog_items SET completion_status='NEEDS_COMPLETION',missing_fields=ARRAY['UPC/EAN'],updated_at=now()
                 WHERE tenant_id=? AND id=?
@@ -847,7 +863,18 @@ public class ReceivingRepository {
         // Receiving an invoice is not a catalogue identity edit. The account's existing
         // vendor mapping is authoritative; retain the source barcode on the document
         // line without reparenting products or demanding a catalogue merge.
-        if(itemId!=null)return new MatchedItem(itemId,false);
+        if(itemId!=null){
+            Boolean valid=jdbc.queryForObject("""
+                SELECT a.status='ACTIVE' AND p.status='ACTIVE'
+                  AND (?='' OR coalesce(a.account_sku,'')=?)
+                  AND (?='' OR NOT EXISTS(SELECT 1 FROM global_product_identifiers i
+                    WHERE i.identity_key=catalog_identifier_key(?,?) AND i.global_product_id<>a.global_product_id))
+                FROM account_catalog_items a JOIN global_catalog_products p ON p.id=a.global_product_id
+                WHERE a.tenant_id=? AND a.id=?
+                """,Boolean.class,accountSku,accountSku,identifier,identifierType(identifier),normalizeIdentifier(identifier),tenantId,itemId);
+            if(!Boolean.TRUE.equals(valid))throw new IllegalArgumentException("Conflicting or inactive product for vendor item code "+vendorCode+". Review the product match before receiving. Nothing was reassigned.");
+            return new MatchedItem(itemId,false);
+        }
         if(!accountSku.isBlank()){
             // Explicit account identity only: exact case and leading zeros are significant.
             var matches=jdbc.query("""
@@ -871,11 +898,12 @@ public class ReceivingRepository {
                 }
                 return new MatchedItem((UUID)match[0],false);
             }
-            if(vendorCode.isBlank())throw new IllegalArgumentException("No active product matches account SKU "+accountSku+". Review the account catalogue before receiving.");
+            if(vendorCode.isBlank())throw new IllegalArgumentException("No active product matches account SKU "+accountSku+". Check whether the uploaded code is a Vendor item code and match that field instead. Review the account catalogue before receiving.");
         }
         if(!identifier.isBlank()&&!identifier.replaceAll("[\\s-]","").matches("(?:[0-9]{8}|[0-9]{12}|[0-9]{13}|[0-9]{14})"))
             throw new IllegalArgumentException("A valid UPC, EAN, or GTIN is required for an unmatched product. An ASIN cannot be used as a barcode.");
         if(!vendorCode.isBlank()){
+        if(cost==null)throw new IllegalArgumentException("No product match with a known buying cost. Review the account catalogue before receiving. Nothing was saved.");
             boolean created=itemId==null;
             itemId=catalog.addImportedVendorProduct(tenantId,actorEmail,vendorId,vendorCode,description,
                 blank(brand),identifierType(identifier),identifier,null,false);
@@ -888,6 +916,7 @@ public class ReceivingRepository {
             WHERE item.tenant_id=? AND identifier.identity_key=catalog_identifier_key(?,?) LIMIT 1
             """,rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,identifierType(identifier),normalizeIdentifier(identifier));
         boolean created=itemId==null;
+        if(created&&cost==null)throw new IllegalArgumentException("No product match with a known buying cost. Review the account catalogue before receiving. Nothing was saved.");
         if(created)itemId=catalog.addAccountProduct(tenantId,actorEmail,description,blank(brand),
             identifierType(identifier),identifier,vendorCode,false);
         if(created)
@@ -923,6 +952,12 @@ public class ReceivingRepository {
     }
     private static String find(Map<String,String> row,String... names){for(String wanted:names)for(var e:row.entrySet()){String n=e.getKey().toLowerCase().replaceAll("[^a-z0-9]","");if(n.equals(wanted))return e.getValue()==null?"":e.getValue().trim();}return "";}
     private static boolean hasHeading(Map<String,String> row,String name){return row.keySet().stream().map(key->key.toLowerCase().replaceAll("[^a-z0-9]","")).anyMatch(name::equals);}
+    static BigDecimal receivingCost(String value){
+        if(value==null||value.isBlank())return null;
+        try{var cost=new BigDecimal(value.replace("$","").replace(",","").trim());
+            if(cost.signum()<0)throw new NumberFormatException();return cost;
+        }catch(NumberFormatException e){throw new IllegalArgumentException("Unit cost must be a valid non-negative amount.");}
+    }
     private static BigDecimal number(String value){try{return new BigDecimal(value.replace("$","").replace(",","").trim());}catch(Exception e){return BigDecimal.ZERO;}}
     static BigDecimal packUnits(String value){
         if(value==null||value.isBlank())return BigDecimal.ONE;

@@ -675,3 +675,60 @@ html[data-theme="dark"] .cost-choice-dialog .cost-change-panel{background:#14243
 #session-dialog .receiving-money input { min-width:0; flex:1; }
 #session-dialog input[type="file"]::file-selector-button { font:inherit; font-weight:600; color:#245dc1; background:#edf4ff; border:1px solid #c5d8ff; border-radius:10px; padding:10px 16px; margin-right:12px; cursor:pointer; }
 @media(max-width:600px) { #session-dialog .form-pair { grid-template-columns:1fr; } }
+
+/* Upload failures remain beside the submit action, outside the scrolling form body. */
+#session-dialog .dialog-actions{flex-wrap:wrap}
+#session-dialog .dialog-actions>.receiving-upload-error{flex:0 0 100%;margin:0;overflow-wrap:anywhere}
+
+#receiving-columns-dialog .dialog-body{min-height:0;overflow:auto}
+#receiving-columns-dialog .dialog-actions{flex-wrap:wrap}
+#receiving-columns-dialog .receiving-upload-error{flex:0 0 100%;margin:0;overflow-wrap:anywhere}
+.receiving-column-samples{overflow:auto;max-height:180px;margin-top:10px}
+.receiving-column-samples table{width:100%;border-collapse:collapse}
+.receiving-column-samples :is(th,td){padding:8px;text-align:left;border-bottom:1px solid var(--line);white-space:normal}
+#receiving-columns-dialog .rw-check{display:flex;align-items:center;gap:8px}
+#receiving-columns-dialog .rw-check input[type="checkbox"]{width:auto;flex:0 0 auto}
+
+/* CD: template help belongs beside the file heading, outside its accessible label. */
+.receiving-file-heading{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin-bottom:8px}
+.receiving-file-heading a{font-size:.8125rem;font-weight:400;line-height:1.4;white-space:nowrap;color:var(--primary,#2c68db);text-decoration:none}
+.receiving-file-heading a:hover,.receiving-file-heading a:focus-visible{text-decoration:underline}
+
+/* Receiving mapping owns one vertical scroll region; cards do not trap wheel input. */
+#receiving-columns-dialog>.dialog-shell{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}
+#receiving-columns-dialog .dialog-header,#receiving-columns-dialog .dialog-actions{flex:none}
+#receiving-columns-dialog .dialog-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+#receiving-columns-dialog .mapping-card{overflow:visible;max-height:none}
+#receiving-columns-dialog .receiving-column-samples{max-height:none;overflow-x:auto}
+
+/* CD: bounded receiving matcher; wide supplier previews cannot resize its form. */
+#receiving-columns-dialog{width:min(960px,calc(100vw - 32px));height:min(820px,calc(100dvh - 32px));max-height:calc(100dvh - 32px)}
+#receiving-columns-dialog :is(.dialog-body,.mapping-card,.mapping-grid){min-width:0;max-width:100%;box-sizing:border-box}
+#receiving-columns-dialog .mapping-card>strong{display:block;overflow-wrap:anywhere}
+#receiving-columns-dialog .mapping-grid>label{grid-template-columns:minmax(160px,.8fr) minmax(0,1.4fr);font-size:14px;font-weight:500;min-width:0}
+#receiving-columns-dialog .mapping-grid>label>span{grid-column:1;min-width:0}
+#receiving-columns-dialog .mapping-grid>label>.standard-choice-trigger{grid-column:2;width:100%;min-width:0;margin:0;min-height:42px;font-size:14px;font-weight:400}
+#receiving-columns-dialog .mapping-grid select[hidden]{display:none!important}
+#receiving-columns-dialog .receiving-column-samples{width:100%;min-width:0;overflow-x:auto}
+#receiving-columns-dialog .receiving-column-samples table{table-layout:fixed;min-width:640px}
+@media(max-width:760px){#receiving-columns-dialog .mapping-grid>label{grid-template-columns:minmax(0,1fr)}#receiving-columns-dialog .mapping-grid>label>.standard-choice-trigger{grid-column:1}}
+#receiving-columns-dialog .dialog-body{display:block;width:100%;min-width:0}
+#receiving-columns-dialog [data-column-matches]{width:100%;min-width:0;max-width:100%}
+#receiving-columns-dialog .mapping-card{width:auto}
+
+/* Receiving bulk commands share standard Actions rows rather than a selection banner. */
+.table-command-panel .rw-selection-bar{display:block;padding:0;border:0;background:transparent;box-shadow:none;color:inherit}
+.table-command-panel .rw-selection-bar .rw-row-actions{display:grid;gap:6px;min-width:0}
+.table-command-panel .rw-selection-bar .table-action-entry{background:transparent;color:inherit;border:0;box-shadow:none;padding:12px;border-radius:12px;font-weight:inherit}
+.table-command-panel .rw-selection-bar .table-action-entry:hover{background:var(--surface-soft,#edf4ff)}
+
+html[data-theme=dark] .table-command-panel .rw-selection-bar .table-action-entry{background:transparent;color:inherit;border:0;box-shadow:none}
+
+/* Receiving-only movable upload preview; the native modal remains inert behind it. */
+@media(min-width:761px){
+ #session-dialog .dialog-header{cursor:grab;touch-action:none}
+ #session-dialog .dialog-header:focus-visible{outline:2px solid var(--brand-blue,#2c68df);outline-offset:-4px}
+ #session-dialog.is-dragging{opacity:.25;transition:none;user-select:none}
+ #session-dialog.is-dragging .dialog-header{cursor:grabbing}
+ #session-dialog.is-dragging::backdrop{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+}

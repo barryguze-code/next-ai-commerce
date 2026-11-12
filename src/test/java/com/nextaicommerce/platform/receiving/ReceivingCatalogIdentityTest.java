@@ -47,6 +47,7 @@ class ReceivingCatalogIdentityTest {
     @Test void aUniqueExistingVendorBindingRemainsAuthoritativeWithoutReparenting()throws Throwable{
         var jdbc=mock(JdbcTemplate.class);var catalog=mock(CatalogRepository.class);
         when(jdbc.queryForList(anyString(),eq(UUID.class),eq(tenant),eq(vendor),eq("342934"))).thenReturn(List.of(a));
+        when(jdbc.queryForObject(anyString(),eq(Boolean.class),any(Object[].class))).thenReturn(true);
         Object result=match(new ReceivingRepository(jdbc,catalog),"000342934");
         var field=result.getClass().getDeclaredMethod("itemId");field.setAccessible(true);assertThat(field.invoke(result)).isEqualTo(a);
         verify(jdbc).queryForList(contains("SELECT DISTINCT"),eq(UUID.class),eq(tenant),eq(vendor),eq("342934"));verifyNoInteractions(catalog);
@@ -54,5 +55,12 @@ class ReceivingCatalogIdentityTest {
     @Test void sharedNormalizationPreservesAlphanumericLeadingZerosAndDoesNotRewriteSourceCodes(){
         assertThat(com.nextaicommerce.platform.catalog.CatalogIdentity.vendorCode("000342934")).isEqualTo("342934");
         assertThat(com.nextaicommerce.platform.catalog.CatalogIdentity.vendorCode("000AB-12")).isEqualTo("000AB12");
+    }
+    @Test void vendorMatchCannotOverrideConflictingOrInactiveIdentity()throws Throwable{
+        var jdbc=mock(JdbcTemplate.class);var catalog=mock(CatalogRepository.class);
+        when(jdbc.queryForList(anyString(),eq(UUID.class),eq(tenant),eq(vendor),anyString())).thenReturn(List.of(a));
+        when(jdbc.queryForObject(anyString(),eq(Boolean.class),any(Object[].class))).thenReturn(false);
+        assertThatThrownBy(()->match(new ReceivingRepository(jdbc,catalog),"342934")).hasMessageContaining("Conflicting or inactive");
+        verifyNoInteractions(catalog);
     }
 }

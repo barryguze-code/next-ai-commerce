@@ -27,6 +27,14 @@ class FbaReadDatabaseTest {
         jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,entry_type,quantity,location_id,expiration_date,unit_cost,currency,source_type,occurred_at,idempotency_key) VALUES (?,?,?,'RECEIVED',10,?,current_date+30,2,'USD','FIXTURE',now()-interval '1 day',?)",layer,tenant,item,location,layer.toString());
         return new DepletionFixture(new FbaDepletionRepository(jdbc,new tools.jackson.databind.ObjectMapper()),item,warehouse,location,layer,email);
     }
+    @Test void completedItemsCanBeReviewedWithoutTransportOrPlacementFees(){tx.executeWithoutResult(st->{
+        var f=depletionFixture();
+        var review=f.operations.preview(tenant,store,"FBA-TEST");
+        assertThat(review.itemsVerified()).isTrue();
+        assertThat(review.ready()).isTrue();
+        assertThat(review.allocations()).isNotEmpty();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+    });}
     private FbaDeductionAdjustments adjustmentService(DepletionFixture f){var access=mock(com.nextaicommerce.platform.web.MemberAccessService.class);when(access.current(tenant,f.email)).thenReturn(new com.nextaicommerce.platform.web.MemberAccessService.Access("OWNER",false,Set.of()));return new FbaDeductionAdjustments(jdbc,f.operations,access);}
     @Test void adjustmentsReturnAndDeductOnlySignedDeltasAndPreserveHistory(){tx.executeWithoutResult(st->{
         var f=depletionFixture();var initial=f.operations.preview(tenant,store,"FBA-TEST");f.operations.deplete(tenant,store,"FBA-TEST",f.email,UUID.randomUUID(),initial.revision(),initial.allocations());

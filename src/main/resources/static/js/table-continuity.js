@@ -19,8 +19,8 @@
   if(!response.ok)throw Error('Mapping save was not confirmed. Review before retrying.');
   const doc=new DOMParser().parseFromString(await response.text(),'text/html');
   const returned=doc.querySelector('#general-task-context');if(view()!==originView||context()!==origin||!returned||([returned.dataset.account||'',returned.dataset.store||''].join('|')!==origin))throw Error('Workspace changed. Mapping response was not applied to this table. Refresh to review.');
-  const error=doc.querySelector('.notice.error');if(error)throw Error(error.textContent.trim());
-  if(!doc.querySelector('.notice:not(.error)'))throw Error('Mapping save was not confirmed. Review before retrying.');
+  const error=doc.querySelector('[data-mapping-result=error]');if(error)throw Error(error.textContent.trim()||'Mapping could not be saved. Review before retrying.');
+  if(!doc.querySelector('[data-mapping-result=success]'))throw Error('Mapping save was not confirmed. Review before retrying.');
   const fresh=[...doc.querySelectorAll('.sku-table tr[data-sku]')];
   let updated=0;
   document.querySelectorAll('.sku-table tr[data-sku]').forEach(row=>{

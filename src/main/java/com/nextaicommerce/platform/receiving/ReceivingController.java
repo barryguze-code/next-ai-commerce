@@ -72,15 +72,23 @@ public class ReceivingController {
         catch(Exception e){log.error("Receiving draft creation failed",e);redirect.addFlashAttribute("catalogError","The receiving draft could not be created. Nothing was saved; please try again.");}
         return "redirect:/app/receiving";
     }
-    @PostMapping("/app/receiving/start") String startWithDocument(Authentication auth,HttpSession session,
+    String startWithDocument(Authentication auth,HttpSession session,
             @RequestParam(required=false) String vendorId,@RequestParam(defaultValue="INVOICE") String documentType,
             @RequestParam(defaultValue="USD") String currency,@RequestParam(required=false) String reference,
             @RequestParam(defaultValue="0") String freightAmount,@RequestParam(defaultValue="0") String dutyImportAmount,
             @RequestParam(defaultValue="0") String otherSharedCost,@RequestParam(value="files",required=false) List<MultipartFile> uploadFiles,
             RedirectAttributes redirect) {
+        return startMappedWithDocument(auth,session,vendorId,documentType,currency,reference,freightAmount,dutyImportAmount,otherSharedCost,uploadFiles,null,redirect);
+    }
+    @PostMapping("/app/receiving/start") String startMappedWithDocument(Authentication auth,HttpSession session,
+            @RequestParam(required=false) String vendorId,@RequestParam(defaultValue="INVOICE") String documentType,
+            @RequestParam(defaultValue="USD") String currency,@RequestParam(required=false) String reference,
+            @RequestParam(defaultValue="0") String freightAmount,@RequestParam(defaultValue="0") String dutyImportAmount,
+            @RequestParam(defaultValue="0") String otherSharedCost,@RequestParam(value="files",required=false) List<MultipartFile> uploadFiles,
+            @RequestParam(required=false) String columnMapping,RedirectAttributes redirect) {
         try {
             UUID tenant=tenant(session); UUID selectedVendor=vendor(vendorId);
-            List<ReceivingIntakeService.IntakeDocument> documents=parseDocuments(uploadFiles);
+            List<ReceivingIntakeService.IntakeDocument> documents=parseDocuments(uploadFiles,columnMapping);
             UUID id=intake.start(tenant,auth.getName(),selectedVendor,documentType,currency,reference,
                 money(freightAmount,"freight"),money(dutyImportAmount,"duty / import"),
                 money(otherSharedCost,"other landed costs"),documents);
@@ -94,8 +102,28 @@ public class ReceivingController {
             log.error("Invoice intake failed",e);
             redirect.addFlashAttribute("catalogError","The documents could not be uploaded. Nothing was saved; please check the files and try again.");
         }
+        redirect.addFlashAttribute("receivingUploadError",true);
+        redirect.addFlashAttribute("receivingUpload",java.util.Map.of("vendorId",java.util.Objects.toString(vendorId,""),
+            "documentType",documentType,"currency",currency,"reference",java.util.Objects.toString(reference,""),
+            "freightAmount",freightAmount,"dutyImportAmount",dutyImportAmount,"otherSharedCost",otherSharedCost));
         return "redirect:/app/receiving";
     }
+    @PostMapping(value="/app/receiving/columns/preview",produces="application/json")
+    ResponseEntity<?> previewColumns(HttpSession session,@RequestParam(value="files",required=false) List<MultipartFile> uploadFiles){
+        try{
+            tenant(session);List<java.util.Map<String,Object>> previews=new ArrayList<>();
+            for(MultipartFile file:selectedFiles(uploadFiles)){
+                var sheet=files.readFile(safe(file.getOriginalFilename()),file.getBytes());
+                boolean pdf=safe(file.getOriginalFilename()).toLowerCase(java.util.Locale.ROOT).endsWith(".pdf");
+                try { ReceivingColumnMapping.requireHeadings(sheet); }
+                catch(IllegalArgumentException error){throw new IllegalArgumentException(safe(file.getOriginalFilename())+": "+error.getMessage(),error);}
+                previews.add(java.util.Map.of("filename",safe(file.getOriginalFilename()),"needsMapping",!ReceivingColumnMapping.hasRequiredHeaders(sheet),
+                    "headed",previewSheet(sheet),"pdf",pdf));
+            }
+            return ResponseEntity.ok(previews);
+        }catch(Exception e){return ResponseEntity.badRequest().body(java.util.Map.of("error",e instanceof IllegalArgumentException?e.getMessage():"The uploaded columns could not be read. Check the file format."));}
+    }
+
     @GetMapping("/app/receiving/{id}") String workspace(@PathVariable UUID id,Authentication auth,HttpSession session,
             Model model,RedirectAttributes redirect){
         if(!(session.getAttribute("selectedTenantId") instanceof UUID))return "redirect:/app/select-account";
@@ -226,25 +254,43 @@ public class ReceivingController {
         try{BigDecimal amount=new BigDecimal(value==null||value.isBlank()?"0":value.trim());if(amount.signum()<0)throw new NumberFormatException();return amount;}
         catch(NumberFormatException e){throw new IllegalArgumentException("Enter a valid non-negative "+label+" amount.");}
     }
-    private List<ReceivingIntakeService.IntakeDocument> parseDocuments(List<MultipartFile> uploadFiles) throws Exception {
+    private List<MultipartFile> selectedFiles(List<MultipartFile> uploadFiles){
         List<MultipartFile> selected=uploadFiles==null?List.of():uploadFiles.stream().filter(file->file!=null&&!file.isEmpty()).toList();
         if(selected.isEmpty())throw new IllegalArgumentException("Choose at least one invoice or packing-list file.");
         if(selected.size()>MAX_DOCUMENTS_PER_UPLOAD)throw new IllegalArgumentException("Upload up to "+MAX_DOCUMENTS_PER_UPLOAD+" documents at a time.");
+        for(MultipartFile file:selected)if(file.getSize()>MAX_DOCUMENT_BYTES)throw new IllegalArgumentException("A document exceeds the 20 MB limit.");
         long batchBytes=selected.stream().mapToLong(MultipartFile::getSize).sum();
         if(batchBytes>MAX_BATCH_BYTES)throw new IllegalArgumentException("This document batch is larger than 80 MB. Upload it in two smaller batches to the same receiving.");
+        return selected;
+    }
+    private List<ReceivingIntakeService.IntakeDocument> parseDocuments(List<MultipartFile> uploadFiles) throws Exception {return parseDocuments(uploadFiles,null);}
+    private List<ReceivingIntakeService.IntakeDocument> parseDocuments(List<MultipartFile> uploadFiles,String mappingJson) throws Exception {
+        List<MultipartFile> selected=selectedFiles(uploadFiles);
+        ReceivingColumnMapping.Selection[] mappings=mappingJson==null||mappingJson.isBlank()?null:new tools.jackson.databind.ObjectMapper().readValue(mappingJson,ReceivingColumnMapping.Selection[].class);
+        if(mappings!=null&&mappings.length!=selected.size())throw new IllegalArgumentException("Review the columns for every uploaded document.");
+        int fileIndex=0;String batchSchema=null;
         List<ReceivingIntakeService.IntakeDocument> parsed=new ArrayList<>();
         for(MultipartFile file:selected){
             String filename=safe(file.getOriginalFilename());
             if(file.getSize()>MAX_DOCUMENT_BYTES)throw new IllegalArgumentException(filename+" is larger than the 20 MB document limit.");
             try{
-                byte[] bytes=file.getBytes();var sheet=files.readFile(filename,bytes);
+                byte[] bytes=file.getBytes();var choice=mappings==null?null:mappings[fileIndex++];
+                if(choice!=null&&!choice.headings())throw new IllegalArgumentException("Column headings are required. Headerless uploads are not accepted.");
+                var sheet=files.readFile(filename,bytes);
+                ReceivingColumnMapping.requireHeadings(sheet);
                 if(sheet.headers().isEmpty()||sheet.rows().isEmpty())throw new IllegalArgumentException("No invoice product rows were detected.");
+                String schema=ReceivingColumnMapping.schema(sheet,choice);
+                if(batchSchema==null)batchSchema=schema;
+                else if(!batchSchema.equals(schema))throw new IllegalArgumentException("Columns or quantity meaning differ from the first file. Upload files with identical columns and mappings together. Nothing was saved.");
+                boolean quantityHeading=choice!=null||ReceivingColumnMapping.hasRequiredHeaders(sheet);
+                if(!quantityHeading)throw new IllegalArgumentException("Match the uploaded column headings before reading this document. Nothing was saved.");
                 parsed.add(new ReceivingIntakeService.IntakeDocument(filename,
-                    HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)),sheet.rows()));
+                    HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)),choice==null?sheet.rows():ReceivingColumnMapping.apply(sheet,choice)));
             }catch(IllegalArgumentException e){throw new IllegalArgumentException(filename+": "+e.getMessage(),e);}
             catch(Exception e){throw new IllegalArgumentException(filename+": we could not identify invoice or packing-list rows. Confirm the file is CSV, TSV, XLS, XLSX, or a text-based PDF.",e);}
         }
         return parsed;
     }
+    private static java.util.Map<String,Object> previewSheet(CatalogImportService.ParsedSheet sheet){return java.util.Map.of("headers",sheet.headers(),"samples",sheet.rows().stream().limit(3).toList(),"totalRows",sheet.rows().size());}
     private static String documentMessage(int count,String verb){return count==1?"Document "+verb+" successfully.":count+" documents "+verb+" successfully.";}
 }

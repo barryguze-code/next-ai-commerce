@@ -84,3 +84,7 @@ html[data-theme=dark] .mapping-unmapped-badge{background:#40272c;color:#ef9ca2}
 .mapping-widget .mw-line>.mapping-component-picture[hidden]{display:none}
 .mapping-widget .mw-picker input[type=search]{font-weight:500}
 @media(max-width:560px){.mapping-widget .mw-line{grid-template-columns:minmax(0,1fr) 64px 28px;gap:8px}.mapping-widget .mw-line:has(>.mapping-component-picture:not([hidden])){grid-template-columns:40px minmax(0,1fr) 64px 28px}.mapping-widget .mw-line>.mapping-component-picture{width:40px;height:44px}}
+
+/* Bounded product/SKU review uses the shared mapping shell and list controls. */
+.mapping-widget .product-mapping-results{display:flex;flex-direction:column;max-height:360px;gap:0}
+.mapping-widget .product-mapping-results button{flex:none;text-align:left;white-space:normal;border:0;border-radius:0;border-bottom:1px solid var(--line);font:inherit;padding:12px 16px}

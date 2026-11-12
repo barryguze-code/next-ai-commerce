@@ -52,14 +52,47 @@ public class CatalogImportService {
             List<String> ignoredHeaders,String processState,int processedRows,int progressPercent,String processError,
             int mappedSkus,int unmappedSkus) {}
 
+    /** Stage matching files as one review; no catalogue products are created here. */
+    @Transactional
+    public UUID stageFiles(UUID tenantId, String actorEmail, UUID vendorId, List<MultipartFile> files) {
+        if(files==null || files.isEmpty() || files.size()>12)
+            throw new IllegalArgumentException("Choose between 1 and 12 catalogue files.");
+        if(files.size()==1)return stage(tenantId,actorEmail,vendorId,files.getFirst());
+        try {
+            List<String> headers=null; List<Map<String,String>> rows=new ArrayList<>();
+            var digest=MessageDigest.getInstance("SHA-256"); long total=0;var hashes=new java.util.HashSet<String>();
+            for(MultipartFile file:files){
+                if(file==null||file.isEmpty())throw new IllegalArgumentException("Choose non-empty catalogue files.");
+                total+=file.getSize();if(total>MAX_BYTES)throw new IllegalArgumentException("Catalogue files must total 20 MB or less.");
+                byte[] bytes=file.getBytes();if(!hashes.add(sha256(bytes)))throw new IllegalArgumentException("The same file was selected more than once.");
+                ParsedSheet sheet=readFile(file.getOriginalFilename(),bytes);
+                if(sheet.rows().isEmpty())throw new IllegalArgumentException(safeFilename(file.getOriginalFilename())+": no product rows found.");
+                if(sheet.headers().contains("__source_filename"))throw new IllegalArgumentException("Reserved source column name. Rename __source_filename before uploading.");
+                if(headers==null)headers=sheet.headers();
+                else if(!headers.equals(sheet.headers()))throw new IllegalArgumentException(safeFilename(file.getOriginalFilename())+": columns differ. Upload files with identical headings in the same order.");
+                if(rows.size()+sheet.rows().size()>MAX_ROWS)throw new IllegalArgumentException("The files exceed the 50,000 product row limit.");
+                for(var row:sheet.rows()){
+                    var source=new LinkedHashMap<>(row);source.put("__source_filename",safeFilename(file.getOriginalFilename()));rows.add(source);
+                }
+                digest.update(java.nio.ByteBuffer.allocate(Long.BYTES).putLong(bytes.length).array());digest.update(bytes);
+            }
+            String names=files.stream().map(f->safeFilename(f.getOriginalFilename())).collect(java.util.stream.Collectors.joining("; "));
+            return stagePrepared(tenantId,actorEmail,vendorId,new ParsedSheet(headers,rows),names.length()>500?names.substring(0,497)+"...":names,java.util.HexFormat.of().formatHex(digest.digest()));
+        }catch(IllegalArgumentException e){throw e;}catch(Exception e){throw new IllegalArgumentException("The catalogue files could not be read. Check their format and try again.",e);}
+    }
+
     @Transactional
     public UUID stage(UUID tenantId, String actorEmail, UUID vendorId, MultipartFile file) {
-        setTenant(tenantId);
         if (file == null || file.isEmpty()) throw new IllegalArgumentException("Choose a catalogue file.");
         if (file.getSize() > MAX_BYTES) throw new IllegalArgumentException("Catalogue files must be 20 MB or smaller.");
+        try {return stagePrepared(tenantId,actorEmail,vendorId,readFile(file.getOriginalFilename(),file.getBytes()),
+                safeFilename(file.getOriginalFilename()),sha256(file.getBytes()));}
+        catch(IllegalArgumentException e){throw e;}catch(Exception e){throw new IllegalArgumentException("The catalogue file could not be read.",e);}
+    }
+
+    private UUID stagePrepared(UUID tenantId,String actorEmail,UUID vendorId,ParsedSheet sheet,String filename,String fileHash) {
+        setTenant(tenantId);
         try {
-            byte[] bytes = file.getBytes();
-            String fileHash=sha256(bytes);
             ExistingImport existing=jdbc.query("""
                 SELECT id,status,vendor_id FROM catalog_imports WHERE tenant_id=? AND file_sha256=?
                 """,rs->rs.next()?new ExistingImport(rs.getObject(1,UUID.class),rs.getString(2),rs.getObject(3,UUID.class)):null,tenantId,fileHash);
@@ -71,10 +104,9 @@ public class CatalogImportService {
                 if(!"PROCESSING".equals(existing.status()))jdbc.update(
                     "DELETE FROM catalog_import_progress WHERE tenant_id=? AND catalog_import_id=?",tenantId,existing.id());
                 log.info("Catalogue upload resumed: file={} | existing review status={} | next=continue mapping and approval",
-                    safeFilename(file.getOriginalFilename()),readableImportStatus(existing.status()));
+                    filename,readableImportStatus(existing.status()));
                 return existing.id();
             }
-            ParsedSheet sheet = readFile(file.getOriginalFilename(), bytes);
             if (sheet.headers().isEmpty() || sheet.rows().isEmpty())
                 throw new IllegalArgumentException("The catalogue must contain headings and at least one product row.");
             if (sheet.rows().size() > MAX_ROWS)
@@ -87,7 +119,7 @@ public class CatalogImportService {
                 INSERT INTO catalog_imports
                     (tenant_id,vendor_id,original_filename,file_sha256,status,column_mapping,total_rows,uploaded_by)
                 VALUES (?,?,?,?,'MAPPED',?::jsonb,?,?) RETURNING id
-                """, UUID.class, tenantId, vendorId, safeFilename(file.getOriginalFilename()), fileHash,
+                """, UUID.class, tenantId, vendorId, filename, fileHash,
                 json.writeValueAsString(autoMapping), sheet.rows().size(), actorId);
             List<Object[]> batch = new ArrayList<>(sheet.rows().size());
             int rowNumber = 2;
@@ -102,14 +134,14 @@ public class CatalogImportService {
             ValidationSummary validation=jdbc.query("SELECT status,valid_rows,rejected_rows FROM catalog_imports WHERE tenant_id=? AND id=?",
                 rs->rs.next()?new ValidationSummary(rs.getString(1),rs.getInt(2),rs.getInt(3)):null,tenantId,importId);
             log.info("Catalogue upload read: file={} | vendor={} | products={} | columns={} | auto-mapped fields={} | validation={} (valid={}, needs attention={}) | next={}",
-                safeFilename(file.getOriginalFilename()),vendorName,sheet.rows().size(),sheet.headers().size(),autoMapping.size()-1,
+                filename,vendorName,sheet.rows().size(),sheet.headers().size(),autoMapping.size()-1,
                 "VALIDATED".equals(validation.status())?"passed":"mapping review required",validation.valid(),validation.rejected(),
                 "VALIDATED".equals(validation.status())?"waiting for user approval":"waiting for user to correct mappings");
             return importId;
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Catalogue upload could not be staged: file={} | reason={}",safeFilename(file.getOriginalFilename()),
+            log.error("Catalogue upload could not be staged: file={} | reason={}",filename,
                 e.getMessage()==null?e.getClass().getSimpleName():e.getMessage(),e);
             throw new IllegalArgumentException("We could not prepare this catalogue upload. The application log now shows the exact file, database, or validation reason.", e);
         }
@@ -134,7 +166,7 @@ public class CatalogImportService {
             SELECT source_data::text FROM catalog_import_rows
             WHERE tenant_id=? AND catalog_import_id=? ORDER BY row_number LIMIT 8
             """, (rs,row)->readMap(rs.getString(1)), tenantId, importId);
-        List<String> headers = samples.isEmpty() ? List.of() : List.copyOf(samples.getFirst().keySet());
+        List<String> headers = samples.isEmpty() ? List.of() : samples.getFirst().keySet().stream().filter(key->!key.equals("__source_filename")).toList();
         List<String> messages=jdbc.query("""
             SELECT 'Row '||row_number||': '||coalesce(validation_messages->>0,'Review this row.')
             FROM catalog_import_rows WHERE tenant_id=? AND catalog_import_id=?
@@ -157,8 +189,6 @@ public class CatalogImportService {
     public void validate(UUID tenantId,UUID importId,Map<String,String> mapping){
         setTenant(tenantId);
         require(mapping,"productName","Product name");require(mapping,"vendorItemCode","Vendor item code");require(mapping,"listCost","List cost");
-        if(mapping.get("accountSku")!=null&&mapping.get("accountSku").equals(mapping.get("vendorItemCode")))
-            throw new IllegalArgumentException("Account SKU and vendor item code cannot use the same spreadsheet column. Leave Account SKU unmapped when no internal SKU exists.");
         List<SourceRow> rows=jdbc.query("SELECT id,row_number,source_data::text FROM catalog_import_rows WHERE tenant_id=? AND catalog_import_id=? ORDER BY row_number",
             (rs,row)->new SourceRow(rs.getObject(1,UUID.class),rs.getInt(2),readMap(rs.getString(3))),tenantId,importId);
         if(rows.isEmpty())throw new IllegalArgumentException("This file has no product rows.");
@@ -296,6 +326,22 @@ public class CatalogImportService {
         mergeIdentifiers();
         // Supplier item codes are stored only on tenant/vendor offers; they do not establish global identity.
         reportProgress(tenantId,importId,rows.size()*3/10);
+        // Omitted internal codes inherit the supplier code, never replacing an existing explicit SKU.
+        jdbc.update("""
+            UPDATE catalog_import_work work SET account_sku=coalesce(
+              (SELECT CASE WHEN nullif(btrim(item.account_sku),'') IS NOT NULL THEN item.account_sku END FROM account_catalog_items item
+               WHERE item.tenant_id=? AND item.global_product_id=work.global_id),work.vendor_item_code)
+            WHERE work.account_sku IS NULL
+            """,tenantId);
+        Integer skuConflicts=jdbc.queryForObject("""
+            SELECT count(*) FROM catalog_import_work work WHERE
+              EXISTS(SELECT 1 FROM account_catalog_items item WHERE item.tenant_id=?
+                AND item.account_sku=work.account_sku AND item.global_product_id<>work.global_id)
+              OR EXISTS(SELECT 1 FROM catalog_import_work other WHERE other.account_sku=work.account_sku
+                AND other.global_id<>work.global_id)
+            """,Integer.class,tenantId);
+        if(skuConflicts!=null&&skuConflicts>0)throw new IllegalArgumentException(
+            "Account SKU conflicts with another product. Supply distinct Account SKUs before importing; nothing was saved.");
         jdbc.update("""
             INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku,created_by)
             SELECT ?,global_id,account_sku,? FROM catalog_import_work
@@ -427,6 +473,13 @@ public class CatalogImportService {
             ? parseXlsx(bytes) : parseDelimited(bytes, lower.endsWith(".tsv") ? '\t' : ',');
     }
 
+    /** Read a headerless upload without dropping its first product row. */
+    public ParsedSheet readFileWithoutHeaders(String filename, byte[] bytes) throws Exception {
+        String lower=filename==null?"":filename.toLowerCase(Locale.ROOT);
+        if(lower.endsWith(".pdf"))throw new IllegalArgumentException("PDF extraction already provides column headings.");
+        return lower.endsWith(".xlsx")||lower.endsWith(".xls")?parseXlsx(bytes,false):parseDelimited(bytes,lower.endsWith(".tsv")?'\t':',',false);
+    }
+
     private ParsedSheet parsePdf(byte[] bytes) throws Exception {
         try (var document = Loader.loadPDF(bytes)) {
             PDFTextStripper stripper=new PDFTextStripper();stripper.setSortByPosition(true);
@@ -548,15 +601,16 @@ public class CatalogImportService {
             .map(String::trim).filter(value -> !value.isBlank()).toList();
     }
 
-    private ParsedSheet parseXlsx(byte[] bytes) throws Exception {
+    private ParsedSheet parseXlsx(byte[] bytes) throws Exception {return parseXlsx(bytes,true);}
+    private ParsedSheet parseXlsx(byte[] bytes,boolean headings) throws Exception {
         try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
             var sheet = workbook.getSheetAt(0); var formatter = new DataFormatter(Locale.US);
             if (sheet.getPhysicalNumberOfRows()==0) return new ParsedSheet(List.of(),List.of());
             var headerRow=sheet.getRow(sheet.getFirstRowNum());
             List<String> headers=new ArrayList<>();
-            for(int c=0;c<headerRow.getLastCellNum();c++) headers.add(uniqueHeader(headers,formatter.formatCellValue(headerRow.getCell(c)),c));
+            for(int c=0;c<headerRow.getLastCellNum();c++) headers.add(uniqueHeader(headers,headings?formatter.formatCellValue(headerRow.getCell(c)):"Column "+(c+1),c));
             List<Map<String,String>> rows=new ArrayList<>();
-            for(int r=sheet.getFirstRowNum()+1;r<=sheet.getLastRowNum();r++) {
+            for(int r=sheet.getFirstRowNum()+(headings?1:0);r<=sheet.getLastRowNum();r++) {
                 var source=sheet.getRow(r); if(source==null) continue; LinkedHashMap<String,String> row=new LinkedHashMap<>(); boolean any=false;
                 for(int c=0;c<headers.size();c++){String value=formatter.formatCellValue(source.getCell(c)).trim();row.put(headers.get(c),value);any|=!value.isBlank();}
                 if(any) rows.add(row);
@@ -565,12 +619,13 @@ public class CatalogImportService {
         }
     }
 
-    private ParsedSheet parseDelimited(byte[] bytes, char delimiter) {
+    private ParsedSheet parseDelimited(byte[] bytes, char delimiter) {return parseDelimited(bytes,delimiter,true);}
+    private ParsedSheet parseDelimited(byte[] bytes,char delimiter,boolean headings) {
         List<List<String>> lines=parseRecords(new String(bytes,StandardCharsets.UTF_8),delimiter);
         if(lines.isEmpty()) return new ParsedSheet(List.of(),List.of());
-        List<String> headers=new ArrayList<>(); for(int i=0;i<lines.getFirst().size();i++) headers.add(uniqueHeader(headers,lines.getFirst().get(i),i));
+        List<String> headers=new ArrayList<>(); for(int i=0;i<lines.getFirst().size();i++) headers.add(uniqueHeader(headers,headings?lines.getFirst().get(i):"Column "+(i+1),i));
         List<Map<String,String>> rows=new ArrayList<>();
-        for(int r=1;r<lines.size();r++){LinkedHashMap<String,String> row=new LinkedHashMap<>();boolean any=false;for(int c=0;c<headers.size();c++){String value=c<lines.get(r).size()?lines.get(r).get(c).trim():"";row.put(headers.get(c),value);any|=!value.isBlank();}if(any)rows.add(row);}
+        for(int r=headings?1:0;r<lines.size();r++){LinkedHashMap<String,String> row=new LinkedHashMap<>();boolean any=false;for(int c=0;c<headers.size();c++){String value=c<lines.get(r).size()?lines.get(r).get(c).trim():"";row.put(headers.get(c),value);any|=!value.isBlank();}if(any)rows.add(row);}
         return new ParsedSheet(headers,rows);
     }
 

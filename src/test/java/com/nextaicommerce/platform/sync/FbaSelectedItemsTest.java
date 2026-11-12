@@ -42,6 +42,20 @@ class FbaSelectedItemsTest {
         worker = mock(FbaManualWorker.class);
         sync = new FbaManualSync(jdbc,tx,worker,true);
     }
+    @Test void headerRefreshPreservesCompletedItemEvidenceWithoutFees() {
+        var json=new tools.jackson.databind.ObjectMapper();
+        var inbound=new FbaInboundSync(mock(AmazonSpApiClient.class),new AmazonSyncStore(jdbc,tx),jdbc,tx,json,new AmazonReportNormalizer(jdbc,tx,json,null));
+        var job=new AmazonSyncStore.Job(UUID.randomUUID(),tenant,UUID.randomUUID(),store,"FBA_INBOUND","FBA_MANUAL","US",java.time.Instant.now(),java.time.Instant.now(),null,0,0,false,null);
+        jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=?::jsonb WHERE tenant_id=? AND shipment_id='A'",
+            "{\"itemEvidenceVersion\":1,\"itemEvidence\":[{\"SellerSKU\":\"0001\",\"QuantityShipped\":3,\"QuantityReceived\":0}],\"itemsCheckedAt\":\"2026-11-12T00:00:00Z\",\"itemEvidenceJob\":\"original\"}",tenant);
+        var rows=json.createArrayNode();rows.addObject().put("ShipmentId","A").put("ShipmentStatus","CLOSED");
+        inbound.saveShipments(job,rows);
+        String payload=jdbc.queryForObject("SELECT raw_payload::text FROM amazon_fba_shipments WHERE tenant_id=? AND shipment_id='A'",String.class,tenant);
+        assertThat(payload).contains("itemEvidenceVersion","0001","itemsCheckedAt","original","CLOSED").doesNotContain("feesCheckedAt");
+        jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=raw_payload-'itemEvidence'-'itemEvidenceVersion' WHERE tenant_id=? AND shipment_id='A'",tenant);
+        inbound.saveShipments(job,rows);
+        assertThat(jdbc.queryForObject("SELECT jsonb_exists(raw_payload,'itemEvidenceVersion') FROM amazon_fba_shipments WHERE tenant_id=? AND shipment_id='A'",Boolean.class,tenant)).isFalse();
+    }
     @Test void selectionCreatesOnlyOneSortedItemJobAndDoesNotJoinOrReplaceIt() {
         UUID job=sync.requestItems(tenant,store,List.of("B","A","B"));
         assertThat(jdbc.queryForObject("""

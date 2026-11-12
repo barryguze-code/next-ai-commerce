@@ -16,6 +16,56 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
 import org.springframework.http.ResponseEntity;
 
 class ReceivingControllerTest {
+    @Test void headerlessPackingListReturnsAnActionableUploadErrorBeforeIntake() throws Exception {
+        var intake=new StubIntake();
+        var controller=new ReceivingController(new ReceivingRepository(null,null),new CatalogRepository(null),
+            new CatalogImportService(null,null,null),intake);
+        String csv="1000015745001,\"KARACA EMIRGAN STEEL POT SET, COLORLES\",42\n1000004690001,KARACA EMIRGAN XL 10 PIECE POT SET,108\n";
+        var redirect=new RedirectAttributesModelMap();
+        String result=controller.startWithDocument(authentication(),session(),UUID.randomUUID().toString(),"PACKING_LIST","USD",null,
+            "0","0","0",List.of(new MockMultipartFile("files","packing.csv","text/csv",csv.getBytes(java.nio.charset.StandardCharsets.UTF_8))),redirect);
+        assertThat(result).isEqualTo("redirect:/app/receiving");
+        assertThat(redirect.getFlashAttributes().get("catalogError").toString()).contains("Column headings");
+        assertThat(redirect.getFlashAttributes().get("receivingUploadError")).isEqualTo(true);
+        assertThat(intake.documents).isEmpty();
+    }
+
+    @Test void columnPreviewRejectsHeaderlessFilesWithoutCreatingAReceiving() {
+        var intake=new StubIntake();
+        var controller=new ReceivingController(new ReceivingRepository(null,null),new CatalogRepository(null),new CatalogImportService(null,null,null),intake);
+        var file=new MockMultipartFile("files","packing.csv","text/csv","000123,Product,42\n000456,Other,108\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var response=controller.previewColumns(session(),List.of(file));
+        assertThat(response.getStatusCode().is4xxClientError()).isTrue();
+        assertThat(response.getBody().toString()).contains("packing.csv", "Column headings are required");
+        assertThat(intake.documents).isEmpty();
+    }
+
+    @Test void confirmedMappingUsesTheOriginalFileAndIndividualUnits() throws Exception {
+        var intake=new StubIntake();
+        var controller=new ReceivingController(new ReceivingRepository(null,null),new CatalogRepository(null),new CatalogImportService(null,null,null),intake);
+        byte[] bytes="AccountSKU,Description,Quantity\n000123,Product,42\n000456,Other,108\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String mapping="[{\"headings\":true,\"quantityUnit\":\"EACH\",\"fields\":{\"AccountSKU\":\"0\",\"Description\":\"1\",\"Quantity\":\"2\"}}]";
+        var result=controller.startMappedWithDocument(authentication(),session(),UUID.randomUUID().toString(),"PACKING_LIST","USD",null,"0","0","0",
+            List.of(new MockMultipartFile("files","packing.csv","text/csv",bytes)),mapping,new RedirectAttributesModelMap());
+        assertThat(result).isEqualTo("redirect:/app/receiving/"+intake.sessionId);
+        var document=intake.documents.getFirst();
+        assertThat(document.rows()).hasSize(2);
+        assertThat(document.rows().getFirst()).containsEntry("AccountSKU","000123").containsEntry("ShipQuantity","42");
+        assertThat(document.sha256()).isEqualTo(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)));
+    }
+
+    @Test void individualUnitPackingListRetainsAllRowsAndDoesNotMultiplyByCasePack() throws Exception {
+        var intake=new StubIntake();
+        var controller=new ReceivingController(new ReceivingRepository(null,null),new CatalogRepository(null),new CatalogImportService(null,null,null),intake);
+        String csv="AccountSKU,Description,ShipQuantity\n1000267175001,Karaca pot,120\n1000267175001,Karaca pot,120\n";
+        var redirect=new RedirectAttributesModelMap();
+        assertThat(controller.startWithDocument(authentication(),session(),UUID.randomUUID().toString(),"PACKING_LIST","USD",null,
+            "0","0","0",List.of(new MockMultipartFile("files","packing.csv","text/csv",csv.getBytes(java.nio.charset.StandardCharsets.UTF_8))),redirect))
+            .isEqualTo("redirect:/app/receiving/"+intake.sessionId);
+        assertThat(intake.documents.getFirst().rows()).hasSize(2).allSatisfy(row->assertThat(row)
+            .containsEntry("AccountSKU","1000267175001").containsEntry("ShipQuantity","120").doesNotContainKey("UnitsPerCase"));
+    }
+
     @Test
     void missingVendorReturnsFriendlyMessageBeforeAnyDataIsSaved() {
         StubIntake intake=new StubIntake();
@@ -37,8 +87,8 @@ class ReceivingControllerTest {
         ReceivingController controller=new ReceivingController(new ReceivingRepository(null,null),
             new CatalogRepository(null),files,intake);
         UUID vendorId=UUID.randomUUID();
-        Map<String,String> row=new LinkedHashMap<>();row.put("Description","Product");row.put("ItemCode","123");row.put("Quantity","1");
-        var parsed=new CatalogImportService.ParsedSheet(List.of("Description","ItemCode","Quantity"),List.of(row));
+        Map<String,String> row=new LinkedHashMap<>();row.put("Description","Product");row.put("VendorItemCode","123");row.put("Quantity","1");
+        var parsed=new CatalogImportService.ParsedSheet(List.of("Description","VendorItemCode","Quantity"),List.of(row));
         files.result=parsed;
         RedirectAttributesModelMap redirect=new RedirectAttributesModelMap();
 

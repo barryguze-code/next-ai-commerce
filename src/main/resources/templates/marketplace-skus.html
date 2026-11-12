@@ -22,8 +22,8 @@
     <div><h1>Marketplace SKUs</h1></div>
     <div class="header-actions"><div th:replace="~{fragments/context-switcher :: switcher}"></div></div>
   </header>
-  <p class="notice" th:if="${mappingSuccess}" th:text="${mappingSuccess}">Mapping saved.</p>
-  <p class="notice error" th:if="${mappingError}" th:text="${mappingError}">Mapping could not be saved.</p>
+  <p class="notice" data-mapping-result="success" th:if="${mappingSuccess}" th:text="${mappingSuccess}">Mapping saved.</p>
+  <p class="notice error" data-mapping-result="error" th:if="${mappingError}" th:text="${mappingError}">Mapping could not be saved.</p>
   <th:block th:if="${shopifySetup != null}">
     <link rel="stylesheet" href="/css/shopify-setup.css?v=shopify-shared-uat-2" th:href="@{/css/shopify-setup.css(v=${buildVersion})}">
     <th:block th:unless="${shopifyInitializationComplete == true}"><section th:replace="~{fragments/shopify-setup :: setup}"></section></th:block>

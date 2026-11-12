@@ -191,12 +191,13 @@ class ReceivingWorkflowDatabaseTest {
         String path=System.getProperty("packingListFixture","");
         byte[] bytes=path.isBlank()?"SKU,Description,Item Code,UPC / EAN,unit cost,Quantity,Default location i,Receiving,Status\nET-SAMPLE,Sample towel,B09SAMPLE01,B09SAMPLE01,5,150,,,\n".getBytes(java.nio.charset.StandardCharsets.UTF_8):java.nio.file.Files.readAllBytes(java.nio.file.Path.of(path));
         var rows=parser.readFile("packing-list.csv",bytes).rows();
-        // Mirror production: exact account SKUs exist, but there are no supplier offers or GTINs in this file.
+        // Exact account SKUs resolve against this supplier buying default; file has no costs or GTINs.
         tx.executeWithoutResult(t->{setTenant();for(var row:rows){
             String code=row.entrySet().stream().filter(e->e.getKey().replaceAll("[^A-Za-z]","").equalsIgnoreCase("SKU")).findFirst().orElseThrow().getValue();
             UUID global=UUID.randomUUID(),item=UUID.randomUUID();
             jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Existing packing product')",global);
             jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES (?,?,?,?)",item,tenant,global,code);
+            jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,list_cost) VALUES (?,?,?,0.01)",tenant,vendor,item);
         }});
         var doc=new ReceivingIntakeService.IntakeDocument("packing-list.csv","fixture-content-hash",rows);
         var intake=new ReceivingIntakeService(receiving);
@@ -216,7 +217,7 @@ class ReceivingWorkflowDatabaseTest {
             assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
             assertThat(jdbc.queryForObject("SELECT sum(ordered_quantity) FROM receiving_document_lines WHERE tenant_id=?",BigDecimal.class,tenant)).isEqualByComparingTo(path.isBlank()?"150":"487");
             assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(rows.size());
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_catalog_offers WHERE tenant_id=?",Integer.class,tenant)).isZero();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_catalog_offers WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(rows.size());
             assertThat(jdbc.queryForList("SELECT account_catalog_item_id FROM receiving_document_lines WHERE tenant_id=?",UUID.class,tenant)).hasSize(rows.size());
             assertThatThrownBy(()->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Duplicate",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).hasMessageContaining("already uploaded");
             assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_sessions WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
@@ -257,6 +258,18 @@ class ReceivingWorkflowDatabaseTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
     }
 
+    @Test void packingListUsesOnlyAccountVendorDefaultAndPreservesHistory(){
+        var f=fixture("INVOICE");
+        tx.executeWithoutResult(t->{setTenant();jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,vendor_item_code,list_cost,currency,is_default) VALUES (?,?,?,'COST-FIXTURE',0.01,'USD',true)",tenant,vendor,f.product());});
+        long ledgerBefore=jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Long.class,tenant);
+        var intake=new ReceivingIntakeService(receiving);
+        UUID session=tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Cost fixture",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(new ReceivingIntakeService.IntakeDocument("cost.csv",UUID.randomUUID().toString(),List.of(Map.of("VendorItemCode","COST-FIXTURE","Description","Fixture","ShipQuantity","42"))))));
+        assertThat(jdbc.queryForObject("SELECT i.unit_cost FROM purchase_order_items i JOIN purchase_orders p ON p.id=i.purchase_order_id WHERE p.receiving_session_id=?",BigDecimal.class,session)).isEqualByComparingTo("0.01");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Long.class,tenant)).isEqualTo(ledgerBefore);
+        tx.executeWithoutResult(t->{setTenant();jdbc.update("UPDATE vendor_catalog_offers SET effective_to=current_date WHERE tenant_id=? AND vendor_item_code='COST-FIXTURE'",tenant);});
+        assertThatThrownBy(()->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Unknown cost",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(new ReceivingIntakeService.IntakeDocument("cost.csv",UUID.randomUUID().toString(),List.of(Map.of("AccountSKU","MISSING","Description","Fixture","ShipQuantity","1"))))))).isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test void packingListAccountSkuFallbackPreservesExactIdentityAndRejectsConflicts() {
         UUID other=UUID.randomUUID(),foreign=UUID.randomUUID(),foreignGlobal=UUID.randomUUID(),own=UUID.randomUUID(),ownGlobal=UUID.randomUUID();
         tx.executeWithoutResult(t->{
@@ -265,6 +278,7 @@ class ReceivingWorkflowDatabaseTest {
             jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES (?,?,?,'00042'),(?,?,?,'Foreign-Only')",own,tenant,ownGlobal,foreign,other,foreignGlobal);
             jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) VALUES (?,'UPC','012345678901',true)",foreignGlobal);
         });
+        tx.executeWithoutResult(t->{setTenant();jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,list_cost) VALUES (?,?,?,0.01)",tenant,vendor,own);});
         var intake=new ReceivingIntakeService(receiving);
         java.util.function.Function<Map<String,String>,UUID> upload=row->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Exact identity",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(new ReceivingIntakeService.IntakeDocument("identity.csv",UUID.randomUUID().toString(),List.of(row)))));
         UUID session=upload.apply(Map.of("Account SKU","00042","Description","Source label","Quantity","2","UPC / EAN","B09INVALID1"));
@@ -281,7 +295,7 @@ class ReceivingWorkflowDatabaseTest {
         assertThatThrownBy(()->upload.apply(Map.of("SKU","Unknown-ASIN","Description","Source","Quantity","1","UPC / EAN","B09TPK5QQS"))).hasMessageContaining("An ASIN cannot be used as a barcode");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers",Long.class)).isEqualTo(identifiersBefore);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM global_catalog_products",Long.class)).isEqualTo(productsBefore);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_catalog_offers WHERE tenant_id=?",Integer.class,tenant)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_catalog_offers WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
         assertThatThrownBy(()->upload.apply(Map.of("Account SKU","Unknown","Description","Source","Quantity","1"))).hasMessageContaining("No active product matches account SKU");
         assertThatThrownBy(()->upload.apply(Map.of("Account SKU","00042","SKU","42","Description","Source","Quantity","1"))).hasMessageContaining("different Account SKU and SKU");
         assertThatThrownBy(()->upload.apply(Map.of("SKU","00042","Description","Source","Quantity","1","UPC / EAN","012345678901"))).hasMessageContaining("Barcode conflicts");
@@ -490,7 +504,7 @@ class ReceivingWorkflowDatabaseTest {
     BigDecimal stock(Fixture f){return tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,f.product());});}
     UUID receipt(Fixture f){return work.receipts(tenant,f.line()).getFirst().id();}
 
-    @Test void invoiceReusesVendorMappingWithoutChangingConflictingCatalogueIdentity(){
+    @Test void invoiceRejectsConflictingCatalogueIdentityWithoutChangingHistory(){
         var mapped=fixture("INVOICE");var other=fixture("INVOICE");
         String barcode="856502006480";
         UUID originalGlobal=tx.execute(s->{setTenant();
@@ -498,16 +512,14 @@ class ReceivingWorkflowDatabaseTest {
             jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) SELECT global_product_id,'UPC',?,true FROM account_catalog_items WHERE tenant_id=? AND id=?",barcode,tenant,other.product());
             return jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenant,mapped.product());
         });
-        UUID document=receiving.addDocument(tenant,mapped.session(),vendor,"INVOICE","invoice-4046298.csv",
+        assertThatThrownBy(()->receiving.addDocument(tenant,mapped.session(),vendor,"INVOICE","invoice-4046298.csv",
             UUID.randomUUID().toString().replace("-","").repeat(2),"USD",List.of(Map.of(
                 "InvoiceNumber","4046298","Description","Invoice product description","ItemNumber","299405",
-                "UPC",barcode,"ShipQuantity","2","NetEach","6.25")),actor);
+                "UPC",barcode,"ShipQuantity","2","NetEach","6.25")),actor)).hasMessageContaining("Conflicting or inactive");
         tx.executeWithoutResult(s->{setTenant();
-            assertThat(jdbc.queryForObject("SELECT account_catalog_item_id FROM receiving_document_lines WHERE tenant_id=? AND receiving_document_id=?",UUID.class,tenant,document)).isEqualTo(mapped.product());
             assertThat(jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenant,mapped.product())).isEqualTo(originalGlobal);
             assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
             assertThat(jdbc.queryForObject("SELECT list_cost FROM vendor_catalog_offers WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,mapped.product())).isEqualByComparingTo("5.07");
-            assertThat(jdbc.queryForObject("SELECT invoice_unit_cost FROM receiving_document_lines WHERE tenant_id=? AND receiving_document_id=?",BigDecimal.class,tenant,document)).isEqualByComparingTo("6.25");
         });
     }
 

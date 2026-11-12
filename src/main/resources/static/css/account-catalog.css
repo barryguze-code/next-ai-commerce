@@ -15,3 +15,19 @@
 .catalog-vendor-logo{position:absolute;top:16px;right:16px;width:60px;height:60px;object-fit:contain;border-radius:10px}
 .catalog-vendor-logo[hidden]{display:none}
 .account-catalog-workspace .vendor-grid dl{margin-right:-76px}
+/* CD catalogue upload: one contained picker, shared dialog and controls. */
+#upload-dialog .dialog-shell,#rp-vendor-directory .dialog-shell,#rp-vendor-editor .dialog-shell{display:flex;flex-direction:column;max-height:calc(100dvh - 34px);min-height:0}
+#upload-dialog .dialog-body,#rp-vendor-directory .dialog-body,#rp-vendor-editor .dialog-body{overflow:auto;min-height:0}
+#upload-dialog .dialog-actions,#rp-vendor-directory .dialog-actions,#rp-vendor-editor .dialog-actions{flex:none;flex-wrap:wrap}
+.catalog-file-drop{border:1px solid var(--line);border-radius:16px;padding:16px;min-width:0}.catalog-file-drop.is-dragging{border-color:var(--primary,#2c68db);background:var(--blue-soft,#edf4ff)}
+.catalog-file-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}.catalog-template-link{display:inline-flex;align-items:center;gap:6px;font-size:.8125rem;font-weight:400;color:var(--primary,#2c68db);text-decoration:none}.catalog-template-link img{width:24px;height:24px;object-fit:contain;display:block}.catalog-template-link:hover{text-decoration:underline}
+.catalog-drop-hint{margin-left:12px;color:var(--muted);font-size:.8125rem}[data-catalog-files]{padding:0;margin:12px 0 0;list-style:none}[data-catalog-files]:empty{display:none}[data-catalog-files] li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0}[data-catalog-files] span{overflow-wrap:anywhere;font-size:.875rem}.catalog-file-remove{border:0;background:transparent;color:var(--muted);width:32px;height:32px;flex:none;cursor:pointer}
+.catalog-upload-error,.rp-vendor-save-error{flex-basis:100%;margin:0;color:var(--red,#bd3644)}
+#rp-vendor-directory{width:min(680px,calc(100vw - 32px))}#rp-vendor-editor{width:min(720px,calc(100vw - 32px))}#rp-vendor-directory .rp-vendor-directory-table{width:100%!important;min-width:0!important;table-layout:fixed;border-collapse:collapse}.rp-vendor-directory-table td{padding:12px 0;border-bottom:1px solid var(--line)}.rp-vendor-directory-table td:last-child{text-align:right;width:80px}.rp-vendor-identity{display:flex;align-items:center;gap:12px}.rp-vendor-identity .table-overview-picture{width:48px;height:48px;flex:0 0 48px}.rp-vendor-identity small{display:block}.catalog-vendor-toast{position:fixed;right:24px;bottom:24px;background:var(--surface,#fff);color:var(--ink,#17283d);border:1px solid var(--line);border-radius:12px;padding:12px 18px;box-shadow:0 8px 24px #0002;z-index:var(--z-toast,1200)}
+
+/* CD compact picker: one control row, selected files below. */
+.catalog-file-drop{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.catalog-file-drop .catalog-drop-hint{margin:0;flex:1 1 120px}
+.catalog-file-drop .catalog-template-link{display:grid;place-items:center;width:40px;height:40px;flex:0 0 40px;margin-left:auto}
+.catalog-file-drop .catalog-template-link img{width:32px;height:32px}
+.catalog-file-drop [data-catalog-files]{flex:1 0 100%;width:100%;margin:0}

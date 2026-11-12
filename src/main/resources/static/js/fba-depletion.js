@@ -32,7 +32,7 @@
 
   });
   const refresh=find('[data-depletion-refresh]');if(refresh)refresh.hidden=!review.plans.some(p=>p.shipment.itemsVerified===false);
-  window.NextAiPlatformControls?.enhance(dialog);dialog.querySelectorAll('[data-location-key][data-location-count="1"]').forEach(n=>{if(n.nextElementSibling?.classList.contains('location-picker-trigger'))n.nextElementSibling.hidden=true;});status('');allocationCue();quantityCue();controls();
+  window.NextAiPlatformControls?.enhance(dialog);dialog.querySelectorAll('[data-location-key][data-location-count="1"]').forEach(n=>{if(n.nextElementSibling?.classList.contains('location-picker-trigger'))n.nextElementSibling.hidden=true;});status(review.plans.some(p=>p.shipment.itemsVerified===false)?'Refresh shipment items before decreasing stock. Your location choices are kept.':executionBlockers()[0]||'');allocationCue();quantityCue();controls();
  }
  function locationEditor(p,line,product,bundle){
   const key=p.shipment+'|'+line.sku+'|'+product.item,stocks=p.stock.filter(v=>v.item===product.item),options=[...new Map(stocks.map(v=>[v.location,v.locationName])).entries()],box=node('div','');box.className='fba-component-allocation';box.dataset.componentKey=key;

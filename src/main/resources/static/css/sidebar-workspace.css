@@ -55,3 +55,7 @@ details.context-menu.store-shortcut-managing .context-popover>.context-footer{di
 .store-shortcuts .store-shortcut-more[open]{display:block}
 .store-shortcut-more-list{position:absolute;right:0;top:48px;display:flex;flex-wrap:wrap;gap:8px;width:184px;padding:12px;background:var(--surface,#fff);border:1px solid var(--line,#dbe3ef);border-radius:12px;z-index:20}
 @media(min-width:761px){body.app-page .workspace-has-store-shortcuts{flex-wrap:nowrap}body.app-page .workspace-has-store-shortcuts>.header-actions{flex:1 1 0;min-width:400px;flex-wrap:nowrap}body.app-page .workspace-has-store-shortcuts>div:first-child:not(.header-actions){flex:0 1 320px}.workspace-has-store-shortcuts .header-actions>.context-menu,.workspace-has-store-shortcuts .huddle-launcher{flex-shrink:0}}
+
+/* CD: selected store remains identifiable; native modal still owns focus and input. */
+.store-shortcut>button[aria-current=true]{border-color:#2d6be7;background:#edf4ff;box-shadow:0 0 0 1px #2d6be7}
+[data-theme=dark] .store-shortcut>button[aria-current=true]{background:#203d63;border-color:#a7c5ff;box-shadow:0 0 0 1px #a7c5ff}

@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/css/fba.css?v=1.9.4" th:href="@{/css/fba.css(v=${buildVersion})}"><link th:if="${shopifyOrdersPage != null}" rel="stylesheet" href="/css/shopify-orders.css?v=shopify-shared-uat-2" th:href="@{/css/shopify-orders.css(v=${buildVersion})}">
 <script th:if="${shopifyOrdersPage == null}" defer src="/js/fba-stock.js?v=1" th:src="@{/js/fba-stock.js(v=${buildVersion})}"></script>
 <p class="notice" th:if="${orderSuccess}" th:text="${orderSuccess}"></p><p class="notice error" th:if="${orderError}" th:text="${orderError}"></p>
-<p class="notice" role="status" th:if="${mappingSuccess}" th:text="${mappingSuccess}"></p><p class="notice error" role="alert" th:if="${mappingError}" th:text="${mappingError}"></p>
+<p class="notice" role="status" data-mapping-result="success" th:if="${mappingSuccess}" th:text="${mappingSuccess}"></p><p class="notice error" role="alert" data-mapping-result="error" th:if="${mappingError}" th:text="${mappingError}"></p>
 <section class="empty-state" th:if="${storeSelectionRequired}"><span class="store-required-icon">⌄</span><h2>Choose an Amazon store</h2><p>Orders are operated one store at a time so inventory and fulfillment stay correctly scoped.</p><button class="primary-button store-picker-action" type="button" onclick="document.querySelector('.context-menu').setAttribute('open','')">Choose store</button></section>
 <section class="empty-state" th:if="${unsupportedChannel}"><span class="store-required-icon">W</span><h2>Walmart order operations are coming next</h2><p>No Amazon data is shown under a Walmart store.</p></section>
 <section class="data-card" th:if="${localShippingFixtures != null and !localShippingFixtures.isEmpty()}" aria-label="Local shipping simulation">

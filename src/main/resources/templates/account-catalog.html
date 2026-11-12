@@ -37,7 +37,7 @@
 <div th:replace="~{fragments/sidebar-user :: user}">
 </div>
 </aside>
-<main th:attr="data-basket-scope=${tableShortcutScope}" class="workspace account-catalog-workspace">
+<main th:attr="data-basket-scope=${tableShortcutScope}" class="workspace account-catalog-workspace"><p class="notice" data-mapping-result="success" th:if="${mappingSuccess}" th:text="${mappingSuccess}"></p><p class="notice error" data-mapping-result="error" th:if="${mappingError}" th:text="${mappingError}"></p>
 <header class="workspace-header">
 <div>
 
@@ -57,14 +57,14 @@
 <div class="table-header-copy">
 <h2>Products</h2>
 <p>UPC/EAN identifies the global product. Account SKUs and vendor item codes are editable for this account.</p>
-</div>
+</div><button type="button" data-table-command data-command-id="map-product" data-action-image="/images/platform/table/map-product-owner.png" data-action-description="Choose a product to map" th:if="${canEditCatalog}" onclick="openProductMappingReview(this)">Map product</button>
 <div data-table-legacy-toolbar class="toolbar-tools table-widget-tools">
-<div data-column-control="account-catalogue"></div><a data-table-command data-command-id="vendor-directory" data-action-image="/images/platform/table/rp-vendors.png" data-action-description="Review account vendors" class="secondary-button compact-button" href="/app/vendors">See Vendors</a>
+<div data-column-control="account-catalogue"></div><button type="button" onclick="document.dispatchEvent(new Event('rp:vendors-open'))" data-table-command data-command-id="vendor-directory" data-action-image="/images/platform/table/rp-vendors.png" data-action-description="Review account vendors" class="secondary-button compact-button" >Vendor list</button>
 <a data-table-command data-command-id="vendors" data-action-image="/images/platform/table/rp-vendors.png" data-action-description="Review account vendors" th:if="${localDevelopment == true}" class="secondary-button compact-button" href="/app/inventory/replenishment#vendors">Vendors</a>
 <button data-table-command data-command-id="add-vendor" data-action-image="/images/platform/table/inventory-add-vendor.png" data-action-description="Create an account vendor" th:if="${canEditCatalog}" class="secondary-button compact-button" type="button" onclick="document.getElementById('vendor-dialog').showModal()">Add vendor</button>
 <button data-table-command data-command-id="locations" data-action-image="/images/platform/table/inventory-locations.png" data-action-description="Manage warehouse locations" th:if="${canEditCatalog}" class="secondary-button compact-button" type="button" onclick="document.getElementById('location-dialog').showModal()">Locations</button>
-<button data-table-command data-command-id="upload-catalogue" data-action-description="Import catalogue products" th:if="${canEditCatalog}" class="secondary-button compact-button" type="button" th:disabled="${#lists.isEmpty(vendors)}" th:title="${#lists.isEmpty(vendors) ? 'Add a vendor first' : 'Upload CSV or XLSX'}" onclick="document.getElementById('upload-dialog').showModal()">Upload catalogue</button>
-<button data-table-command data-command-id="add-product" data-action-description="Choose or create an account product" th:if="${canEditCatalog}" class="primary-button compact-button" type="button" onclick="openCatalogAddProduct()">Add product</button>
+<button data-table-command data-command-id="upload-catalogue" data-action-image="/images/platform/table/catalogue-upload-owner.png" data-action-description="Import catalogue products" th:if="${canEditCatalog}" class="secondary-button compact-button" type="button" th:disabled="${#lists.isEmpty(vendors)}" th:title="${#lists.isEmpty(vendors) ? 'Add a vendor first' : 'Upload CSV or XLSX'}" onclick="document.getElementById('upload-dialog').showModal()">Upload catalogue</button>
+<button data-table-command data-command-id="add-product" data-action-image="/images/platform/table/catalogue-add-product-owner.png" data-action-description="Choose or create an account product" th:if="${canEditCatalog}" class="primary-button compact-button" type="button" onclick="openCatalogAddProduct()">Add product</button>
 </div>
 </div>
 <div class="table-standard-toolbar table-widget-tools" data-table-toolbar><form method="get" action="/app/catalog"><input type="hidden" name="sort" th:value="${catalogSort ?: 'product'}"><input type="hidden" name="direction" th:value="${catalogDirection ?: 'asc'}"><input type="hidden" name="size" th:value="${catalogPage.size}"><label class="search-field table-standard-search">
@@ -311,36 +311,25 @@
 <div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Done</button><button class="primary-button compact-button" type="submit">Add new location</button></div>
 </form>
 </dialog>
-<dialog id="upload-dialog" class="invite-dialog">
-<form method="post" th:action="@{/app/catalog/imports}" enctype="multipart/form-data" class="dialog-shell">
-<div class="dialog-header">
-<div>
-<span class="eyebrow dark">Guided import</span>
-<h2>Upload vendor catalogue</h2>
-<p>Your file is staged first. Nothing is added until you map, review, and approve it.</p>
-</div>
-<button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button>
-</div>
+<dialog id="upload-dialog" class="invite-dialog" th:with="uploadVendors=${vendors == null ? {} : vendors.?[status == 'ACTIVE']}" aria-labelledby="catalog-upload-title">
+<form method="post" th:action="@{/app/catalog/imports}" enctype="multipart/form-data" class="dialog-shell" data-catalog-upload>
+<div class="dialog-header"><div><h2 id="catalog-upload-title">Upload vendor catalogue</h2></div><button class="dialog-close" type="button" aria-label="Close catalogue upload" onclick="this.closest('dialog').close()">×</button></div>
 <div class="dialog-body catalog-form">
-<label>Vendor<select name="vendorId" required>
-<option value="">Choose vendor</option>
-<option th:each="vendor:${vendors}" th:value="${vendor.id}" th:text="${vendor.name}">Vendor</option>
-</select>
-</label>
-<label>Catalogue file<input name="file" type="file" accept=".csv,.tsv,.xlsx" required>
-<small>CSV, TSV, or XLSX · maximum 20 MB and 50,000 product rows.</small>
-</label>
-<div class="import-safety">
-<strong>Safe staged import</strong>
-<span>We will show the column mapping and sample rows before creating products or costs.</span>
+<input th:if="${#lists.size(uploadVendors) == 1}" type="hidden" name="vendorId" th:value="${uploadVendors[0].id}">
+<label th:if="${#lists.size(uploadVendors) != 1}">Vendor<select name="vendorId" required data-standard-choice aria-label="Vendor"><option value="">Choose vendor</option><option th:each="vendor:${uploadVendors}" th:value="${vendor.id}" th:text="${vendor.name}">Vendor</option></select></label>
+<div class="catalog-file-drop" data-catalog-drop>
+
+<input id="catalogue-files" aria-label="Catalogue files" name="file" type="file" accept=".csv,.tsv,.xlsx" multiple required class="sr-only">
+<button class="secondary-button" type="button" data-catalog-add-files>Add files</button>
+<span class="catalog-drop-hint">or drag files here</span>
+<a class="catalog-template-link" href="https://docs.google.com/spreadsheets/d/1sJ99F8X_oCReNE7D-KldCJ8P8eVvqHV64ZcT64bRSCI/edit?gid=872594910#gid=872594910" target="_blank" rel="noopener noreferrer" aria-label="Open catalogue template in a new tab" data-tooltip="Catalogue template · opens new tab"><img src="/images/platform/table/catalogue-template-owner.png" alt=""></a>
+<ul data-catalog-files aria-live="polite"></ul>
+</div><small>CSV, TSV or XLSX · 20 MB total · 50,000 rows · matching columns</small>
 </div>
-</div>
-<div class="dialog-actions">
-<button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button>
-<button class="primary-button compact-button" type="submit">Review file</button>
-</div>
-</form>
-</dialog>
+<div class="dialog-actions"><p class="notice error catalog-upload-error" role="alert" data-catalog-upload-error hidden></p><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button" type="submit">Review files</button></div>
+</form></dialog>
+<dialog id="rp-vendor-directory" class="invite-dialog" data-return-to-origin="true" aria-labelledby="catalog-vendor-title"><div class="dialog-shell"><header class="dialog-header"><div><span class="eyebrow dark">Account catalogue</span><h2 id="catalog-vendor-title">Vendor list</h2></div><button type="button" class="dialog-close" data-vendor-close aria-label="Close vendor list">×</button></header><div class="dialog-body" data-vendor-list></div><footer class="dialog-actions"><p role="alert" data-vendor-feedback hidden></p><button type="button" class="secondary-button" data-vendor-close>Close</button><button type="button" class="primary-button" data-vendor-add th:if="${canEditCatalog}">Add vendor</button></footer></div></dialog><dialog id="rp-vendor-editor" class="invite-dialog" aria-label="Vendor details"></dialog>
+<script defer src="/js/replenishment-vendors.js" th:src="@{/js/replenishment-vendors.js(v=${buildVersion})}"></script><script defer src="/js/catalogue-upload.js" th:src="@{/js/catalogue-upload.js(v=${buildVersion})}"></script>
 <dialog id="cost-dialog" class="invite-dialog">
 <form method="post" th:action="@{/app/catalog/offers}" class="dialog-shell">
 <input type="hidden" name="itemId" id="cost-item-id">
@@ -384,6 +373,10 @@
 <link rel="stylesheet" href="/css/catalog-add-product.css?v=1.9.3" th:href="@{/css/catalog-add-product.css(v=${buildVersion})}">
 <script src="/js/catalog-global-picker.js?v=1.9.3" th:src="@{/js/catalog-global-picker.js(v=${buildVersion})}"></script>
 <div th:replace="~{fragments/stock-editor :: editor}"></div>
+<link rel="stylesheet" href="/css/mapping-widget.css" th:href="@{/css/mapping-widget.css(v=${buildVersion})}">
+<input type="hidden" id="buy-shipping-csrf" th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
+<script src="/js/mapping-widget.js" th:src="@{/js/mapping-widget.js(v=${buildVersion})}"></script>
+<script src="/js/product-mapping-review.js" th:src="@{/js/product-mapping-review.js(v=${buildVersion})}"></script>
 <script src="/js/stock-entry-points.js?v=20261002-2" th:src="@{/js/stock-entry-points.js(v=${buildVersion})}"></script>
 <script src="/js/catalog-product-editor.js?v=1.9.1" th:src="@{/js/catalog-product-editor.js(v=${buildVersion})}"></script><script defer th:src="@{/js/catalog-removal.js(v=${buildVersion})}" src="/js/catalog-removal.js"></script></body>
 </html>

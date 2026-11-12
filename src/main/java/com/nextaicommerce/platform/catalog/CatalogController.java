@@ -426,6 +426,7 @@ public class CatalogController {
             @RequestParam(defaultValue="/app/catalog") String returnTo, RedirectAttributes redirect) {
         try{
             catalog.addVendor(requiredTenantId(session),name,code,currency,discountRate,defaultFreightAmount);
+            if(readCache!=null)readCache.invalidate();
             boolean receivingFlow=returnTo!=null&&returnTo.startsWith("/app/receiving");
             redirect.addFlashAttribute("catalogSuccess",receivingFlow
                 ?"Vendor saved. You are now on Step 2—select this vendor and upload the supplier documents."
@@ -452,6 +453,7 @@ public class CatalogController {
             @RequestParam(defaultValue="0") BigDecimal defaultFreightAmount,
             @RequestParam(defaultValue="ACTIVE") String status, RedirectAttributes redirect) {
         try{catalog.updateVendor(requiredTenantId(session),vendorId,name,code,currency,discountRate,defaultFreightAmount,status);
+            if(readCache!=null)readCache.invalidate();
             redirect.addFlashAttribute("catalogSuccess","Vendor details updated.");}
         catch(IllegalArgumentException e){redirect.addFlashAttribute("catalogError",e.getMessage());}
         catch(Exception e){log.error("Vendor update failed vendorId={}",vendorId,e);redirect.addFlashAttribute("catalogError","The vendor could not be updated. Please try again.");}
@@ -472,10 +474,10 @@ public class CatalogController {
 
     @PostMapping("/app/catalog/imports")
     String uploadImport(Authentication authentication, HttpSession session,
-            @RequestParam UUID vendorId, @RequestParam("file") MultipartFile file,
+            @RequestParam UUID vendorId, @RequestParam("file") List<MultipartFile> files,
             RedirectAttributes redirect) {
         try {
-            UUID id = imports.stage(requiredTenantId(session), authentication.getName(), vendorId, file);
+            UUID id = imports.stageFiles(requiredTenantId(session), authentication.getName(), vendorId, files);
             return "redirect:/app/catalog/imports/" + id;
         } catch (IllegalArgumentException e) {
             redirect.addFlashAttribute("catalogError", e.getMessage());

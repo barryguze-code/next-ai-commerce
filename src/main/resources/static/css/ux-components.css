@@ -45,3 +45,11 @@ body .collaboration-row-button .collaboration-unread-dot{background:#ce3548}
 .platform-tooltip-notice{opacity:1;transition:opacity .25s ease}
 .platform-tooltip-notice.platform-tooltip-fading{opacity:0}
 @media(prefers-reduced-motion:reduce){.platform-tooltip-notice{transition:none}.platform-tooltip-notice.platform-tooltip-fading{opacity:1}}
+
+/* Shared centered-dialog movement; drawers retain their existing behavior. */
+@media (min-width:761px){
+.ux-dialog-draggable .ux-dialog-header{cursor:grab;touch-action:none}
+.ux-dialog-draggable.is-dragging{opacity:.25;transition:none;user-select:none}
+.ux-dialog-draggable.is-dragging .ux-dialog-header{cursor:grabbing}
+.ux-dialog-draggable.is-dragging::backdrop{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+}

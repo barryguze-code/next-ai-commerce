@@ -316,6 +316,6 @@ public class MarketplaceSkuController {
     }
 
     private static String safeReturn(String returnTo,String fallback){
-        return returnTo!=null && returnTo.matches("/app/(?:orders|marketplace-skus)(?:\\?[^\\r\\n]*)?") ? "redirect:"+returnTo : fallback;
+        return returnTo!=null && returnTo.matches("/app/(?:orders|marketplace-skus|catalog|inventory|receiving)(?:\\?[^\\r\\n]*)?") ? "redirect:"+returnTo : fallback;
     }
 }

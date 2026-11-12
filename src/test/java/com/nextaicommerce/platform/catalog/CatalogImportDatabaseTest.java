@@ -22,6 +22,49 @@ class CatalogImportDatabaseTest {
     final Map<String,String> mapping=Map.of("productName","Description","vendorItemCode","ItemCode",
         "listCost","Cost","identifier","UPC","identifierType","UPC");
 
+    @Test void matchingCatalogueFilesStageTogetherWithoutCreatingProductsOrInventory(){
+        var first=new MockMultipartFile("file","first.csv","text/csv","Description,ItemCode,Cost,UPC\nFirst,001,0.01,042100005264\n".getBytes(StandardCharsets.UTF_8));
+        var second=new MockMultipartFile("file","second.csv","text/csv","Description,ItemCode,Cost,UPC\nSecond,002,2.00,036000291452\n".getBytes(StandardCharsets.UTF_8));
+        UUID id=tx.execute(t->service.stageFiles(tenant,email,vendor,List.of(first,second)));
+        var view=service.load(tenant,id);assertThat(view.totalRows()).isEqualTo(2);
+        assertThat(view.headers()).doesNotContain("__source_filename");
+        assertThat(jdbc.queryForObject("SELECT source_data->>'ItemCode' FROM catalog_import_rows WHERE catalog_import_id=? AND row_number=2",String.class,id)).isEqualTo("001");
+        assertThat(jdbc.queryForObject("SELECT source_data->>'__source_filename' FROM catalog_import_rows WHERE catalog_import_id=? AND row_number=3",String.class,id)).isEqualTo("second.csv");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
+    }
+    @Test void differingCatalogueColumnsFailBeforeStagingAnyRows(){
+        var first=new MockMultipartFile("file","first.csv","text/csv","Description,ItemCode\nFirst,001\n".getBytes(StandardCharsets.UTF_8));
+        var second=new MockMultipartFile("file","second.csv","text/csv","ItemCode,Description\n002,Second\n".getBytes(StandardCharsets.UTF_8));
+        assertThatThrownBy(()->tx.execute(t->service.stageFiles(tenant,email,vendor,List.of(first,second)))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("second.csv: columns differ");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM catalog_imports WHERE tenant_id=?",Integer.class,tenant)).isZero();
+    }
+
+    @Test void omittedAccountSkuDefaultsToExactVendorCodeAndPreservesExistingSku(){
+        UUID id=stage("Default,000123,1.00,042100005264\n");
+        tx.executeWithoutResult(t->service.validate(tenant,id,mapping));approve(id);
+        assertThat(jdbc.queryForObject("SELECT account_sku FROM account_catalog_items WHERE tenant_id=?",String.class,tenant)).isEqualTo("000123");
+        jdbc.update("UPDATE account_catalog_items SET account_sku='MY-EXPLICIT' WHERE tenant_id=?",tenant);
+        UUID again=stage("Default,000123,2.00,042100005264\n");
+        tx.executeWithoutResult(t->service.validate(tenant,again,mapping));approve(again);
+        assertThat(jdbc.queryForObject("SELECT account_sku FROM account_catalog_items WHERE tenant_id=?",String.class,tenant)).isEqualTo("MY-EXPLICIT");
+    }
+    @Test void sameColumnMayExplicitlySupplyBothCodes(){
+        var fields=new HashMap<>(mapping);fields.put("accountSku","ItemCode");
+        UUID id=stage("Default,000456,1.00,036000291452\n");
+        tx.executeWithoutResult(t->{service.validate(tenant,id,fields);service.approve(tenant,email,id,fields);});
+        assertThat(jdbc.queryForObject("SELECT account_sku FROM account_catalog_items WHERE tenant_id=?",String.class,tenant)).isEqualTo("000456");
+    }
+
+    @Test void defaultSkuCollisionRejectsWholeImport(){
+        UUID existing=product(null);
+        jdbc.update("INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku) VALUES (?,?,'000123')",tenant,existing);
+        UUID id=stage("Conflicting,000123,1.00,042100005264\n");tx.executeWithoutResult(t->service.validate(tenant,id,mapping));
+        assertThatThrownBy(()->approve(id)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Account SKU conflicts");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
+    }
+
     @BeforeAll static void setup() throws Exception {
         schema="catalog_test_"+UUID.randomUUID().toString().replace("-","");
         String url,password=null;

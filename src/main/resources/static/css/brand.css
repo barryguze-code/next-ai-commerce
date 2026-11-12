@@ -326,3 +326,7 @@ html[data-theme="dark"] .invite-dialog .dialog-shell,html[data-theme="dark"] .in
 button[data-account-title]{appearance:none;line-height:inherit;font:inherit;font-weight:600;color:inherit;background:transparent;border:0;padding:0;text-align:left;cursor:pointer}
 button[data-account-title]:hover{text-decoration:underline}
 button[data-account-title]:focus-visible{outline:2px solid var(--blue,#2e6be6);outline-offset:4px;border-radius:3px}
+
+/* Shared modal treatment: retain context without a clear-header cutout. */
+:root{--modal-backdrop-blur:1px}
+dialog::backdrop{backdrop-filter:blur(var(--modal-backdrop-blur))!important}

@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.14.6",
+    "title": "Receiving and mapping improvements",
+    "sections": [
+      {
+        "title": "Improvements",
+        "items": [
+          "Improved receiving column matching and product mapping saves.",
+          "Preserved verified FBA shipment contents during refresh.",
+          "Updated shared dialogs, catalogue controls and icons."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.5",
     "title": "Cleaner row Actions artwork",
     "sections": [

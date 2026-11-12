@@ -100,7 +100,10 @@ public class FbaInboundSync {
                     destination_fulfillment_center=EXCLUDED.destination_fulfillment_center,
                     label_prep_type=EXCLUDED.label_prep_type,
                     created_date=coalesce(EXCLUDED.created_date,amazon_fba_shipments.created_date),updated_date=EXCLUDED.updated_date,
-                    raw_payload=EXCLUDED.raw_payload || CASE WHEN jsonb_exists(amazon_fba_shipments.raw_payload,'feesCheckedAt') THEN jsonb_build_object('feesCheckedAt',amazon_fba_shipments.raw_payload->>'feesCheckedAt') ELSE '{}'::jsonb END,updated_at=now()
+                    raw_payload=EXCLUDED.raw_payload || coalesce((
+                        SELECT jsonb_object_agg(key,value) FROM jsonb_each(amazon_fba_shipments.raw_payload)
+                        WHERE key IN ('feesCheckedAt','itemsCheckedAt','itemEvidence','itemEvidenceVersion','itemEvidenceJob')
+                    ),'{}'::jsonb),updated_at=now()
                 """,job.tenantId(),job.connectionId(),row.path("ShipmentId").asText(),row.path("ShipmentName").asText(null),
                 row.path("ShipmentStatus").asText(null),row.path("DestinationFulfillmentCenterId").asText(null),row.path("LabelPrepType").asText(null),creationDate(row),timestamp(row,"LastUpdatedDate"),row.toString());count++;
         }return count;

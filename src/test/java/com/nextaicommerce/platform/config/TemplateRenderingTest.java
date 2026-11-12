@@ -39,6 +39,15 @@ import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 class TemplateRenderingTest {
+    @Test void catalogueUploadHidesOnlySingleActiveVendorAndKeepsTemplateOutOfReceiving(){
+        var c=webContext();UUID id=UUID.randomUUID();
+        c.setVariables(Map.ofEntries(Map.entry("items",List.of()),Map.entry("canEditCatalog",true),Map.entry("query",""),Map.entry("catalogPage",new com.nextaicommerce.platform.catalog.CatalogRepository.AccountItemPage(List.of(),0,0,25)),Map.entry("vendors",List.of(new VendorView(id,"Own vendor","V","USD",BigDecimal.ZERO,BigDecimal.ZERO,0,"ACTIVE"))),Map.entry("offersByItem",Map.of()),Map.entry("locations",List.of())));
+        String html=templateEngine().process("account-catalog",c);String upload=html.substring(html.indexOf("<dialog id=\"upload-dialog\""),html.indexOf("<dialog id=\"rp-vendor-directory\""));
+        assertThat(upload).contains("type=\"hidden\" name=\"vendorId\" value=\""+id,"View catalogue template","multiple").doesNotContain("Choose vendor");
+        c.setVariable("vendors",List.of(new VendorView(id,"Own vendor","V","USD",BigDecimal.ZERO,BigDecimal.ZERO,0,"ACTIVE"),new VendorView(UUID.randomUUID(),"Second","S","USD",BigDecimal.ZERO,BigDecimal.ZERO,0,"ACTIVE")));
+        html=templateEngine().process("account-catalog",c);upload=html.substring(html.indexOf("<dialog id=\"upload-dialog\""),html.indexOf("<dialog id=\"rp-vendor-directory\""));assertThat(upload).contains("Choose vendor");
+    }
+
     @Test void fbaTableUsesCompactHeadersScopedCollaborationAndUnitsOnly(){
         var context=webContext();UUID store=UUID.randomUUID();
         var row=new com.nextaicommerce.platform.fba.FbaReadRepository.Shipment("FBA-TEST","Long Amazon shipment name","CLOSED","ABC1","City, TX 00123, US",Instant.EPOCH,2,24,23);
@@ -99,7 +108,7 @@ class TemplateRenderingTest {
     @Test void emptyAccountCatalogueOffersPrefilledGlobalSearchAndCompactVendorPresentation(){
         var c=webContext();c.setVariables(Map.ofEntries(Map.entry("items",List.of()),Map.entry("canEditCatalog",true),Map.entry("query","079834140503"),Map.entry("selectedAccountName","Own account"),Map.entry("catalogPage",new com.nextaicommerce.platform.catalog.CatalogRepository.AccountItemPage(List.of(),0,0,25)),Map.entry("vendors",List.of(new VendorView(UUID.randomUUID(),"Own vendor","V","USD",new BigDecimal("18.0000"),BigDecimal.ZERO,0,"ACTIVE"))),Map.entry("offersByItem",Map.of()),Map.entry("locations",List.of())));
         String html=templateEngine().process("account-catalog",c);
-        assertThat(html).contains("account-catalog-workspace","Search Global Catalogue","Create new product","data-query=\"079834140503\"","See Vendors","catalog-vendor-logo","18%","name=\"size\"","name=\"unitOfMeasure\"").doesNotContain("catalog-readiness","Open vendor directory","18.0000%");
+        assertThat(html).contains("account-catalog-workspace","Search Global Catalogue","Create new product","data-query=\"079834140503\"","Vendor list","catalog-vendor-logo","18%","name=\"size\"","name=\"unitOfMeasure\"").doesNotContain("catalog-readiness","Open vendor directory","18.0000%");
     }
     @Test void sharedNavigationKeepsPermissionAwareLinksForMobileShell(){
         var c=webContext();
