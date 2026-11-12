@@ -24,13 +24,17 @@
     const cell=row.querySelector('td:last-child'),menu=document.createElement('div');menu.dataset.contextMenu='';menu.dataset.title='Marketplace SKU';
     menu.append(action({sellerSku:source.value}));cell.append(menu);
   });
-  document.querySelectorAll('.inventory-row').forEach(row=>{
-    const existing=row.querySelector('[data-context-action]');
-    const menu=document.createElement('div');menu.dataset.contextMenu='';menu.dataset.title=row.dataset.product;
-    menu.append(mapping({item:row.dataset.item}),action({...row.dataset}));
-    if(existing){const plans=document.createElement('button');plans.type='button';plans.textContent='Stock plan';plans.dataset.actionDescription='Review expiry and stock actions';plans.onclick=e=>{e.stopPropagation();window.openInventoryActionMenu(existing)};menu.append(plans);existing.hidden=true;}
-    row.querySelector('td:last-child')?.append(menu);
-  });
+  // Picture-first inventory rows already own a shared Record action menu.
+  // Do not append raw commands to the final cell: that path is not enhanced.
+  const inventoryMenu=document.querySelector('#inventory-action-menu form');
+  if(inventoryMenu){
+    const map=mapping({});
+    const icon=document.createElement('span'),image=document.createElement('img');
+    image.src=map.dataset.actionImage;image.alt='';image.width=24;image.height=24;icon.append(image);
+    const label=document.createElement('div'),name=document.createElement('strong');name.textContent='Map product';label.append(name);map.replaceChildren(icon,label);
+    map.onclick=event=>{event.stopPropagation();map.dataset.mappingItem=document.getElementById('quick-action-item').value;window.closeInventoryActionMenu();window.openProductMappingReview(map)};
+    inventoryMenu.querySelector('header').after(map);
+  }
   const legacy=document.querySelector('#inventory-action-menu [onclick^="openInventoryAdjustment"]');
   if(legacy)legacy.onclick=()=>{const item=document.getElementById('quick-action-item').value,location=document.getElementById('quick-action-location').value,expiration=document.getElementById('quick-action-expiration').value;window.openSharedInventoryAdjustment({dataset:{item,location,expiration}})};
   const toolbar=[...document.querySelectorAll('.card-toolbar')].find(t=>t.querySelector('h2')?.textContent==='Invoices & packing lists');

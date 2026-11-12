@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.14.7",
+    "title": "Inventory action presentation",
+    "sections": [
+      {
+        "title": "Presentation",
+        "items": [
+          "Restored Available Inventory row actions to the shared Record menu."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.6",
     "title": "Receiving and mapping improvements",
     "sections": [

@@ -123,7 +123,8 @@
     document.getElementById('quick-action-location-code').value = button.dataset.locationCode;
     document.getElementById('quick-action-expiration').value = button.dataset.expiration;
     document.getElementById('quick-action-product').textContent = button.dataset.product;
-    document.getElementById('quick-action-date').textContent = 'Expiration ' + formatCalendarDate(button.dataset.expiration)
+    menu.querySelectorAll('[onclick^="openSalePrice"],[onclick^="openDisposition"]').forEach(action=>action.hidden=!button.dataset.expiration);
+    document.getElementById('quick-action-date').textContent = (button.dataset.expiration ? 'Expiration ' + formatCalendarDate(button.dataset.expiration) : 'No expiration')
       + (button.closest('tr') ? ' · '+[...button.closest('tr').querySelectorAll('[data-column="shelf-life"] > *')].map(el=>el.textContent.trim()).filter(Boolean).join(' · ') : '');
     let saved=document.getElementById('quick-saved-plan');
     if(!saved){saved=document.createElement('section');saved.id='quick-saved-plan';document.getElementById('quick-action-clear').before(saved);}
