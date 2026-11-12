@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.14.5",
+    "title": "Cleaner row Actions artwork",
+    "sections": [
+      {
+        "title": "Presentation",
+        "items": [
+          "Remove the surrounding frame from table-row Actions artwork, preserving its size and behavior."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.4",
     "title": "Receipt corrections and clearer actions",
     "sections": [

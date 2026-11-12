@@ -15,3 +15,7 @@ html body.app-page .orders-workspace .order-list .order-engagement>.platform-art
 /* A calculator is inline with its amount; multi-row profit previews retain their grid. */
 html body.app-page .profit-price-link:has(>img[src*="/optimized32/"]){display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 html body.app-page .profit-price-link>img[src*="/optimized32/"]{margin:0}
+
+/* Row Actions artwork supplies its own square edge; preserve the control hitbox and focus ring. */
+html body.app-page .table-widget :is(.table-overview-rail,.table-context-cell) :is(button,summary).table-action-trigger:has(>img[src*="/optimized32/actions-owner-20261111.png"]),
+html body.app-page .orders-workspace .order-list :is(.order-engagement,.order-product-stage)>.order-picture-more:has(>img[src*="/optimized32/actions-owner-20261111.png"]){border-color:transparent!important;background:transparent!important;box-shadow:none!important}
