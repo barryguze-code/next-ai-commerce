@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.14.10",
+    "title": "FBA shipment stock review",
+    "sections": [
+      {
+        "title": "Improvements",
+        "items": [
+          "Restored the approved Decrease stock dialog with aligned location, Cases and Each controls.",
+          "Show master-case equivalents while retaining shipment quantities and location-selection safeguards.",
+          "Preserved the 1.14.9 allocation controls and updated the release chooser."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.8",
     "title": "Consistent product mapping controls",
     "sections": [
