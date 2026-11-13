@@ -85,7 +85,7 @@ public class CatalogController {
         if(selectedAccount!=null&&!workspaceAccess.canOperateAccount(selectedAccount,authentication.getName()))
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
         var result=selectedAccount==null?catalog.pageGlobalProducts(q,goToPage==null?page:Math.max(0,goToPage-1),size,sort,direction):catalog.pageGlobalProducts(selectedAccount,q,goToPage==null?page:Math.max(0,goToPage-1),size,sort,direction);
-        model.addAttribute("products",result.rows());model.addAttribute("globalPage",result);model.addAttribute("query",q);
+        model.addAttribute("physicalAttributes",catalog.physicalAttributes(result.rows().stream().map(CatalogRepository.GlobalProductView::id).toList()));model.addAttribute("products",result.rows());model.addAttribute("globalPage",result);model.addAttribute("query",q);
         model.addAttribute("globalSort",CatalogRepository.globalSort(sort));model.addAttribute("globalDirection",CatalogRepository.catalogDirection(direction));
         model.addAttribute("globalProductImageIds",catalog.globalProductImageIds(result.rows().stream().map(CatalogRepository.GlobalProductView::id).toList()));
         return "global-catalog";
@@ -115,6 +115,7 @@ public class CatalogController {
         model.addAttribute("vendors",snapshot.vendors());
         model.addAttribute("locations",snapshot.locations());
         var visibleIds=catalogPage.rows().stream().map(CatalogRepository.AccountItemView::id).toList();
+        model.addAttribute("physicalAttributes",catalog.physicalAttributes(catalogPage.rows().stream().map(CatalogRepository.AccountItemView::globalProductId).toList()));
         model.addAttribute("productReferences",catalog.accountProductReferences(tenantId,visibleIds));
         model.addAttribute("threadsByCatalogItem",collaboration==null?Map.of():collaboration.openSubjectSummaries(
             tenantId,"CATALOG",visibleIds.stream().map(UUID::toString).toList(),authentication.getName()));
@@ -249,9 +250,9 @@ public class CatalogController {
             @RequestParam(required=false) String brand,@RequestParam String identifierType,
             @RequestParam String identifier,@RequestParam(defaultValue="EA") String unitOfMeasure,
             @RequestParam(defaultValue="false") boolean expirationRequired,
-            @RequestParam(defaultValue="ACTIVE") String status,RedirectAttributes redirect){
+            @RequestParam(defaultValue="ACTIVE") String status,@RequestParam(required=false) BigDecimal masterCase,@RequestParam(required=false) BigDecimal netWeight,@RequestParam(defaultValue="oz") String weightUnit,@RequestParam(required=false) BigDecimal length,@RequestParam(required=false) BigDecimal width,@RequestParam(required=false) BigDecimal height,@RequestParam(defaultValue="in") String dimensionUnit,@RequestParam(required=false) String physicalRevision,RedirectAttributes redirect){
         try{
-            catalog.updateGlobalProduct(productId,name,brand,identifierType,identifier,unitOfMeasure,expirationRequired,status);
+            catalog.updateGlobalProductWithPhysical(productId,name,brand,identifierType,identifier,unitOfMeasure,expirationRequired,status,masterCase==null?null:new CatalogRepository.PhysicalAttributes(masterCase,netWeight,weightUnit,length,width,height,dimensionUnit),physicalRevision);readCache.invalidate();
             redirect.addFlashAttribute("catalogSuccess","Global product identity updated.");
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("catalogError",e.getMessage());}
         catch(Exception e){log.error("Global product update failed productId={}",productId,e);redirect.addFlashAttribute("catalogError","The global product could not be updated. Nothing was changed.");}
@@ -262,9 +263,9 @@ public class CatalogController {
     ResponseEntity<?> updateAccountProductInline(@PathVariable UUID itemId,HttpSession session,Authentication authentication,
             @RequestParam(required=false) String displayName,@RequestParam(required=false) String accountSku,
             @RequestParam(defaultValue="ACTIVE") String status,@RequestParam(required=false) BigDecimal itemCost,
-            @RequestParam(required=false) UUID costVendorId,@RequestParam(required=false) String vendorItemCode){
+            @RequestParam(required=false) UUID costVendorId,@RequestParam(required=false) String vendorItemCode,@RequestParam(required=false) BigDecimal masterCase,@RequestParam(required=false) BigDecimal netWeight,@RequestParam(defaultValue="oz") String weightUnit,@RequestParam(required=false) BigDecimal length,@RequestParam(required=false) BigDecimal width,@RequestParam(required=false) BigDecimal height,@RequestParam(defaultValue="in") String dimensionUnit,@RequestParam(required=false) String physicalRevision){
         requireAccountEditor(authentication,session);
-        try{catalog.updateAccountProductVendor(requiredTenantId(session),itemId,displayName,accountSku,status,itemCost,costVendorId,vendorItemCode,authentication.getName());
+        try{catalog.updateAccountProductWithPhysical(requiredTenantId(session),itemId,displayName,accountSku,status,itemCost,costVendorId,vendorItemCode,authentication.getName(),masterCase==null?null:new CatalogRepository.PhysicalAttributes(masterCase,netWeight,weightUnit,length,width,height,dimensionUnit),physicalRevision);readCache.invalidate();
             return ResponseEntity.ok(java.util.Map.of("message","Account product details updated."));
         }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(java.util.Map.of("message",e.getMessage()));}
     }
@@ -273,10 +274,10 @@ public class CatalogController {
     String updateAccountProduct(@PathVariable UUID itemId,HttpSession session,Authentication authentication,
             @RequestParam(required=false) String displayName,@RequestParam(required=false) String accountSku,
             @RequestParam(defaultValue="ACTIVE") String status,@RequestParam(required=false) BigDecimal itemCost,
-            @RequestParam(required=false) UUID costVendorId,@RequestParam(required=false) String vendorItemCode,RedirectAttributes redirect){
+            @RequestParam(required=false) UUID costVendorId,@RequestParam(required=false) String vendorItemCode,@RequestParam(required=false) BigDecimal masterCase,@RequestParam(required=false) BigDecimal netWeight,@RequestParam(defaultValue="oz") String weightUnit,@RequestParam(required=false) BigDecimal length,@RequestParam(required=false) BigDecimal width,@RequestParam(required=false) BigDecimal height,@RequestParam(defaultValue="in") String dimensionUnit,@RequestParam(required=false) String physicalRevision,RedirectAttributes redirect){
         requireAccountEditor(authentication,session);
         try{
-            catalog.updateAccountProductVendor(requiredTenantId(session),itemId,displayName,accountSku,status,itemCost,costVendorId,vendorItemCode,authentication.getName());
+            catalog.updateAccountProductWithPhysical(requiredTenantId(session),itemId,displayName,accountSku,status,itemCost,costVendorId,vendorItemCode,authentication.getName(),masterCase==null?null:new CatalogRepository.PhysicalAttributes(masterCase,netWeight,weightUnit,length,width,height,dimensionUnit),physicalRevision);readCache.invalidate();
             redirect.addFlashAttribute("catalogSuccess","Account product details updated.");
         }catch(IllegalArgumentException e){redirect.addFlashAttribute("catalogError",e.getMessage());}
         catch(Exception e){log.error("Account product update failed itemId={}",itemId,e);redirect.addFlashAttribute("catalogError","The account product could not be updated. Nothing was changed.");}

@@ -97,6 +97,8 @@ html body.app-page input[type=file]::file-selector-button{font:inherit;font-size
 html body.app-page input[type=file]:hover:not(:disabled)::file-selector-button{border-color:var(--ui-action)}
 html body.app-page input[type=file]:disabled::file-selector-button{opacity:.45;cursor:not-allowed}
 
+.catalog-measurement-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.catalog-measurement-grid label{min-width:0}@media(max-width:640px){.catalog-measurement-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
 /* Owner-approved shared dark selection and copy feedback; semantic status colors stay local. */
 html[data-theme=dark]{--ui-selection-surface:#243C54;--ui-selection-text:#E6EEF8;--ui-selection-secondary:#B6C5D4}
 html[data-theme=dark] body.app-page :is(.package-list-row.selected,tr.is-selected,tr[aria-selected=true],.table-widget [role=option][aria-selected=true],.location-picker-popup button[aria-selected=true],.location-picker-popup button[aria-pressed=true],#packing-name-options button[aria-selected=true]){background:var(--ui-selection-surface)!important;color:var(--ui-selection-text)!important}
@@ -131,3 +133,5 @@ html body.app-page .table-widget .platform-action-control:not(.needs-attention):
 
 /* Inactive segmented labels sit on the accepted light pill in either theme. */
 html body.app-page :is(.collaboration-view-tabs,.history-scope-switch)>:is(a,button):not(.active):not([aria-selected=true]):not([aria-pressed=true]){color:#596A80}
+
+.catalog-weight-field{display:grid;gap:8px;font-weight:600;align-content:start}.catalog-weight-field>.form-pair{margin:0}

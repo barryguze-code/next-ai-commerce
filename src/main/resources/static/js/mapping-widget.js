@@ -57,7 +57,7 @@ function shell(){
  document.body.append(dialog);
  dialog.addEventListener('cancel',event=>{if(dialog.querySelector('form').dataset.saving)event.preventDefault()});
  const close=()=>{if(dialog.querySelector('form').dataset.saving)return;dialog.close();opener?.focus({preventScroll:true})};
- async function persist(form,submitter){if(!window.NextAiTableContinuity?.saveMapping){form.dataset.asinConfirmed='true';form.requestSubmit(submitter);delete form.dataset.asinConfirmed;return;}const restore=window.NextAiTableContinuity.capture();const controls=[...dialog.querySelectorAll('button')].map(button=>[button,button.disabled]);form.dataset.saving='true';controls.forEach(([button])=>button.disabled=true);try{const message=await window.NextAiTableContinuity.saveMapping(form,submitter);delete form.dataset.saving;close();restore();requestAnimationFrame(restore);if(window.NextAiToast)window.NextAiToast(message);}catch(error){dialog.querySelector('.mw-feedback').textContent=error.message;}finally{delete form.dataset.saving;controls.forEach(([button,disabled])=>button.disabled=disabled);update();}}
+ async function persist(form,submitter){if(!window.NextAiTableContinuity?.saveMapping){form.dataset.asinConfirmed='true';form.requestSubmit(submitter);delete form.dataset.asinConfirmed;return;}const restore=window.NextAiTableContinuity.capture();const controls=[...dialog.querySelectorAll('button')].map(button=>[button,button.disabled]);form.dataset.saving='true';controls.forEach(([button])=>button.disabled=true);try{const message=await window.NextAiTableContinuity.saveMapping(form,submitter);delete form.dataset.saving;dialog.dataset.mappingSaved='true';close();restore();requestAnimationFrame(restore);if(window.NextAiToast)window.NextAiToast(message);}catch(error){dialog.querySelector('.mw-feedback').textContent=error.message;}finally{delete form.dataset.saving;controls.forEach(([button,disabled])=>button.disabled=disabled);update();}}
  dialog.querySelector('.mw-close').onclick=close;dialog.querySelector('.mw-cancel').onclick=close;
  dialog.addEventListener('click',e=>{if(e.target===dialog)close()});
  dialog.querySelector('.mw-add').onclick=()=>{if(valid()){line().querySelector('input[type=search]').focus();update()}};
@@ -106,7 +106,7 @@ function draftQuantity(suggestion){const quantity=Number(suggestion?.quantity);r
 
 async function open(trigger){
  if(dialog?.querySelector('form').dataset.saving)return;
- opener=trigger;const d=shell(),version=++requestNumber;
+ opener=trigger;const d=shell(),version=++requestNumber;delete d.dataset.mappingSaved;
  const record=trigger.dataset.target?document.getElementById(trigger.dataset.target):trigger;
  const stage=trigger.closest('.order-item')?.querySelector('[data-picture-actions]');
  const data=record?.dataset||{};
@@ -137,6 +137,6 @@ async function open(trigger){
   d.querySelector('.mw-clear').disabled=!products.length;update();
  }catch{if(version===requestNumber)d.querySelector('.mw-feedback').textContent='Could not load mapping. Close and try again; nothing has changed.'}
 }
-window.NextAiMappingWidget={picture,option,open,attachEditor,identityLabel};
+window.NextAiMappingWidget={picture,option,open,attachEditor,identityLabel,getDialog:shell};
 window.openOrderMapping=open;
 })();

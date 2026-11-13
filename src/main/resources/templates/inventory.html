@@ -44,8 +44,8 @@
 </svg>
 <b th:if="${conversation != null and conversation.totalCount > 0}" th:text="${conversation.totalCount}">2</b>
 </button>
-<button th:if="${canEditCatalog and row.expirationDate != null}" class="plan-action-button inventory-stage-menu" data-context-action type="button" th:attr="data-item=${row.itemId},data-product=${row.productName},data-location=${row.locationId},data-location-code=${row.locationCode},data-expiration=${row.expirationDate.toString()},data-action=${row.plannedAction ?: ''},data-action-label=${row.actionLabel() ?: ''},data-on-hand=${row.quantityUnits},data-available=${row.availableUnits}" onclick="event.stopPropagation();openInventoryActionMenu(this)" th:aria-label="${'Open actions for '+row.productName}" title="Open inventory actions">⋯</button>
-<span th:unless="${canEditCatalog and row.expirationDate != null}" class="action-unavailable inventory-stage-menu" aria-label="No actions available">—</span>
+<button th:if="${canEditCatalog}" class="plan-action-button inventory-stage-menu" data-context-action type="button" th:attr="data-item=${row.itemId},data-product=${row.productName},data-location=${row.locationId},data-location-code=${row.locationCode},data-expiration=${row.expirationDate != null ? row.expirationDate.toString() : ''},data-action=${row.plannedAction ?: ''},data-action-label=${row.actionLabel() ?: ''},data-on-hand=${row.quantityUnits},data-available=${row.availableUnits}" onclick="event.stopPropagation();openInventoryActionMenu(this)" th:aria-label="${'Open actions for '+row.productName}" title="Open inventory actions">⋯</button>
+<span th:unless="${canEditCatalog}" class="action-unavailable inventory-stage-menu" aria-label="No actions available">—</span>
 </div>
 <form th:if="${canEditCatalog}" method="post" enctype="multipart/form-data" th:action="@{/app/catalog/products/{id}/image(id=${row.itemId})}" class="product-image-upload table-overview-picture product-thumbnail-slot" onclick="event.stopPropagation()">
 <input type="hidden" name="returnTo" value="/app/inventory">

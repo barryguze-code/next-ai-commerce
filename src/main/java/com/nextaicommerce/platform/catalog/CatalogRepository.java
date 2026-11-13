@@ -951,6 +951,48 @@ public class CatalogRepository {
         return itemId;
     }
 
+    public record PhysicalAttributes(BigDecimal masterCase,BigDecimal netWeight,String weightUnit,BigDecimal length,BigDecimal width,BigDecimal height,String dimensionUnit) {
+        public String revision() {
+            // A form supplies display units even when all associated measurements are empty.
+            String fields=String.join("|", number(masterCase),number(netWeight),netWeight==null?"":String.valueOf(weightUnit),
+                    number(length),number(width),number(height),length==null && width==null && height==null?"":String.valueOf(dimensionUnit));
+            return java.util.UUID.nameUUIDFromBytes(fields.getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        }
+        private static String number(BigDecimal value){return value==null?"":value.stripTrailingZeros().toPlainString();}
+        public void validate() { positive(masterCase,"Master case",true);if(masterCase.compareTo(new BigDecimal("99999999.9999"))>0)throw new IllegalArgumentException("Master case is too large.");positive(netWeight,"Weight",false);positive(length,"Length",false);positive(width,"Width",false);positive(height,"Height",false);
+            if(!Set.of("oz","lb","g","kg").contains(weightUnit==null?"oz":weightUnit))throw new IllegalArgumentException("Choose a weight unit.");
+            if(!Set.of("in","cm").contains(dimensionUnit==null?"in":dimensionUnit))throw new IllegalArgumentException("Choose a dimension unit."); }
+        private static void positive(BigDecimal n,String name,boolean required){if((required&&n==null)||(n!=null&&(n.signum()<=0||n.scale()>4||n.compareTo(new BigDecimal("9999999999"))>0)))throw new IllegalArgumentException(name+" must be positive, with up to four decimals.");}
+    }
+    public Map<UUID,PhysicalAttributes> physicalAttributes(List<UUID> ids){
+        if(ids.isEmpty())return Map.of();Map<UUID,PhysicalAttributes> values=new java.util.HashMap<>();
+        jdbc.query("SELECT id,units_per_case,net_weight,weight_unit,length,width,height,dimension_unit,package_size,unit_of_measure FROM global_catalog_products WHERE id=ANY(?)",r->{
+            values.put(r.getObject(1,UUID.class),physicalValues(r.getBigDecimal(2),r.getBigDecimal(3),r.getString(4),r.getBigDecimal(5),r.getBigDecimal(6),r.getBigDecimal(7),r.getString(8),r.getString(9),r.getString(10)));},(Object)ids.toArray(UUID[]::new));return values;
+    }
+    static PhysicalAttributes physicalValues(BigDecimal pack,BigDecimal weight,String weightUnit,BigDecimal length,BigDecimal width,BigDecimal height,String dimension,String legacySize,String legacyUnit){
+        if(weight==null&&legacySize!=null&&legacyUnit!=null){String unit=legacyUnit.trim().toLowerCase(java.util.Locale.ROOT);if(unit.equals("lbs"))unit="lb";if(unit.equals("gr"))unit="g";
+            if(Set.of("oz","lb","g","kg").contains(unit))try{BigDecimal parsed=new BigDecimal(legacySize.trim());if(parsed.signum()>0){weight=parsed;weightUnit=unit;}}catch(NumberFormatException ignored){}
+        }
+        return new PhysicalAttributes(pack,weight,weightUnit==null?null:weightUnit.toLowerCase(java.util.Locale.ROOT),length,width,height,dimension==null?null:dimension.toLowerCase(java.util.Locale.ROOT));
+    }
+    private void savePhysical(UUID product,PhysicalAttributes v,String originalRevision){
+        if(v==null)return;
+        v.validate();
+        if(v.revision().equals(originalRevision))return;
+        jdbc.queryForList("SELECT id FROM global_catalog_products WHERE id=? FOR UPDATE",product);
+        PhysicalAttributes current=physicalAttributes(List.of(product)).get(product);
+        if(current==null || !current.revision().equals(originalRevision))
+            throw new IllegalArgumentException("Shared product details changed. Reopen the product and review the latest measurements.");
+
+        int updated=jdbc.update("UPDATE global_catalog_products SET units_per_case=?,net_weight=?,weight_unit=?,length=?,width=?,height=?,dimension_unit=?,updated_at=now() WHERE id=?",v.masterCase(),v.netWeight(),v.weightUnit(),v.length(),v.width(),v.height(),v.dimensionUnit(),product);
+        if(updated!=1)throw new IllegalArgumentException("Product not found.");
+    }
+    @Transactional public void updateGlobalProductWithPhysical(UUID id,String name,String brand,String type,String code,String unit,boolean expiry,String status,PhysicalAttributes physical,String originalRevision){CatalogIdentity.lock(jdbc);savePhysical(id,physical,originalRevision);updateGlobalProduct(id,name,brand,type,code,unit,expiry,status);}
+    @Transactional public void updateAccountProductWithPhysical(UUID tenant,UUID item,String name,String code,String status,BigDecimal cost,UUID vendor,String vendorCode,String actor,PhysicalAttributes physical,String originalRevision){
+        if(physical!=null)physical.validate();setTenant(tenant);CatalogIdentity.lock(jdbc);UUID product=jdbc.query("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=? FOR UPDATE",r->r.next()?r.getObject(1,UUID.class):null,tenant,item);
+        if(product==null)throw new IllegalArgumentException("Product not found in this account.");updateAccountProductVendor(tenant,item,name,code,status,cost,vendor,vendorCode,actor);savePhysical(product,physical,originalRevision);
+    }
+
     @Transactional
     public void updateGlobalProduct(UUID productId,String name,String brand,String identifierType,String identifier,
             String unitOfMeasure,boolean expirationRequired,String status){

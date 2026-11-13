@@ -25,6 +25,29 @@ function update(){
   document.querySelectorAll('[data-single-selection-hint]').forEach(hint=>hint.hidden=!selected.size);
   try{sessionStorage.setItem(key,JSON.stringify([...selected]));}catch(_){}
 }
+document.querySelectorAll('[data-delete-document]').forEach(control=>control.addEventListener('click',()=>{
+  const dialog=document.createElement('dialog');dialog.className='invite-dialog';
+  const shell=document.createElement('div');shell.className='dialog-shell';
+  shell.innerHTML='<div class="dialog-header"><div><h2>Delete document?</h2><p data-document-context></p></div><button type="button" class="dialog-close" aria-label="Cancel">×</button></div><div class="dialog-body"><p>This removes the uploaded document and its unreceived lines.</p></div><p class="notice error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="secondary-button" data-cancel>Cancel</button><button type="button" class="primary-button rw-danger" data-confirm>Delete document</button></div>';
+  shell.querySelector('[data-document-context]').textContent=control.dataset.documentLabel;
+  dialog.append(shell);document.body.append(dialog);
+  let pending=false;
+  const close=()=>{if(pending)return;dialog.close();dialog.remove();control.focus({preventScroll:true})};
+  shell.querySelector('.dialog-close').onclick=close;shell.querySelector('[data-cancel]').onclick=close;
+  dialog.addEventListener('cancel',event=>{event.preventDefault();close()});
+  const requestId=crypto.randomUUID(),confirm=shell.querySelector('[data-confirm]'),error=shell.querySelector('[role="alert"]');
+  confirm.onclick=async()=>{
+    pending=true;confirm.disabled=true;error.hidden=true;
+    const csrf=document.getElementById('buy-shipping-csrf');
+    try{
+      const response=await fetch('/app/receiving/work/remove/'+control.dataset.deleteDocument,{method:'POST',headers:{'Content-Type':'application/json',[csrf.dataset.header]:csrf.value},body:JSON.stringify({requestId})});
+      const result=await response.json();if(!response.ok)throw Error(result.message||'Document could not be deleted.');
+      const row=document.querySelector('[data-source-select][value="'+control.dataset.deleteDocument+'"]')?.closest('tr');
+      selected.delete(control.dataset.deleteDocument);row?.remove();update();dialog.close();dialog.remove();button.focus({preventScroll:true});
+    }catch(problem){error.textContent=problem.message||'Document could not be deleted. Please try again.';error.hidden=false;pending=false;confirm.disabled=false;}
+  };
+  dialog.showModal();shell.querySelector('[data-cancel]').focus();
+}));
 update();
 document.querySelector('[data-clear-selected]').onclick=()=>{selected.clear();document.querySelectorAll('[data-source-select]').forEach(input=>input.checked=false);update();};
 document.addEventListener('change',event=>{

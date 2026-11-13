@@ -43,6 +43,17 @@ class AccountCatalogSelectionDatabaseTest {
  CatalogRepository.AccountProductDraft draft(UUID account,UUID product,String code,UUID supplier,String supplierCode,BigDecimal cost){return new CatalogRepository.AccountProductDraft(product,choice(account,product).revision(),"forged shared name","forged shared brand","UPC","850032994026",code,supplier,supplierCode,cost,false);}
  CatalogRepository.AccountAddition add(UUID account,CatalogRepository.AccountProductDraft draft){return tx.execute(s->repo.addProductToAccount(account,actor,draft));}
  String snapshot(String table){return jdbc.queryForObject("SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY id),'[]'::jsonb)::text FROM "+table+" t",String.class);}
+ @Test void sharedCaseEditPreservesNewerValuesOnAccountOnlySaveAndRejectsStaleEdits(){
+  UUID first=item(tenant,global,"FIRST"), second=item(other,global,"SECOND");
+  var initial=repo.physicalAttributes(List.of(global)).get(global);
+  var edited=new CatalogRepository.PhysicalAttributes(new BigDecimal("12"),null,"oz",null,null,null,"in");
+  tx.executeWithoutResult(s->repo.updateAccountProductWithPhysical(tenant,first,"First edit","FIRST","ACTIVE",BigDecimal.ONE,vendor,null,actor,edited,initial.revision()));
+  tx.executeWithoutResult(s->repo.updateAccountProductWithPhysical(other,second,"Local edit","SECOND","ACTIVE",BigDecimal.ONE,foreignVendor,null,actor,initial,initial.revision()));
+  var stale=new CatalogRepository.PhysicalAttributes(new BigDecimal("6"),null,"oz",null,null,null,"in");
+  assertThatThrownBy(()->tx.executeWithoutResult(s->repo.updateAccountProductWithPhysical(other,second,"Stale","SECOND","ACTIVE",BigDecimal.ONE,foreignVendor,null,actor,stale,initial.revision()))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Reopen");
+  assertThat(repo.physicalAttributes(List.of(global)).get(global).masterCase()).isEqualByComparingTo("12");
+  assertThat(jdbc.queryForObject("SELECT display_name FROM account_catalog_items WHERE id=?",String.class,second)).isEqualTo("Local edit");
+ }
  @Test void searchContainsCanonicalFieldsAndOnlyCurrentAccountPresence()throws Exception{
   UUID foreign=item(other,global,"PRIVATE-OTHER");jdbc.update("UPDATE account_catalog_items SET display_name='PRIVATE NAME' WHERE id=?",foreign);
   jdbc.update("INSERT INTO account_catalog_product_images(tenant_id,account_catalog_item_id,image_bytes,image_content_type) VALUES (?,?,?,'image/png')",other,foreign,new byte[]{9});

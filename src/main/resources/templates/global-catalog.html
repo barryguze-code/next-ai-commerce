@@ -115,7 +115,7 @@
 <div class="form-pair"><label>Brand<input name="brand" th:value="${product.brand}"></label><label>Unit<input name="unitOfMeasure" required th:value="${product.unitOfMeasure}"></label></div>
 <div class="form-pair"><label>Identifier type<select name="identifierType"><option value="UPC" th:selected="${product.identifierType == 'UPC'}">UPC</option><option value="EAN" th:selected="${product.identifierType == 'EAN'}">EAN</option><option value="GTIN" th:selected="${product.identifierType == 'GTIN'}">GTIN</option></select></label><label>UPC / EAN / GTIN<input name="identifier" required th:value="${product.identifier}"></label></div>
 <div class="form-pair"><label>Status<select name="status"><option value="ACTIVE" th:selected="${product.status == 'ACTIVE'}">Active</option><option value="ARCHIVED" th:selected="${product.status == 'ARCHIVED'}">Archived</option></select></label><label class="check-line"><input type="checkbox" name="expirationRequired" value="true" th:checked="${product.expirationRequired}"><span><strong>Track expiration dates</strong></span></label></div>
-</div>
+<th:block th:replace="~{fragments/catalog-physical :: fields(${physicalAttributes == null ? null : physicalAttributes[product.id]})}"></th:block></div>
 <div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button" type="submit">Save changes</button></div>
 </form>
 </dialog>

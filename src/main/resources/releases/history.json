@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.14.11",
+    "title": "Catalogue and receiving improvements",
+    "sections": [
+      {
+        "title": "Improvements",
+        "items": [
+          "Edit shared dimensions, weight and case quantities from catalogue forms.",
+          "Reorder store shortcuts and keep undated inventory actions available.",
+          "Map receiving items in context and remove unused documents safely.",
+          "Preserve all deployed FBA review and receipt fixes."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.10",
     "title": "FBA shipment stock review",
     "sections": [

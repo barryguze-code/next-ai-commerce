@@ -60,6 +60,7 @@ details.context-menu.store-shortcut-managing .context-popover>.context-footer{di
 .store-shortcut>button[aria-current=true]{border-color:#2d6be7;background:#edf4ff;box-shadow:0 0 0 1px #2d6be7}
 [data-theme=dark] .store-shortcut>button[aria-current=true]{background:#203d63;border-color:#a7c5ff;box-shadow:0 0 0 1px #a7c5ff}
 
+.store-shortcut > button[draggable=true]:hover{cursor:grab}.store-shortcut.shortcut-drop-changed{box-shadow:inset 3px 0 var(--primary,#2d6be8)}
 /* Fit the existing PNGs' visible alpha bounds, rather than their padded canvases. */
 @media(min-width:761px){
  html body.app-page .sidebar-edge-toggle{height:64px}
