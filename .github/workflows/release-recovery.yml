@@ -1,0 +1,28 @@
+name: Release recovery
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Verify Java and package
+        run: mvn --batch-mode verify
+      - run: npm ci --ignore-scripts
+      - name: Initial rendering regressions
+        run: node --test src/test/js/inventory-first-paint.test.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-parity-1.14.13-package
+          path: |
+            target/next-ai-commerce-1.14.13.jar
+            target/surefire-reports/
+          if-no-files-found: error
