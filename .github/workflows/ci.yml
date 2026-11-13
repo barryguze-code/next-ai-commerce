@@ -135,8 +135,8 @@ jobs:
         if: github.ref == 'refs/heads/codex/local-parity-1.14.11'
         uses: actions/upload-artifact@v4
         with:
-          name: local-parity-1.14.11-package
+          name: local-parity-1.14.13-package
           path: |
-            target/next-ai-commerce-1.14.11.jar
+            target/next-ai-commerce-1.14.13.jar
             target/surefire-reports/
           if-no-files-found: error

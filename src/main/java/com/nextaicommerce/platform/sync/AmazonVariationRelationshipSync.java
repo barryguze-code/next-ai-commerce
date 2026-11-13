@@ -16,6 +16,8 @@ public class AmazonVariationRelationshipSync {
     private final AmazonVariationRelationshipPublisher publisher;
     private final AmazonSpApiClient amazon;
     private final boolean enabled;
+    @org.springframework.beans.factory.annotation.Value("${app.amazon.variation.parent-read-enabled:false}") private boolean parentReads;
+    public UUID afterImport(UUID tenant,UUID connection){return parentReads?jobs.enqueueParents(tenant,connection):null;}
     public AmazonVariationRelationshipSync(AmazonVariationRelationshipJobs jobs,AmazonVariationRelationshipPublisher publisher,
             AmazonSpApiClient amazon,@Value("${app.amazon.variation.sync-enabled:false}") boolean enabled){
         this.jobs=jobs;this.publisher=publisher;this.amazon=amazon;this.enabled=enabled;
@@ -24,9 +26,9 @@ public class AmazonVariationRelationshipSync {
     public UUID startCoverage(UUID key){if(!enabled)throw new IllegalStateException("Acquisition is disabled");return jobs.startCoverage(key);}
     public UUID enqueue(Scope scope,Collection<String> exactSkus){return enabled?jobs.enqueue(scope,exactSkus):null;}
     @Scheduled(initialDelayString="${app.amazon.variation.initial-delay-ms:30000}",fixedDelayString="${app.amazon.variation.delay-ms:1000}")
-    public void tick(){if(enabled){var lease=jobs.claim("variation");if(lease!=null)process(lease);}}
+    public void tick(){if(enabled||parentReads){var lease=jobs.claim("variation");if(lease!=null)process(lease);}}
     public void process(AmazonVariationRelationshipJobs.Lease lease){
-        if(!enabled||!Boolean.TRUE.equals(jobs.owned(lease,j->true)))return;
+        if(!(enabled||parentReads)||!Boolean.TRUE.equals(jobs.owned(lease,j->true)))return;
         String sku=lease.cursor().path("pending").path(0).asText();
         try{
             String endpoint=endpoint(lease.job().marketplaceId());

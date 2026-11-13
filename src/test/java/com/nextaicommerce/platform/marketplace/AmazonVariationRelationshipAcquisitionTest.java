@@ -63,7 +63,25 @@ class AmazonVariationRelationshipAcquisitionTest {
     String jobStatus(UUID id){return jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE id=?",String.class,id);}
     @Test void defaultOffDoesNotReadQueueEnqueueOrCallAmazon(){
         var queue=mock(AmazonVariationRelationshipJobs.class);var publisher=mock(AmazonVariationRelationshipPublisher.class);
-        var disabled=new AmazonVariationRelationshipSync(queue,publisher,api,false);disabled.tick();assertThat(disabled.enqueue(scope,List.of("S"))).isNull();verifyNoInteractions(queue,publisher,api);
+        var disabled=new AmazonVariationRelationshipSync(queue,publisher,api,false);disabled.tick();assertThat(disabled.afterImport(tenant,connection)).isNull();assertThat(disabled.enqueue(scope,List.of("S"))).isNull();verifyNoInteractions(queue,publisher,api);
+    }
+    @Test void completedImportsQueueExactScopedParentReadsAndRetainExplicitEvidence() {
+        org.springframework.test.util.ReflectionTestUtils.setField(jobs,"parentReads",true);
+        jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin) VALUES (?,?,'ATVPDKIKX0DER','4D-2PHN-6KX3','ASIN1'),(?,?,'ATVPDKIKX0DER','child','ASIN1')",tenant,connection,tenant,connection);
+        UUID id=jobs.enqueueParents(tenant,connection);
+        assertThat(jobs.enqueueParents(tenant,connection)).isEqualTo(id);
+        response("4D-2PHN-6KX3",body("4D-2PHN-6KX3","PARENT",List.of(),List.of("missing-child")));
+        response("child",body("child","CHILD",List.of("4D-2PHN-6KX3"),List.of()));
+        for(int i=0;i<4;i++){worker.tick();clock.advance(2);}
+        assertThat(jobStatus(id)).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("SELECT diagnostics->'presentation'->>'role' FROM amazon_variation_classifications WHERE marketplace_connection_id=? AND seller_sku='4D-2PHN-6KX3'",String.class,connection)).isEqualTo("PARENT");
+        assertThat(read("4D-2PHN-6KX3").state()).isEqualTo(State.UNKNOWN);
+        assertThat(tx.execute(status->new MarketplaceSkuRelationships(jdbc,provider,json).load(tenant,connection)).parents()).containsExactly("4D-2PHN-6KX3");
+        jdbc.update("UPDATE amazon_listings SET asin='CHANGED' WHERE marketplace_connection_id=? AND seller_sku='4D-2PHN-6KX3'",connection);
+        assertThat(tx.execute(status->new MarketplaceSkuRelationships(jdbc,provider,json).load(tenant,connection)).parents()).isEmpty();
+        assertThat(archived()).isEqualTo(2);
+        verify(api,never()).getVariationAt(any(),any(),anyString(),contains("/missing-child?"));
+        assertThat(jobs.enqueueParents(UUID.randomUUID(),connection)).isNull();
     }
     @Test void reciprocalFamilyPublishesAtomicallyAndPreservesInventory(){
         UUID source=UUID.randomUUID();jdbc.update("INSERT INTO amazon_source_documents(id,tenant_id,marketplace_connection_id,source_type,sha256,text_payload) VALUES (?,?,?,'INVENTORY_SNAPSHOT',?,'original report')",source,tenant,connection,"a".repeat(64));

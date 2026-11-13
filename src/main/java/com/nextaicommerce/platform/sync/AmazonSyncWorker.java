@@ -34,6 +34,7 @@ public class AmazonSyncWorker {
     private final MarketplaceSkuAutoMapper skuMapper; private final OrderRepository orders; private final boolean enabled;
     private AmazonCompetitivePricingService competitivePricing;
     private FbaInboundSync inbound;
+    @Autowired private AmazonVariationRelationshipSync relationships;
     private AmazonProductFeeSync productFees;
     @Autowired void configureProductFees(AmazonProductFeeSync productFees){this.productFees=productFees;}
     @Autowired void configureInbound(FbaInboundSync inbound){this.inbound=inbound;}
@@ -152,6 +153,7 @@ public class AmazonSyncWorker {
         store.saveDocumentAndComplete(job,documentId,document,report.requestId(),
             source->normalizer.normalize(job,document,source));
         if("LISTINGS_SNAPSHOT".equals(job.type())){try{skuMapper.mapSameAsinAfterImport(job.tenantId(),job.connectionId());}catch(RuntimeException deferred){log.warn("{} same-ASIN matching deferred; imported listings retained",runLabel(job),deferred);}}
+        if("LISTINGS_SNAPSHOT".equals(job.type())&&relationships!=null){try{relationships.afterImport(job.tenantId(),job.connectionId());}catch(RuntimeException deferred){log.warn("{} parent reads deferred; imported listings retained",runLabel(job));}}
         if("ORDERS_30_DAY".equals(job.type())&&recipients!=null)recipients.enqueueWindow(job.tenantId(),job.connectionId(),job.windowStart(),job.windowEnd());
         log.info("{} local report import complete in {} second(s).",runLabel(job),
             Duration.between(importStarted,Instant.now()).toSeconds());

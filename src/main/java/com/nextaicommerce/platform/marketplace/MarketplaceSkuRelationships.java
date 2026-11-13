@@ -32,7 +32,11 @@ public class MarketplaceSkuRelationships {
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());
         Instant now=jdbc.queryForObject("SELECT transaction_timestamp()",java.sql.Timestamp.class).toInstant();
         var rows=jdbc.queryForList("""
-            SELECT v.seller_sku,v.marketplace_id,v.observed_asin FROM amazon_variation_classifications v
+            SELECT v.seller_sku,v.marketplace_id,v.observed_asin,
+                (v.diagnostics->'presentation'->>'role'='PARENT' AND EXISTS(
+                    SELECT 1 FROM amazon_listings l WHERE l.tenant_id=v.tenant_id AND l.marketplace_connection_id=v.marketplace_connection_id
+                    AND l.marketplace_id=v.marketplace_id AND l.seller_sku=v.seller_sku
+                    AND l.asin=v.diagnostics->'presentation'->>'asin')) explicit_parent FROM amazon_variation_classifications v
             JOIN marketplace_connections c ON c.tenant_id=v.tenant_id AND c.id=v.marketplace_connection_id
                 AND c.marketplace_identifier=v.marketplace_id AND c.channel='AMAZON'
             WHERE v.tenant_id=? AND v.marketplace_connection_id=? ORDER BY v.seller_sku COLLATE "C" LIMIT 10001
@@ -46,7 +50,7 @@ public class MarketplaceSkuRelationships {
         var edges=jdbc.queryForList("SELECT subject_sku,related_sku,marketplace_id FROM amazon_variation_claims WHERE tenant_id=? AND marketplace_connection_id=? AND direction='CHILD_OF' ORDER BY subject_sku LIMIT 10001",tenant,connection);
         if(edges.size()>10000)throw new IllegalArgumentException("Relationship presentation exceeds claim budget");
         Map<String,Parent> children=new LinkedHashMap<>();Set<String> parents=new LinkedHashSet<>();List<Map<String,Object>> projection=new ArrayList<>();
-        for(var row:rows){String sku=(String)row.get("seller_sku");var c=verified.get(sku);if(c!=null&&c.quality()==Quality.VERIFIED&&c.state()==State.PARENT){parents.add(sku);projection.add(Map.of("sku",sku,"marketplace",row.get("marketplace_id"),"is_parent",true));}}
+        for(var row:rows){String sku=(String)row.get("seller_sku");var c=verified.get(sku);if(Boolean.TRUE.equals(row.get("explicit_parent"))||(c!=null&&c.quality()==Quality.VERIFIED&&c.state()==State.PARENT)){parents.add(sku);projection.add(Map.of("sku",sku,"marketplace",row.get("marketplace_id"),"is_parent",true));}}
         for(var edge:edges){String child=(String)edge.get("subject_sku"),parent=(String)edge.get("related_sku");var c=verified.get(child);
             if(c!=null&&c.quality()==Quality.VERIFIED&&c.state()==State.CHILD&&parents.contains(parent)&&asins.get(parent)!=null
                 &&Objects.equals(edge.get("marketplace_id"),marketplaces.get(child))&&Objects.equals(edge.get("marketplace_id"),marketplaces.get(parent))){

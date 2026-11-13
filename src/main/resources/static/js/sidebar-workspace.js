@@ -6,8 +6,8 @@ function mount(){
  let width=Math.max(220,Math.min(360,Number(saved.width)||260)),collapsed=saved.collapsed===true;
  const persist=()=>{try{localStorage.setItem(key,JSON.stringify({...saved,width,collapsed}));}catch(_){}};
  sidebar.querySelector('.brand')?.setAttribute('aria-label','Next AI Commerce home');
- const toggle=document.createElement('button');toggle.type='button';toggle.className='sidebar-edge-toggle';
- const resize=document.createElement('div');resize.className='sidebar-resize';resize.tabIndex=0;resize.setAttribute('role','separator');resize.setAttribute('aria-orientation','vertical');resize.setAttribute('aria-label','Sidebar width');resize.setAttribute('aria-valuemin','220');resize.setAttribute('aria-valuemax','360');
+ const toggle=sidebar.querySelector('.sidebar-edge-toggle')||document.createElement('button');toggle.type='button';toggle.className='sidebar-edge-toggle';
+ const resize=sidebar.querySelector('.sidebar-resize')||document.createElement('div');resize.className='sidebar-resize';resize.tabIndex=0;resize.setAttribute('role','separator');resize.setAttribute('aria-orientation','vertical');resize.setAttribute('aria-label','Sidebar width');resize.setAttribute('aria-valuemin','220');resize.setAttribute('aria-valuemax','360');
  function paint(){page.style.setProperty('--sidebar-width',width+'px');page.classList.toggle('sidebar-collapsed',collapsed);toggle.textContent=collapsed?'›':'‹';toggle.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');toggle.setAttribute('aria-expanded',String(!collapsed));resize.setAttribute('aria-valuenow',String(width));resize.tabIndex=collapsed?-1:0;}
  toggle.addEventListener('click',()=>{collapsed=!collapsed;paint();persist();});
  sidebar.querySelectorAll('.product-nav a,.nav-group-label').forEach(n=>{const label=n.textContent.trim();if(!n.getAttribute('aria-label'))n.setAttribute('aria-label',label);[...n.childNodes].filter(x=>x.nodeType===3&&x.textContent.trim()).forEach(x=>{const span=document.createElement('span');span.className='nav-item-label';x.replaceWith(span);span.append(x);});});

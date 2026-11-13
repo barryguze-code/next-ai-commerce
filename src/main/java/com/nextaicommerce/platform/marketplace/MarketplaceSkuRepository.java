@@ -513,7 +513,7 @@ public class MarketplaceSkuRepository {
                 WHEN available<=0 THEN 'OOS'
                 WHEN upper(coalesce(listing_status,''))='ACTIVE' THEN 'ACTIVE'
                 ELSE 'INACTIVE' END operational_status
-              FROM source_rows
+              FROM source_rows WHERE NOT verified_parent
             )
             SELECT count(*),count(*) FILTER (WHERE operational_status='ACTIVE'),
                    count(*) FILTER (WHERE operational_status='OOS'),

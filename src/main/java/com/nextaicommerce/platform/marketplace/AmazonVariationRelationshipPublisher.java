@@ -55,6 +55,13 @@ public class AmazonVariationRelationshipPublisher {
             JsonNode statuses=json.createArrayNode();for(JsonNode group:root.path("summaries"))if(scope.marketplace().equals(group.path("marketplaceId").asText())&&group.path("status").isArray())statuses=group.path("status");
             jdbc.update("UPDATE amazon_variation_classifications SET amazon_status=CAST(? AS jsonb),attributes=CAST(? AS jsonb) WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=?",statuses.toString(),root.path("attributes").isObject()?root.path("attributes").toString():"{}",scope.tenant(),scope.connection(),scope.marketplace(),sku);
         }
+        // Presentation evidence is the listing's own explicit designation, independent of family verification.
+        // A failed/incomplete read never erases the last valid designation.
+        if(matching&&hasDatasets(root,scope.marketplace())&&asin!=null){
+            String explicit=explicitRole(root,scope.marketplace());
+            if(explicit!=null)jdbc.update("UPDATE amazon_variation_classifications SET diagnostics=jsonb_set(diagnostics,'{presentation}',CAST(? AS jsonb)) WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=?",
+                json.writeValueAsString(Map.of("role",explicit,"asin",asin,"source",source.toString(),"observed",observed.toString())),scope.tenant(),scope.connection(),scope.marketplace(),sku);
+        }
         Set<String> referenced=new LinkedHashSet<>();referenced.addAll(parents);referenced.addAll(children);
         int count=0;for(String related:referenced){if(related.equals(sku)||++count>1000)continue;stub(scope,related);}
         for(String parent:parents)if(!parent.equals(sku)&&hasStub(scope,parent))claim(scope,sku,parent,"CHILD_OF",revision,source,observed);
@@ -133,5 +140,13 @@ public class AmazonVariationRelationshipPublisher {
             jdbc.update("UPDATE amazon_variation_classifications SET own_complete=false WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=?",key(s,sku));
         }
         jdbc.update("UPDATE amazon_variation_classifications SET last_attempt_at=?,last_http_status=?,last_error_code=?,fetch_status=?,failure_count=failure_count+1 WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=?",time(at),status==0?null:status,"HTTP_"+status,status==401||status==403?"PAUSED":"ERROR",s.tenant(),s.connection(),s.marketplace(),sku);
+    }
+    static String explicitRole(JsonNode root,String marketplace){
+        Set<String> levels=new HashSet<>();
+        for(JsonNode level:root.path("attributes").path("parentage_level"))
+            if(marketplace.equals(level.path("marketplace_id").asText()))levels.add(level.path("value").asText());
+        if(levels.equals(Set.of("parent")))return "PARENT";
+        if(levels.equals(Set.of("child")))return "CHILD";
+        return null;
     }
 }

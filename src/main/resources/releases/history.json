@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.14.13",
+    "title": "Amazon parent listings and initial rendering",
+    "sections": [
+      {
+        "title": "Improvements",
+        "items": [
+          "Identify explicit Amazon parent listings after Marketplace SKU imports and omit them from listing views and counts.",
+          "Load Orders and Marketplace SKU styles before displaying the page, with sidebar controls in the initial markup.",
+          "Refresh versioned frontend assets without caching inventory or permissions."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.12",
     "title": "Product master-case quantities",
     "sections": [

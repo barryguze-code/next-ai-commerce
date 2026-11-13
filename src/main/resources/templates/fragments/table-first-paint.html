@@ -1,5 +1,6 @@
 <!doctype html><html xmlns:th="http://www.thymeleaf.org"><head>
 <th:block th:fragment="head">
+<link rel="stylesheet" th:href="@{/css/sidebar-workspace.css(v=${buildVersion})}">
 <script src="/js/theme.js" th:src="@{/js/theme.js(v=${buildVersion})}"></script>
 <link rel="stylesheet" href="/css/platform-ui.css" th:href="@{/css/platform-ui.css(v=${buildVersion})}">
 <link rel="stylesheet" href="/css/product-thumbnails.css" th:href="@{/css/product-thumbnails.css(v=${buildVersion})}">

@@ -2,6 +2,8 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <body>
 <th:block th:fragment="nav(active)">
+<button type="button" class="sidebar-edge-toggle" aria-label="Collapse navigation" aria-expanded="true">‹</button>
+<div class="sidebar-resize" tabindex="0" role="separator" aria-orientation="vertical" aria-label="Sidebar width" aria-valuemin="220" aria-valuemax="360" aria-valuenow="260"></div>
 <link rel="stylesheet" href="/css/action-suggestions.css?v=20261002-standards3" th:href="@{/css/action-suggestions.css(v=${buildVersion})}">
 <script defer src="/js/action-suggestions.js?v=20261002-standards3" th:src="@{/js/action-suggestions.js(v=${buildVersion})}"></script>
 <dialog id="action-suggestion-dialog" aria-labelledby="action-suggestion-title">

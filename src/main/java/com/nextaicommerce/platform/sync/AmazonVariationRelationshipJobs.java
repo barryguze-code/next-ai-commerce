@@ -24,6 +24,34 @@ public class AmazonVariationRelationshipJobs {
         this(jdbc,tx,json,trial);this.coverage=Objects.requireNonNull(coverage);
     }
     private AmazonVariationCoverageGrant coverage;
+    @org.springframework.beans.factory.annotation.Value("${app.amazon.variation.parent-read-enabled:false}")
+    private boolean parentReads;
+    private boolean parent(Lease lease){return parentReads&&"PARENT_PRESENTATION".equals(lease.cursor().path("purpose").asText());}
+    private boolean parentDeadline(Lease lease){try{return Instant.parse(lease.cursor().path("deadline").asText()).isAfter(now());}catch(RuntimeException e){return false;}}
+    /** Only called after a committed listing import. Existing evidence is retained on read failures. */
+    public UUID enqueueParents(UUID tenant,UUID connection){
+        if(!parentReads)return null;
+        return tx.execute(status->{scope(tenant);
+            var connections=jdbc.queryForList("SELECT marketplace_identifier FROM marketplace_connections WHERE tenant_id=? AND id=? AND channel='AMAZON' AND status='ACTIVE' FOR UPDATE",tenant,connection);
+            if(connections.isEmpty())return null;
+            String market=(String)connections.getFirst().get("marketplace_identifier");
+            var active=jdbc.queryForList("SELECT id FROM marketplace_sync_jobs WHERE tenant_id=? AND marketplace_connection_id=? AND job_type=? AND status IN ('QUEUED','WAITING','RUNNING')",tenant,connection,TYPE);
+            if(!active.isEmpty())return (UUID)active.getFirst().get("id");
+            var seeds=jdbc.query("""
+                SELECT l.seller_sku FROM amazon_listings l
+                LEFT JOIN amazon_variation_classifications v ON v.tenant_id=l.tenant_id
+                  AND v.marketplace_connection_id=l.marketplace_connection_id AND v.marketplace_id=l.marketplace_id AND v.seller_sku=l.seller_sku
+                WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.marketplace_id=?
+                  AND (v.observed_at IS NULL OR v.observed_at < clock_timestamp()-interval '7 days')
+                ORDER BY v.observed_at NULLS FIRST,l.seller_sku COLLATE "C" LIMIT 5000
+                """,(r,n)->r.getString(1),tenant,connection,market);
+            if(seeds.isEmpty())return null;
+            UUID run=UUID.randomUUID(),job=UUID.randomUUID();Instant at=now();
+            jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,window_start,window_end) VALUES(?,?,?,'RECONCILIATION',?,?,?)",run,tenant,connection,TYPE,time(at),time(at));
+            String cursor=json.writeValueAsString(Map.of("pending",seeds,"done",List.of(),"marketplace",market,"purpose","PARENT_PRESENTATION","deadline",at.plus(Duration.ofHours(6)).toString()));
+            jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,required_for_ready,cursor,available_at) VALUES(?,?,?,?,?,1,false,CAST(? AS jsonb),?)",job,tenant,run,connection,TYPE,cursor,time(at));return job;
+        });
+    }
     private boolean account(Lease lease){return coverage!=null&&coverage.covers(lease);}
     public UUID startCoverage(UUID key){if(coverage==null||trial==null||!trial.enabled())throw new IllegalStateException("Guarded coverage wiring is required");return coverage.start(key);}
     public void requestUncertain(Lease lease,UUID request){if(account(lease))coverage.uncertain(lease);else requestCompleted(lease,request);}
@@ -34,12 +62,12 @@ public class AmazonVariationRelationshipJobs {
     // Clock constructor retains the pre-trial synthetic A2 harness; Spring always requires the guarded constructor.
     private AmazonVariationTrial trial;
     public UUID startTrial(UUID key){if(trial==null)throw new IllegalStateException("Guarded trial wiring is required");return trial.start(key,this);}
-    public java.time.Duration trialRemaining(Lease lease){return account(lease)?coverage.remaining(lease):trial==null?java.time.Duration.ofSeconds(45):trial.remaining(lease);}
-    public boolean reserveOAuth(Lease lease,UUID request){return trial==null||Boolean.TRUE.equals(owned(lease,j->account(lease)?coverage.reserve(lease,true,request):trial.reserve(lease,true,request)));}
-    public void requestCompleted(Lease lease,UUID request){if(account(lease))coverage.release(lease,request);else if(trial!=null)trial.release(lease,request);}
+    public java.time.Duration trialRemaining(Lease lease){return parent(lease)?Duration.between(now(),Instant.parse(lease.cursor().path("deadline").asText())):account(lease)?coverage.remaining(lease):trial==null?java.time.Duration.ofSeconds(45):trial.remaining(lease);}
+    public boolean reserveOAuth(Lease lease,UUID request){return parent(lease)?Boolean.TRUE.equals(owned(lease,j->parentDeadline(lease))):trial==null||Boolean.TRUE.equals(owned(lease,j->account(lease)?coverage.reserve(lease,true,request):trial.reserve(lease,true,request)));}
+    public void requestCompleted(Lease lease,UUID request){if(parent(lease))return; if(account(lease))coverage.release(lease,request);else if(trial!=null)trial.release(lease,request);}
     boolean guarded(){return trial!=null;}
     boolean familyAllowed(Lease lease,String sku,JsonNode response){
-        if(trial==null)return true;
+        if(parent(lease)||trial==null)return true;
         Set<String> identities=new HashSet<>();lease.cursor().path("pending").forEach(v->identities.add(v.asText()));lease.cursor().path("done").forEach(v->identities.add(v.asText()));
         if(sku.equals(response.path("sku").asText()))for(JsonNode group:response.path("relationships"))if(lease.job().marketplaceId().equals(group.path("marketplaceId").asText()))
             for(JsonNode relation:group.path("relationships"))if("VARIATION".equals(relation.path("type").asText()))for(String field:List.of("parentSkus","childSkus"))
@@ -47,7 +75,7 @@ public class AmazonVariationRelationshipJobs {
         return identities.size()<=(account(lease)?AmazonVariationCoverageGrant.IDENTITIES:4);
     }
     void stopFamily(Lease lease){stop(lease,"FAMILY_LIMIT");}
-    private void stop(Lease lease,String reason){if(account(lease))coverage.stop(lease,reason);else if(trial!=null)trial.stop(lease.job().id(),reason);}
+    private void stop(Lease lease,String reason){if(parent(lease)){finishInside(lease,true,reason);return;}if(account(lease))coverage.stop(lease,reason);else if(trial!=null)trial.stop(lease.job().id(),reason);}
     private void scope(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
     public UUID enqueue(Scope scope,Collection<String> seeds){
         if(trial!=null)throw new IllegalStateException("Use the bounded trial operator start");
@@ -82,7 +110,7 @@ public class AmazonVariationRelationshipJobs {
     }
     private final java.util.concurrent.atomic.AtomicInteger rotation=new java.util.concurrent.atomic.AtomicInteger();
     public Lease claim(String worker){
-        if(trial!=null){if(!trial.enabled())return null;trial.inspect(false);}
+        if(trial!=null&&trial.enabled())trial.inspect(false);else if(!parentReads&&trial!=null)return null;
         var tenants=new ArrayList<>(jdbc.query("SELECT id FROM tenants WHERE status='ACTIVE' ORDER BY id",(r,n)->r.getObject(1,UUID.class)));
         if(!tenants.isEmpty())Collections.rotate(tenants,Math.floorMod(rotation.getAndIncrement(),tenants.size()));
         for(UUID tenant:tenants){
@@ -97,7 +125,7 @@ public class AmazonVariationRelationshipJobs {
                       AND ((j.status IN ('QUEUED','WAITING') AND j.available_at<=? AND (j.lease_expires_at IS NULL OR j.lease_expires_at<=?))
                         OR (j.status='RUNNING' AND j.lease_expires_at<=?))
                     ORDER BY j.available_at,j.created_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1
-                    """.replace("/*TRIAL_SCOPE*/",trial==null?"":"AND (EXISTS(SELECT 1 FROM amazon_variation_trial t WHERE t.job_id=j.id AND t.tenant_id=j.tenant_id AND t.marketplace_connection_id=j.marketplace_connection_id AND t.marketplace_id=c.marketplace_identifier AND t.seller_identifier=c.seller_identifier AND t.state='RUNNING' AND t.deadline>clock_timestamp())"+(coverage!=null&&coverage.enabled()?" OR j.cursor->'approval'->'contract'->>'approval'='"+coverage.approval()+"' AND j.tenant_id='"+coverage.scope().tenant()+"' AND j.marketplace_connection_id='"+coverage.scope().connection()+"'":"")+")"),tenant,TYPE,time(now),time(now),time(now));
+                    """.replace("/*TRIAL_SCOPE*/",trial==null?"":"AND (EXISTS(SELECT 1 FROM amazon_variation_trial t WHERE t.job_id=j.id AND t.tenant_id=j.tenant_id AND t.marketplace_connection_id=j.marketplace_connection_id AND t.marketplace_id=c.marketplace_identifier AND t.seller_identifier=c.seller_identifier AND t.state='RUNNING' AND t.deadline>clock_timestamp())"+(parentReads?" OR (j.cursor->>'purpose'='PARENT_PRESENTATION')":"")+(coverage!=null&&coverage.enabled()?" OR j.cursor->'approval'->'contract'->>'approval'='"+coverage.approval()+"' AND j.tenant_id='"+coverage.scope().tenant()+"' AND j.marketplace_connection_id='"+coverage.scope().connection()+"'":"")+")"),tenant,TYPE,time(now),time(now),time(now));
                 if(rows.isEmpty())return null;var r=rows.getFirst();UUID id=(UUID)r.get("id");String owner=worker+":"+UUID.randomUUID();
                 int fence=((Number)r.get("attempt_count")).intValue()+1;
                 jdbc.update("UPDATE marketplace_sync_jobs SET status='RUNNING',attempt_count=?,lease_owner=?,lease_expires_at=?,started_at=coalesce(started_at,?) WHERE tenant_id=? AND id=?",fence,owner,time(now.plusSeconds(120)),time(now),tenant,id);
@@ -121,12 +149,13 @@ public class AmazonVariationRelationshipJobs {
             FOR UPDATE OF j
             """,lease.job().tenantId(),lease.job().id(),lease.job().connectionId(),TYPE,lease.owner(),lease.fence(),time(now()),lease.job().marketplaceId(),lease.seller());
         if(rows.isEmpty())return null;
-        if(account(lease)){if(!coverage.allowed(lease))return null;}
+        if(parent(lease)){if(!parentDeadline(lease)){finishInside(lease,true,"READ_WINDOW_EXPIRED");return null;}}
+        else if(account(lease)){if(!coverage.allowed(lease))return null;}
         else if(trial!=null){trial.expire(lease.job().id());if(!trial.allowed(lease))return null;}
         Instant expires=jdbc.queryForObject("SELECT lease_expires_at FROM marketplace_sync_jobs WHERE id=?",Timestamp.class,lease.job().id()).toInstant();
         T result=action.apply(jdbc);
         if(!expires.isAfter(now()))throw new IllegalStateException("Relationship lease expired before publication commit");
-        if(account(lease)?!coverage.withinDeadline(lease):trial!=null&&!trial.withinDeadline(lease.job().id()))throw new IllegalStateException("Relationship trial deadline expired before publication commit");
+        if(parent(lease)?!parentDeadline(lease):account(lease)?!coverage.withinDeadline(lease):trial!=null&&!trial.withinDeadline(lease.job().id()))throw new IllegalStateException("Relationship trial deadline expired before publication commit");
         return result;
     });}
     private void rateLock(){jdbc.execute("SELECT pg_advisory_xact_lock(7142198372401)");}
@@ -137,7 +166,7 @@ public class AmazonVariationRelationshipJobs {
         rateLock();long next=counter("amazon_variation_next_request_ms"),now=now().toEpochMilli();
         if(next>now){if(trial!=null&&Duration.ofMillis(next-now).compareTo(trialRemaining(lease))>=0)stop(lease,"RETRY_OUTSIDE_WINDOW");
             else waitInside(lease,Instant.ofEpochMilli(next),lease.cursor());return false;}
-        if(account(lease)?!coverage.reserve(lease,false,request):trial!=null&&!trial.reserve(lease,false,request))return false;
+        if(!parent(lease)&&(account(lease)?!coverage.reserve(lease,false,request):trial!=null&&!trial.reserve(lease,false,request)))return false;
         set("amazon_variation_next_request_ms",Math.addExact(now,counter("amazon_variation_request_interval_ms")));return true;
     }));}
     public void observeRate(Double requestsPerSecond){
@@ -154,13 +183,13 @@ public class AmazonVariationRelationshipJobs {
         var done=new LinkedHashSet<String>();lease.cursor().path("done").forEach(v->done.add(v.asText()));
         String sku=pending.iterator().next();pending.remove(sku);done.add(sku);
         var rechecked=new LinkedHashSet<String>();lease.cursor().path("rechecked").forEach(v->rechecked.add(v.asText()));
-        for(String member:referenced){if(!done.contains(member))pending.add(member);
+        for(String member:parent(lease)?List.<String>of():referenced){if(!done.contains(member))pending.add(member);
             else if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM amazon_variation_classifications WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=? AND observed_role='PARENT')",Boolean.class,lease.job().tenantId(),lease.job().connectionId(),lease.job().marketplaceId(),member))&&rechecked.add(member))pending.add(member);}
 
         var identities=new HashSet<>(done);identities.addAll(pending);
-        if(identities.size()>(account(lease)?AmazonVariationCoverageGrant.IDENTITIES:trial==null?1000:4)||lease.fence()>10000){finishInside(lease,true,"FAMILY_LIMIT");return;}
+        if(identities.size()>(parent(lease)?5000:account(lease)?AmazonVariationCoverageGrant.IDENTITIES:trial==null?1000:4)||lease.fence()>10000){finishInside(lease,true,"FAMILY_LIMIT");return;}
         if(pending.isEmpty()){jdbc.update("UPDATE marketplace_sync_jobs SET cursor=cursor || CAST(? AS jsonb) WHERE tenant_id=? AND id=?",json.writeValueAsString(Map.of("pending",pending,"done",done,"rechecked",rechecked,"marketplace",lease.job().marketplaceId())),lease.job().tenantId(),lease.job().id());var args=new ArrayList<Object>(List.of(lease.job().tenantId(),lease.job().connectionId(),lease.job().marketplaceId()));args.addAll(done);
-            boolean unresolved=Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM amazon_variation_classifications WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku IN ("+String.join(",",Collections.nCopies(done.size(),"?"))+") AND (classification IN ('UNKNOWN','CONFLICT') OR valid_until<=?))",Boolean.class,appendTime(args)));
+            boolean unresolved=!parent(lease)&&Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM amazon_variation_classifications WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku IN ("+String.join(",",Collections.nCopies(done.size(),"?"))+") AND (classification IN ('UNKNOWN','CONFLICT') OR valid_until<=?))",Boolean.class,appendTime(args)));
             finishInside(lease,unresolved,unresolved?"UNRESOLVED_EVIDENCE":null);return;}
         var cursor=json.valueToTree(Map.of("pending",pending,"done",done,"rechecked",rechecked,"marketplace",lease.job().marketplaceId()));
         waitInside(lease,now().plusSeconds(1),cursor);
@@ -181,7 +210,7 @@ public class AmazonVariationRelationshipJobs {
         jdbc.update("UPDATE amazon_variation_classifications SET next_attempt_at=? WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=?",time(at),lease.job().tenantId(),lease.job().connectionId(),lease.job().marketplaceId(),lease.cursor().path("pending").path(0).asText());
     }
     private void finishInside(Lease lease,boolean warning,String reason){
-        if(account(lease))coverage.finish(lease,warning?(reason==null?"UNRESOLVED_EVIDENCE":reason):"COMPLETED");else if(trial!=null)trial.finish(lease.job().id(),warning,reason);
+        if(parent(lease)){}else if(account(lease))coverage.finish(lease,warning?(reason==null?"UNRESOLVED_EVIDENCE":reason):"COMPLETED");else if(trial!=null)trial.finish(lease.job().id(),warning,reason);
         jdbc.update("UPDATE marketplace_sync_jobs SET status=?,completed_at=?,lease_owner=NULL,lease_expires_at=NULL,error_code=? WHERE tenant_id=? AND id=?",warning?"SKIPPED":"COMPLETED",time(now()),reason,lease.job().tenantId(),lease.job().id());
         jdbc.update("UPDATE marketplace_sync_runs SET status=?,completed_at=?,progress_percent=100,user_message=? WHERE tenant_id=? AND id=?",warning?"COMPLETED_WITH_WARNINGS":"COMPLETED",time(now()),warning?"Relationship evidence remains unresolved":"Relationship acquisition completed",lease.job().tenantId(),lease.job().runId());
     }
