@@ -21,7 +21,8 @@ public class ReceivingWorkflowRepository {
     }
     public record Document(UUID id,UUID sessionId,String vendor,String type,String number,String filename,
             LocalDate date,Instant uploadedAt,String currency,BigDecimal expected,BigDecimal received,
-            BigDecimal outstanding,boolean closed,boolean partial,boolean hasHistory,String closeReason,UUID vendorId){
+            BigDecimal outstanding,boolean closed,boolean partial,boolean hasHistory,String closeReason,UUID vendorId,BigDecimal receivedCases){
+        public String receivedCasesLabel(){return receivedCases==null?null:receivedCases.setScale(2,java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();}
         public String label(){return ("INVOICE".equals(type)?"Invoice":"Packing list")+" · "+(number==null||number.isBlank()?filename:number);}
         public String progress(){return closed?(partial?"Closed · Partial":"Closed · Received"):
             outstanding.signum()==0?(received.compareTo(expected)<0?"Resolved · exceptions":"Fully received"):
@@ -186,7 +187,9 @@ public class ReceivingWorkflowRepository {
           OR EXISTS(SELECT 1 FROM vendor_credit_requests c JOIN purchase_order_items i
             ON i.tenant_id=c.tenant_id AND i.id=c.purchase_order_item_id JOIN purchase_orders p
             ON p.tenant_id=i.tenant_id AND p.id=i.purchase_order_id
-            WHERE c.tenant_id=d.tenant_id AND p.receiving_document_id=d.id),d.close_reason,d.vendor_id
+            WHERE c.tenant_id=d.tenant_id AND p.receiving_document_id=d.id),d.close_reason,d.vendor_id,
+          CASE WHEN coalesce(t.received,0)=0 THEN 0
+            WHEN packs.receipt_each=t.received AND packs.unknown_packs=0 THEN packs.cases ELSE NULL END
         FROM receiving_documents d JOIN receiving_sessions s ON s.tenant_id=d.tenant_id AND s.id=d.receiving_session_id
         JOIN vendors v ON v.tenant_id=d.tenant_id AND v.id=d.vendor_id
         LEFT JOIN LATERAL (SELECT sum(i.ordered_quantity*CASE WHEN i.invoice_unit='CASE' THEN i.units_per_case ELSE 1 END) expected,
@@ -194,6 +197,13 @@ public class ReceivingWorkflowRepository {
             -i.received_quantity-i.discrepancy_quantity+(SELECT coalesce(sum(r.total_each_quantity),0) FROM receiving_line_receipts r WHERE r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id AND r.disposition='OVER_SHIPPED' AND r.voided_at IS NULL),0)) outstanding
           FROM purchase_orders p JOIN purchase_order_items i ON i.tenant_id=p.tenant_id AND i.purchase_order_id=p.id
           WHERE p.tenant_id=d.tenant_id AND p.receiving_document_id=d.id) t ON true
+        LEFT JOIN LATERAL (SELECT sum(r.total_each_quantity) receipt_each,
+          sum(r.total_each_quantity/nullif(r.units_per_case,0)) cases,
+          count(*) FILTER (WHERE r.units_per_case IS NULL OR r.units_per_case<=0) unknown_packs
+          FROM purchase_orders p JOIN purchase_order_items i ON i.tenant_id=p.tenant_id AND i.purchase_order_id=p.id
+          JOIN receiving_line_receipts r ON r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id
+          WHERE p.tenant_id=d.tenant_id AND p.receiving_document_id=d.id
+            AND r.voided_at IS NULL AND r.disposition<>'SHORT_SHIPPED') packs ON true
         WHERE d.tenant_id=:tenant AND d.removed_at IS NULL AND s.status<>'CANCELLED'
         """;
     @Transactional(readOnly=true)
@@ -223,7 +233,7 @@ public class ReceivingWorkflowRepository {
         return sql.query(DOCUMENTS+(ids.isEmpty()?"":" AND d.id IN (:ids)")+" ORDER BY d.created_at DESC",
             Map.of("tenant",tenant,"ids",ids),(rs,n)->new Document(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),
             rs.getString(4),rs.getString(5),rs.getString(6),rs.getObject(7,LocalDate.class),rs.getTimestamp(8).toInstant(),
-            rs.getString(9),rs.getBigDecimal(10),rs.getBigDecimal(11),rs.getBigDecimal(12),rs.getBoolean(13),rs.getBoolean(14),rs.getBoolean(15),rs.getString(16),rs.getObject(17,UUID.class)));
+            rs.getString(9),rs.getBigDecimal(10),rs.getBigDecimal(11),rs.getBigDecimal(12),rs.getBoolean(13),rs.getBoolean(14),rs.getBoolean(15),rs.getString(16),rs.getObject(17,UUID.class),rs.getBigDecimal(18)));
     }
     @Transactional(readOnly=true)
     public List<WorkLine> lines(UUID tenant,List<UUID> ids){

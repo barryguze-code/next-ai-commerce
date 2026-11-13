@@ -412,6 +412,23 @@ class ReceivingWorkflowDatabaseTest {
         assertThat(inventory.inventory(tenant,List.of(UUID.randomUUID()))).isEmpty();
         assertThat(inventory.inventory(tenant)).hasSize(1);
     }
+    @Test void documentReceivedCasesUseReceiptSnapshotsAndOmitUnreconciledHistory(){
+        var f=fixture("INVOICE");
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().receivedCases()).isZero();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE purchase_order_items SET received_quantity=10,units_per_case=99 WHERE tenant_id=? AND id=?",tenant,f.line());
+            jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id) VALUES (?,?,6,3,'SELLABLE',?,?),(?,?,4,2,'DAMAGED',?,?)",tenant,f.line(),user,f.location(),tenant,f.line(),user,f.location());
+            jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id,voided_at) VALUES (?,?,8,2,'SELLABLE',?,?,now())",tenant,f.line(),user,f.location());
+            jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id) VALUES (?,?,2,2,'SHORT_SHIPPED',?,?)",tenant,f.line(),user,f.location());
+        });
+        var document=work.documents(tenant,List.of(f.document())).getFirst();
+        assertThat(document.received()).isEqualByComparingTo("10");
+        assertThat(document.receivedCases()).isEqualByComparingTo("4");
+        assertThat(document.receivedCasesLabel()).isEqualTo("4");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET received_quantity=11 WHERE tenant_id=? AND id=?",tenant,f.line());});
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().receivedCases()).isNull();
+        assertThat(work.documents(UUID.randomUUID(),List.of(f.document()))).isEmpty();
+    }
     @Test void manualReceiptRecordsItemDateLocationAndExplanation(){
         var f=fixture("INVOICE");
         inventory.receiveUninvoicedItem(tenant,actor,f.product(),new BigDecimal("5"),expiry,f.location(),"Received extra delivery without invoice");

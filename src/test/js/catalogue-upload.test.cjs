@@ -7,6 +7,6 @@ test('catalogue picker accumulates files, drop appends, remove and limits preser
  await page.locator('[data-catalog-drop]').evaluate(el=>{const data=new DataTransfer();data.items.add(new File(['SKU,Description\n003,Product'],'third.csv',{type:'text/csv'}));el.dispatchEvent(new DragEvent('drop',{dataTransfer:data,bubbles:true}));});
  assert.equal(await page.locator('[data-catalog-files] li').count(),3);await page.getByRole('button',{name:'Remove second.csv'}).click();assert.equal(await page.locator('input[type=file]').evaluate(e=>e.files.length),2);
  await page.locator('input[type=file]').setInputFiles(file('bad.exe'));assert.match(await page.locator('[data-catalog-upload-error]').textContent(),/CSV, TSV or XLSX/);assert.equal(await page.locator('input[type=file]').evaluate(e=>e.files.length),2);
- const html=fs.readFileSync('src/main/resources/templates/account-catalog.html','utf8');assert.match(html,/catalogue-template-owner.png/);assert.match(html,/View catalogue template/);assert.match(html,/uploadVendors\) == 1/);assert.match(html,/data-command-id="upload-catalogue" data-action-image/);
+ const html=fs.readFileSync('src/main/resources/templates/account-catalog.html','utf8');assert.match(html,/catalogue-template-owner.png/);assert.match(html,/aria-label="Open catalogue template in a new tab"/);assert.match(html,/uploadVendors\) == 1/);assert.match(html,/data-command-id="upload-catalogue" data-action-image/);
  }finally{await browser.close();}
 });

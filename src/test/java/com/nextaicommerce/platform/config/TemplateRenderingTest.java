@@ -146,7 +146,7 @@ class TemplateRenderingTest {
         var c=webContext();UUID document=UUID.randomUUID(),session=UUID.randomUUID(),line=UUID.randomUUID();
         var d=new com.nextaicommerce.platform.receiving.ReceivingWorkflowRepository.Document(document,session,"QA supplier",
             "INVOICE","INV-101","invoice.csv",java.time.LocalDate.now(),Instant.now(),"USD",
-            new BigDecimal("10"),new BigDecimal("3"),new BigDecimal("7"),false,false,true,null,UUID.randomUUID());
+            new BigDecimal("10"),new BigDecimal("3"),new BigDecimal("7"),false,false,true,null,UUID.randomUUID(),new BigDecimal("0.5"));
         var l=new com.nextaicommerce.platform.receiving.ReceivingWorkflowRepository.WorkLine(line,document,session,UUID.randomUUID(),
             "Yogurt & cream","QA-100","012345678901",new BigDecimal("10"),new BigDecimal("3"),new BigDecimal("7"),BigDecimal.ONE,
             new BigDecimal("2"),"USD",true,false,1,BigDecimal.ZERO,BigDecimal.ZERO,UUID.randomUUID());
@@ -161,7 +161,7 @@ class TemplateRenderingTest {
         // Exercise the populated parent page too: empty-list fixtures never evaluate d.statusTone().
         c.setVariable("sessions",List.of());c.setVariable("vendors",List.of());c.setVariable("query","");
         assertThat(templateEngine().process("receiving",c))
-            .contains("Invoices &amp; packing lists","INV-101","data-receiving-status=\"partial\"","Partially received")
+            .contains("Invoices &amp; packing lists","INV-101","data-receiving-status=\"partial\"","Partially received","rw-received-cases"," · 0.5 cases")
             .doesNotContain("src=\"/js/receiving-work.js");
     }
     @Test

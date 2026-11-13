@@ -732,3 +732,6 @@ html[data-theme=dark] .table-command-panel .rw-selection-bar .table-action-entry
  #session-dialog.is-dragging .dialog-header{cursor:grabbing}
  #session-dialog.is-dragging::backdrop{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 }
+
+/* Receipt case equivalents stay beside eaches in the document table. */
+.rw-received-cases{color:var(--muted);white-space:nowrap}
