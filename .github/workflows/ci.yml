@@ -1,5 +1,11 @@
 name: CI
 on:
+  workflow_dispatch:
+    inputs:
+      release_recovery:
+        description: Run full Java verification and focused first-render checks for the approved release
+        type: boolean
+        default: false
   push:
     branches: ["**"]
   pull_request:
@@ -19,7 +25,12 @@ jobs:
       - run: mvn --batch-mode verify
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+        if: inputs.release_recovery != true
       - run: npm test
+        if: inputs.release_recovery != true
+      - name: Recovery first-render regressions
+        if: inputs.release_recovery == true
+        run: node --test src/test/js/inventory-first-paint.test.cjs
       - name: Preserve tested notice hotfix artifact
         if: github.ref == 'refs/heads/codex/notice-only-hotfix'
         uses: actions/upload-artifact@v4
