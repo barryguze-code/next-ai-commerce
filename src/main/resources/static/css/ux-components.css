@@ -53,3 +53,15 @@ body .collaboration-row-button .collaboration-unread-dot{background:#ce3548}
 .ux-dialog-draggable.is-dragging .ux-dialog-header{cursor:grabbing}
 .ux-dialog-draggable.is-dragging::backdrop{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 }
+/* Workspace-picker chrome uses the accepted dark panel surface, never the logo canvas. */
+html[data-theme=dark] body.app-page :is(.context-popover,.context-popover>.context-footer,.store-shortcut-more-list){background:#1B2B3C!important;border-color:#34465B!important;color:#E6EEF8!important}
+html[data-theme=dark] body.app-page .context-popover>header{border-color:#34465B}
+html[data-theme=dark] body.app-page .context-popover>header small{color:#B6C5D4}
+html[data-theme=dark] body.app-page .context-popover .context-close{background:#243C54;border-color:#46637F;color:#E6EEF8}
+html[data-theme=dark] body.app-page .context-popover .context-close:hover{background:#2B4A68;border-color:#8EB6E8}
+html[data-theme=dark] body.app-page .context-popover .context-close:focus-visible{outline:2px solid #A8CDFF;outline-offset:2px}
+/* Pinned stores are readable independently of the currently active workspace. */
+html[data-theme=dark] body.app-page .store-shortcut-managing form:has([name=storeId]) button[aria-pressed=true]:not(.selected){background:#1C3550!important}
+html[data-theme=dark] body.app-page .store-shortcut-managing form:has([name=storeId]) button[aria-pressed=true]:not(.selected):is(:hover,:focus-visible){background:#243C54!important}
+html[data-theme=dark] body.app-page .store-shortcut-managing form:has([name=storeId]) button:is([aria-pressed=true],.selected),html[data-theme=dark] body.app-page .store-shortcut-managing form:has([name=storeId]) button:is([aria-pressed=true],.selected) strong{color:#E6EEF8!important}
+html[data-theme=dark] body.app-page .store-shortcut-managing form:has([name=storeId]) button:is([aria-pressed=true],.selected) small{color:#B6C5D4!important}

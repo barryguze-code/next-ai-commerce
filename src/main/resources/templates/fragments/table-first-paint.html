@@ -1,5 +1,20 @@
 <!doctype html><html xmlns:th="http://www.thymeleaf.org"><head>
 <th:block th:fragment="head">
+<script src="/js/theme.js" th:src="@{/js/theme.js(v=${buildVersion})}"></script>
+<link rel="stylesheet" href="/css/platform-ui.css" th:href="@{/css/platform-ui.css(v=${buildVersion})}">
+<link rel="stylesheet" href="/css/product-thumbnails.css" th:href="@{/css/product-thumbnails.css(v=${buildVersion})}">
+<link rel="stylesheet" href="/css/table-composition.css" th:href="@{/css/table-composition.css(v=${buildVersion})}">
+<link rel="stylesheet" href="/css/header-pilot.css" th:href="@{/css/header-pilot.css(v=${buildVersion})}">
+<link rel="stylesheet" href="/css/platform-icons.css" th:href="@{/css/platform-icons.css(v=${buildVersion})}">
+<script src="/js/platform-icons.js" th:src="@{/js/platform-icons.js(v=${buildVersion})}"></script>
+<script src="/js/table-filter-drafts.js" th:src="@{/js/table-filter-drafts.js(v=${buildVersion})}"></script>
+<script src="/js/table-preferences.js" th:src="@{/js/table-preferences.js(v=${buildVersion})}"></script>
+<script src="/js/table-widget.js" th:src="@{/js/table-widget.js(v=${buildVersion})}"></script>
+<script src="/js/table-data-tools.js" th:src="@{/js/table-data-tools.js(v=${buildVersion})}"></script>
+<script src="/js/table-composition.js" th:src="@{/js/table-composition.js(v=${buildVersion})}"></script>
+<script src="/js/header-pilot.js" th:src="@{/js/header-pilot.js(v=${buildVersion})}"></script>
+<script src="/js/table-prepaint.js" th:src="@{/js/table-prepaint.js(v=${buildVersion})}"></script>
+
 <link rel="stylesheet" href="/css/table-widget.css" th:href="@{/css/table-widget.css(v=${buildVersion})}">
 <style>
 /* No intermediate legacy toolbar: JS-disabled pages retain their original controls. */

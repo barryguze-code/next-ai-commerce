@@ -9,7 +9,7 @@
     search.value = filters.search || '';
     try { size.value = Math.max(1,Math.min(50,Number(localStorage.getItem(storage+'.initialRows'))||Number(filters.size)||5)); } catch { size.value=filters.size||5; }
     account.value=filters.account||'';
-    const type=root.querySelector('#personal-type');type.value=filters.type||'';
+    const type=root.querySelector('#personal-type');let appliedType=filters.type||'';type.value=appliedType;
     let store=filters.store||'';
     const workspaceKey=(root.dataset.workspaceAccount||'')+'|'+(root.dataset.workspaceStore||'');
     if(root.dataset.workspaceAccount&&filters.workspace!==workspaceKey){account.value=root.dataset.workspaceAccount;store=root.dataset.workspaceStore||'';}
@@ -19,11 +19,13 @@
         sessionStorage.setItem(storage+'.anchor',JSON.stringify(anchor));
     });
     let page, busy = false, generation=0, dragged=null;
+    const selectedAssignees=new Set(Array.isArray(filters.assignedUsers)?filters.assignedUsers:[]);
+    const selectedParticipants=new Set(Array.isArray(filters.participantUsers)?filters.participantUsers:[]);
     let scope=filters.scope||'ASSIGNED';
     const extent = filters.extent || {};
     const expanded=filters.expanded||{};
     function save() {
-        sessionStorage.setItem(storage, JSON.stringify({workspace:workspaceKey,account:account.value, search:search.value, size:size.value, extent, expanded, scope, store, type:type.value}));
+        sessionStorage.setItem(storage, JSON.stringify({workspace:workspaceKey,account:account.value, search:search.value, size:size.value, extent, expanded, scope, store, type:appliedType,assignedUsers:[...selectedAssignees],participantUsers:[...selectedParticipants]}));
     }
     function element(tag, text, parent) {
         const node = document.createElement(tag);
@@ -32,6 +34,9 @@
         return node;
     }
     function render() {
+        presentPeopleFilters();
+        const filterCount=(appliedType?1:0)+selectedAssignees.size+selectedParticipants.size;let badge=filterControl.querySelector(':scope>summary .table-filter-count');if(!badge){badge=document.createElement('span');badge.className='table-filter-count';filterControl.querySelector(':scope>summary').append(badge);}badge.textContent=String(filterCount);badge.hidden=!filterCount;filterControl.querySelector(':scope>summary').setAttribute('aria-label',filterCount?'Filters, '+filterCount+' applied':'Filters');
+        let summary=root.querySelector('.personal-applied-filter-summary');if(!summary){summary=document.createElement('span');summary.className='personal-applied-filter-summary table-applied-filter-summary';filterControl.after(summary);}summary.textContent=[appliedType?type.querySelector('option[value="'+appliedType+'"]').textContent:'',selectedAssignees.size?selectedAssignees.size+' assigned users':'',selectedParticipants.size?selectedParticipants.size+' participants':''].filter(Boolean).join(' · ');summary.hidden=!filterCount;
         const focusedGroup=document.activeElement?.closest('.personal-group-toggle')?.dataset.groupKey;
         clearInsertion();
         root.dataset.loadedScope=scope;
@@ -79,7 +84,7 @@
         }
         for(const [label,rows] of groups){
             const section=element('tbody','',table);
-            const key=[scope,account.value,store,type.value,search.value,label].join('|');
+            const key=[scope,account.value,store,appliedType,search.value,label].join('|');
             if(label){
                 const groupCell=element('td','',element('tr','',section));groupCell.colSpan=ranked?9:8;
                 const heading=element('button',(rows.length?(expanded[key]?'▾ ':'▸ '):'')+label+' · '+rows.length,groupCell);
@@ -135,6 +140,7 @@
                 const accountChoice=[...root.querySelectorAll('[data-collaboration-account]:not([data-collaboration-store])')].find(b=>b.dataset.collaborationAccount===(c.contextAccount||c.account));
                 const picture=page.pictures?.[c.key.id]||accountChoice?.dataset.logo;
                 article.dataset.image=picture||'';article.dataset.title=detail?.subjectLabel||c.title;
+                article.dataset.productPhoto=String(Boolean(page.pictures?.[c.key.id])&&!c.sourceRestricted&&(detail?.subjectType||c.subjectType)!=='PLATFORM');
                 const rail=element('div','',layout);rail.className='table-overview-rail';
                 const chatButton=element('button','',rail);chatButton.className='collaboration-row-button';chatButton.type='button';chatButton.dataset.conversationCount=String(detail?.messageCount||0);chatButton.dataset.assignedToMe=String(!closed&&(c.assignedToMe??(c.key.type==='REVIEW'&&(detail?.assigneeEmail||'').split(',').some(email=>email.trim().toLowerCase()===root.dataset.user.toLowerCase()))));chatButton.dataset.unreadMessageCount=String(detail?.unreadMessageCount||0);chatButton.setAttribute('aria-label','Open conversation');
                 const chat=element('img','',chatButton);chat.src=window.NextAiIcons?.source(chatButton.dataset.assignedToMe==='true'?'collaboration-assigned-red':'collaboration-blue')||'/images/platform/optimized32/collaboration-default.png?v=20261109-icons32-1';chat.dataset.collaborationIcon='';chat.alt=chatButton.dataset.assignedToMe==='true'?'Assigned to you':'Conversation';chat.className='platform-icon';
@@ -200,8 +206,8 @@
             }
             if(label==='Older'&&rows.length>limit){
                 const moreCell=element('td','',element('tr','',section));moreCell.colSpan=ranked?9:8;
-                const more=element('button','Load more',moreCell);more.type='button';more.className='secondary-button';more.onclick=()=>{
-                extent[key]=olderExtra+25; save();render();
+                const more=element('button','Load more',moreCell);more.type='button';more.className='secondary-button';more.onclick=async()=>{
+                more.disabled=true;more.textContent='Loading conversations…';const before=new Set([...table.querySelectorAll('tr[data-card-id]')].map(n=>n.dataset.cardId));await new Promise(resolve=>requestAnimationFrame(resolve));extent[key]=olderExtra+25; save();render();const next=[...table.querySelectorAll('tr[data-card-id]')].find(n=>!before.has(n.dataset.cardId));next?.scrollIntoView({block:'nearest'});
             };
             }
         }
@@ -297,7 +303,7 @@
         const labels={THIS_WEEK:'This week',LAST_WEEK:'Last week',EARLIER_THIS_MONTH:'This month',LAST_MONTH:'Last month',OLDER:'Older'};
         const group=filtered.slice(count).filter(r=>{const date=page.dates?.[r.card.key.type+r.card.key.id];return date&&(!window.from||Date.parse(date)>=Date.parse(window.from))&&Date.parse(date)<Date.parse(window.until);});
         const groupIndex=group.findIndex(r=>sameKey(r.card.key,key));
-        const groupKey=[scope,account.value,store,type.value,search.value,labels[window.key]||window.key].join('|');
+        const groupKey=[scope,account.value,store,appliedType,search.value,labels[window.key]||window.key].join('|');
         expanded[groupKey]=true;extent[groupKey]=Math.max(extent[groupKey]||0,Math.ceil((groupIndex+1)/count)*count-count);
         save();render();
     }
@@ -350,7 +356,17 @@
         page=result;
         render();
     }
-    type.onchange=()=>{save();render();};
+    const filterControl=type.closest('.table-filter-control'), filterPanel=type.closest('.table-filter-panel');
+    let draftPeople={type:appliedType,assignedUsers:[...selectedAssignees],participantUsers:[...selectedParticipants]};
+    const filterDraft=window.NextAiFilterDrafts.create({
+        readApplied:()=>({type:appliedType,assignedUsers:[...selectedAssignees],participantUsers:[...selectedParticipants]}),
+        emptyState:()=>({type:'',assignedUsers:[],participantUsers:[]}),
+        renderDraft:value=>{draftPeople=value;type.value=value.type;if(page)presentPeopleFilters();},
+        commit:value=>{appliedType=value.type;selectedAssignees.clear();value.assignedUsers.forEach(id=>selectedAssignees.add(id));selectedParticipants.clear();value.participantUsers.forEach(id=>selectedParticipants.add(id));save();render();return true;}
+    });
+    filterDraft.mountFooter(filterPanel,{close:()=>{filterControl.open=false;}});
+    filterControl.addEventListener('toggle',()=>{if(filterControl.open)filterDraft.open();else filterDraft.discard();});
+    type.onchange=()=>{draftPeople.type=type.value;filterDraft.update(draftPeople);};
     root.querySelectorAll('[data-collaboration-account]').forEach(button=>{
         button.onclick=()=>{
             if(busy)return;
@@ -369,10 +385,37 @@
         if(event.key==='Escape'){event.preventDefault();scopePicker.open=false;scopePicker.querySelector('summary').focus();}
     });
     document.addEventListener('pointerdown',event=>{if(scopePicker?.open&&!scopePicker.contains(event.target))scopePicker.open=false;});
+    function matchesPeople(card){
+        const people=page.peopleByCard?.[card.key.type+card.key.id]||[];
+        return (!selectedAssignees.size||people.some(p=>p.assigned&&selectedAssignees.has(p.id)))&&
+            (!selectedParticipants.size||people.some(p=>p.participant&&selectedParticipants.has(p.id)));
+    }
+    function presentPeopleFilters(){
+        for(const [role,key] of [['assigned','assignedUsers'],['participant','participantUsers']]){
+            const selected=new Set(draftPeople[key]);
+            const field=root.querySelector('[data-people-filter="'+role+'"]');if(!field)continue;
+            if(!field.dataset.expandable){
+                field.dataset.expandable='true';const legend=field.querySelector('legend'),details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=legend.textContent;summary.dataset.peopleHeading=legend.textContent;const children=[...field.children].filter(n=>n!==legend);details.append(summary,...children);field.append(details);legend.hidden=true;
+                const search=document.createElement('input');search.type='search';search.placeholder='Search people';search.setAttribute('aria-label','Search '+summary.dataset.peopleHeading.toLowerCase());details.insertBefore(search,details.querySelector('[data-people-options]'));search.oninput=()=>field.querySelectorAll('[data-people-options] label').forEach(label=>label.hidden=!label.textContent.toLowerCase().includes(search.value.toLowerCase()));
+            }
+            const heading=field.querySelector('summary');heading.textContent=heading.dataset.peopleHeading+' · '+selected.size;
+            const people=new Map();
+            for(const values of Object.values(page.peopleByCard||{}))for(const person of values)if(person[role])people.set(person.id,person);
+            const options=[...people.values()].sort((a,b)=>(a.displayName||'Member').localeCompare(b.displayName||'Member')||a.id.localeCompare(b.id));
+            const signature=JSON.stringify(options.map(p=>[p.id,p.displayName]));const host=field.querySelector('[data-people-options]');
+            if(host.dataset.options!==signature){
+                host.dataset.options=signature;host.replaceChildren();
+                for(const person of options){const label=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');input.type='checkbox';input.value=person.id;input.checked=selected.has(person.id);name.textContent=person.displayName||'Member';label.append(input,name);host.append(label);input.onchange=()=>{const selected=new Set(draftPeople[key]);if(input.checked)selected.add(person.id);else selected.delete(person.id);draftPeople[key]=[...selected];filterDraft.update(draftPeople);presentPeopleFilters();};}
+                if(!options.length){const empty=document.createElement('small');empty.textContent='No matching people in this view';host.append(empty);}
+            }
+            host.querySelectorAll('input').forEach(input=>input.checked=selected.has(input.value));
+            const clear=field.querySelector('[data-people-clear]');clear.disabled=!selected.size;clear.onclick=()=>{draftPeople[key]=[];filterDraft.update(draftPeople);presentPeopleFilters();};
+        }
+    }
     function filteredRows(){
         return page.rows.filter(({card})=>(!account.value||account.value===(card.contextAccount||card.account))&&
             (!store||!(card.contextStore||card.store||page.reviews?.[card.key.id]?.storeId)||store===(card.contextStore||card.store||page.reviews?.[card.key.id]?.storeId))&&
-            (!type.value||(card.subjectType||page.reviews?.[card.key.id]?.subjectType)===type.value))
+            (!appliedType||(card.subjectType||page.reviews?.[card.key.id]?.subjectType)===appliedType)&&matchesPeople(card))
             .sort((a,b)=>{
                 if(scope==='ASSIGNED')return (a.position??Number.MAX_SAFE_INTEGER)-(b.position??Number.MAX_SAFE_INTEGER);
                 const x=page.dates?.[a.card.key.type+a.card.key.id]||'',y=page.dates?.[b.card.key.type+b.card.key.id]||'';

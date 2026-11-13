@@ -90,3 +90,25 @@
 #personal-queue .personal-group-toggle:disabled .personal-group-chevron{display:none}
 
 #personal-queue .personal-subject-cell .collaboration-record-copy{max-width:none;width:auto}
+
+/* Dark-only secondary metadata ink; due-date semantics and typography remain unchanged. */
+html[data-theme=dark] #personal-queue .collaboration-table time{color:#B6C5D4}
+/* Persistent grouping handle stays inside the row, including the final collapsed group. */
+#personal-queue .personal-group-toggle{display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 20px 4px;background:transparent;color:inherit;overflow:visible}
+#personal-queue tr:has(.personal-group-toggle),#personal-queue td:has(>.personal-group-toggle){background:#F0F2F5;color:var(--ink)}
+#personal-queue .personal-group-chevron{position:relative;display:grid;place-items:center;flex:0 0 28px;left:auto;bottom:auto;transform:none;width:68px;height:28px;border:0;border-radius:0;background:transparent;color:#245DA8}
+#personal-queue .personal-group-chevron::before{content:""!important;position:absolute;box-sizing:border-box;width:54px;height:14px;border:1px solid #AFC1D4;border-radius:999px;background-color:#F0F2F5;background-image:linear-gradient(#6D8197,#6D8197),linear-gradient(#6D8197,#6D8197),linear-gradient(#6D8197,#6D8197),linear-gradient(#6D8197,#6D8197);background-size:1px 5px;background-position:12px center,17px center,35px center,40px center;background-repeat:no-repeat}
+#personal-queue .personal-group-chevron::after{content:""!important;position:relative;width:4px;height:4px;margin-top:-2px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}
+#personal-queue [aria-expanded=true]>.personal-group-chevron::before{border-top:1px solid #AFC1D4;border-bottom:1px solid #AFC1D4}
+#personal-queue [aria-expanded=true]>.personal-group-chevron::after{margin-top:2px;transform:rotate(225deg)}
+html[data-theme=dark] #personal-queue tr:has(.personal-group-toggle),html[data-theme=dark] #personal-queue td:has(>.personal-group-toggle){background:#202B37;color:#E6EEF8}
+html[data-theme=dark] #personal-queue .personal-group-chevron{color:#AFCCF3}
+html[data-theme=dark] #personal-queue .personal-group-chevron::before{border-color:#46637F;background-color:#202B37;background-image:linear-gradient(#718AA4,#718AA4),linear-gradient(#718AA4,#718AA4),linear-gradient(#718AA4,#718AA4),linear-gradient(#718AA4,#718AA4)}
+/* Date groups use the same divider-centered handle as Replenishment. */
+#personal-queue .personal-group-toggle{position:relative;z-index:2}
+#personal-queue .personal-group-chevron{position:absolute;left:50%;bottom:0;transform:translate(-50%,50%);z-index:3}
+#personal-queue tr:has(.personal-group-toggle),#personal-queue td:has(>.personal-group-toggle){overflow:visible}
+/* A non-record end gutter keeps the final divider handle inside the table frame. */
+#personal-queue .collaboration-table::after{content:"";display:table-row;height:14px}
+/* Keep date labels clear of both their own divider handle and the preceding one. */
+#personal-queue .personal-group-toggle{box-sizing:border-box;min-height:56px;padding:14px 20px 22px;line-height:20px}

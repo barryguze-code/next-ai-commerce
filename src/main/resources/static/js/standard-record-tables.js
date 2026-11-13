@@ -3,7 +3,10 @@
  'use strict';
  if(!document.body?.classList.contains('platform-standard-tables')&&!['/app/inventory','/app/inventory/ledger','/app/catalog','/app/vendors','/app/receiving','/app/marketplace-skus'].includes(location.pathname))return;
  const node=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls||'';if(text)el.textContent=text;return el};
- const artwork=label=>/price|cost/i.test(label)?'price':/sale/i.test(label)?'sale':/adjust|stock|hold|remov/i.test(label)?'inventory':/sku|map product|mapping/i.test(label)?'mapping':/close/i.test(label)?'shipped':/receiv|document|invoice/i.test(label)?'warehouse':'edit';
+ const artwork=label=>{
+  const rules=[[/clear.*select|clear filters|reset selection/i,'clear'],[/receive all|receive selected documents/i,'receiveAll'],[/receive selected document/i,'receiveSelected'],[/unlisted/i,'unlisted'],[/receive from file|upload documents/i,'receiveFile'],[/receive item/i,'receive'],[/upload.*catalog|import.*catalog/i,'catalogUpload'],[/add vendor/i,'vendorAdd'],[/add product/i,'productAdd'],[/edit.*product|case size/i,'productEdit'],[/shelf.life/i,'shelf'],[/physical count|review count/i,'count'],[/location/i,'location'],[/sale/i,'sale'],[/price|cost/i,'price'],[/hold/i,'hold'],[/return.*vendor/i,'returnVendor'],[/remov/i,'remove'],[/adjust|stock/i,'adjust'],[/sku|map product|mapping/i,'mapping'],[/document|invoice|receiv/i,'document']];
+  const match=rules.find(([pattern])=>pattern.test(label));return match?'action:'+match[1]:'edit';
+ };
  function imageMenu(trigger,holder,url,product){
   const shared=url.startsWith("/app/platform/catalog/products/"),catalogue=product&&(Boolean(holder.closest("tr[data-picture-item],tr[data-picture-global]"))||location.pathname==='/app/marketplace-skus');
   const menu=node('dialog','order-picture-menu standard-picture-menu');menu.setAttribute('aria-label','Edit picture');
@@ -69,8 +72,8 @@
     const walker=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode())){if(text.parentElement.closest('input,select,button,script,style'))continue;const value=text.nodeValue.replace(/\bUSD\s+(?=[\d-])/g,'$').replace(/^USD$/,'$');if(value!==text.nodeValue)text.nodeValue=value}
    });
   });
-  document.querySelectorAll('.table-action-icon:not([data-art-ready])').forEach(icon=>{icon.dataset.artReady='true';if(icon.parentElement.dataset.actionImage&&icon.querySelector('img'))return;const art=window.NextAiIcons.create(artwork(icon.parentElement.textContent));if(/hold|remov/i.test(icon.parentElement.textContent)){delete art.dataset.platformIcon;art.src='/images/platform/table/adjust-inventory.png?v=20261109-icons32-1';}icon.replaceChildren(art);});
-  document.querySelectorAll('#inventory-action-menu button:not([data-suggest-action])>span,#inventory-action-menu a>span').forEach(icon=>{if(icon.dataset.artReady)return;icon.dataset.artReady='true';if(icon.parentElement.dataset.actionImage&&icon.querySelector('img'))return;const art=window.NextAiIcons.create(artwork(icon.parentElement.textContent));if(/hold|remov/i.test(icon.parentElement.textContent)){delete art.dataset.platformIcon;art.src='/images/platform/table/adjust-inventory.png?v=20261109-icons32-1';}icon.replaceChildren(art)});
+  document.querySelectorAll('.table-action-icon:not([data-art-ready])').forEach(icon=>{icon.dataset.artReady='true';if(icon.parentElement.dataset.actionImage&&icon.querySelector('img'))return;const art=window.NextAiIcons.create(artwork(icon.parentElement.textContent));icon.replaceChildren(art);});
+  document.querySelectorAll('#inventory-action-menu button:not([data-suggest-action])>span,#inventory-action-menu a>span').forEach(icon=>{if(icon.dataset.artReady)return;icon.dataset.artReady='true';if(icon.parentElement.dataset.actionImage&&icon.querySelector('img'))return;const art=window.NextAiIcons.create(artwork(icon.parentElement.textContent));icon.replaceChildren(art)});
  }
  window.NextAiStandardTables={enhance,editPicture:(trigger,holder,url)=>imageMenu(trigger,holder,url,true)};
  document.addEventListener('DOMContentLoaded',()=>requestAnimationFrame(enhance));

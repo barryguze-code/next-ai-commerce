@@ -106,6 +106,7 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
       const response=await fetch('/app/inventory/'+encodeURIComponent(row.dataset.item)+'/movements?'+params,{signal:controller.signal,headers:{Accept:"application/json"}});
       if(!response.ok)throw new Error();
       const rows=await response.json();if(controller.signal.aborted)return;feedback.remove();
+      const previouslyLoaded=target.querySelectorAll('.history-movement').length;
       for(const m of rows){
         const article=document.createElement("article");article.className="history-movement "+(Number(m.quantity)>0?"incoming":"outgoing");article.dataset.clarified="true";
         const batch=m.expirationDate?' · Batch '+escapeHistory(formatCalendarDate(m.expirationDate)):' · FIFO batch';
@@ -114,7 +115,9 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
         window.NextAiLedgerDesignPreview?.decorateMovement(article,m);target.append(article);
       }
       if(!target.children.length){feedback.textContent=mode==="received"?"No receipts recorded for this item.":"No movements recorded for "+(mode==="item"?"this item.":"this batch.");target.append(feedback);}
-      if(rows.length===100){const more=document.createElement("button");more.type="button";more.className="secondary-button history-load-more";more.dataset.historyMore="";more.textContent="Load more movements";more.onclick=()=>window.loadInventoryMovements(row,mode,page+1);target.append(more);}
+      if(page>0&&rows.length)target.dispatchEvent(new CustomEvent('inventory:movements-appended',{detail:{previousCount:previouslyLoaded}}));
+      const firstNew=page>0&&rows.length>0?[...target.querySelectorAll('.history-movement')].slice(-rows.length)[0]:null;if(firstNew)requestAnimationFrame(()=>firstNew.scrollIntoView({block:'nearest'}));let loadedStatus=target.querySelector('.history-loaded-count');if(!loadedStatus){loadedStatus=document.createElement('p');loadedStatus.className='history-loaded-count';loadedStatus.setAttribute('role','status');target.append(loadedStatus);}target.append(loadedStatus);loadedStatus.textContent=target.querySelectorAll('.history-movement').length+' movements loaded'+(rows.length<100?' · All movements loaded':'');
+      if(rows.length===100){const more=document.createElement("button");more.type="button";more.className="secondary-button history-load-more";more.dataset.historyMore="";more.textContent="Load more movements";more.onclick=()=>{more.disabled=true;more.textContent='Loading movements…';window.loadInventoryMovements(row,mode,page+1);};target.append(more);}
     }catch(error){
       if(error.name==="AbortError")return;
       feedback.className="history-error";feedback.textContent="Movements could not be loaded. ";

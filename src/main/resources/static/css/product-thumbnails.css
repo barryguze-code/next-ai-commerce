@@ -8,8 +8,20 @@
 .table-widget .product-thumbnail-slot:has(>label>.product-avatar>img:not([hidden]))>label>.product-avatar{
  display:grid;place-items:center;width:100%;height:100%;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none
 }
-.table-widget .product-thumbnail-slot>img:not([hidden]),
-.table-widget .product-thumbnail-slot>label>.product-avatar>img:not([hidden]),
-.orders-workspace .order-list.table-widget .order-product-stage.product-thumbnail-slot>img:not([hidden]){
+.table-widget .product-thumbnail-slot:not(.platform-product-photo)>img:not([hidden]),
+.table-widget .product-thumbnail-slot>label>.product-avatar>img:not([hidden]){
  position:static;inset:auto;display:block;box-sizing:content-box;width:auto;height:auto;min-width:0;min-height:0;max-width:78px;max-height:86px;padding:0;margin:0;border:1px solid #d3dfed;border-radius:min(18px,25%);background:#fff;object-fit:contain;object-position:center
 }
+
+/* Effective Orders photo contract shared with actual Collaborate product photos. */
+.table-widget .platform-product-photo:has(>img:not([hidden])){position:relative;padding:0!important;border:0!important;background:transparent!important;box-shadow:none}
+.platform-standard-tables .table-widget .table-overview-picture.platform-product-photo:has(>img:not([hidden])){width:80px!important;height:80px!important;flex-basis:80px}
+.table-widget .platform-product-photo>img:not([hidden]){position:absolute;inset:0;display:block;box-sizing:border-box;width:100%;height:100%;max-width:100%;max-height:100%;min-width:0;min-height:0;padding:0!important;margin:0;border:1px solid #d3dfed;border-radius:min(18px,25%);background:#fff;object-fit:contain;object-position:center}
+/* Nested receiving/replenishment product photos use the same square canvas, never logos. */
+.rp-sku-identity>img.rp-sku-picture{box-sizing:border-box;width:80px!important;height:80px!important;min-width:80px;min-height:80px;max-width:80px;max-height:80px;flex:0 0 80px;padding:0;margin:0;border:1px solid #d3dfed;border-radius:min(18px,25%);background:#fff;object-fit:contain;object-position:center}
+/* Inventory editable and view-only photos share Orders' square canvas at first paint. */
+.available-inventory-table .table-overview-picture.product-thumbnail-slot:has(img:not([hidden])){position:relative;box-sizing:border-box;width:80px!important;height:80px!important;min-width:80px;min-height:80px;flex:0 0 80px;padding:0!important;border:0!important;background:transparent!important}
+.available-inventory-table .product-image-upload.product-thumbnail-slot:has(img:not([hidden]))>label,
+.available-inventory-table .product-image-upload.product-thumbnail-slot:has(img:not([hidden]))>label>.product-avatar{position:relative;display:block;box-sizing:border-box;width:80px!important;height:80px!important;padding:0!important;border:0;background:transparent}
+.available-inventory-table .table-overview-picture.product-thumbnail-slot>img:not([hidden]),
+.available-inventory-table .product-image-upload.product-thumbnail-slot>label>.product-avatar>img:not([hidden]){position:absolute;inset:0;display:block;box-sizing:border-box;width:100%!important;height:100%!important;min-width:0;min-height:0;max-width:100%;max-height:100%;padding:0;margin:0;border:1px solid #d3dfed;border-radius:min(18px,25%);background:#fff;object-fit:contain;object-position:center}

@@ -72,13 +72,14 @@ document.querySelector('#packing-complete')?.addEventListener('click',async even
   }catch(error){button.disabled=false;status.textContent=error.message;}
 });
 // Start clipboard access during the click gesture; keep the link's native new-tab behavior.
-document.querySelector('#veeqo-shortcut')?.addEventListener('click',async()=>{
+document.querySelector('#veeqo-shortcut')?.addEventListener('click',async event=>{
+  const copyTrigger=event.currentTarget;window.NextAiCopyFeedback?.capture(copyTrigger);
   const orderId=document.querySelector('.packing-workspace')?.dataset.orderId;
   const status=document.querySelector('#packing-status');
   if(!orderId)return;
   try{
     await navigator.clipboard.writeText(orderId);
-    if(status)status.textContent='Order ID copied — ready to paste into Veeqo.';
+    window.NextAiCopyFeedback?.success(copyTrigger);
   }catch(_){
     if(status)status.textContent='Clipboard access was blocked. Order ID: '+orderId;
   }

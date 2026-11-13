@@ -1,6 +1,12 @@
 <!doctype html>
 <html xmlns:th="http://www.thymeleaf.org"><body>
 <th:block th:fragment="runtime">
+  <link rel="stylesheet" href="/css/table-composition.css" th:href="@{/css/table-composition.css(v=${buildVersion})}">
+  <script defer src="/js/table-filter-drafts.js" th:src="@{/js/table-filter-drafts.js(v=${buildVersion})}"></script>
+  <script defer src="/js/table-composition.js" th:src="@{/js/table-composition.js(v=${buildVersion})}"></script>
+  <link rel="stylesheet" href="/css/copy-feedback.css" th:href="@{/css/copy-feedback.css(v=${buildVersion})}">
+  <script defer src="/js/copy-feedback.js" th:src="@{/js/copy-feedback.js(v=${buildVersion})}"></script>
+
   <link rel="stylesheet" href="/css/ux-components.css?v=20261008-1" th:href="@{/css/ux-components.css(v=${buildVersion})}">
   <script defer src="/js/ux-components.js?v=20261008-1" th:src="@{/js/ux-components.js(v=${buildVersion})}"></script>
   <script defer src="/js/metric-drilldown.js?v=20261007-1" th:src="@{/js/metric-drilldown.js(v=${buildVersion})}"></script>

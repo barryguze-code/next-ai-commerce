@@ -16,6 +16,8 @@
  }catch{/* A damaged or unavailable browser cache must not prevent planning. */}
  const expanded=new Map();
  function syncDetails(){expanded.forEach(({parent,control,child,section})=>{
+  const stripe=parent.dataset.tableStripe==='even'?'var(--table-stripe-even)':'var(--table-stripe-odd)';
+  if(control.style.getPropertyValue('--table-row-surface')!==stripe)control.style.setProperty('--table-row-surface',stripe);
   if(parent.nextElementSibling!==control)parent.after(control);
   if(control.nextElementSibling!==child)control.after(child);
   const parentHidden=parent.hidden||parent.classList.contains('table-data-hidden')||parent.style.display==='none';
@@ -27,7 +29,7 @@
   if(control.cells[0].colSpan!==span)control.cells[0].colSpan=span;
  });}
  const body=rows[0]?.parentElement;
- if(body)new MutationObserver(syncDetails).observe(body,{childList:true,subtree:true,attributes:true,attributeFilter:['class','hidden','style']});
+ if(body)new MutationObserver(syncDetails).observe(body,{childList:true,subtree:true,attributes:true,attributeFilter:['class','hidden','style','data-table-stripe']});
  function toggleSkus(id){
   const section=document.getElementById('rp-skus-'+id),parent=rows.find(row=>row.dataset.item===id);if(!section||!parent)return;
   if(!expanded.has(id)){

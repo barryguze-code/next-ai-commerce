@@ -27,6 +27,7 @@ public class MarketplaceSkuController {
     private static final Logger log=LoggerFactory.getLogger(MarketplaceSkuController.class);
     @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceUi;
     private final MarketplaceSkuRepository skus;
+    @Autowired private MarketplaceWarehouseAvailability warehouseAvailability;
     @Autowired(required=false) private com.nextaicommerce.platform.fees.AmazonFeeVarianceRepository feeVariances;
     @Autowired private com.nextaicommerce.platform.orders.SkuRefundHistory refunds;
     @Autowired private com.nextaicommerce.platform.fba.FbaReadRepository fba;
@@ -151,6 +152,17 @@ public class MarketplaceSkuController {
         var stockKeys=contextList.stream().filter(MarketplaceSkuRepository.SkuView::fba).map(MarketplaceSkuRepository.SkuView::sellerSku).toList();
         for(int i=0;i<stockKeys.size();i+=1000)allStock.putAll(fba.stocks(tenantId,connectionId,stockKeys.subList(i,Math.min(i+1000,stockKeys.size()))));
         model.addAttribute("fbaStock",allStock);
+        var warehouseStock=new java.util.LinkedHashMap<String,MarketplaceWarehouseAvailability.Availability>();
+        var warehouseKeys=MarketplaceWarehouseAvailability.eligibleKeys(contextList,policy.decisions());
+        try {
+            for(int i=0;i<warehouseKeys.size();i+=1000)warehouseStock.putAll(warehouseAvailability.load(tenantId,connectionId,
+                warehouseKeys.subList(i,Math.min(i+1000,warehouseKeys.size()))));
+        } catch(RuntimeException failure) {
+            warehouseStock.clear();
+            log.warn("Physical warehouse availability could not be loaded for the visible Marketplace SKU page",failure);
+        }
+        model.addAttribute("warehouseAvailability",warehouseStock);
+
         model.addAttribute("refundHistory",refunds.fourWeeks(tenantId,connectionId,contextList.stream().map(row->row.sellerSku()).toList()));
         model.addAttribute("salesAsOf",java.time.Instant.now());
         model.addAttribute("threadsByMarketplaceSku",collaboration==null?java.util.Map.of():collaboration.openSubjectSummaries(

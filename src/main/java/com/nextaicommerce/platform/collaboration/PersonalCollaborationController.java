@@ -30,7 +30,7 @@ class PersonalCollaborationController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(presentation(queue.view(auth.getName(),staff(auth),scope,q),auth));
     }
     record Presentation(java.util.List<PersonalCollaborationQueue.Row> rows,long revision,
-            java.util.Map<UUID,CollaborationRepository.Review> reviews,java.util.Map<UUID,String> pictures,java.util.Map<String,java.util.List<String>> closedGroups,java.util.Map<String,java.time.Instant> dates,java.util.List<CollaborationCompletionWindow> windows,java.util.Set<UUID> editableAccounts) {}
+            java.util.Map<UUID,CollaborationRepository.Review> reviews,java.util.Map<UUID,String> pictures,java.util.Map<String,java.util.List<String>> closedGroups,java.util.Map<String,java.time.Instant> dates,java.util.List<CollaborationCompletionWindow> windows,java.util.Set<UUID> editableAccounts,java.util.Map<String,java.util.List<CollaborationPerson>> peopleByCard) {}
     private Presentation presentation(PersonalCollaborationQueue.Page page,Authentication auth){
         var details=new java.util.LinkedHashMap<UUID,CollaborationRepository.Review>();
         var pictures=new java.util.HashMap<UUID,String>();
@@ -59,6 +59,16 @@ class PersonalCollaborationController {
                 pictures.put(key,url.matches("/app/catalog/products/[0-9a-fA-F-]{36}/image")?"/app/collaboration/personal/context/"+review.id()+"/picture":url);
             }});
         });
+        var people=new java.util.LinkedHashMap<String,java.util.List<CollaborationPerson>>();
+        var taskPeople=queue.taskPeopleByCard(page,auth.getName());if(taskPeople!=null)people.putAll(taskPeople);
+        grouped.forEach((account,items)->{
+            for(int offset=0;offset<items.size();offset+=200){
+                var ids=items.subList(offset,Math.min(offset+200,items.size())).stream().map(CollaborationRepository.Review::id).toList();
+                var projected=reviews.peopleByReview(account,ids,auth.getName());
+                if(projected!=null)for(var row:page.rows())if(row.card().key().type().equals("REVIEW")&&projected.containsKey(row.card().key().id()))
+                    people.put("REVIEW"+row.card().key().id(),projected.get(row.card().key().id()));
+            }
+        });
         var buckets=new java.util.LinkedHashMap<String,java.util.List<String>>();
         var windows=CollaborationCompletionWindow.at(java.time.Instant.now(),java.time.ZoneId.of("America/Los_Angeles"));
         var closed=page.rows();
@@ -71,7 +81,7 @@ class PersonalCollaborationController {
         }
         var editable=page.rows().stream().map(r->r.card().account()).filter(java.util.Objects::nonNull).distinct()
             .filter(id->accounts.canOperateAccount(id,auth.getName())).collect(java.util.stream.Collectors.toSet());
-        return new Presentation(page.rows(),page.revision(),details,pictures,buckets,dates,windows,editable);
+        return new Presentation(page.rows(),page.revision(),details,pictures,buckets,dates,windows,editable,people);
     }
     @GetMapping("/app/collaboration/personal/tasks/{id}/account-logo") @ResponseBody
     ResponseEntity<byte[]> taskLogo(@PathVariable UUID id,Authentication auth){

@@ -5,6 +5,8 @@
   <title th:text="${'Packing slip · '+slip.orderId}">Packing slip</title>
   <link rel="stylesheet" href="/css/platform-controls.css" th:href="@{/css/platform-controls.css(v=${buildVersion})}">
   <link rel="stylesheet" href="/css/packing-slip.css?v=1.9.5" th:href="@{/css/packing-slip.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/copy-feedback.css" th:href="@{/css/copy-feedback.css(v=${buildVersion})}">
+  <script defer src="/js/copy-feedback.js" th:src="@{/js/copy-feedback.js(v=${buildVersion})}"></script>
 </head>
 <body>
 <main class="packing-workspace" th:attr="data-order-id=${slip.orderId}">

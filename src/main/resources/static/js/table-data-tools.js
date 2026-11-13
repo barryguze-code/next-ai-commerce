@@ -46,9 +46,9 @@ function presentTableCommands(group){
   const icon=document.createElement('span');icon.className='table-action-icon';icon.dataset.artReady='true';icon.setAttribute('aria-hidden','true');
   // Missing artwork stays neutral pending the owner's supplied icon suite.
   const image=control.dataset.actionImage;
-  if(image?.startsWith('/images/platform/')){const img=document.createElement('img');img.src=image;img.alt='';icon.append(img);}
+  if(image?.startsWith('/images/platform/')){const img=document.createElement('img');img.src=image;img.alt='';if(control.hasAttribute('data-preserve-platform-art'))img.setAttribute('data-preserve-platform-art','true');icon.append(img);}
   const label=document.createElement('span');label.className='table-action-label';const strong=document.createElement('strong');
-  strong.append(...control.childNodes);label.append(strong);
+  strong.append(...control.childNodes);const walker=document.createTreeWalker(strong,NodeFilter.SHOW_TEXT);let first;while((first=walker.nextNode())){if(first.parentElement.closest('svg,[aria-hidden=true],.table-action-icon')||!first.textContent.trim())continue;first.textContent=first.textContent.replace(/^\s*[+＋]\s*/, '');break;}label.append(strong);
   const description=control.dataset.actionDescription;if(description){const small=document.createElement('small');small.textContent=description;label.append(small);}
   control.append(icon,label);
  });
@@ -56,7 +56,7 @@ function presentTableCommands(group){
 }
 // Local prototype: preferences contain only allowlisted command IDs, scoped to user/account/table.
 function composeActionShortcuts(card,setup,cluster,details,close){
- const table=card.dataset.tableShortcuts,scope=card.closest('[data-basket-scope]')?.dataset.basketScope;
+ const table=card.dataset.tableShortcuts,scope=card.closest('[data-basket-scope]')?.dataset.basketScope,pilot=!!card.closest('[data-header-pilot]')||card.classList.contains('shared-table-composition');
  if(!table||!scope)return;
  const controls=[...setup.querySelectorAll('[data-command-id]')].filter(c=>c.matches('button,a'));
  const commands=new Map(controls.map(c=>[c.dataset.commandId,c]));
@@ -74,19 +74,19 @@ function composeActionShortcuts(card,setup,cluster,details,close){
    const invoke=document.createElement('button');invoke.type='button';invoke.className='table-action-shortcut';invoke.dataset.shortcutId=id;invoke.setAttribute('aria-label',label(original));invoke.setAttribute('data-tooltip',label(original));invoke.disabled=!usable(original);
    const image=original.querySelector('.table-action-icon img');if(image)invoke.append(image.cloneNode(true));else invoke.textContent=label(original);
    invoke.addEventListener('click',()=>{if(!usable(original))return;close(false);original.click();});
-   const remove=document.createElement('button');remove.type='button';remove.className='table-shortcut-remove';remove.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';remove.setAttribute('aria-label','Remove '+label(original)+' shortcut');remove.onclick=()=>{selected=selected.filter(x=>x!==id);persist();render();details.querySelector('summary').focus();};wrap.append(invoke,remove);bar.append(wrap);
+   const remove=document.createElement('button');remove.type='button';remove.className='table-shortcut-remove';remove.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';remove.setAttribute('aria-label','Remove '+label(original)+' shortcut');remove.onclick=()=>{if(cluster.dataset.shortcutEntry!=='true')return;selected=selected.filter(x=>x!==id);persist();render();details.querySelector('summary').focus();};wrap.append(invoke,remove);bar.append(wrap);
   }
-  {const target=document.createElement('button');target.type='button';target.className='table-shortcut-target';target.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';target.setAttribute('aria-label','Add shortcuts menu');target.setAttribute('data-tooltip','Menu');target.setAttribute('aria-controls','table-actions-'+table);target.setAttribute('aria-expanded',String(details.open));const available=[...commands].some(([id,c])=>!selected.includes(id)&&usable(c));target.hidden=!available;target.onclick=()=>{cluster.dataset.shortcutEntry='true';details.classList.add('is-shortcut-add');const alreadyOpen=details.open;details.open=true;if(alreadyOpen)[...commands].find(([id,c])=>!selected.includes(id)&&usable(c))?.[1].focus();};
+  {const target=document.createElement('button');target.type='button';target.className='table-shortcut-target';target.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';target.setAttribute('aria-label','Add shortcuts menu');target.setAttribute('data-tooltip','Menu');target.setAttribute('aria-controls','table-actions-'+table);target.setAttribute('aria-expanded',String(details.open));const available=[...commands].some(([id,c])=>!selected.includes(id)&&usable(c));target.hidden=!available&&!pilot;target.onclick=()=>{cluster.dataset.shortcutEntry='true';details.classList.add('is-shortcut-add');const alreadyOpen=details.open;details.open=true;if(alreadyOpen)[...commands].find(([id,c])=>!selected.includes(id)&&usable(c))?.[1].focus();};
    target.ondragover=event=>{if(dragging&&commands.has(dragging)){event.preventDefault();event.dataTransfer.dropEffect='copy';target.classList.add('drag-over');}};target.ondragleave=()=>target.classList.remove('drag-over');target.ondrop=event=>{event.preventDefault();event.stopPropagation();if(dragging)add(dragging);dragging='';};bar.prepend(target);
   }
   for(const [id,c] of commands)c.closest('.table-shortcut-command')?.classList.toggle('is-pinned',selected.includes(id));
-  setup.querySelectorAll('.table-shortcut-add').forEach(b=>{b.disabled=selected.includes(b.dataset.shortcutAdd)||!usable(commands.get(b.dataset.shortcutAdd));b.setAttribute('aria-label',(selected.includes(b.dataset.shortcutAdd)?'Shortcut added: ':'Add shortcut: ')+label(commands.get(b.dataset.shortcutAdd)));});
+  setup.querySelectorAll('.table-shortcut-pin').forEach(b=>{const pinned=selected.includes(b.dataset.shortcutToggle);b.disabled=!usable(commands.get(b.dataset.shortcutToggle));b.setAttribute('aria-pressed',String(pinned));b.setAttribute('aria-label',(pinned?'Unpin ':'Pin ')+label(commands.get(b.dataset.shortcutToggle)));});
  }
  for(const [id,control] of commands){const row=document.createElement('div');row.className='table-shortcut-command';control.before(row);row.append(control);control.draggable=true;control.addEventListener('dragstart',event=>{dragging=id;event.dataTransfer.setData('text/plain',id);event.dataTransfer.effectAllowed='copy';});control.addEventListener('dragend',()=>{dragging='';bar.querySelector('.drag-over')?.classList.remove('drag-over');});
-  const addButton=document.createElement('button');addButton.type='button';addButton.className='table-shortcut-add';addButton.dataset.shortcutAdd=id;addButton.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';addButton.setAttribute('data-shortcut-control','true');addButton.setAttribute('data-tooltip','Add shortcut');addButton.onclick=event=>{event.stopPropagation();add(id);};row.append(addButton);
+  const pin=document.createElement('button');pin.type='button';pin.className='table-shortcut-pin';pin.dataset.shortcutToggle=id;pin.setAttribute('data-shortcut-control','true');pin.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M7 3h10l-1 6 3 3v2H5v-2l3-3-1-6ZM12 14v7"/></svg>';pin.onclick=event=>{event.stopPropagation();if(cluster.dataset.shortcutEntry!=='true')return;if(selected.includes(id)){selected=selected.filter(value=>value!==id);persist();render();live.textContent='Shortcut removed: '+label(control);}else add(id);};row.append(pin);
  }
  // Capture add-mode activation before an original command's own handlers or delegated actions.
- setup.addEventListener('click',event=>{if(cluster.dataset.shortcutEntry!=='true')return;const row=event.target.closest('.table-shortcut-command');if(!row&&!event.target.closest('button,a,summary'))return;event.preventDefault();event.stopImmediatePropagation();const control=row?.querySelector('[data-command-id]');if(control)add(control.dataset.commandId);},true);
+ setup.addEventListener('click',event=>{if(cluster.dataset.shortcutEntry!=='true'||event.target.closest('[data-shortcut-control]'))return;const row=event.target.closest('.table-shortcut-command');if(!row&&!event.target.closest('button,a,summary'))return;event.preventDefault();event.stopImmediatePropagation();const control=row?.querySelector('[data-command-id]');if(control){const id=control.dataset.commandId;if(selected.includes(id)){selected=selected.filter(value=>value!==id);persist();render();live.textContent='Shortcut removed: '+label(control);}else add(id);}},true);
  details.querySelector('summary').addEventListener('click',()=>{delete cluster.dataset.shortcutEntry;details.classList.remove('is-shortcut-add');});
  details.addEventListener('toggle',render);
  // Observe originals, never shortcut nodes: permission/busy/count changes remain authoritative.
@@ -94,34 +94,34 @@ function composeActionShortcuts(card,setup,cluster,details,close){
  render();
 }
 
-function composeTable(card,toolbar,host,search){
+function composeTable(card,toolbar,host,search,domainOwned=false){
  if(!card.hasAttribute('data-table-composition'))return;
- search.form?.querySelectorAll('button').forEach(button=>{if(button.textContent.trim()==='Search')button.remove()});
- if(search.name==='q'&&search.form?.method.toLowerCase()==='get')bindServerSearch(search);else bindClientSearch(search,toolbar);
+ if(!domainOwned){search.form?.querySelectorAll('button').forEach(button=>{if(button.textContent.trim()==='Search')button.remove()});
+ if(search.name==='q'&&search.form?.method.toLowerCase()==='get')bindServerSearch(search);else bindClientSearch(search,toolbar);}
  const columns=host.querySelector('.table-column-control>summary');
  if(columns&&!columns.querySelector('.table-columns-art')){columns.innerHTML='<svg class="table-columns-art" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16M15 4v16"></path></svg>';columns.setAttribute('aria-label','Columns');columns.title='Columns';}
- if(card.querySelector('.table-command-menu'))return;
+ if([...card.querySelectorAll('.table-command-menu')].some(n=>n.closest('.data-card,.table-widget-surface,.receive-lines,.desk-card,[data-table-composition]')===card))return;
  const spinner=document.createElement('span');spinner.className='table-search-spinner';spinner.setAttribute('role','status');spinner.setAttribute('aria-label','Loading results');toolbar.append(spinner);
  const details=document.createElement('details');details.className='table-command-menu table-row-warning';
  const trigger=document.createElement('summary');trigger.className='table-action-trigger';trigger.setAttribute('aria-label','Actions');trigger.setAttribute('data-tooltip','Actions');
  const art=document.createElement('img');art.src='/images/platform/optimized32/actions-owner-20261111.png?v=1.14.4';art.alt='';trigger.append(art);
  const panel=document.createElement('div');panel.className='table-warning-panel table-command-panel';panel.setAttribute('popover','manual');panel.setAttribute('aria-label','Table actions');
  const setup=document.createElement('div');setup.className='table-command-group';setup.setAttribute('role','group');setup.setAttribute('aria-label','Table commands');
- card.querySelectorAll('[data-table-command]').forEach(node=>{if(!node.parentElement.closest('[data-table-command],.table-command-menu'))setup.append(node)});
+ card.querySelectorAll('[data-table-command]').forEach(node=>{if(node.closest('.data-card,.table-widget-surface,.receive-lines,.desk-card,[data-table-composition]')===card&&!node.parentElement.closest('[data-table-command],.table-command-menu'))setup.append(node)});
  const bulk=document.createElement('div');bulk.className='table-command-group';bulk.setAttribute('role','group');bulk.setAttribute('aria-label','Selected records');
- card.querySelectorAll('[data-table-command-group="bulk"]').forEach(node=>bulk.append(node));
+ card.querySelectorAll('[data-table-command-group="bulk"]').forEach(node=>{if(node.closest('.data-card,.table-widget-surface,.receive-lines,.desk-card,[data-table-composition]')===card)bulk.append(node)});
  const heading=document.createElement('header');heading.className='table-action-heading';const copy=document.createElement('div');const title=document.createElement('strong');title.textContent='Actions';copy.append(title);const dismiss=document.createElement('button');dismiss.type='button';dismiss.textContent='×';dismiss.setAttribute('aria-label','Close actions');dismiss.onclick=()=>close(true);heading.append(copy,dismiss);panel.append(heading);
  if(setup.children.length)panel.append(setup);if(bulk.children.length)panel.append(bulk);
  presentTableCommands(setup);presentTableCommands(bulk);
 
  details.append(trigger,panel);
- const header=card.querySelector('.card-toolbar');
- let commands=header?.querySelector('.order-sync-status,.sku-sync-status,.fba-sync-utility');
+ const header=[...card.querySelectorAll('.card-toolbar')].find(n=>n.closest('.data-card,.table-widget-surface,.receive-lines,.desk-card,[data-table-composition]')===card);
+ let commands=header?.querySelector(':scope>.table-header-commands');
  if(!commands&&header){commands=document.createElement('div');commands.className='table-header-commands';header.append(commands)}
  if(header&&commands)header.append(commands);
  if(header){const heading=header.querySelector('h2');[...header.children].find(node=>node!==commands&&node.contains(heading))?.classList.add('table-header-copy');}
  const cluster=document.createElement('div');cluster.className='table-sync-actions';
- if(commands)commands.querySelectorAll(':scope>form').forEach(form=>cluster.append(form));
+ // Sync forms retain their own status wrapper; table commands never enter it.
  cluster.append(details);(commands||host).append(cluster);
  const position=()=>{const box=trigger.getBoundingClientRect(),top=Math.max(12,Math.min(box.bottom+6,innerHeight-Math.min(panel.scrollHeight,innerHeight-24)-12));panel.style.maxHeight=Math.max(0,innerHeight-top-12)+'px';panel.style.left=Math.max(12,Math.min(box.right-panel.offsetWidth,innerWidth-panel.offsetWidth-12))+'px';panel.style.top=top+'px'};
  const close=focus=>{const shortcut=cluster.dataset.shortcutEntry==='true';delete cluster.dataset.shortcutEntry;details.classList.remove('is-shortcut-add');details.open=false;if(panel.matches(':popover-open'))panel.hidePopover();if(focus)cluster.dataset.restoreCommandFocus=shortcut?'shortcut':'actions'};if(card.dataset.tableShortcuts)panel.id='table-actions-'+card.dataset.tableShortcuts;
@@ -136,15 +136,15 @@ function composeTable(card,toolbar,host,search){
 }
 function composeTabs(card){
  if(!card.hasAttribute('data-table-composition'))return;
- const header=card.querySelector('.card-toolbar');
- card.querySelectorAll('.order-tab-caption').forEach(caption=>caption.remove());
- for(const bar of card.querySelectorAll('.inventory-filter-bar,.sku-filter-bar,.order-filters')){
+ const header=[...card.querySelectorAll('.card-toolbar')].find(n=>n.closest('.data-card,.table-widget-surface,.receive-lines,.desk-card,[data-table-composition]')===card);
+ [...card.querySelectorAll('.order-tab-caption')].filter(n=>n.closest('.data-card,.table-widget-surface,.receive-lines,.desk-card,[data-table-composition]')===card).forEach(caption=>caption.remove());
+ for(const bar of [...card.querySelectorAll('.inventory-filter-bar,.sku-filter-bar,.order-filters')].filter(n=>n.closest('.data-card,.table-widget-surface,.receive-lines,.desk-card,[data-table-composition]')===card)){
   const strip=bar.closest('.inventory-filter-row,.order-tab-panel')||bar.closest('.table-tab-overflow')||bar;if(strip!==bar)bar.classList.remove('table-status-strip');strip.classList.add('table-status-strip');
   if(header&&card.contains(strip)&&!header.contains(strip))header.after(strip);
   const tabs=[...bar.children].filter(el=>el.matches('a,button')&&el.querySelector('b,.order-tab-count'));
   for(const tab of tabs){for(const node of tab.childNodes)if(node.nodeType===3&&node.textContent.trim()){const text=node.textContent;node.textContent=text.replace(/Buybox Lost/g,'Buybox lost').replace(/Out Of Stock/g,'Out of stock');}}
   const tone=tab=>tab.matches('.sku-alert-tab,.order-alert-tab,[data-filter="BLOCKED"],[data-status="oos"],[data-status="overstock"]')?'red':tab.matches('.sku-info-tab,.order-informative-tab,[data-filter="ACT_SOON"],[data-status="low"]')?'amber':'blue';
-  for(const tab of tabs){const kind=tone(tab);tab.dataset.tabTone=kind;const count=tab.querySelector('b')||tab.querySelector('.order-tab-count');if(kind==='red'&&count&&/^0(?:\s*\/\s*0)?$/.test(count.textContent.trim())){const active=tab.matches('.active,[aria-current="page"]');tab.hidden=true;if(active&&!bar.querySelector('.table-hidden-status-clear')){const clear=document.createElement('a');clear.className='secondary-button compact-button table-hidden-status-clear';clear.textContent='Clear filter';const url=new URL(location.href);url.searchParams.delete('status');url.searchParams.delete('page');clear.href=url.href;bar.append(clear)}}}
+  for(const tab of tabs){if(bar.matches('.order-filters'))tab.hidden=false;const kind=tone(tab);tab.dataset.tabTone=kind;const count=tab.querySelector('b')||tab.querySelector('.order-tab-count');if(!bar.matches('.order-filters')&&kind==='red'&&count&&/^0(?:\s*\/\s*0)?$/.test(count.textContent.trim())){const active=tab.matches('.active,[aria-current="page"]');tab.hidden=true;if(active&&!bar.querySelector('.table-hidden-status-clear')){const clear=document.createElement('a');clear.className='secondary-button compact-button table-hidden-status-clear';clear.textContent='Clear filter';const url=new URL(location.href);url.searchParams.delete('status');url.searchParams.delete('page');clear.href=url.href;bar.append(clear)}}}
   // Reuse the Orders tab/count component without changing domain-owned nodes or handlers.
   bar.classList.add('table-status-tabs');
   for(const tab of tabs){
@@ -293,10 +293,12 @@ async function marketplaceCsv(columns,filters,shopify=false){
 function init(root){
   if(root.dataset.dataToolsReady)return;
   const cols=headers(root);if(!cols.length)return;
-  const host=[...document.querySelectorAll('[data-column-control]')].find(el=>el.dataset.columnControl===root.dataset.tableWidget);
+  const card=root.closest('.table-widget-surface,.data-card,.receive-lines,.desk-card')||root.parentElement;
+  const owned=[...card.querySelectorAll('[data-column-control]')].find(el=>el.dataset.columnControl===root.dataset.tableWidget&&el.closest('.table-widget-surface,.data-card,.receive-lines,.desk-card')===card);
+  const duplicate=[...document.querySelectorAll('[data-table-widget]')].filter(el=>el.dataset.tableWidget===root.dataset.tableWidget).length>1;
+  const host=owned||(!duplicate?[...document.querySelectorAll('[data-column-control]')].find(el=>el.dataset.columnControl===root.dataset.tableWidget):null);
   if(!host)return;
   root.dataset.dataToolsReady='true';
-  const card=root.closest('.data-card,.receive-lines,.desk-card')||root.parentElement;
   card.classList.add('table-filter-standard');
   window.NextAiTableFirstPaint?.capture(card);
   let serverPager=card.querySelector('.table-pagination');
@@ -310,9 +312,10 @@ function init(root){
   if(![25,50,100].includes(storedSize)){try{storedSize=Number(localStorage.getItem(sizeKey))}catch{}}
   const hasPreference=[25,50,100].includes(storedSize),preferredSize=hasPreference?storedSize:25;
   if(hasPreference)rememberSize(preferredSize);
-  const saved=states.get(root.dataset.tableWidget)||{page:1,size:25,query:'',filters:{}};
+  const saved=(duplicate?structuredClone(states.get(root.dataset.tableWidget)):states.get(root.dataset.tableWidget))||{page:1,size:25,query:'',filters:{}};
   saved.size=preferredSize;
   states.set(root.dataset.tableWidget,saved);
+  let draftFilters=structuredClone(saved.filters||{}),draftSession=null;
   const toolbar=card.querySelector(':scope > [data-table-toolbar]')||document.createElement('div');toolbar.className='table-standard-toolbar';
   const container=root.closest('.table-wrap,.receive-table-wrap')||root;
   container.before(toolbar);toolbar.append(host);host.classList.add('table-widget-tools');
@@ -340,7 +343,7 @@ function init(root){
   const filters=document.createElement('details');filters.className='table-filter-control';
   const summary=document.createElement('summary');summary.className='secondary-button compact-button';summary.setAttribute('aria-label','Filters');summary.setAttribute('aria-expanded','false');summary.dataset.tooltip='Filters';summary.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-7 8v7l-4 2v-9L3 4"/></svg>';filters.append(summary);
   const panel=document.createElement('div');panel.className='table-filter-panel';filters.append(panel);
-  const hint=document.createElement('p');hint.textContent=isServer?'Filter rows on this page. Search above searches all results.':'Match values in one or more columns.';panel.append(hint);
+  const hint=document.createElement('p');hint.textContent=isServer?'Filters loaded rows. Search above searches all results.':'Match values in one or more columns.';panel.append(hint);
   const filterCols=cols.filter(col=>!['action','actions','record-context','selection','select'].includes(col.id));
   filterCols.forEach(col=>{
     const label=document.createElement('label');label.textContent=col.title;
@@ -348,32 +351,38 @@ function init(root){
     const kind=standard&&/^(quantity|on hand|reserved|physical available|unit cost|current buying cost|freight prefill|default discount|products|expected|received)$/i.test(col.title.trim().replace(/\s+i$/,''))?'number':standard&&/^(expiration|uploaded|date & time)$/i.test(col.title.trim())?'date':'search';
     if(kind!=='search'){
       const range=document.createElement('div');range.className='standard-filter-range';
-      ['min','max'].forEach(bound=>{const input=document.createElement('input');input.type=kind;if(kind==='number')input.step='any';input.placeholder=bound==='min'?'From':'To';input.setAttribute('aria-label',col.title+' '+input.placeholder);input.value=saved.filters[col.id]?.[bound]||'';input.oninput=()=>{const current=typeof saved.filters[col.id]==='object'?saved.filters[col.id]:{type:kind,min:'',max:''};current[bound]=input.value;saved.filters[col.id]=current.min||current.max?current:'';saved.page=1;render()};range.append(input)});label.append(range);
+      ['min','max'].forEach(bound=>{const input=document.createElement('input');input.type=kind;input.dataset.filterColumn=col.id;input.dataset.filterBound=bound;if(kind==='number')input.step='any';input.placeholder=bound==='min'?'From':'To';input.setAttribute('aria-label',col.title+' '+input.placeholder);input.value=draftFilters[col.id]?.[bound]||'';input.oninput=()=>{const current=typeof draftFilters[col.id]==='object'?draftFilters[col.id]:{type:kind,min:'',max:''};current[bound]=input.value;draftFilters[col.id]=current.min||current.max?current:'';draftSession?.update(draftFilters)};range.append(input)});label.append(range);
     }else{
-      const input=document.createElement('input');input.type='search';input.placeholder='Contains…';input.value=saved.filters[col.id]||'';
-      input.setAttribute('aria-label','Filter '+col.title);input.addEventListener('input',()=>{saved.filters[col.id]=input.value;saved.page=1;render()});label.append(input);
+      const input=document.createElement('input');input.type='search';input.dataset.filterColumn=col.id;input.placeholder='Contains…';input.value=draftFilters[col.id]||'';
+      input.setAttribute('aria-label','Filter '+col.title);input.addEventListener('input',()=>{draftFilters[col.id]=input.value;draftSession?.update(draftFilters)});label.append(input);
     }panel.append(label);
   });
-  const clear=document.createElement('button');clear.type='button';clear.className='secondary-button compact-button';clear.textContent='Clear column filters';
-  clear.onclick=()=>{saved.filters={};panel.querySelectorAll('input').forEach(input=>input.value='');saved.page=1;render()};panel.append(clear);const filterControl=document.createElement('div');filterControl.className='table-filter-icon-control table-generic-filter-control';filterControl.append(filters);host.prepend(filterControl);
+  const clear=document.createElement('button');clear.type='button';clear.className='secondary-button compact-button';clear.textContent='Clear filters';
+  clear.onclick=()=>{if(draftSession)draftSession.clear();else{saved.filters={};panel.querySelectorAll('input').forEach(input=>input.value='');saved.page=1;render()}};panel.append(clear);
+  const renderDraft=values=>{draftFilters=structuredClone(values);panel.querySelectorAll('input[data-filter-column]').forEach(input=>{const value=draftFilters[input.dataset.filterColumn];input.value=input.dataset.filterBound?value?.[input.dataset.filterBound]||'':typeof value==='string'?value:'';});};
+  draftSession=window.NextAiFilterDrafts?.create({readApplied:()=>saved.filters||{},renderDraft,emptyState:()=>({}),commit:values=>{for(const input of panel.querySelectorAll('input'))if(!input.reportValidity())return false;saved.filters=structuredClone(values);saved.page=1;render();return true;}})||null;
+  if(draftSession&&!document.body.classList.contains('platform-standard-tables')){clear.remove();draftSession.mountFooter(panel,{close:()=>{filters.open=false;}});}
+  const filterCount=document.createElement('span');filterCount.className='table-filter-count';filterCount.hidden=true;summary.append(filterCount);
+  const appliedSummary=document.createElement('span');appliedSummary.className='table-applied-filter-summary';appliedSummary.hidden=true;toolbar.append(appliedSummary);
+const filterControl=document.createElement('div');filterControl.className='table-filter-icon-control table-generic-filter-control';filterControl.append(filters);host.prepend(filterControl);
   const clearAll=document.createElement('button');clearAll.type='button';clearAll.className='table-clear-active-filters table-filter-reset';clearAll.hidden=true;clearAll.setAttribute('aria-label','Clear table filters');clearAll.dataset.tooltip='Clear filters';clearAll.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';filterControl.append(clearAll);
-  function updateActiveFilterState(){const active=Object.values(saved.filters).some(value=>typeof value==='object'?!!(value.min||value.max):!!value);toolbar.classList.toggle('table-has-active-filters',active);filters.classList.toggle('has-active-filters',active);summary.setAttribute('aria-label',active?'Filters active':'Filters');summary.dataset.tooltip=active?'Filters active':'Filters';clearAll.hidden=!active;clearAll.disabled=!active;}
-  clearAll.onclick=event=>{event.stopPropagation();event.preventDefault();clear.click()};
-  filters.addEventListener('toggle',()=>{summary.setAttribute('aria-expanded',String(filters.open));if(filters.open){const box=summary.getBoundingClientRect();panel.style.top=Math.min(box.bottom+8,Math.max(12,innerHeight-360))+'px';panel.style.left=Math.max(12,Math.min(box.left,innerWidth-332))+'px'}});
+  function updateActiveFilterState(){const entries=Object.entries(saved.filters).filter(([,value])=>typeof value==='object'?!!(value.min||value.max):!!value),active=entries.length>0;filterCount.hidden=!active;filterCount.textContent=String(entries.length);appliedSummary.hidden=!active;appliedSummary.textContent=entries.map(([id,value])=>(cols.find(c=>c.id===id)?.title||id)+': '+(typeof value==='object'?[value.min||'Any',value.max||'Any'].join('–'):value)).join(' · ');toolbar.classList.toggle('table-has-active-filters',active);filters.classList.toggle('has-active-filters',active);summary.setAttribute('aria-label',active?'Filters, '+entries.length+' applied':'Filters');summary.dataset.tooltip=active?'Filters, '+entries.length+' applied':'Filters';clearAll.hidden=!active;clearAll.disabled=!active;}
+  clearAll.onclick=event=>{event.stopPropagation();event.preventDefault();saved.filters={};draftSession?.open();saved.page=1;render()};
+  filters.addEventListener('toggle',()=>{if(filters.open)draftSession?.open();else draftSession?.discard();summary.setAttribute('aria-expanded',String(filters.open));if(filters.open){const box=summary.getBoundingClientRect();panel.style.top=Math.min(box.bottom+8,Math.max(12,innerHeight-360))+'px';panel.style.left=Math.max(12,Math.min(box.left,innerWidth-332))+'px'}});
   const close=event=>{if(!root.isConnected){document.removeEventListener('pointerdown',close);return}if(!filters.contains(event.target))filters.open=false};document.addEventListener('pointerdown',close);
   filters.addEventListener('keydown',event=>{if(event.key==='Escape'){filters.open=false;summary.focus()}});
   if(document.body.classList.contains('platform-standard-tables')){
     const drawer=document.createElement('dialog');drawer.className='standard-filter-drawer';drawer.setAttribute('aria-label','Table filters');
     const head=document.createElement('header');head.innerHTML='<h2>Filters</h2><button type="button" aria-label="Close filters">×</button>';drawer.append(head,panel);
-    const foot=document.createElement('footer');const done=document.createElement('button');done.type='button';done.className='primary-button';done.textContent='Done';foot.append(clear,done);drawer.append(foot);document.body.append(drawer);
-    const closeDrawer=()=>{drawer.close();summary.setAttribute('aria-expanded','false');summary.focus()};head.querySelector('button').onclick=closeDrawer;done.onclick=closeDrawer;
-    summary.onclick=event=>{event.preventDefault();filters.open=false;drawer.showModal();summary.setAttribute('aria-expanded','true')};
+    const foot=document.createElement('footer');const done=document.createElement('button');done.type='button';done.className='primary-button';done.textContent='Apply filters';foot.append(clear,done);drawer.append(foot);document.body.append(drawer);
+    const closeDrawer=()=>{draftSession?.discard();drawer.close();summary.setAttribute('aria-expanded','false');summary.focus()};head.querySelector('button').onclick=closeDrawer;if(draftSession){foot.remove();clear.remove();draftSession.mountFooter(drawer,{close:closeDrawer});}else done.onclick=closeDrawer;
+    summary.onclick=event=>{event.preventDefault();filters.open=false;draftSession?.open();drawer.showModal();summary.setAttribute('aria-expanded','true')};
     drawer.addEventListener('cancel',event=>{event.preventDefault();closeDrawer()});
   }
   const exportButton=document.createElement('button');exportButton.type='button';exportButton.className='secondary-button compact-button table-export';
   exportButton.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg>';
   exportButton.setAttribute('aria-label','Download table as CSV');
-  exportButton.title=isServer?'Download all matching pages with your visible columns':'Download all filtered rows with your visible columns';host.append(exportButton);composeTable(card,toolbar,host,search);composeTabs(card);
+  exportButton.title=isServer?'Download all matching pages with your visible columns':'Download all filtered rows with your visible columns';host.append(exportButton);composeTable(card,toolbar,host,search);composeTabs(card);window.NextAiTableComposition?.placeCommands(card);
   const status=document.createElement('span');status.className='table-data-status';status.setAttribute('role','status');toolbar.after(status);
   let footer=null,pageLabel=null,updatePager=null;
   if(isServer){
@@ -517,6 +526,6 @@ function init(root){
   window.NextAiTableFirstPaint?.complete(card);
 }
 function refresh(){document.querySelectorAll('[data-table-widget-ready]').forEach(init)}
-window.NextAiTableDataTools={bindServerSearch,refresh,csvCell,exportColumns,exportValues,resetFilters:key=>{const saved=states.get(key);if(saved){saved.filters={};saved.query='';saved.page=1;}}};
+window.NextAiTableDataTools={bindServerSearch,refresh,presentCommands:(card,toolbar,host,search)=>{composeTable(card,toolbar,host,search,true);window.NextAiTableComposition?.placeCommands(card);},csvCell,exportColumns,exportValues,resetFilters:key=>{const saved=states.get(key);if(saved){saved.filters={};saved.query='';saved.page=1;}}};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{window.NextAiTableWidget?.refresh();refresh()});else{window.NextAiTableWidget?.refresh();refresh()}
 })();

@@ -228,7 +228,7 @@ function prepareSalesBars(root){
   });
 }
 function init(root){
-  const key=root.dataset.tableWidget;if(!key)return;
+  const key=root.dataset.tableWidget;if(!key)return;window.NextAiTableComposition?.prepare(root);
   if(key==='orders'){
     const header=root.querySelector('.table-grid-header');
     const fulfillment=header?.querySelector('[data-column=action]');if(fulfillment){fulfillment.dataset.title='Actions';fulfillment.textContent='Actions';}
@@ -252,6 +252,8 @@ function init(root){
   else prepareOverview(root);
   prepareSalesBars(root);
   root.classList.add('table-widget');
+  root.querySelectorAll('.order-product-stage.product-thumbnail-slot,tr[data-product-photo=true] .table-overview-picture,tr[data-replenishment-row] .table-overview-picture').forEach(picture=>picture.classList.add('product-thumbnail-slot','platform-product-photo'));
+
   const isTable=root.matches('table'),defaults=isTable?tableColumns(root):gridColumns(root);if(!defaults.length)return;
   const stored=read(key)||{},saved=stored.schema===2&&(!root.dataset.layoutVersion||stored.layoutVersion===root.dataset.layoutVersion)?stored:{},valid=id=>defaults.some(c=>c.id===id);
   let order=[...(saved.order||[])].filter(valid);defaults.forEach(c=>{if(!order.includes(c.id))order.push(c.id)});
@@ -259,13 +261,16 @@ function init(root){
   if(key==='orders'&&order.includes('fees')){order=order.filter(id=>id!=='fees');order.splice(order.indexOf('profit')+1,0,'fees');}
   if(root.matches('.fba-shipment-table')&&order.includes('received')&&order.includes('shipped')){order=order.filter(id=>id!=='received');order.splice(order.indexOf('shipped')+1,0,'received');}
   const pinned=id=>id==='record-context'||(root.dataset.priorityAfterRecord==='true'&&id==='priority')||(key==='orders'&&id==='picture');
-  if(key==='marketplace-skus'){const financial=['profit','est-fees','available','4w-sales'];order=order.filter(id=>!financial.includes(id)).concat(financial.filter(valid));}
+  if(key==='marketplace-skus'){const financial=['profit','est-fees','available','warehouse-available','4w-sales'];order=order.filter(id=>!financial.includes(id)).concat(financial.filter(valid));}
   order=[...order.filter(pinned),...order.filter(id=>!pinned(id))];
   if(root.dataset.priorityAfterRecord==='true'&&valid('priority')){
     order=order.filter(id=>id!=='priority');order.splice(order.indexOf('record-context')+1,0,'priority');
   }
   const visibility=Object.fromEntries(defaults.map(c=>[c.id,c.required?true:(saved.visibility?.[c.id]??c.defaultVisible)]));
-  let host=document.querySelector('[data-column-control="'+key+'"]');
+  const cardScope=root.closest('.table-widget-surface,.data-card,.receive-lines,.desk-card');
+  const sameKey=[...document.querySelectorAll('[data-table-widget]')].filter(n=>n.dataset.tableWidget===key);
+  let host=cardScope?[...cardScope.querySelectorAll('[data-column-control]')].find(n=>n.dataset.columnControl===key&&n.closest('.table-widget-surface,.data-card,.receive-lines,.desk-card')===cardScope):null;
+  if(!host&&sameKey.length===1)host=document.querySelector('[data-column-control="'+key+'"]');
   if(!host){host=document.createElement('div');host.dataset.columnControl=key;(root.closest('.table-wrap')||root).before(host)}
   const column=id=>defaults.find(c=>c.id===id);
   if(root.dataset.tableMinWidth)root.style.setProperty('--table-min-width',Number(root.dataset.tableMinWidth)+'px');
@@ -423,5 +428,43 @@ function prepareRecordScrollFrames(){
 }
 function boot(){prepareTabOverflow();document.querySelectorAll('.desk-table:not([data-table-widget])').forEach(root=>{root.dataset.tableWidget='shipping-ready';root.dataset.gridRow='.candidate-row';const header=root.querySelector('.desk-table-head');header?.classList.add('table-grid-header');[...header.children].forEach((cell,index)=>{cell.dataset.column=['record-context','select','product','order','package','shipping','action'][index];cell.dataset.columnRequired=String(index===0||index===1||index===2||index===6);if(index===1)cell.dataset.title='Select'})});document.querySelectorAll('.data-card table:not([data-table-widget])').forEach((root,index)=>{if(root.tHead&&!root.closest('dialog'))root.dataset.tableWidget=location.pathname.replace(/\W+/g,'-')+'-'+index});document.querySelectorAll('[data-table-widget]:not([data-table-widget-ready])').forEach(root=>{root.dataset.tableWidgetReady='true';init(root)});document.querySelectorAll('[data-page-jump]').forEach(initPageJump);window.NextAiTableDataTools?.refresh();window.NextAiStandardTables?.enhance();prepareRecordScrollFrames()}
 function prepareMetricTables(){document.querySelectorAll('[data-rp-sales]').forEach(prepareSalesBars);}
-document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>{boot();prepareMetricTables();}):(boot(),prepareMetricTables());window.NextAiTableWidget={refresh:boot};
+document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>{boot();prepareMetricTables();}):(boot(),prepareMetricTables());window.NextAiTableWidget={refresh:boot,presentControlRow(toolbar){
+ // Domain-owned search/filter/export retain their handlers; shared widget owns control artwork.
+ for(const [selector,name,label] of [['.table-filter-control>summary','filter','Filters'],['#personal-download','download','Download CSV']]){
+  const control=toolbar.querySelector(selector);if(!control||control.dataset.widgetControlArt===name)continue;
+  const art=window.NextAiIcons?.create('action:'+name);if(!art)continue;
+  art.setAttribute('width','20');art.setAttribute('height','20');const count=control.querySelector('.table-filter-count');control.replaceChildren(art,...(count?[count]:[]));control.dataset.widgetControlArt=name;control.classList.add('secondary-button','compact-button');control.setAttribute('aria-label',label);control.setAttribute('data-tooltip',label);
+ }
+ const details=toolbar.querySelector('.table-filter-control'),panel=details?.querySelector('.table-filter-panel');
+ if(details&&panel&&!details.dataset.widgetControlPosition){
+  details.dataset.widgetControlPosition='true';
+  const position=()=>{
+   if(!details.open)return;
+   // Same viewport-bounded geometry as the widget's Columns panel, retaining domain filter contents.
+   const viewport=window.visualViewport,margin=12,left=viewport?.offsetLeft||0,top=viewport?.offsetTop||0,width=viewport?.width||innerWidth,height=viewport?.height||innerHeight;
+   const trigger=details.querySelector('summary').getBoundingClientRect();
+   Object.assign(panel.style,{position:'fixed',right:'auto',bottom:'auto',margin:'0',boxSizing:'border-box',maxWidth:Math.max(0,width-margin*2)+'px',maxHeight:Math.max(0,Math.min(420,height-margin*2))+'px'});
+   const box=panel.getBoundingClientRect(),below=top+height-trigger.bottom-margin,above=trigger.top-top-margin;
+   panel.style.left=Math.max(left+margin,Math.min(trigger.right-box.width,left+width-box.width-margin))+'px';
+   const desired=below<box.height&&above>below?trigger.top-box.height-8:trigger.bottom+8;
+   panel.style.top=Math.max(top+margin,Math.min(desired,top+height-box.height-margin))+'px';
+  };
+  details.addEventListener('toggle',()=>requestAnimationFrame(position));window.addEventListener('resize',position);window.addEventListener('scroll',position,true);window.visualViewport?.addEventListener('resize',position);
+ }
+}};
+})();
+
+/* Shared decorative zebra only; domain state, selected rows and handlers stay intact. */
+(()=>{
+ if(window.NextAiTableStripeReady)return;window.NextAiTableStripeReady=true;
+ let queued=false;
+ function stripe(){queued=false;
+  document.querySelectorAll('table[data-table-widget],table.table-widget,.order-list.table-widget,.desk-table.table-widget').forEach(widget=>{
+   const rows=widget.matches('table')?[...widget.tBodies].flatMap(body=>[...body.rows]):[...widget.querySelectorAll(widget.matches('.order-list')?'.order-row':'.candidate-row')];
+   let index=0;rows.forEach(row=>{const visible=!row.hidden&&getComputedStyle(row).display!=='none'&&!(row.matches('tr')&&row.querySelector('[colspan]'));const value=visible?(index++%2?'even':'odd'):'';if(row.dataset.tableStripe!==value)row.dataset.tableStripe=value;});
+  });
+ }
+ function schedule(){if(!queued){queued=true;requestAnimationFrame(stripe);}}
+ new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','class','style']});
+ schedule();
 })();

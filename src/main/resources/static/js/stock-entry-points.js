@@ -7,7 +7,7 @@
   };
   const mapping=context=>{const b=document.createElement('button');b.type='button';b.textContent='Map product';b.dataset.actionImage='/images/platform/table/map-product-owner.png';b.dataset.actionDescription='Map this product';b.dataset.mappingItem=context.item;b.onclick=e=>{e.stopPropagation();window.openProductMappingReview(b)};return b;};
   const menuFor=context=>{
-    const trigger=document.createElement('button');trigger.type='button';trigger.className='plan-action-button inventory-stage-menu';trigger.textContent='⋯';trigger.setAttribute('aria-label','Inventory actions');
+    const trigger=document.createElement('button');trigger.type='button';trigger.className='plan-action-button inventory-stage-menu';trigger.dataset.contextAction='';trigger.textContent='⋯';trigger.setAttribute('aria-label','Inventory actions');
     const panel=document.createElement('div');panel.className='stock-action-popover';panel.setAttribute('popover','auto');const button=action(context);button.className='secondary-button compact-button';panel.append(mapping(context),button);document.body.append(panel);
     trigger.popoverTargetElement=panel;panel.addEventListener('click',e=>{if(e.target.closest('button'))panel.hidePopover()});
     panel.addEventListener('toggle',()=>{if(!panel.matches(':popover-open'))return;const box=trigger.getBoundingClientRect();panel.style.left=Math.max(12,Math.min(box.left,innerWidth-panel.offsetWidth-12))+'px';panel.style.top=Math.max(12,Math.min(box.bottom+6,innerHeight-panel.offsetHeight-12))+'px'});
@@ -37,7 +37,7 @@
   }
   const legacy=document.querySelector('#inventory-action-menu [onclick^="openInventoryAdjustment"]');
   if(legacy)legacy.onclick=()=>{const item=document.getElementById('quick-action-item').value,location=document.getElementById('quick-action-location').value,expiration=document.getElementById('quick-action-expiration').value;window.openSharedInventoryAdjustment({dataset:{item,location,expiration}})};
-  const toolbar=[...document.querySelectorAll('.card-toolbar')].find(t=>t.querySelector('h2')?.textContent==='Invoices & packing lists');
+  const toolbar=document.querySelector('[data-table-shortcuts="receiving-documents"]>.card-toolbar')||[...document.querySelectorAll('.card-toolbar')].find(t=>t.querySelector('h2')?.textContent==='Invoices & packing lists');
   if(toolbar){const button=document.createElement('button');button.type='button';button.className='secondary-button compact-button';button.dataset.tableCommand='';button.dataset.commandId='receive-item';button.dataset.actionImage='/images/platform/table/receive-item-owner.png';button.dataset.actionDescription='Choose a product and quantity';button.textContent='Receive item';button.onclick=()=>window.openSharedInventoryReceipt();(toolbar.closest('[data-table-composition]')?.querySelector('.table-command-group')||toolbar).append(button)}
   const input=document.getElementById('inventory-search'),table=document.querySelector('.available-inventory-table');
   if(!input||!table)return;
@@ -58,7 +58,7 @@
           // The shared table has already inserted Overview. Keep product copy in Product,
           // not in that narrow image/action column, and retain the original data-column order.
           const overview=document.createElement('td'),layout=document.createElement('div'),picture=document.createElement('span'),rail=document.createElement('div');
-          overview.dataset.column='record-context';overview.className='table-context-cell table-overview-cell';layout.className='table-overview-layout';picture.className='table-overview-picture';rail.className='table-overview-rail';
+          overview.dataset.column='record-context';overview.className='table-context-cell table-overview-cell';layout.className='table-overview-layout';picture.className='table-overview-picture product-thumbnail-slot platform-product-photo';rail.className='table-overview-rail';
           const image=stage.querySelector('img');if(image)picture.append(image);rail.append(menuFor({item:product.id}));layout.append(picture,rail);overview.append(layout);
           const cells=new Map([['record-context',overview],['product',cell]]);
           [['location','—'],['on-hand','0 each'],['reserved','0 each'],['physical-available','0 each'],['expiration','—'],['shelf-life','No stock'],['unit-cost','Not valued']].forEach(([key,value])=>{const td=document.createElement('td');td.textContent=value;cells.set(key,td)});

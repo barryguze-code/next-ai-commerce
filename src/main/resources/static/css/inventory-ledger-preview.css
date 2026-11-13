@@ -177,3 +177,23 @@ html[data-theme="dark"] #inventory-history-dialog.inventory-ledger-preview .hist
 #inventory-history-dialog.inventory-ledger-preview .ledger-position-stock>.ledger-position-choose{display:inline-flex;align-items:center;justify-content:center;flex:0 0 36px;width:36px;height:36px;min-height:36px;padding:3px!important;margin-inline-start:6px;align-self:center}
 #inventory-history-dialog.inventory-ledger-preview .ledger-transfer-icon{width:28px;height:28px;object-fit:contain}
 #inventory-history-dialog.inventory-ledger-preview .ledger-relocate-source.selected .ledger-position-choose{display:none}
+#inventory-history-dialog #history-picture.ledger-has-photo{position:relative;box-sizing:border-box;width:64px;height:64px;min-width:64px;min-height:64px;flex:0 0 64px;background:#fff!important;font-size:0;color:transparent;overflow:hidden}
+#inventory-history-dialog #history-picture>.ledger-position-photo{position:absolute;inset:0;width:100%;height:100%;box-sizing:border-box;object-fit:contain;object-position:center;border:1px solid #d3dfed;border-radius:min(18px,25%);background:#fff}
+#inventory-history-dialog #history-picture #history-image-upload{position:relative;z-index:1;font-size:12px;color:var(--ink)}
+#inventory-history-dialog .ledger-position-stock>.reserved-quantity-link{padding:0;border:0;background:transparent;color:var(--blue);box-shadow:none;text-align:left}
+#inventory-history-dialog .order-identifier-line .order-sku-copy svg{display:block;flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5}
+.ledger-relocation-unavailable{margin:4px 0 0}
+
+@media(max-width:760px){#inventory-history-dialog #history-picture.ledger-has-photo{width:48px;height:48px;min-width:48px;min-height:48px;flex-basis:48px}}
+#inventory-history-dialog.inventory-ledger-preview .ledger-related-identity .order-sku-copy svg{display:block}
+#inventory-history-dialog .history-summary .reserved-quantity-link{padding:0;border:0;background:transparent;color:var(--blue);box-shadow:none;text-align:left}
+/* Reserved links occupy the same quantity slot as noninteractive values. */
+#inventory-history-dialog .ledger-position-stock>.reserved-quantity-link{min-width:0;width:auto;min-height:0;margin:0;padding:0}
+@media(min-width:761px){
+ #inventory-history-dialog.inventory-ledger-preview .ledger-position-stock{display:grid;grid-template-columns:100px minmax(120px,1fr) repeat(3,minmax(70px,1fr)) 36px}
+ #inventory-history-dialog.inventory-ledger-preview .ledger-position-stock>.ledger-position-choose{margin-inline-start:0}
+}
+/* SKU copy stays beside its exact identifier in every drawer entry context. */
+#inventory-history-dialog.inventory-ledger-preview .ledger-related-identity .order-sku-copy{display:inline-flex;align-items:center;gap:6px;flex-wrap:nowrap;min-width:0;max-width:100%;padding:0}
+#inventory-history-dialog.inventory-ledger-preview .ledger-related-identity .order-sku-copy code{min-width:0;white-space:normal;overflow-wrap:anywhere}
+#inventory-history-dialog.inventory-ledger-preview .ledger-related-identity .order-sku-copy svg{display:block;flex:0 0 14px;width:14px;height:14px}

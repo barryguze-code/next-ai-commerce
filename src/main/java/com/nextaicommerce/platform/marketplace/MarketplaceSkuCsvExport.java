@@ -19,7 +19,8 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class MarketplaceSkuCsvExport {
     static final int MAX_ROWS=10_000, MAX_BYTES=50*1024*1024;
-    static final Set<String> GROUPS=Set.of("product-details","status","price-shipping","available","4w-sales","shipping-template","condition","fnsku","inbound","reserved","unfulfillable","profit");
+    static final Set<String> GROUPS=Set.of("product-details","status","price-shipping","available","warehouse-available","4w-sales","shipping-template","condition","fnsku","inbound","reserved","unfulfillable","profit");
+    @org.springframework.beans.factory.annotation.Autowired private MarketplaceWarehouseAvailability warehouseAvailability;
     final MarketplaceSkuRepository listings; final FbaReadRepository stock; final SkuRefundHistory refunds;
     final ProfitRepository profits; final JdbcTemplate jdbc; final ObjectMapper json;
     public record Request(String q,String status,String sort,String direction,Map<String,String> predicates,List<String> columns,Map<String,Object> columnFilters) {}
@@ -28,7 +29,7 @@ public class MarketplaceSkuCsvExport {
     public MarketplaceSkuCsvExport(MarketplaceSkuRepository listings,FbaReadRepository stock,SkuRefundHistory refunds,ProfitRepository profits,JdbcTemplate jdbc,ObjectMapper json){this.listings=listings;this.stock=stock;this.refunds=refunds;this.profits=profits;this.jdbc=jdbc;this.json=json;}
 
     static void validate(Request r){
-        if(r==null||r.q()==null||r.q().length()>1000||r.columns()==null||r.columns().size()>12||new HashSet<>(r.columns()).size()!=r.columns().size()||!GROUPS.containsAll(r.columns())||r.columnFilters()==null||r.columnFilters().size()>12||!GROUPS.containsAll(r.columnFilters().keySet()))throw new IllegalArgumentException("Invalid export columns or filters.");
+        if(r==null||r.q()==null||r.q().length()>1000||r.columns()==null||r.columns().size()>GROUPS.size()||new HashSet<>(r.columns()).size()!=r.columns().size()||!GROUPS.containsAll(r.columns())||r.columnFilters()==null||r.columnFilters().size()>GROUPS.size()||!GROUPS.containsAll(r.columnFilters().keySet()))throw new IllegalArgumentException("Invalid export columns or filters.");
         if(!r.columns().contains("product-details"))throw new IllegalArgumentException("Product details are required.");
         for(Object value:r.columnFilters().values())if(value instanceof String s){if(s.length()>1000)throw new IllegalArgumentException("Filter too long.");}else if(value instanceof Map<?,?> m){if(!Set.of("type","min","max").containsAll(m.keySet())||!Set.of("number","date").contains(m.get("type")))throw new IllegalArgumentException("Invalid column filter.");for(Object v:m.values())if(!(v instanceof String)||v.toString().length()>100)throw new IllegalArgumentException("Invalid filter value.");for(String key:List.of("min","max")){Object v=m.get(key);if(v==null||v.toString().isEmpty())continue;try{if("date".equals(m.get("type")))LocalDate.parse(v.toString());else if(!Double.isFinite(Double.parseDouble(v.toString())))throw new IllegalArgumentException();}catch(RuntimeException ex){throw new IllegalArgumentException("Invalid column filter bound.");}}}else throw new IllegalArgumentException("Invalid column filter.");
     }
@@ -56,6 +57,9 @@ public class MarketplaceSkuCsvExport {
             if(keys.isEmpty())break;
             var stocks=stock.stocks(tenant,connection,batch.rows().stream().filter(MarketplaceSkuRepository.SkuView::fba).map(MarketplaceSkuRepository.SkuView::sellerSku).toList());
             var mappings=listings.mappingComponents(tenant,connection,keys);
+            var warehouse=request.columns().contains("warehouse-available")||request.columnFilters().containsKey("warehouse-available")
+                ?warehouseAvailability.load(tenant,connection,MarketplaceWarehouseAvailability.eligibleKeys(batch.rows(),inventoryPolicy==null?null:inventoryPolicy.decisions())):Map.<String,MarketplaceWarehouseAvailability.Availability>of();
+
             var evidence=rawEvidence(tenant,connection,keys);
             var history=refunds.fourWeeks(tenant,connection,keys);
             var estimates=request.columns().contains("profit")?profits.skus(tenant,connection,keys,anchor.atZone(ZoneId.of("America/Los_Angeles")).toLocalDate()):Map.<String,ProfitRepository.View>of();
@@ -72,6 +76,11 @@ public class MarketplaceSkuCsvExport {
                 var parent=parentContexts.get(sku.sellerSku());
                 row.fields().put("Parent SKU",parent==null?null:parent.sku());row.fields().put("Parent ASIN",parent==null?null:parent.asin());
                 if(inventoryPolicy!=null)applyInventoryPolicy(row,inventoryPolicy.get(sku.sellerSku()));
+                var decision=inventoryPolicy==null?null:inventoryPolicy.get(sku.sellerSku());
+                String warehouseDisplay=warehouseText(sku.fba(),decision!=null&&decision.parent(),warehouse.get(sku.sellerSku()));
+                row.fields().put("Warehouse available (physical eaches / catalogue case equivalents)",warehouseDisplay);
+                row.filters().put("warehouse-available",normalize(warehouseDisplay));
+
                 if(!request.columnFilters().entrySet().stream().allMatch(e->matches(row.filters().getOrDefault(e.getKey(),""),e.getValue())))continue;
                 if(output.size()==MAX_ROWS)throw new IllegalArgumentException("More than 10,000 matching listings. Narrow the filters.");
                 output.add(row);components=Math.max(components,parts.size());hasFba|=sku.fba();
@@ -122,6 +131,13 @@ public class MarketplaceSkuCsvExport {
             for(String key:List.of("min","max")){String bound=Objects.toString(m.get(key),"");if(bound.isEmpty())continue;double v="date".equals(m.get("type"))?LocalDate.parse(bound).toEpochDay():Double.parseDouble(bound);if(!Double.isFinite(v)||("min".equals(key)?value<v:value>v))return false;}return true;
         }catch(RuntimeException ex){return false;}
     }
+    static String warehouseText(boolean fba,boolean parent,MarketplaceWarehouseAvailability.Availability stock){
+        if(!fba||parent)return "Not applicable";
+        if(stock==null||stock.state().equals("UNAVAILABLE"))return "Unavailable";
+        if(stock.state().equals("NOT_MAPPED"))return "Not mapped";
+        return stock.lines().stream().map(line->line.warehouse()+(line.warehouse().equals(line.warehouseName())?"":" ("+line.warehouseName()+")")+" · "+(stock.multipleProducts()?line.code()+" · "+line.product()+" · ":"")+line.quantityDisplay())
+            .collect(java.util.stream.Collectors.joining("; "));
+    }
     static Map<String,List<String>> emptySchema(int n,Collection<String> currencies){
         return emptySchema(n,currencies,true);
     }
@@ -133,6 +149,7 @@ public class MarketplaceSkuCsvExport {
         g.put("status",List.of("Listing status","Local inventory plan","Fulfillment method","Condition"));
         g.put("price-shipping",List.of("Listing price","Listing currency","Average customer shipping per unit","Buy Box price","Buy Box currency"));
         g.put("available",hasFba?List.of("Available units","Inbound units","FC transfer units","Reserved units"):List.of("Available units"));
+        g.put("warehouse-available",List.of("Warehouse available (physical eaches / catalogue case equivalents)"));
         g.put("4w-sales",List.of("Four-week orders","Four-week units","Week 1 units (oldest)","Week 2 units","Week 3 units","Week 4 units (latest)"));
         g.put("shipping-template",List.of("Shipping template"));g.put("condition",List.of("Condition"));g.put("fnsku",List.of("FNSKU"));
         for(String name:List.of("inbound","reserved","unfulfillable"))g.put(name,List.of(name.substring(0,1).toUpperCase()+name.substring(1)+" units"));

@@ -1,0 +1,74 @@
+/* Shared widget chrome. Status meanings, domain filters and table widths remain owned by consumers. */
+.shared-table-composition,.table-widget-surface{border:1px solid var(--line);border-radius:16px;background:var(--white);min-width:0}
+.shared-table-composition>.table-wrap,.table-widget-surface>.table-wrap{border:0}
+.shared-table-composition>.card-toolbar,.table-widget-surface>.card-toolbar{min-width:0;flex-wrap:wrap}
+html body.app-page .shared-table-composition :is(.table-status-strip,.inventory-filter-row,.order-tab-panel){background:#F0F2F5!important;border-radius:0!important;box-shadow:none!important}
+html[data-theme=dark] body.app-page .shared-table-composition :is(.table-status-strip,.inventory-filter-row,.order-tab-panel){background:#202B37!important}
+html body.app-page .shared-table-composition .table-status-strip :is(.order-filters,.inventory-filter-bar,.sku-filter-bar){background:transparent!important;box-shadow:none!important}
+.table-filter-footer{position:sticky;bottom:0;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:12px 0 0;margin-top:12px;border-top:1px solid var(--line);background:var(--white)}
+.table-filter-footer [role=status]{flex:1 1 100%;font-size:var(--ui-meta,12px);color:var(--danger,#c73547)}
+.table-applied-filter-summary{max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--ui-meta,12px);color:var(--muted)}
+.table-filter-count{position:absolute;right:-5px;top:-5px;min-width:16px;height:16px;padding:0 3px;border-radius:999px;background:var(--ui-action-text);color:var(--white);font-size:10px;line-height:16px;text-align:center}
+.table-filter-control>summary{position:relative}
+@media(max-width:760px){.table-applied-filter-summary{max-width:100%}.table-widget-surface{max-width:100%}}
+/* A domain filter supersedes the generic loaded-row filter when explicitly hidden. */
+.app-page .table-widget-tools>.table-filter-control[hidden]{display:none!important}
+.shared-table-composition .table-shortcut-target{width:40px;height:40px;min-width:40px;min-height:40px}
+.shared-table-composition .table-shortcut-target>svg{width:20px;height:20px}
+.personal-people-filter>details>summary{cursor:pointer;font-weight:650;padding:6px 0}
+.personal-people-filter>details>input[type=search]{width:100%;box-sizing:border-box}
+/* Editable allocation/calculation tables share the frame without filtering unsaved inputs. */
+.table-form-frame{border:1px solid var(--line);border-radius:16px;overflow:auto;max-width:100%}
+.table-form-surface{width:100%;border-collapse:collapse;font-family:var(--font-ui,inherit);font-size:var(--ui-body,13px)}
+.table-form-surface th{text-align:left;font-size:var(--ui-meta,12px);color:var(--muted);background:var(--surface-soft,#F3F5F7)}
+html[data-theme=dark] .table-form-surface th{background:#1B2B3C;color:#B6C5D4}
+html body.app-page .table-generic-filter-control[hidden]{display:none!important}
+html body.app-page .shared-table-composition .table-command-menu>summary.table-action-trigger{width:40px!important;height:40px!important;min-width:40px!important;min-height:40px!important;padding:0!important;border:1px solid var(--ui-action-line)!important;border-radius:10px!important;background:var(--ui-action-soft)!important;color:var(--ui-action-text)!important}
+html body.app-page .shared-table-composition .table-command-menu>summary.table-action-trigger>img{width:20px!important;height:20px!important;min-width:20px!important;min-height:20px!important}
+/* Reuse the compact page band while retaining saved-store/context controls. */
+body.app-page .shared-table-page>.workspace-header{align-items:center;flex-wrap:wrap;border-bottom:0}
+body.app-page .shared-table-page>.workspace-header>div:first-child:not(.header-actions){flex:1 1 0;min-width:0;width:auto;max-width:none;display:flex;flex-direction:row;flex-wrap:nowrap;align-content:flex-start;align-items:center;justify-content:flex-start;gap:18px}
+.shared-table-page .table-page-meta{min-width:0;font-size:12px;line-height:1.45;color:var(--muted)}
+body.app-page .shared-table-page>.workspace-header .page-intro{margin:0;font-size:12px;line-height:1.45}
+.shared-table-composition>.card-toolbar[hidden],.table-widget-surface>.card-toolbar[hidden]{display:none!important}
+.shared-table-composition .table-shared-command-row{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.shared-table-composition .table-shared-command-row>.table-header-commands{margin-left:auto;display:flex;align-items:center;gap:8px}
+@media(max-width:760px){body.app-page .shared-table-page>.workspace-header>div:first-child:not(.header-actions){flex-wrap:wrap;gap:8px 14px}.shared-table-page .table-page-meta{flex-basis:200px}}
+/* Pinned commands execute; removal is available only through explicit shortcut editing. */
+.table-sync-actions:not([data-shortcut-entry=true]) .table-shortcut-remove{display:none!important}
+html body.app-page .table-widget .table-overview-rail :is(button,summary).table-action-trigger,html body.app-page .order-list :is(button,summary).table-action-trigger{width:28px!important;height:28px!important;min-width:28px!important;min-height:28px!important;padding:3px!important}
+/* Explicit shortcut editing owns pin state; normal Actions have no pin-add clutter. */
+.table-command-menu:not(.is-shortcut-add) .table-shortcut-pin{display:none!important}
+.table-command-menu.is-shortcut-add .table-shortcut-pin{display:inline-flex;align-items:center;justify-content:center;flex:0 0 32px;width:32px;height:32px;min-width:32px;padding:6px;border:0;background:transparent;color:var(--ui-action-text)}
+.table-shortcut-pin svg{display:block;width:20px;height:20px;flex:none}
+.table-command-menu.is-shortcut-add .table-shortcut-command.is-pinned{opacity:1;cursor:pointer}
+.table-shortcut-pin[aria-pressed=true]{background:var(--ui-action-soft)!important;border-radius:8px}
+.physical-count-recent-list{display:grid;gap:8px;margin-top:10px}
+.physical-count-recent-list a{display:flex;align-items:center;justify-content:space-between;gap:12px}
+/* One table-owned cluster: tabs row when present, otherwise the existing search row. */
+html body.app-page .shared-table-composition .table-shared-command-row{display:flex!important;align-items:center;flex-wrap:wrap;gap:12px}
+html body.app-page .shared-table-composition .table-shared-command-row>.table-sync-actions{display:flex;align-items:center;flex:0 0 auto;margin-inline-start:auto;gap:8px}
+html body.app-page .shared-table-composition .table-shared-command-row>:is(.table-tab-viewport,.table-tab-overflow,.order-filters,.table-status-tabs){flex:1 1 0;min-width:0}
+html body.app-page .shared-table-composition .order-tab-panel{min-width:0}
+html body.app-page .workspace:is(.shared-table-page,[data-header-pilot])>.workspace-header>div:first-child:not(.header-actions){flex:1 1 0;min-width:0;width:auto;max-width:none;flex-wrap:nowrap;align-content:flex-start}
+html body.app-page .workspace:is(.shared-table-page,[data-header-pilot])>.workspace-header :is(h1,.page-title-line){flex-shrink:0}
+.table-page-meta{display:flex;flex:1 1 auto;min-width:0;flex-direction:column;gap:4px}
+.table-page-meta-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.workspace-header :is(.sku-sync-status,.fba-sync-utility){display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0;font-size:12px}
+/* Estimated-profit auxiliary panel shares Matching orders' established amber treatment. */
+html body.app-page .orders-workspace .order-summary :is(.period-financials,.summary-filtered){background:#fff4df;color:#995a0b}
+html body.app-page .orders-workspace .order-summary :is(.period-financials,.summary-filtered)>small:not(.period-refunds){color:#a36112}
+html[data-theme=dark] body.app-page .orders-workspace .order-summary :is(.period-financials,.summary-filtered){background:#3d2e1e;color:#ffd398}
+html[data-theme=dark] body.app-page .orders-workspace .order-summary :is(.period-financials,.summary-filtered)>small:not(.period-refunds){color:#edbb7b}
+@media(max-width:760px){html body.app-page .workspace:is(.shared-table-page,[data-header-pilot])>.workspace-header>div:first-child:not(.header-actions){flex-wrap:wrap}}
+/* Physical warehouse quantities remain distinct from Amazon's listing availability. */
+.sku-warehouse-availability{min-width:150px;text-align:left}
+.sku-warehouse-line{display:grid;gap:2px;white-space:normal;overflow-wrap:anywhere}
+.sku-warehouse-line+.sku-warehouse-line{margin-top:8px}
+.sku-warehouse-line>small{color:var(--muted);font-size:12px}
+.sku-warehouse-line>span{font-size:13px;font-variant-numeric:tabular-nums}
+/* Status remains a badge; fulfillment and condition are quiet secondary metadata. */
+html body.app-page .sku-workspace .sku-fulfillment-condition{display:block;margin-top:4px;padding:0;border:0;border-radius:0;background:transparent;color:var(--muted);font-family:inherit;font-size:12px;line-height:20px;font-weight:400}
+/* Mapping uses the same transparent compact frame in Marketplace and Orders. */
+html body.app-page :is(.sku-mapping-icon,.order-inline-mapping-trigger,.platform-mapping-slot){display:inline-flex!important;align-items:center;justify-content:center;box-sizing:border-box;width:28px!important;height:28px!important;min-width:28px!important;min-height:28px!important;max-width:28px!important;max-height:28px!important;padding:4px!important;border:1px solid var(--line,#ccd9e9)!important;border-radius:7px!important;background:transparent!important;box-shadow:none!important;overflow:visible;flex:none}
+html body.app-page :is(.sku-mapping-icon,.order-inline-mapping-trigger,.platform-mapping-slot)>img{position:static!important;inset:auto!important;box-sizing:border-box;display:block;width:20px!important;height:20px!important;min-width:20px!important;min-height:20px!important;max-width:20px!important;max-height:20px!important;object-fit:contain;flex:none;margin:0!important;padding:0!important;background:transparent}

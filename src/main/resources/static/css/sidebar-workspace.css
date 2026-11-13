@@ -35,7 +35,7 @@
 /* CD-directed owner artwork: a slim visual inside the accessible border control. */
 @media(min-width:761px){
 .app-page .sidebar-edge-toggle{height:44px;background:transparent;border:0;border-radius:8px;font-size:0;color:transparent}
-.app-page:not(.sidebar-collapsed) .sidebar-edge-toggle::before{content:"";display:block;width:18px;height:44px;background:url('../images/platform/sidebar-collapse-transparent.png') 50% 50% / auto 52px no-repeat;border-radius:7px}
+.app-page:not(.sidebar-collapsed) .sidebar-edge-toggle::before{content:""!important;display:block;width:18px;height:44px;background:url('../images/platform/sidebar-collapse-transparent.png') 50% 50% / auto 52px no-repeat;border-radius:7px}
 .sidebar-edge-toggle:focus-visible{outline:2px solid #2d6be7;outline-offset:2px}
 }
 /* Store-shortcut removal stays quiet until the matching shortcut is engaged. */
@@ -44,7 +44,7 @@
 .store-shortcut:hover .store-shortcut-remove,.store-shortcut:focus-within .store-shortcut-remove{opacity:1;pointer-events:auto}
 }
 
-@media(min-width:761px){.app-page.sidebar-collapsed .sidebar-edge-toggle::before{content:"";display:block;width:18px;height:44px;background:url('../images/platform/sidebar-expand-transparent.png') 50% 50% / auto 50px no-repeat;border-radius:7px}}
+@media(min-width:761px){.app-page.sidebar-collapsed .sidebar-edge-toggle::before{content:""!important;display:block;width:18px;height:44px;background:url('../images/platform/sidebar-expand-transparent.png') 50% 50% / auto 50px no-repeat;border-radius:7px}}
 
 details.context-menu.store-shortcut-managing .context-popover>.context-footer{display:none}
 
@@ -59,3 +59,10 @@ details.context-menu.store-shortcut-managing .context-popover>.context-footer{di
 /* CD: selected store remains identifiable; native modal still owns focus and input. */
 .store-shortcut>button[aria-current=true]{border-color:#2d6be7;background:#edf4ff;box-shadow:0 0 0 1px #2d6be7}
 [data-theme=dark] .store-shortcut>button[aria-current=true]{background:#203d63;border-color:#a7c5ff;box-shadow:0 0 0 1px #a7c5ff}
+
+/* Fit the existing PNGs' visible alpha bounds, rather than their padded canvases. */
+@media(min-width:761px){
+ html body.app-page .sidebar-edge-toggle{height:64px}
+ html body.app-page:not(.sidebar-collapsed) .sidebar-edge-toggle::before{content:""!important;width:20px;height:64px;background-size:36.57px 74.21px;background-position:-8.22px -5.56px}
+ html body.app-page.sidebar-collapsed .sidebar-edge-toggle::before{content:""!important;width:20px;height:64px;background-size:24.08px 72.24px;background-position:-2.04px -4.42px}
+}

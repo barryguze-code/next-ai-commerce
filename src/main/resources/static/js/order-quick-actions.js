@@ -7,13 +7,12 @@
   }
   document.addEventListener('click',async event=>{
     const button=event.target.closest('[data-copy-sku]');if(!button)return;
-    try{await navigator.clipboard.writeText(button.dataset.copySku);notify('SKU copied');}
-    catch(_){notify('Could not copy SKU. Allow clipboard access and try again.');}
+    try{await navigator.clipboard.writeText(button.dataset.copySku);window.NextAiCopyFeedback?.success(button);}
+    catch(_){window.NextAiCopyFeedback?.failure(button,'Could not copy SKU. Allow clipboard access and try again.');}
   });
   const tip=document.createElement('div');tip.className='sku-instant-tooltip';tip.setAttribute('role','tooltip');tip.hidden=true;document.body.append(tip);
-  function showSku(event){const button=event.target.closest('[data-copy-sku]');if(!button)return;tip.replaceChildren(button.querySelector('svg').cloneNode(true),document.createTextNode(button.dataset.copySku));tip.hidden=false;const rect=button.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(rect.left,innerWidth-tip.offsetWidth-8))+'px';tip.style.top=Math.max(8,Math.min(rect.bottom+6,innerHeight-tip.offsetHeight-8))+'px';}
   function showReference(event){const button=event.target.closest('.order-reference-options button');if(!button)return;if(button.title){button.dataset.referenceTip=button.title.replace(/^(ASIN|Item code)\s+/i,'');button.removeAttribute('title');}tip.textContent=button.dataset.referenceTip||'';tip.hidden=false;const rect=button.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(rect.left,innerWidth-tip.offsetWidth-8))+'px';tip.style.top=Math.max(8,Math.min(rect.bottom+6,innerHeight-tip.offsetHeight-8))+'px';}
-  document.addEventListener('mouseover',showSku);document.addEventListener('mouseover',showReference);
+  document.addEventListener('mouseover',showReference);
   document.addEventListener('mouseout',()=>tip.hidden=true);document.addEventListener('focusout',()=>tip.hidden=true);window.addEventListener('scroll',()=>tip.hidden=true,true);
   window.addEventListener('blur',()=>tip.hidden=true);document.addEventListener('click',()=>tip.hidden=true);
   let refreshOnReturn=false;

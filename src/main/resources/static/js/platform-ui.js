@@ -64,7 +64,7 @@
   const copy=event.target.closest('[data-ui-copy]'),title=event.target.closest('[data-ui-product]');if(!copy&&!title)return;
   event.preventDefault();event.stopPropagation();
   if(title){details(title);return;}
-  try{await navigator.clipboard.writeText(copy.dataset.uiCopy);copy.title='Copied';copy.setAttribute('aria-label','Name copied');}catch(_){copy.title='Copy unavailable';}
+  try{await navigator.clipboard.writeText(copy.dataset.uiCopy);window.NextAiCopyFeedback?.success(copy);}catch(_){window.NextAiCopyFeedback?.failure(copy);}
  },true);
  document.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)&&event.target.matches('[data-ui-product]')){event.preventDefault();event.stopPropagation();details(event.target)}},true);
  function start(){

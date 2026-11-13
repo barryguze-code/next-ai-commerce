@@ -104,9 +104,8 @@
   find('.orders-workspace .order-list[data-table-widget-ready]').forEach(root=>{root.dataset.orderDesignReady='true';});
  }
  const tip=document.createElement('div');tip.className='order-design-tooltip';tip.setAttribute('role','tooltip');tip.id='order-design-tooltip';tip.hidden=true;document.body.append(tip);
- function show(e){const target=e.target.closest('[data-order-copy]');if(!target)return;tip.textContent=target.dataset.orderCopy+'  ⧉';tip.hidden=false;target.setAttribute('aria-describedby',tip.id);const r=target.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(r.left,innerWidth-tip.offsetWidth-8))+'px';tip.style.top=Math.max(8,Math.min(r.bottom+7,innerHeight-tip.offsetHeight-8))+'px';}
- document.addEventListener('mouseover',show);document.addEventListener('focusin',show);document.addEventListener('mouseout',()=>tip.hidden=true);document.addEventListener('focusout',()=>tip.hidden=true);
- document.addEventListener('click',async e=>{const target=e.target.closest('[data-order-copy]');if(target){try{await navigator.clipboard.writeText(target.dataset.orderCopy);tip.textContent='Copied';tip.hidden=false;}catch(_){tip.textContent='Could not copy. Please allow clipboard access.';tip.hidden=false;}}
+
+ document.addEventListener('click',async e=>{const target=e.target.closest('[data-order-copy]');if(target){try{await navigator.clipboard.writeText(target.dataset.orderCopy);window.NextAiCopyFeedback?.success(target);}catch(_){window.NextAiCopyFeedback?.failure(target,'Could not copy. Please allow clipboard access.');}}
   document.querySelectorAll('.order-compact-actions[open]').forEach(d=>{if(!d.contains(e.target)||e.target.closest('button,a'))d.open=false;});
  });
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){tip.hidden=true;document.querySelectorAll('.order-compact-actions[open]').forEach(d=>{d.open=false;d.querySelector('summary').focus();});}if((e.key==='Enter'||e.key===' ')&&e.target.matches('strong[data-order-copy]')){e.preventDefault();e.target.click();}});

@@ -18,6 +18,7 @@
  }
  function hide(){clearTimeout(noticeTimer);clearTimeout(noticeFadeTimer);noticeTimer=null;noticeFadeTimer=null;tip.classList.remove('platform-tooltip-notice','platform-tooltip-fading');tip.removeAttribute('aria-hidden');if(anchor){const ids=(anchor.getAttribute('aria-describedby')||'').split(/\s+/).filter(id=>id&&id!==tip.id);if(ids.length)anchor.setAttribute('aria-describedby',ids.join(' '));else anchor.removeAttribute('aria-describedby');}anchor=null;tip.hidden=true;}
  function show(event){
+  if(event.target.closest?.('[data-ui-copy],[data-order-copy],[data-copy-sku],.sku-identifier-copy')){hide();return;}
   if(noticeTimer&&(anchor?.contains(event.target)||(event.type==='focusin'&&!event.target.closest?.('[data-tooltip],[data-copy-sku],[data-order-copy],[data-reference-tip]'))))return;
   const target=event.target.closest?.('[data-tooltip],[data-copy-sku],[data-order-copy],[data-reference-tip]');
   if(!target||target.closest('[data-profit-key]')?.querySelector('.profit-calculator-art')){hide();return;}

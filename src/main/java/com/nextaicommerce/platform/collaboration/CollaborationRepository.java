@@ -226,6 +226,39 @@ public class CollaborationRepository {
             (rs,row)->review(rs),values.toArray());
     }
 
+    /** Public-thread people only; never derive participant identity from private notes. */
+    @Transactional(readOnly=true)
+    public Map<UUID,List<CollaborationPerson>> peopleByReview(UUID tenantId,List<UUID> ids,String viewerEmail){
+        var result=new LinkedHashMap<UUID,List<CollaborationPerson>>();if(ids.isEmpty())return result;
+        setContext(tenantId,viewerEmail);
+        String marks=String.join(",",Collections.nCopies(ids.size(),"?"));
+        var args=new ArrayList<Object>();args.add(tenantId);args.addAll(ids);
+        String sql="""
+            SELECT review.id,person.id,person.display_name,bool_or(audience.assigned),bool_or(audience.participant)
+            FROM collaboration_reviews review CROSS JOIN LATERAL (
+              SELECT a.user_id,true AS assigned,false AS participant FROM collaboration_assignments a
+                WHERE a.tenant_id=review.tenant_id AND a.review_id=review.id
+              UNION ALL SELECT review.assigned_to,true,false WHERE review.assigned_to IS NOT NULL
+                AND NOT EXISTS(SELECT 1 FROM collaboration_assignments current_assignment WHERE current_assignment.tenant_id=review.tenant_id AND current_assignment.review_id=review.id)
+              UNION ALL SELECT coalesce(message.sender_id,author.id),false,true
+                FROM collaboration_messages message LEFT JOIN app_users author ON lower(author.email)=lower(message.author_email)
+                WHERE message.tenant_id=review.tenant_id AND message.review_id=review.id AND message.message_type='TEAM_CHAT'
+              UNION ALL SELECT mention.mentioned_user_id,false,true FROM collaboration_mentions mention
+                JOIN collaboration_messages message ON message.id=mention.message_id AND message.message_type='TEAM_CHAT'
+                WHERE mention.tenant_id=review.tenant_id AND mention.review_id=review.id AND message.tenant_id=review.tenant_id AND message.review_id=review.id
+              UNION ALL SELECT requester.id,false,true FROM app_users requester
+                WHERE lower(requester.email)=lower(review.requested_by)
+                  AND NOT EXISTS(SELECT 1 FROM collaboration_messages public_message
+                    WHERE public_message.tenant_id=review.tenant_id AND public_message.review_id=review.id AND public_message.message_type='TEAM_CHAT')
+            ) audience JOIN app_users person ON person.id=audience.user_id
+            WHERE review.tenant_id=? AND review.id IN (%s) AND (%s)
+            GROUP BY review.id,person.id,person.display_name ORDER BY review.id,lower(person.display_name),person.id
+            """.formatted(marks,VISIBLE_THREAD);
+        jdbc.query(sql,(org.springframework.jdbc.core.RowCallbackHandler)rs->result.computeIfAbsent(rs.getObject(1,UUID.class),id->new ArrayList<>())
+            .add(new CollaborationPerson(rs.getObject(2,UUID.class),rs.getString(3),rs.getBoolean(4),rs.getBoolean(5))),args.toArray());
+        return result;
+    }
+
     @Transactional(readOnly=true)
     public Map<String,SubjectSummary> openSubjectSummaries(UUID tenantId,String subjectType,List<String> subjectKeys,String viewerEmail){
         if(subjectKeys.isEmpty())return Map.of();

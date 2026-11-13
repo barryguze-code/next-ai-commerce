@@ -474,3 +474,17 @@ html body.app-page .table-filter-standard .table-filter-control.has-active-filte
 html body.app-page .table-filter-standard .table-filter-control .table-filter-reset{background:transparent!important;border:0!important;box-shadow:none}
 html body.app-page .table-filter-standard .table-standard-toolbar :is(.standard-choice-trigger,select[data-standard-choice]){box-sizing:border-box;height:40px;min-height:40px;font-size:14px!important;font-weight:400!important}
 html body.app-page .table-filter-standard .table-filter-icon-control[hidden]{display:none!important}
+
+/* Owner-approved neutral table rhythm. Semantic row fills and selection take precedence. */
+html{--table-stripe-odd:#F3F5F7;--table-stripe-even:#EDF4FC}
+html[data-theme=dark]{--table-stripe-odd:#17212B;--table-stripe-even:#1C3044}
+html body.app-page [data-table-stripe=odd]{--table-row-surface:var(--table-stripe-odd)}
+html body.app-page [data-table-stripe=even]{--table-row-surface:var(--table-stripe-even)}
+html body.app-page :is(table.table-widget,table[data-table-widget])>tbody>tr[data-table-stripe]:not([data-table-stripe=""]):not(:is(.selected,.is-selected,.has-warning,.has-error,.state-needs_mapping,.state-inventory_shortage,[aria-selected=true],:has(input[type=checkbox]:checked))){background:var(--table-row-surface)!important}
+html body.app-page .order-list.table-widget .order-row[data-table-stripe]:not(:is(.state-needs_mapping,.state-inventory_shortage,.selected,.is-selected,[aria-selected=true])){background:var(--table-row-surface)!important}
+html body.app-page .order-list.table-widget .order-row[data-table-stripe] :is(.order-items,.order-item:not(.order-needs-attention),.order-actions){background:transparent!important}
+html body.app-page .desk-table.table-widget .candidate-row[data-table-stripe]:not(:is(.selected,.is-selected,[aria-selected=true])){background:var(--table-row-surface)!important}
+
+/* Ordinary opaque cells expose their shared stripe; semantic receiving cells retain their fills. */
+html body.app-page tr[data-table-stripe][data-replenishment-row]:not(.rp-detail-row)>td{background:transparent!important}
+html body.app-page .receive-table tr.receive-line[data-table-stripe]:not([data-receiving-status]):not(:is(.partial,.complete,.discrepancy,.over))>td:not([data-receipt-progress]){background:transparent!important}

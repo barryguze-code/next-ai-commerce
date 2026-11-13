@@ -1,0 +1,59 @@
+/* Owner-approved pilot is restricted to these two page roots. */
+[data-header-pilot]>.workspace-header{border-bottom:0}
+[data-header-pilot]>.workspace-header .page-intro{margin:8px 0 0;color:var(--muted)}
+[data-header-pilot=orders] .page-title-line{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+[data-header-pilot=orders]>.workspace-header .order-sync-status{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:10px}
+[data-header-pilot=orders] .order-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+[data-header-pilot=orders] .order-toolbar>.order-tab-panel{flex:1;min-width:0;padding:0;border:0;background:transparent}
+[data-header-pilot=orders] .order-toolbar>.table-header-commands{margin-left:auto}
+[data-header-pilot=orders] .order-toolbar .order-filters{padding:0}
+[data-header-pilot=collaboration] .header-pilot-card>.table-standard-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:16px 20px}
+[data-header-pilot=collaboration] .header-pilot-card>.table-standard-toolbar>.table-standard-search{flex:1 1 240px;min-width:180px}
+[data-header-pilot=collaboration] .header-pilot-card>.table-standard-toolbar>.table-widget-tools{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-left:auto}
+[data-header-pilot=collaboration] .personal-initial-count{display:flex;align-items:center;gap:6px;margin:0;white-space:nowrap}
+[data-header-pilot=collaboration] .personal-result-controls:has(#personal-status){border-top:0}
+[data-header-pilot=collaboration] .table-filter-control>summary{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:40px;height:40px;padding:9px}
+html[data-theme=dark] [data-header-pilot=collaboration]#personal-queue .personal-initial-count{color:#B6C5D4}
+html[data-theme=dark] [data-header-pilot=collaboration] #personal-size{background:#17212B;color:#E6EEF8;border-color:#46637F}
+html[data-theme=dark] body.app-page [data-header-pilot=orders] .order-summary .period-financials>small.period-refunds{color:#F48C98}
+@media(max-width:760px){[data-header-pilot]>.workspace-header{flex-wrap:wrap}[data-header-pilot=collaboration] .header-pilot-card>.table-standard-toolbar>.table-widget-tools{margin-left:0;justify-content:flex-start}[data-header-pilot=orders] .order-toolbar>.order-tab-panel{flex-basis:100%}}
+
+[data-header-pilot=collaboration]>.workspace-header>div:first-child{display:block}
+
+[data-header-pilot=collaboration] .collaboration-view-tabs{flex-wrap:wrap;min-width:0}
+[data-header-pilot=collaboration] .header-pilot-card>.table-standard-toolbar>.table-widget-tools{min-width:0;max-width:100%}
+[data-header-pilot=collaboration] .collaboration-view-tabs{max-width:100%}
+@media(max-width:620px){[data-header-pilot=collaboration] .header-pilot-card>.table-standard-toolbar>.table-widget-tools{width:100%}[data-header-pilot=collaboration] .collaboration-view-tabs{flex-basis:100%}}
+/* Defeat the legacy shortcut header's 320px copy cap only inside this pilot. */
+body.app-page [data-header-pilot]>.workspace-header>div:first-child:not(.header-actions){flex:1 1 0;min-width:0;width:auto;max-width:none;display:flex;flex-direction:column;flex-wrap:nowrap;align-content:flex-start;align-items:flex-start;justify-content:flex-start;gap:6px}
+body.app-page [data-header-pilot]>.workspace-header{align-items:flex-start;flex-wrap:wrap}
+body.app-page [data-header-pilot]>.workspace-header .page-intro,
+body.app-page [data-header-pilot]>.workspace-header .order-sync-status{margin:0}
+body.app-page [data-header-pilot=orders]>.workspace-header .order-sync-status{gap:8px;font-size:12px}
+body.app-page [data-header-pilot=collaboration] :is(.table-filter-control>summary,#personal-download)>img.professional-action-art{width:20px!important;height:20px!important;max-width:20px!important;max-height:20px!important;object-fit:contain}
+body.app-page [data-header-pilot=collaboration] #personal-download{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:40px;min-width:40px;height:40px;min-height:40px;padding:9px}
+
+/* Final two-page pilot: a compact title/metadata band with the established right context controls. */
+body.app-page [data-header-pilot]>.workspace-header>div:first-child:not(.header-actions){flex-direction:row;align-items:center;gap:18px}
+[data-header-pilot] .page-header-meta{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}
+[data-header-pilot] .page-header-meta-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+body.app-page [data-header-pilot]>.workspace-header .page-intro{font-size:12px;line-height:1.45;margin:0}
+[data-header-pilot=orders] .order-toolbar,[data-header-pilot=collaboration] .header-pilot-card>.table-standard-toolbar{background:#F0F2F5}
+html[data-theme=dark] [data-header-pilot=orders] .order-toolbar,html[data-theme=dark] [data-header-pilot=collaboration] .header-pilot-card>.table-standard-toolbar{background:#202B37}
+body.app-page [data-header-pilot] :is(.table-command-menu>summary.table-action-trigger,.table-shortcut-target,.table-action-shortcut){display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:40px;min-width:40px;height:40px;min-height:40px;padding:9px!important;border:1px solid var(--ui-action-line,#b8cff0);border-radius:10px;background:var(--ui-action-soft,#edf4ff);color:var(--ui-action-text,#2864b8)}
+body.app-page [data-header-pilot] :is(.table-command-menu>summary.table-action-trigger,.table-shortcut-target,.table-action-shortcut)>:is(img,svg){width:20px!important;height:20px!important;max-width:20px!important;max-height:20px!important}
+body.app-page [data-header-pilot=collaboration] .table-overview-picture img{padding:0!important;object-fit:contain}
+body.app-page [data-header-pilot=collaboration] .table-filter-panel{font:inherit}
+@media(max-width:760px){body.app-page [data-header-pilot]>.workspace-header>div:first-child:not(.header-actions){flex-wrap:wrap;gap:8px 14px}[data-header-pilot] .page-header-meta{flex-basis:200px}}
+
+[data-header-pilot=collaboration] .personal-people-filter{display:grid;gap:8px;padding:12px 0;border:0;border-top:1px solid var(--line);margin:0;min-width:0}
+[data-header-pilot=collaboration] .personal-people-filter legend{font:inherit;font-weight:600;padding:0}
+[data-header-pilot=collaboration] .personal-people-filter [data-people-options]{display:grid;gap:8px;max-height:160px;overflow:auto}
+[data-header-pilot=collaboration] .personal-people-filter [data-people-options] label{display:flex;align-items:center;gap:8px;font:inherit}
+[data-header-pilot=collaboration] .personal-people-filter input[type=checkbox]{width:16px;height:16px;flex:none;padding:0}
+[data-header-pilot=collaboration] .personal-people-filter :is(small,[data-people-clear]),[data-header-pilot=collaboration] .personal-people-filter-hint{font:inherit;font-size:12px;color:var(--muted)}
+[data-header-pilot=collaboration] .personal-people-filter [data-people-clear]{justify-self:start;border:0;background:transparent;padding:0;cursor:pointer}
+
+[data-header-pilot=orders] .order-toolbar .order-filters{background:transparent;border:0;box-shadow:none}
+/* Composed-strip defaults are important; this pilot uses the single neutral toolbar surface. */
+html body.app-page [data-header-pilot=orders] .order-toolbar>.order-tab-panel.table-status-strip{background:transparent!important;border:0!important;padding:0!important;box-shadow:none!important}

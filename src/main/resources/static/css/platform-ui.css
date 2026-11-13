@@ -24,14 +24,14 @@ body.app-page :is(.table-widget td,.table-widget-scroll){font-size:13px}
 body.app-page :is(.item-product-copy>strong,.sku-approved-title,.inventory-product-stage>strong,.product-cell>div>strong){font-size:var(--ui-product-title)!important;line-height:1.45!important}
 body.app-page :is(.table-widget td small,.item-product-copy code){font-size:var(--ui-meta);line-height:1.45}
 /* Filter tabs use one geometry; warning states remain red/amber, not blue. */
-body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.inventory-view-switch){gap:6px}
-html body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.inventory-view-switch)>:is(a,button){display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 11px!important;border:1px solid transparent;border-radius:9px!important;font-size:var(--ui-tab)!important;font-weight:650;line-height:20px!important;text-decoration:none;white-space:nowrap;box-sizing:border-box}
+body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.history-scope-switch,.inventory-view-switch){gap:6px}
+html body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.history-scope-switch,.inventory-view-switch)>:is(a,button){display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 11px!important;border:1px solid transparent;border-radius:9px!important;font-size:var(--ui-tab)!important;font-weight:650;line-height:20px!important;text-decoration:none;white-space:nowrap;box-sizing:border-box}
 /* Semantic exception selection retains its red hue and standard thin border. */
 body.app-page .order-filters>a.order-alert-tab.has-issues{--ui-action-text:var(--danger,#c73547);--ui-action-soft:var(--danger-soft,#fff1f2);--ui-action-line:#dc4b54}
 html[data-theme=dark] body.app-page .order-filters>a.order-alert-tab.has-issues{--ui-action-text:#ffb8bd;--ui-action-soft:#ef66751a;--ui-action-line:#ef8995}
 html body.app-page .order-filters>a.order-alert-tab.has-issues.active .order-tab-count{color:inherit;background:var(--danger-soft,#fde8eb)}
 html[data-theme=dark] body.app-page .order-filters>a.order-alert-tab.has-issues.active .order-tab-count{background:var(--danger-soft,#ef66751a)}
-html body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.inventory-view-switch)>:is(a,button).active{background:var(--ui-action-soft)!important;border-color:var(--ui-action-line)!important;color:var(--ui-action-text)!important;box-shadow:none}
+html body.app-page :is(.order-filters,.sku-filter-bar,.inventory-filter-bar,.collaboration-view-tabs,.history-scope-switch,.inventory-view-switch)>:is(a,button).active{background:var(--ui-action-soft)!important;border-color:var(--ui-action-line)!important;color:var(--ui-action-text)!important;box-shadow:none}
 body.app-page :is(.order-tab-count,.sku-filter-bar b,.inventory-filter-bar b){font-size:11px!important;line-height:18px;border-radius:999px;min-width:22px;text-align:center;font-variant-numeric:tabular-nums}
 /* All command buttons share the same blue family. Secondary means blue outline,
    not a competing grey/green CTA. Image controls are deliberately excluded. */
@@ -96,3 +96,38 @@ html body.app-page [data-ui-product]:hover{text-decoration:underline;color:var(-
 html body.app-page input[type=file]::file-selector-button{font:inherit;font-size:var(--ui-label);font-weight:650;line-height:20px;min-height:var(--ui-control-height);padding:8px 13px;margin-inline-end:12px;border:1px solid var(--ui-action-line);border-radius:var(--ui-radius);background:var(--ui-action-soft);color:var(--ui-action-text);box-shadow:none;cursor:pointer}
 html body.app-page input[type=file]:hover:not(:disabled)::file-selector-button{border-color:var(--ui-action)}
 html body.app-page input[type=file]:disabled::file-selector-button{opacity:.45;cursor:not-allowed}
+
+/* Owner-approved shared dark selection and copy feedback; semantic status colors stay local. */
+html[data-theme=dark]{--ui-selection-surface:#243C54;--ui-selection-text:#E6EEF8;--ui-selection-secondary:#B6C5D4}
+html[data-theme=dark] body.app-page :is(.package-list-row.selected,tr.is-selected,tr[aria-selected=true],.table-widget [role=option][aria-selected=true],.location-picker-popup button[aria-selected=true],.location-picker-popup button[aria-pressed=true],#packing-name-options button[aria-selected=true]){background:var(--ui-selection-surface)!important;color:var(--ui-selection-text)!important}
+html[data-theme=dark] body.app-page :is(tr.is-selected,tr[aria-selected=true])>td:not([data-receipt-progress]){background:var(--ui-selection-surface)!important;color:var(--ui-selection-text)}
+html[data-theme=dark] body.app-page :is(.package-list-row.selected,.table-widget [role=option][aria-selected=true],.location-picker-popup button[aria-selected=true],.location-picker-popup button[aria-pressed=true],#packing-name-options button[aria-selected=true]) small{color:var(--ui-selection-secondary)}
+html[data-theme=dark] body.app-page .orders-workspace .order-summary .period-financials{background:#1B2B3C;color:#E6EEF8}
+html[data-theme=dark] body.app-page .orders-workspace .order-summary .period-financials>small{color:#B6C5D4}
+body.app-page :is([data-ui-copy],[data-order-copy],[data-copy-sku],.sku-identifier-copy,.order-identifier-copy,.ui-copy-title,.order-sku-copy,.order-copy-value,.item-product-copy>strong,[data-ui-product]){cursor:pointer!important}
+
+
+/* Opaque shared table headers retain their sticky geometry and readable dark labels. */
+html[data-theme=dark] body.app-page :is(table.table-widget,table[data-table-widget])>thead>tr>th,
+html[data-theme=dark] body.app-page :is(.table-grid-header,.package-list-heading){background:#1B2B3C!important;color:#B6C5D4}
+html[data-theme=dark] body.app-page :is(table.table-widget,table[data-table-widget])>thead>tr>th :is(a,button){color:inherit}
+
+/* One segmented component for conversation views and ledger movement scopes. */
+body.app-page :is(.collaboration-view-tabs,.history-scope-switch){display:flex;gap:6px;padding:3px;border:1px solid #dfe6ee;border-radius:11px;background:#f6f8fb;box-shadow:none}
+html body.app-page :is(.collaboration-view-tabs,.history-scope-switch)>:is(a,button).active{font-weight:600}
+/* Contextual type roles only: preserve heading weights, metric values, statuses and monospace code. */
+html body.app-page :is(.dialog-header,.drawer-header) h2,
+html body.app-page dialog>:is(form,section,.dialog-shell)>header h2,
+html body.app-page :is(.standard-filter-drawer,.order-filter-drawer)>header h2{font-size:var(--ui-dialog-title)!important;line-height:1.25!important}
+html body.app-page :is(.dialog-body,.drawer-body) :is(.section-title,.position-section-title>strong),
+html body.app-page .related-skus-card>header strong{font-size:var(--ui-section-title)!important;line-height:1.35}
+html body.app-page :is(.dialog-body,.drawer-body,.order-filter-body,.standard-filter-drawer){font-family:inherit;font-size:var(--ui-label);line-height:1.45}
+html body.app-page label{font-size:var(--ui-label)!important;line-height:1.45}
+html body.app-page :is(.dialog-header p,.drawer-header p,.dialog-body>p,.drawer-body>p){font-size:var(--ui-label)!important;line-height:1.45}
+html body.app-page :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=range]):not([type=color]),select,textarea){font-size:var(--ui-search-text)}
+html body.app-page :is(.cell-note,.history-dates,.location-safety,.dialog-header small,.drawer-header small){font-size:var(--ui-meta);line-height:1.45}
+/* Shared Actions presentation; real attention states keep their domain amber/red rules. */
+html body.app-page .table-widget .platform-action-control:not(.needs-attention):not(.platform-action-control-attention){background:var(--ui-action-soft)!important;border:1px solid var(--ui-action-line)!important;color:var(--ui-action-text)!important;border-radius:10px!important;box-shadow:none!important}
+
+/* Inactive segmented labels sit on the accepted light pill in either theme. */
+html body.app-page :is(.collaboration-view-tabs,.history-scope-switch)>:is(a,button):not(.active):not([aria-selected=true]):not([aria-pressed=true]){color:#596A80}

@@ -145,6 +145,41 @@ public class PersonalCollaborationQueue {
         return search(new Page(rows,0),email,query,view.equals("PRIVATE"));
     }
 
+    /** Exact parent/task audience only; source-account access is deliberately not required. */
+    @Transactional(readOnly=true)
+    public Map<String,List<CollaborationPerson>> taskPeopleByCard(Page page,String email) {
+        var result=new LinkedHashMap<String,List<CollaborationPerson>>();
+        var authorizedParents=new HashSet<UUID>();parents.available(email).forEach(p->authorizedParents.add(p.id()));
+        var batches=new LinkedHashMap<UUID,List<UUID>>();
+        for(var row:page.rows())if(row.card().key().type().equals("TASK")&&authorizedParents.contains(row.card().parent()))
+            batches.computeIfAbsent(row.card().parent(),id->new ArrayList<>()).add(row.card().key().id());
+        db.queryForObject("select set_config('app.user_email',?,true)",String.class,email);
+        for(var batch:batches.entrySet()){
+            db.queryForObject("select set_config('app.parent_id',?,true)",String.class,batch.getKey().toString());
+            var ids=batch.getValue();
+            for(int offset=0;offset<ids.size();offset+=200){
+                var part=ids.subList(offset,Math.min(offset+200,ids.size()));
+                String marks=String.join(",",Collections.nCopies(part.size(),"?"));
+                var args=new ArrayList<Object>();args.add(batch.getKey());args.addAll(part);args.add(email);
+                db.query("""
+                    SELECT audience.task_id,member.id,member.display_name,audience.assigned
+                    FROM collaboration_task_participants audience JOIN app_users member ON member.id=audience.user_id
+                    WHERE audience.parent_id=? AND audience.task_id IN (%s)
+                      AND EXISTS(SELECT 1 FROM collaboration_tasks task
+                        JOIN collaboration_task_participants viewer ON viewer.parent_id=task.parent_id AND viewer.task_id=task.id
+                        JOIN app_users actor ON actor.id=viewer.user_id
+                        WHERE task.parent_id=audience.parent_id AND task.id=audience.task_id
+                          AND lower(actor.email)=lower(?) AND actor.status='ACTIVE')
+                    ORDER BY audience.task_id,lower(member.display_name),member.id
+                    """.formatted(marks),(org.springframework.jdbc.core.RowCallbackHandler)rs->{
+                        String key="TASK"+rs.getObject(1,UUID.class);
+                        result.computeIfAbsent(key,id->new ArrayList<>()).add(new CollaborationPerson(rs.getObject(2,UUID.class),rs.getString(3),rs.getBoolean(4),true));
+                    },args.toArray());
+            }
+        }
+        return result;
+    }
+
     private Map<Key,Card> sources(UUID user,String email,boolean staff) {
         return sources(user,email,staff,"ASSIGNED");
     }
