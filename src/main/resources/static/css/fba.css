@@ -131,13 +131,13 @@
 #fba-depletion-dialog .fba-component-allocation{display:grid;gap:8px;min-width:0}
 #fba-depletion-dialog .fba-split-row{display:grid;grid-template-columns:minmax(0,1fr) 72px 36px;gap:8px;align-items:start}
 #fba-depletion-dialog .fba-split-row input{width:100%;min-width:0}
-#fba-depletion-dialog [data-allocation-total][data-invalid="true"]{color:#b42335}
+#fba-depletion-dialog [data-allocation-total][data-invalid="true"]{color:var(--danger,#b42335)}
 @media(max-width:600px){#fba-depletion-dialog .fba-split-row{grid-template-columns:minmax(0,1fr) 80px 36px}#fba-depletion-dialog .fba-component-label{white-space:normal}}
 
 #fba-depletion-dialog .fba-split-remove{width:36px;min-width:36px;margin-top:24px;padding:4px;min-height:38px}
 #fba-depletion-dialog .fba-split-row label{min-width:0}
-#fba-depletion-dialog .fba-deduction-quantities{grid-template-columns:minmax(280px,1fr) 100px 110px}
-#fba-depletion-dialog .fba-depletion-line{grid-template-columns:48px minmax(0,1fr) minmax(530px,560px)}
+#fba-depletion-dialog .fba-deduction-quantities{grid-template-columns:minmax(280px,1fr) 100px 130px}
+#fba-depletion-dialog .fba-depletion-line{grid-template-columns:48px minmax(0,1fr) minmax(530px,60%)}
 @media(max-width:600px){#fba-depletion-dialog .fba-depletion-line{grid-template-columns:48px minmax(0,1fr)}#fba-depletion-dialog .fba-deduction-quantities{grid-template-columns:1fr 1fr}}
 
 /* Reuse warehouse Add contact's compact secondary action without grid stretching. */
@@ -154,6 +154,18 @@ html body.app-page .data-card table.fba-shipment-table td.fba-row-actions{white-
 
 /* Match Orders visible artwork (19–21px): owner art needs a 24px canvas; retain 34px controls. */
 html body .fba-shipment-table .fba-row-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+#fba-depletion-dialog .fba-split-row.has-case-input{grid-template-columns:minmax(100px,1fr) 72px 72px 36px}
+
+/* Shared row top alignment: product and quantity headings share one baseline. */
+#fba-depletion-dialog .fba-depletion-line,#fba-depletion-dialog .fba-deduction-quantities{align-items:start}
+#fba-depletion-dialog .fba-deduction-identity,#fba-depletion-dialog .fba-deduction-picture{margin-top:22px}
+#fba-depletion-dialog .fba-case-equivalent{display:block;font-size:12px;line-height:1.4;margin-top:4px;color:var(--muted)}
+#fba-depletion-dialog .fba-case-equivalent span{display:block}
+
+/* CD: equal caption tracks keep wrapped headings and controls aligned. */
+#fba-depletion-dialog .fba-field-caption{display:block;min-height:32px;line-height:16px}
+#fba-depletion-dialog .fba-deduction-identity,#fba-depletion-dialog .fba-deduction-picture{margin-top:38px}
 
 #fba-depletion-dialog .fba-split-row>[data-location-cue]{grid-column:1/-1;font-size:12px;line-height:20px;margin:0}
 #fba-depletion-dialog .fba-split-remove{box-sizing:border-box;width:28px;min-width:28px;height:28px;padding:4px;display:inline-flex;align-items:center;justify-content:center;background:transparent}

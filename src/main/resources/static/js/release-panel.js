@@ -25,15 +25,15 @@
     const selected=history.find(release=>release.version===version)||history[0];
     content.replaceChildren();
     const picker=el('div','release-panel-picker');const label=el('label','','Recent releases');label.htmlFor='release-panel-version';
-    const select=el('select');select.id='release-panel-version';
+    const select=el('select');select.id='release-panel-version';select.setAttribute('data-standard-choice','');select.setAttribute('aria-label','Recent releases');
     const recent=history.slice(0,5);if(!recent.includes(selected))recent.push(selected);
     for(const release of recent){const option=el('option','',`v${release.version} · ${release.title}`);option.value=release.version;option.selected=release===selected;select.append(option);}
-    select.addEventListener('change',()=>{show(select.value);body.scrollTop=0;content.querySelector('select').focus();});picker.append(label,select);
+    select.addEventListener('change',()=>{show(select.value);body.scrollTop=0;content.querySelector('.location-picker-trigger,select').focus();});picker.append(label,select);
     const article=el('article','release-panel-article');article.append(el('span','release-panel-kicker',`RELEASE ${selected.version}`),el('h2','',selected.title));
     for(const section of selected.sections){const sectionNode=el('section');sectionNode.append(el('h3','',section.title));const list=el('ul');for(const item of section.items)list.append(el('li','',item));sectionNode.append(list);article.append(sectionNode);}
     const footer=el('footer','release-panel-history');footer.append(el('h2','','Deployment history'),el('p','','Browse the notes from every documented production release.'));
-    for(const release of history){const button=el('button','release-history-item');button.type='button';button.append(el('strong','',`v${release.version}`),el('span','',release.title));if(release===selected)button.setAttribute('aria-current','page');button.addEventListener('click',()=>{show(release.version);body.scrollTop=0;content.querySelector('select').focus();});footer.append(button);}
-    content.append(picker,article,footer);
+    for(const release of history){const button=el('button','release-history-item');button.type='button';button.append(el('strong','',`v${release.version}`),el('span','',release.title));if(release===selected)button.setAttribute('aria-current','page');button.addEventListener('click',()=>{show(release.version);body.scrollTop=0;content.querySelector('.location-picker-trigger,select').focus();});footer.append(button);}
+    content.append(picker,article,footer);window.NextAiPlatformControls?.enhance(picker);
   }
   trigger.addEventListener('click',async event=>{
     if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;

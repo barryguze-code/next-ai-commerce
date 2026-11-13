@@ -5,6 +5,7 @@
   <title>What's new | Next AI Commerce</title>
   <link rel="stylesheet" href="/css/app.css" th:href="@{/css/app.css(v=${buildVersion})}"><link rel="stylesheet" href="/css/brand.css?v=20260913-3" th:href="@{/css/brand.css(v=${buildVersion})}">
   <link rel="stylesheet" href="/css/release-notes.css?v=1.0.1" th:href="@{/css/release-notes.css(v=${buildVersion})}">
+  <link rel="stylesheet" href="/css/platform-controls.css" th:href="@{/css/platform-controls.css(v=${buildVersion})}">
   <script src="/js/theme.js?v=20260905-1" th:src="@{/js/theme.js(v=${buildVersion})}"></script>
 </head>
 <body class="app-page">
@@ -13,7 +14,7 @@
   <header><span class="eyebrow">Next AI Commerce</span><h1>What's new</h1><p>Small improvements that make everyday work easier.</p></header>
   <form action="/app/releases" method="get" class="release-picker">
     <label for="release-version">Release</label>
-    <select id="release-version" name="version" onchange="this.form.requestSubmit()">
+    <select id="release-version" data-standard-choice name="version" onchange="this.form.requestSubmit()">
       <option th:each="item:${releases}" th:value="${item.version}" th:text="${'v'+item.version}" th:selected="${item.version == release.version}">v1.0.1</option>
     </select>
     <noscript><button type="submit">Show release</button></noscript>
@@ -29,4 +30,4 @@
   </article>
   <footer class="release-card" style="margin-top:24px"><h2>Deployment history</h2><p th:each="item:${releaseHistory}"><a th:href="${'/app/releases?version='+item.version}" th:text="${'v'+item.version+' · '+item.title}">Release notes</a></p></footer>
 </main>
-</body></html>
+<script src="/js/platform-controls.js" th:src="@{/js/platform-controls.js(v=${buildVersion})}"></script></body></html>

@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.14.8",
+    "title": "Consistent product mapping controls",
+    "sections": [
+      {
+        "title": "Improvements",
+        "items": [
+          "Standardized mapping icon sizes and frames across tables and inventory ledger dialogs in both themes.",
+          "Updated shared dialogue, catalogue and receiving presentation."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.7",
     "title": "Inventory action presentation",
     "sections": [
