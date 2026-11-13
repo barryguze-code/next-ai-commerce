@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.14.12",
+    "title": "Product master-case quantities",
+    "sections": [
+      {
+        "title": "Corrections",
+        "items": [
+          "Calculate received cases from each product\u2019s current master-case quantity.",
+          "Show case totals beneath received units in smaller regular text.",
+          "Require whole-number units per case and display without decimal padding."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.11",
     "title": "Catalogue and receiving improvements",
     "sections": [

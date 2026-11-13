@@ -5,9 +5,9 @@ const drawer=document.getElementById('receiving-drawer'),body=document.getElemen
 const canEdit=document.querySelector('.receive-work').dataset.canEdit==='true';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number=value=>Number(value||0).toLocaleString(undefined,{maximumFractionDigits:4});
-// Case equivalents use the saved invoice pack, never a subsequently changed catalogue pack.
+// Presentation uses the current product master case; invoice and receipt quantities stay unchanged.
 const quantity=(value,l)=>{
-  const units=Number(value),pack=Number(l?.unitsPerCase),each=number(value)+' each';
+  const units=Number(value),pack=Number((state.details||[]).find(d=>d.id===l?.id)?.catalogPack||l?.unitsPerCase),each=number(value)+' each';
   if(!Number.isFinite(units)||units<0||!Number.isFinite(pack)||pack<=0)return each;
   const cases=Math.floor(units/pack),loose=Number((units-cases*pack).toFixed(4));
   return number(cases)+(cases===1?' case':' cases')+(loose>0?' + '+number(loose)+' loose':'')+' · '+each;

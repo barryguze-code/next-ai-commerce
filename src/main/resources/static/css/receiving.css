@@ -733,5 +733,5 @@ html[data-theme=dark] .table-command-panel .rw-selection-bar .table-action-entry
  #session-dialog.is-dragging::backdrop{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 }
 
-/* Receipt case equivalents stay beside eaches in the document table. */
-.rw-received-cases{color:var(--muted);white-space:nowrap}
+/* Product master-case totals are secondary to received eaches. */
+.rw-received-cases{display:block;margin-top:2px;color:var(--muted);font-size:.9em;font-weight:400;line-height:1.25;white-space:nowrap}

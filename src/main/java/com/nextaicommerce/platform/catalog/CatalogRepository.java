@@ -959,7 +959,7 @@ public class CatalogRepository {
             return java.util.UUID.nameUUIDFromBytes(fields.getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
         }
         private static String number(BigDecimal value){return value==null?"":value.stripTrailingZeros().toPlainString();}
-        public void validate() { positive(masterCase,"Master case",true);if(masterCase.compareTo(new BigDecimal("99999999.9999"))>0)throw new IllegalArgumentException("Master case is too large.");positive(netWeight,"Weight",false);positive(length,"Length",false);positive(width,"Width",false);positive(height,"Height",false);
+        public void validate() { positive(masterCase,"Master case",true);if(masterCase.stripTrailingZeros().scale()>0)throw new IllegalArgumentException("Units / case must be a whole number.");if(masterCase.compareTo(new BigDecimal("99999999.9999"))>0)throw new IllegalArgumentException("Master case is too large.");positive(netWeight,"Weight",false);positive(length,"Length",false);positive(width,"Width",false);positive(height,"Height",false);
             if(!Set.of("oz","lb","g","kg").contains(weightUnit==null?"oz":weightUnit))throw new IllegalArgumentException("Choose a weight unit.");
             if(!Set.of("in","cm").contains(dimensionUnit==null?"in":dimensionUnit))throw new IllegalArgumentException("Choose a dimension unit."); }
         private static void positive(BigDecimal n,String name,boolean required){if((required&&n==null)||(n!=null&&(n.signum()<=0||n.scale()>4||n.compareTo(new BigDecimal("9999999999"))>0)))throw new IllegalArgumentException(name+" must be positive, with up to four decimals.");}

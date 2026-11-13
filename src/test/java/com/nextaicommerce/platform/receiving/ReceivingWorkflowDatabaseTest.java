@@ -412,19 +412,31 @@ class ReceivingWorkflowDatabaseTest {
         assertThat(inventory.inventory(tenant,List.of(UUID.randomUUID()))).isEmpty();
         assertThat(inventory.inventory(tenant)).hasSize(1);
     }
-    @Test void documentReceivedCasesUseReceiptSnapshotsAndOmitUnreconciledHistory(){
+    @Test void documentReceivedCasesUseProductMasterCasesAndOmitUnreconciledHistory(){
         var f=fixture("INVOICE");
         assertThat(work.documents(tenant,List.of(f.document())).getFirst().receivedCases()).isZero();
         tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE global_catalog_products SET units_per_case=5 WHERE id=(SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?)",tenant,f.product());
             jdbc.update("UPDATE purchase_order_items SET received_quantity=10,units_per_case=99 WHERE tenant_id=? AND id=?",tenant,f.line());
-            jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id) VALUES (?,?,6,3,'SELLABLE',?,?),(?,?,4,2,'DAMAGED',?,?)",tenant,f.line(),user,f.location(),tenant,f.line(),user,f.location());
+            jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id) VALUES (?,?,6,1,'SELLABLE',?,?),(?,?,4,1,'DAMAGED',?,?)",tenant,f.line(),user,f.location(),tenant,f.line(),user,f.location());
             jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id,voided_at) VALUES (?,?,8,2,'SELLABLE',?,?,now())",tenant,f.line(),user,f.location());
             jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id) VALUES (?,?,2,2,'SHORT_SHIPPED',?,?)",tenant,f.line(),user,f.location());
         });
         var document=work.documents(tenant,List.of(f.document())).getFirst();
         assertThat(document.received()).isEqualByComparingTo("10");
-        assertThat(document.receivedCases()).isEqualByComparingTo("4");
-        assertThat(document.receivedCasesLabel()).isEqualTo("4");
+        assertThat(document.receivedCases()).isEqualByComparingTo("2");
+        assertThat(document.receivedCasesLabel()).isEqualTo("2");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE global_catalog_products SET units_per_case=10 WHERE id=(SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?)",tenant,f.product());});
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().receivedCases()).isEqualByComparingTo("1");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE global_catalog_products SET units_per_case=5 WHERE id=(SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?)",tenant,f.product());});
+        var second=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE global_catalog_products SET units_per_case=4 WHERE id=(SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?)",tenant,second.product());
+            jdbc.update("UPDATE purchase_order_items SET purchase_order_id=(SELECT purchase_order_id FROM purchase_order_items WHERE tenant_id=? AND id=?) WHERE tenant_id=? AND id=?",tenant,f.line(),tenant,second.line());
+            jdbc.update("UPDATE purchase_order_items SET received_quantity=6 WHERE tenant_id=? AND id=?",tenant,second.line());
+            jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id) VALUES (?,?,6,1,'SELLABLE',?,?)",tenant,second.line(),user,second.location());
+        });
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().receivedCases()).isEqualByComparingTo("3.5");
         tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET received_quantity=11 WHERE tenant_id=? AND id=?",tenant,f.line());});
         assertThat(work.documents(tenant,List.of(f.document())).getFirst().receivedCases()).isNull();
         assertThat(work.documents(UUID.randomUUID(),List.of(f.document()))).isEmpty();

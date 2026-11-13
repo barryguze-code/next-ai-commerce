@@ -198,10 +198,12 @@ public class ReceivingWorkflowRepository {
           FROM purchase_orders p JOIN purchase_order_items i ON i.tenant_id=p.tenant_id AND i.purchase_order_id=p.id
           WHERE p.tenant_id=d.tenant_id AND p.receiving_document_id=d.id) t ON true
         LEFT JOIN LATERAL (SELECT sum(r.total_each_quantity) receipt_each,
-          sum(r.total_each_quantity/nullif(r.units_per_case,0)) cases,
-          count(*) FILTER (WHERE r.units_per_case IS NULL OR r.units_per_case<=0) unknown_packs
+          sum(r.total_each_quantity/nullif(g.units_per_case,0)) cases,
+          count(*) FILTER (WHERE g.units_per_case IS NULL OR g.units_per_case<=0) unknown_packs
           FROM purchase_orders p JOIN purchase_order_items i ON i.tenant_id=p.tenant_id AND i.purchase_order_id=p.id
           JOIN receiving_line_receipts r ON r.tenant_id=i.tenant_id AND r.purchase_order_item_id=i.id
+          LEFT JOIN account_catalog_items a ON a.tenant_id=i.tenant_id AND a.id=i.account_catalog_item_id
+          LEFT JOIN global_catalog_products g ON g.id=a.global_product_id
           WHERE p.tenant_id=d.tenant_id AND p.receiving_document_id=d.id
             AND r.voided_at IS NULL AND r.disposition<>'SHORT_SHIPPED') packs ON true
         WHERE d.tenant_id=:tenant AND d.removed_at IS NULL AND s.status<>'CANCELLED'
