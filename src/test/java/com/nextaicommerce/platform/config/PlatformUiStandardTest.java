@@ -47,7 +47,7 @@ class PlatformUiStandardTest {
         assertThat(read("static/js/action-suggestions.js")).contains(
             ".sku-actions-dialog", ".order-picture-menu", "[data-action-suggestion-menu]",
             "Help R&D improve this menu", "pending=new Set()", "enhance(node)");
-        assertThat(read("static/js/platform-controls.js")).contains("activePicker={trigger,popup,close}");
+        assertThat(read("static/js/platform-controls.js")).contains("activePicker={trigger,popup,close,position}");
     }
 
     @Test void shippingPollingPreservesUnchangedRowsAndSelection() throws Exception {

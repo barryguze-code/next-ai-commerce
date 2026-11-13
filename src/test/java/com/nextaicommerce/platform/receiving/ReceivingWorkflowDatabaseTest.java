@@ -239,7 +239,7 @@ class ReceivingWorkflowDatabaseTest {
             try(var stmt=blocker.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))")){stmt.setObject(1,tenant);stmt.execute();}
             assertThat((UUID)tx.execute(t->intake.start(other,actor,otherVendor,"PACKING_LIST","USD","Other",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).isNotNull();
             long started=System.nanoTime();
-            assertThatThrownBy(()->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Timeout",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).isInstanceOf(IllegalArgumentException.class).hasMessage("Inventory is being updated. Nothing changed; please try again in a moment.");
+            assertThatThrownBy(()->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Timeout",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).isInstanceOf(IllegalArgumentException.class).hasMessage("lock-test.csv: Inventory is being updated. Nothing changed; please try again in a moment.");
             assertThat(java.time.Duration.ofNanos(System.nanoTime()-started)).isBetween(java.time.Duration.ofSeconds(4),java.time.Duration.ofSeconds(9));
             for(String table:List.of("receiving_sessions","receiving_documents","receiving_document_lines","account_catalog_items","inventory_ledger_entries"))
                 assertThat(jdbc.queryForObject("SELECT count(*) FROM "+table+" WHERE tenant_id=?",Integer.class,tenant)).as(table+" fully rolled back").isZero();
@@ -921,7 +921,7 @@ class ReceivingWorkflowDatabaseTest {
         assertThatThrownBy(()->work.undo(tenant,actor,f.line(),r,"Blocked")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(()->work.adjust(tenant,actor,f.line(),r,new BigDecimal("6"),"DECREASE","LOSS","Blocked")).isInstanceOf(IllegalArgumentException.class);
         assertThat(stock(f)).isEqualByComparingTo("8");
-        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE order_inventory_reservations SET status='SHIPPED' WHERE tenant_id=? AND id=?",tenant,reservation);jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,source_type,notes) VALUES (?,?,?,'ADJUSTMENT',-3,?,'MANUAL','Shipped stock fixture')",tenant,f.product(),f.location(),expiry);});
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE order_inventory_reservations SET status='SHIPPED' WHERE tenant_id=? AND id=?",tenant,reservation);jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,source_type,notes,occurred_at,idempotency_key) VALUES (?,?,?,'ADJUSTMENT',-3,?,'MANUAL','Shipped stock fixture',now(),?)",tenant,f.product(),f.location(),expiry,"shipped-stock-"+reservation);});
         assertThatThrownBy(()->work.undo(tenant,actor,f.line(),r,"Sold")).isInstanceOf(IllegalArgumentException.class);
     }
     @Test void reservationOnAnotherExpirationBatchDoesNotBlockReceiptAdjustment(){

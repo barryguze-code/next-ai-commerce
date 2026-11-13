@@ -123,6 +123,9 @@ class SecurityConfigTest {
     }
     @TestConfiguration
     static class StubConfig {
+        @Bean com.nextaicommerce.platform.marketplace.MarketplaceWarehouseAvailability marketplaceWarehouseAvailability(){
+            return org.mockito.Mockito.mock(com.nextaicommerce.platform.marketplace.MarketplaceWarehouseAvailability.class);
+        }
         static final UUID MAPPING_STORE=UUID.fromString("00000000-0000-0000-0000-000000000123");
         @Bean com.nextaicommerce.platform.catalog.CatalogRemovalService catalogRemovalService(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.catalog.CatalogRemovalService.class);}
         @Bean com.nextaicommerce.platform.config.PlatformReadCache platformReadCache(){return new PlatformReadCache(false,java.time.Duration.ofSeconds(10),10);}

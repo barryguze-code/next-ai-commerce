@@ -43,7 +43,7 @@ class TemplateRenderingTest {
         var c=webContext();UUID id=UUID.randomUUID();
         c.setVariables(Map.ofEntries(Map.entry("items",List.of()),Map.entry("canEditCatalog",true),Map.entry("query",""),Map.entry("catalogPage",new com.nextaicommerce.platform.catalog.CatalogRepository.AccountItemPage(List.of(),0,0,25)),Map.entry("vendors",List.of(new VendorView(id,"Own vendor","V","USD",BigDecimal.ZERO,BigDecimal.ZERO,0,"ACTIVE"))),Map.entry("offersByItem",Map.of()),Map.entry("locations",List.of())));
         String html=templateEngine().process("account-catalog",c);String upload=html.substring(html.indexOf("<dialog id=\"upload-dialog\""),html.indexOf("<dialog id=\"rp-vendor-directory\""));
-        assertThat(upload).contains("type=\"hidden\" name=\"vendorId\" value=\""+id,"View catalogue template","multiple").doesNotContain("Choose vendor");
+        assertThat(upload).contains("type=\"hidden\" name=\"vendorId\" value=\""+id,"Open catalogue template in a new tab","multiple").doesNotContain("Choose vendor");
         c.setVariable("vendors",List.of(new VendorView(id,"Own vendor","V","USD",BigDecimal.ZERO,BigDecimal.ZERO,0,"ACTIVE"),new VendorView(UUID.randomUUID(),"Second","S","USD",BigDecimal.ZERO,BigDecimal.ZERO,0,"ACTIVE")));
         html=templateEngine().process("account-catalog",c);upload=html.substring(html.indexOf("<dialog id=\"upload-dialog\""),html.indexOf("<dialog id=\"rp-vendor-directory\""));assertThat(upload).contains("Choose vendor");
     }
@@ -253,7 +253,7 @@ class TemplateRenderingTest {
 
         context.setVariable("items",List.of(new AccountItemView(UUID.randomUUID(),UUID.randomUUID(),
             "Donuts Vanilla Glazed","Drumroll",null,null,null,"2302326",0,null,"USD",false,"ACTIVE","COMPLETE")));
-        assertThat(engine.process("account-catalog",context)).contains("Vendor item code unavailable","Account SKU 2302326","Account SKU<input aria-description=\"Your account’s internal product code\" name=\"accountSku\" value=\"2302326\"")
+        assertThat(engine.process("account-catalog",context)).contains("Vendor item code unavailable","Account SKU 2302326","About Account SKU","<input aria-description=\"Your account’s internal product code\" name=\"accountSku\" value=\"2302326\"")
             .doesNotContain("Not assigned");
         var globalContext = webContext();
         globalContext.setVariables(Map.ofEntries(
@@ -266,7 +266,7 @@ class TemplateRenderingTest {
         ));
         globalContext.setVariable("globalPage",new com.nextaicommerce.platform.catalog.CatalogRepository.GlobalProductPage(List.of(),1,0,25));globalContext.setVariable("globalSort","product");globalContext.setVariable("globalDirection","asc");globalContext.setVariable("query","");
         assertThat(engine.process("global-catalog", globalContext)).contains(
-            "Global Catalogue", "Shared product identities. Account prices, codes and inventory stay separate.",
+            "Global Catalogue",
             "012345678905", "Edit global product");
     }
 
