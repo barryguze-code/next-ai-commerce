@@ -13,11 +13,11 @@ class ReleaseNotesControllerTest {
         var controller=new ReleaseNotesController(new ObjectMapper());
         var model=new ExtendedModelMap();
         assertThat(controller.releases(null,null,model)).isEqualTo("release-notes");
-        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.14.11");
+        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.14.13");
         controller.releases("1.0.2",null,model);
         assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.0.2");
         controller.releases("unknown",null,model);
-        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.14.11");
+        assertThat(((ReleaseNotesController.Release)model.get("release")).version()).isEqualTo("1.14.13");
         assertThat((java.util.List<?>)model.get("releases")).hasSizeLessThanOrEqualTo(5);
         var resolver=new ClassLoaderTemplateResolver();resolver.setPrefix("templates/");resolver.setSuffix(".html");
         var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);
@@ -26,11 +26,11 @@ class ReleaseNotesControllerTest {
         var context=new org.thymeleaf.context.WebContext(application.buildExchange(new org.springframework.mock.web.MockHttpServletRequest(servlet),new org.springframework.mock.web.MockHttpServletResponse()));
         context.setVariables(model);
         assertThat(engine.process("release-notes",context))
-            .contains("Catalogue and receiving improvements","v1.14.11","Deployment history","/css/release-notes.css");
-        assertThat(controller.history().getFirst().version()).isEqualTo("1.14.11");
-        assertThat(controller.history().subList(0,7)).extracting(ReleaseNotesController.Release::version)
-            .containsExactly("1.14.11","1.14.10","1.14.8","1.14.7","1.14.6","1.14.5","1.14.4");
-        assertThat(controller.history().subList(13, controller.history().size())).extracting(ReleaseNotesController.Release::version)
+            .contains("Amazon parent listings and initial rendering","v1.14.13","Deployment history","/css/release-notes.css");
+        assertThat(controller.history().getFirst().version()).isEqualTo("1.14.13");
+        assertThat(controller.history().subList(0,9)).extracting(ReleaseNotesController.Release::version)
+            .containsExactly("1.14.13","1.14.12","1.14.11","1.14.10","1.14.8","1.14.7","1.14.6","1.14.5","1.14.4");
+        assertThat(controller.history().subList(15, controller.history().size())).extracting(ReleaseNotesController.Release::version)
             .containsExactly("1.11.0","1.10.0","1.9.0","1.8.0","1.7.3","1.7.2","1.7.1","1.7.0","1.6.10","1.6.9","1.6.8","1.6.7","1.6.6","1.6.5","1.6.4","1.6.3","1.6.2","1.6.1","1.6.0","1.5.0","1.4.3","1.4.2","1.4.1","1.4.0","1.3.14","1.3.13","1.3.12","1.3.11","1.3.10","1.3.9","1.3.8","1.3.7","1.3.6","1.3.5","1.3.4","1.3.3","1.3.2","1.3.1","1.3.0","1.2.7","1.2.6","1.2.5","1.2.4","1.2.3","1.2.2","1.2.1","1.2.0","1.1.1","1.1.0","1.0.5","1.0.4","1.0.3","1.0.2","1.0.1","1.0.0");
     }
 }
