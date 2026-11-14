@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.14.14",
+    "title": "Catalogue removal clarity",
+    "sections": [
+      {
+        "title": "Corrections",
+        "items": [
+          "Delete unused archived or inactive products after checking dependencies.",
+          "Explain retained dependencies instead of archiving the same product again."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.13",
     "title": "Amazon parent listings and initial rendering",
     "sections": [

@@ -20,6 +20,7 @@ public class CatalogRemovalService {
         CatalogIdentity.lock(jdbc);
         if("DELETE".equals(expected))lockLogicalReferences();
         Review review=inspect(tenant,id,global,true);
+        if("BLOCKED".equals(review.operation()))throw new IllegalArgumentException(review.message());
         if(!review.operation().equals(expected))throw new IllegalArgumentException("This product’s dependencies changed. Review removal again; nothing was changed.");
         String table=global?"global_catalog_products":"account_catalog_items";
         String where=global?"id=?":"id=? AND tenant_id=?";
@@ -31,12 +32,16 @@ public class CatalogRemovalService {
 
     private Review inspect(UUID tenant,UUID id,boolean global,boolean lock){
         if(!global){if(tenant==null)throw new IllegalArgumentException("Choose an account.");jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
-        String sql=global?"SELECT canonical_name FROM global_catalog_products WHERE id=?":"SELECT coalesce(display_name,account_sku,'Product') FROM account_catalog_items WHERE id=? AND tenant_id=?";
-        var names=jdbc.query(sql+(lock?" FOR UPDATE":""),(r,n)->r.getString(1),global?new Object[]{id}:new Object[]{id,tenant});
+        String sql=global?"SELECT canonical_name,status FROM global_catalog_products WHERE id=?":"SELECT coalesce(display_name,account_sku,'Product'),status FROM account_catalog_items WHERE id=? AND tenant_id=?";
+        var names=jdbc.query(sql+(lock?" FOR UPDATE":""),(r,n)->new String[]{r.getString(1),r.getString(2)},global?new Object[]{id}:new Object[]{id,tenant});
         if(names.isEmpty())throw new IllegalArgumentException("Product was not found in this catalogue.");
-        boolean used=hasDependencies(id,global);
+        Boolean used=hasDependencies(id,global);
+        if(used==null)return new Review(names.getFirst()[0],"BLOCKED","Delete product","We couldn’t verify linked records. Try again. Nothing was changed.");
+        boolean retained=global?"ARCHIVED".equals(names.getFirst()[1]):!"ACTIVE".equals(names.getFirst()[1]);
+        if(used&&retained)return new Review(names.getFirst()[0],"BLOCKED","Delete product",
+            global?"This product is already archived. It cannot be deleted while linked accounts or other dependent records remain. No changes will be made.":"This product is already inactive. It cannot be deleted while inventory, mappings, receipts or other dependent records remain. No changes will be made.");
         String operation=used?(global?"ARCHIVE":"INACTIVE"):"DELETE";
-        return new Review(names.getFirst(),operation,used?(global?"Archive product":"Mark inactive"):"Delete product",
+        return new Review(names.getFirst()[0],operation,used?(global?"Archive product":"Mark inactive"):"Delete product",
             used?(global?"Archive this shared product? This change applies across accounts. Existing records and links will be retained.":"Mark this product inactive in your account? Existing records and links will be retained."):
                 "Permanently delete this unused "+(global?"shared global product":"account product")+"? This cannot be undone.");
     }
@@ -46,7 +51,7 @@ public class CatalogRemovalService {
         for(String table:tables)jdbc.execute("LOCK TABLE "+table+" IN SHARE MODE");
     }
 
-    private boolean hasDependencies(UUID id,boolean global){
+    private Boolean hasDependencies(UUID id,boolean global){
         // RLS must never turn an invisible dependency into permission to delete. If the role
         // cannot inspect all references, conservatively offer the non-destructive status action.
         return jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Boolean>)connection->{
@@ -86,7 +91,7 @@ public class CatalogRemovalService {
                     }
                 }
                 connection.rollback(savepoint);connection.releaseSavepoint(savepoint);return false;
-            }catch(java.sql.SQLException cannotVerify){connection.rollback(savepoint);connection.releaseSavepoint(savepoint);return true;}
+            }catch(java.sql.SQLException cannotVerify){connection.rollback(savepoint);connection.releaseSavepoint(savepoint);return null;}
         });
     }
 }
