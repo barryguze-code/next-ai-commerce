@@ -13,3 +13,4 @@ html body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-b
 html body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button:disabled{opacity:.45;cursor:not-allowed}
 html[data-theme="dark"] body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button{background:#da4652!important;border-color:#da4652!important}
 html[data-theme="dark"] body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button:hover:not(:disabled){background:#c9343f!important;border-color:#c9343f!important}
+html[data-theme="dark"] body.app-page dialog.catalog-removal-dialog .dialog-actions [role="alert"]{color:#ff8992!important}
