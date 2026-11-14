@@ -25,3 +25,15 @@
 .available-inventory-table .product-image-upload.product-thumbnail-slot:has(img:not([hidden]))>label>.product-avatar{position:relative;display:block;box-sizing:border-box;width:80px!important;height:80px!important;padding:0!important;border:0;background:transparent}
 .available-inventory-table .table-overview-picture.product-thumbnail-slot>img:not([hidden]),
 .available-inventory-table .product-image-upload.product-thumbnail-slot>label>.product-avatar>img:not([hidden]){position:absolute;inset:0;display:block;box-sizing:border-box;width:100%!important;height:100%!important;min-width:0;min-height:0;max-width:100%;max-height:100%;padding:0;margin:0;border:1px solid #d3dfed;border-radius:min(18px,25%);background:#fff;object-fit:contain;object-position:center}
+
+/* Catalogue photos use the same full square canvas in both themes. */
+[data-table-widget="account-catalogue"] .table-overview-picture.product-thumbnail-slot:has(img:not([hidden])),
+[data-table-widget="global-catalogue"] .table-overview-picture.product-thumbnail-slot:has(img:not([hidden])){position:relative;box-sizing:border-box;width:80px!important;height:80px!important;min-width:80px;min-height:80px;flex:0 0 80px;padding:0!important;border:0!important;background:transparent!important}
+[data-table-widget="account-catalogue"] .product-image-upload.product-thumbnail-slot:has(img:not([hidden]))>label,
+[data-table-widget="account-catalogue"] .product-image-upload.product-thumbnail-slot:has(img:not([hidden]))>label>.product-avatar,
+[data-table-widget="global-catalogue"] .product-image-upload.product-thumbnail-slot:has(img:not([hidden]))>label,
+[data-table-widget="global-catalogue"] .product-image-upload.product-thumbnail-slot:has(img:not([hidden]))>label>.product-avatar{position:relative;display:block;box-sizing:border-box;width:80px!important;height:80px!important;padding:0!important;border:0;background:transparent}
+[data-table-widget="account-catalogue"] .table-overview-picture.product-thumbnail-slot>img:not([hidden]),
+[data-table-widget="account-catalogue"] .product-image-upload.product-thumbnail-slot>label>.product-avatar>img:not([hidden]),
+[data-table-widget="global-catalogue"] .table-overview-picture.product-thumbnail-slot>img:not([hidden]),
+[data-table-widget="global-catalogue"] .product-image-upload.product-thumbnail-slot>label>.product-avatar>img:not([hidden]){position:absolute;inset:0;display:block;box-sizing:border-box;width:100%!important;height:100%!important;min-width:0;min-height:0;max-width:100%;max-height:100%;padding:0;margin:0;border:1px solid #d3dfed;border-radius:min(18px,25%);background:#fff;object-fit:contain;object-position:center}

@@ -50,9 +50,21 @@ class GlobalCatalogDatabaseTest {
         var transaction=new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.getDataSource()));
         UUID id=UUID.randomUUID();jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Disposable removal fixture')",id);
         jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) VALUES (?,'UPC','850017604087',true)",id);
+        UUID admin=UUID.randomUUID();
+        jdbc.update("INSERT INTO app_users(id,email,display_name) VALUES (?,'removal-admin@example.test','Removal admin')",admin);
+        jdbc.update("INSERT INTO platform_administrators(user_id) VALUES (?)",admin);
+        jdbc.queryForObject("SELECT set_config('app.user_email','removal-admin@example.test',false)",String.class);
+        UUID parent=UUID.randomUUID(),task=UUID.randomUUID();
+        jdbc.update("INSERT INTO parent_tenants(id,name,created_by) VALUES (?,'Removal parent',?)",parent,admin);
+        jdbc.update("INSERT INTO parent_tenant_memberships(parent_id,user_id,role) VALUES (?,?,'OWNER')",parent,admin);
+        jdbc.update("INSERT INTO collaboration_tasks(id,parent_id,title,created_by,queue_position,subject_key) VALUES (?,?,'Linked product',?,1,?)",task,parent,admin,id.toString());
         var service=new CatalogRemovalService(jdbc);
-        assertThat(transaction.execute(state->service.review(null,id,true)).operation()).isEqualTo("DELETE");
-        transaction.executeWithoutResult(state->service.remove(null,id,true,"DELETE"));
+        jdbc.execute("CREATE ROLE catalogue_app NOINHERIT NOSUPERUSER NOBYPASSRLS");
+        jdbc.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO catalogue_app");
+        assertThat(transaction.execute(state->{jdbc.execute("SET LOCAL ROLE catalogue_app");jdbc.queryForObject("SELECT set_config('app.user_email','removal-admin@example.test',true)",String.class);var review=service.review(null,id,true);assertThat(jdbc.queryForObject("SELECT current_setting('app.user_email',true)",String.class)).isEqualTo("removal-admin@example.test");assertThat(jdbc.queryForObject("SELECT current_setting('app.collaboration_queue_mutation',true)",String.class)).isNotEqualTo("true");return review;}).operation()).isEqualTo("ARCHIVE");
+        jdbc.update("DELETE FROM collaboration_tasks WHERE id=?",task);
+        assertThat(transaction.execute(state->{jdbc.execute("SET LOCAL ROLE catalogue_app");jdbc.queryForObject("SELECT set_config('app.user_email','removal-admin@example.test',true)",String.class);return service.review(null,id,true);}).operation()).isEqualTo("DELETE");
+        transaction.executeWithoutResult(state->{jdbc.execute("SET LOCAL ROLE catalogue_app");jdbc.queryForObject("SELECT set_config('app.user_email','removal-admin@example.test',true)",String.class);service.remove(null,id,true,"DELETE");});
         assertThat(jdbc.queryForObject("SELECT count(*) FROM global_catalog_products WHERE id=?",Integer.class,id)).isZero();
     }
 }

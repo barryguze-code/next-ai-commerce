@@ -36,6 +36,36 @@ class CatalogRemovalDatabaseTest {
  @Test void staleDeleteDoesNotSilentlyChangeStatus(){db.update("INSERT INTO inventory_history VALUES (?,1)",item);assertThatThrownBy(()->remove(false,"DELETE")).hasMessageContaining("dependencies changed");assertThat(db.queryForObject("SELECT status FROM account_catalog_items WHERE id=?",String.class,item)).isEqualTo("ACTIVE");}
  @Test void foreignAccountCannotReviewOrRemove(){UUID foreign=UUID.randomUUID();assertThatThrownBy(()->tx.execute(s->service.remove(foreign,item,false,"DELETE"))).hasMessageContaining("not found");}
  @Test void unknownOperationCannotWrite(){assertThatThrownBy(()->remove(false,"ARCHIVE")).hasMessageContaining("dependencies changed");assertThat(review(false).operation()).isEqualTo("DELETE");}
+ @Test void productionRoleChecksAllAccountsWithoutBypassingRls(){
+  db.execute("CREATE TABLE tenants(id uuid primary key)");
+  db.execute("CREATE TABLE scoped_history(tenant_id uuid NOT NULL REFERENCES tenants(id),item_id uuid REFERENCES account_catalog_items(id) ON DELETE CASCADE)");
+  db.execute("ALTER TABLE scoped_history ENABLE ROW LEVEL SECURITY");
+  db.execute("ALTER TABLE scoped_history FORCE ROW LEVEL SECURITY");
+  db.execute("CREATE POLICY scope ON scoped_history USING(tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid)");
+  db.execute("CREATE ROLE production_catalog_role");db.execute("GRANT SELECT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO production_catalog_role");
+  UUID other=UUID.randomUUID();db.update("INSERT INTO tenants VALUES (?),(?)",tenant,other);
+  try{
+   var empty=tx.execute(status->{db.execute("SET LOCAL ROLE production_catalog_role");return service.review(tenant,item,false);});
+   assertThat(empty.operation()).isEqualTo("DELETE");
+   db.update("INSERT INTO scoped_history VALUES (?,?)",other,item);
+   var used=tx.execute(status->{db.execute("SET LOCAL ROLE production_catalog_role");db.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());var result=service.review(tenant,item,false);assertThat(db.queryForObject("SELECT current_setting('app.tenant_id')",String.class)).isEqualTo(tenant.toString());return result;});
+   assertThat(used.operation()).isEqualTo("INACTIVE");
+   db.execute("DROP POLICY scope ON scoped_history");
+   db.execute("CREATE POLICY scope ON scoped_history USING(tenant_id=nullif(current_setting('app.tenant_ id',true),'')::uuid)");
+   assertThat(tx.execute(status->{db.execute("SET LOCAL ROLE production_catalog_role");return service.review(tenant,item,false);}).operation()).isEqualTo("BLOCKED");
+   db.execute("DROP POLICY scope ON scoped_history");
+   db.execute("CREATE ROLE noninherited_scope");
+   db.execute("ALTER ROLE production_catalog_role NOINHERIT");
+   db.execute("GRANT noninherited_scope TO production_catalog_role");
+   db.execute("CREATE POLICY scope ON scoped_history TO noninherited_scope USING(tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid)");
+   assertThat(tx.execute(status->{db.execute("SET LOCAL ROLE production_catalog_role");return service.review(tenant,item,false);}).operation()).isEqualTo("BLOCKED");
+   db.execute("DROP POLICY scope ON scoped_history");
+   db.execute("CREATE POLICY scope ON scoped_history USING(tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid)");
+   db.update("DELETE FROM scoped_history WHERE item_id=?",item);
+   tx.executeWithoutResult(status->{db.execute("SET LOCAL ROLE production_catalog_role");service.remove(tenant,item,false,"DELETE");});
+   assertThat(db.queryForObject("SELECT count(*) FROM account_catalog_items WHERE id=?",Integer.class,item)).isZero();
+  }finally{db.execute("DROP TABLE scoped_history");db.execute("DROP TABLE tenants");}
+ }
  @Test void rlsHiddenDependencyFailsClosed(){
   db.execute("CREATE ROLE limited_catalog_role");db.execute("GRANT SELECT,UPDATE,DELETE ON account_catalog_items TO limited_catalog_role");db.execute("GRANT SELECT ON inventory_history,collaboration_reviews TO limited_catalog_role");
   db.execute("ALTER TABLE inventory_history ENABLE ROW LEVEL SECURITY");db.execute("CREATE POLICY invisible ON inventory_history USING(false)");db.update("INSERT INTO inventory_history VALUES (?,5)",item);

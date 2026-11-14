@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.14.15",
+    "title": "Catalogue pictures and safe deletion",
+    "sections": [
+      {
+        "title": "Corrections",
+        "items": [
+          "Show catalogue pictures in consistent square frames in both themes.",
+          "Verify linked records using production database permissions before deleting unused products."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.14",
     "title": "Catalogue removal clarity",
     "sections": [
