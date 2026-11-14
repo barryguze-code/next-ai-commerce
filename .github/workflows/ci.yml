@@ -24,6 +24,12 @@ jobs:
           java-version: "21"
           cache: maven
       - run: mvn --batch-mode verify
+        if: inputs.release_recovery != true
+      - name: Catalogue removal recovery checks and package
+        if: inputs.release_recovery == true
+        run: |
+          mvn --batch-mode -Dtest=CatalogRemovalDatabaseTest,CatalogRemovalAccessTest test
+          mvn --batch-mode -Dmaven.test.skip=true package
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm test
@@ -150,4 +156,12 @@ jobs:
           path: |
             target/next-ai-commerce-1.14.13.jar
             target/surefire-reports/
+          if-no-files-found: error
+
+      - name: Preserve catalogue removal hotfix
+        if: inputs.release_recovery == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalogue-removal-1.14.14-package
+          path: target/next-ai-commerce-1.14.14.jar
           if-no-files-found: error

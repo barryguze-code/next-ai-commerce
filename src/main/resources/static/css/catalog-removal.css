@@ -9,7 +9,7 @@ html body.app-page dialog.catalog-removal-dialog{width:520px;max-width:calc(100v
 .catalog-removal-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--white);border-radius:8px}
 /* Destructive confirmation stays scoped to catalogue removal. */
 html body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button{background:#c9343f!important;border-color:#c9343f!important;color:#fff!important}
-html body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button:hover:not(:disabled){background:#ad2933!important;border-color:#ad2933}
+html body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button:hover:not(:disabled){background:#ad2933!important;border-color:#ad2933!important}
 html body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button:disabled{opacity:.45;cursor:not-allowed}
-html[data-theme="dark"] body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button{background:#da4652!important;border-color:#da4652}
-html[data-theme="dark"] body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button:hover:not(:disabled){background:#c9343f!important;border-color:#c9343f}
+html[data-theme="dark"] body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button{background:#da4652!important;border-color:#da4652!important}
+html[data-theme="dark"] body.app-page dialog.catalog-removal-dialog .dialog-actions button.danger-button:hover:not(:disabled){background:#c9343f!important;border-color:#c9343f!important}
