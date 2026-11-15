@@ -274,11 +274,16 @@ public class ProfitRepository {
                 if(fee==null||fee.get("referral_fee")==null||!v.currency().equals(fee.get("currency")))referralKnown=false;
                 else referral=referral.add(((BigDecimal)fee.get("referral_fee")).multiply(BigDecimal.valueOf(line.quantity())));
                 var shipping=inbound.stream().filter(f->line.sku().equals(f.get("seller_sku"))).findFirst().orElse(null);
-                if(shipping==null||shipping.get("transport_unit")==null||!v.currency().equals(shipping.get("currency")))transportKnown=false;
-                else transport=transport.add(((BigDecimal)shipping.get("transport_unit")).multiply(BigDecimal.valueOf(line.quantity())));
-                if(shipping==null||shipping.get("placement_unit")==null||!v.currency().equals(shipping.get("currency")))placementKnown=false;
-                else placement=placement.add(((BigDecimal)shipping.get("placement_unit")).multiply(BigDecimal.valueOf(line.quantity())));
-                if(shipping!=null)sources.add(shipping.get("shipment_id")+" · charges posted "+shipping.get("estimate_date"));
+                boolean completeInbound=shipping!=null&&shipping.get("transport_unit")!=null&&shipping.get("placement_unit")!=null&&v.currency().equals(shipping.get("currency"));
+                if(completeInbound){
+                    transport=transport.add(((BigDecimal)shipping.get("transport_unit")).multiply(BigDecimal.valueOf(line.quantity())));
+                    placement=placement.add(((BigDecimal)shipping.get("placement_unit")).multiply(BigDecimal.valueOf(line.quantity())));
+                    sources.add(shipping.get("shipment_id")+" · charges posted "+shipping.get("estimate_date"));
+                }else if("USD".equals(v.currency())){
+                    // Combined fallback, once per sold SKU unit; never add partial charges.
+                    transport=transport.add(BigDecimal.ONE.multiply(BigDecimal.valueOf(line.quantity())));
+                    sources.add("Shipping + placement · $1.00 estimated per SKU unit");
+                }else{transportKnown=false;placementKnown=false;}
             }
             if(basis.containsKey("FBA")){total=basis.get("FBA");known=true;feeSources.add("Expected FBA fees fixed at purchase · complete exact item coverage");feeSummaries.add("FBA basis fixed at purchase");}
             if(basis.containsKey("REFERRAL")){referral=basis.get("REFERRAL");referralKnown=true;feeSources.add("Expected referral fees fixed at purchase · complete exact item coverage");feeSummaries.add("Referral basis fixed at purchase");}
@@ -287,7 +292,7 @@ public class ProfitRepository {
             if("USD".equals(v.currency())&&!v.lines().isEmpty()){
                 BigDecimal revenue=v.lines().stream().allMatch(l->l.unitPrice()!=null&&l.customerShipping()!=null)?v.lines().stream().map(l->l.unitPrice().multiply(BigDecimal.valueOf(l.quantity())).add(l.customerShipping())).reduce(BigDecimal.ZERO,BigDecimal::add):null;
                 BigDecimal product=v.lines().stream().allMatch(l->l.productCost()!=null)?v.lines().stream().map(l->l.productCost().multiply(BigDecimal.valueOf(l.quantity()))).reduce(BigDecimal.ZERO,BigDecimal::add):null;
-                BigDecimal other=v.lines().stream().allMatch(l->l.otherCost()!=null)?v.lines().stream().map(l->l.otherCost().multiply(BigDecimal.valueOf(l.quantity()))).reduce(BigDecimal.ZERO,BigDecimal::add):null;
+                BigDecimal other=BigDecimal.ZERO;
                 BigDecimal profit=revenue!=null&&product!=null&&other!=null&&known&&referralKnown&&transportKnown&&placementKnown?
                     revenue.subtract(product).subtract(other).subtract(total).subtract(referral).subtract(transport).subtract(placement).setScale(2,RoundingMode.HALF_UP):null;
                 breakdown=new ProfitEstimate.Breakdown(revenue,product,referralKnown?referral:null,null,other,profit);
@@ -300,7 +305,7 @@ public class ProfitRepository {
     }
     private static View view(String key,String kind,String title,String currency,LocalDate date,List<Line> lines,List<PackageCost> packages,String fulfillment,ProfitShippingRates.PackageType type){
         boolean fba=fulfillment.toUpperCase(Locale.ROOT).contains("AMAZON")||Set.of("AFN","FBA").contains(fulfillment.toUpperCase(Locale.ROOT));
-        String note=fba?"FBA fulfillment fees are imported estimates. Shipping to FBA requires verified transportation and placement charges allocated per shipped unit. Missing charges remain Pending; historical order fees are not settled actuals.":!"USD".equals(currency)?"Only USD estimates are supported.":
+        String note=fba?"FBA fulfillment fees are imported estimates. Shipping to FBA requires verified transportation and placement charges allocated per shipped unit. When complete inbound charges are unavailable, USD estimates use $1.00 combined shipping and placement per SKU unit. Historical order fees are not settled actuals.":!"USD".equals(currency)?"Only USD estimates are supported.":
             "Estimated using current catalogue costs; excludes refunds, advertising and settlement adjustments. Order revenue excludes tax and promotions. Confirm shipping packages for multi-unit orders.";
         ProfitEstimate.Breakdown total=null;
         if(!fba&&"USD".equals(currency)&&!lines.isEmpty()&&lines.stream().allMatch(l->(l.unitPrice()==null||l.unitPrice().signum()>=0)&&l.customerShipping().signum()>=0))

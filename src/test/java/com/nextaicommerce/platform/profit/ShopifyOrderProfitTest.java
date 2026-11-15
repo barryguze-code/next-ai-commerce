@@ -8,12 +8,33 @@ import static org.assertj.core.api.Assertions.*;
 class ShopifyOrderProfitTest {
     final UUID item=UUID.randomUUID(),location=UUID.randomUUID();
     ShopifyOrderProfitRepository.Basis basis(String demand,String stock,UUID origin){return new ShopifyOrderProfitRepository.Basis(Map.of(item,new BigDecimal(demand)),Map.of(new ShopifyOrderProfitRepository.Identity(item,origin),new BigDecimal(stock)));}
-    @Test void reuseRequiresWholeCompositionAndExactWarehouseQuantities(){
+    @Test void reuseRequiresWholeCompositionWithoutDependingOnReservations(){
         var a=basis("6","6",location);
         assertThat(a.matches(basis("6.0000","6.0",location))).isTrue();
-        for(var other:List.of(basis("3","3",location),basis("6","3",location),basis("6","6",UUID.randomUUID()),new ShopifyOrderProfitRepository.Basis(Map.of(item,BigDecimal.valueOf(6)),Map.of())))assertThat(a.matches(other)).isFalse();
+        for(var other:List.of(basis("3","3",location)))assertThat(a.matches(other)).isFalse();
+        assertThat(a.matches(basis("6","3",UUID.randomUUID()))).isTrue();
+        assertThat(a.matches(new ShopifyOrderProfitRepository.Basis(Map.of(item,BigDecimal.valueOf(6)),Map.of()))).isTrue();
         var extra=new HashMap<>(a.items());extra.put(UUID.randomUUID(),BigDecimal.ONE);
         assertThat(a.matches(new ShopifyOrderProfitRepository.Basis(extra,a.origins()))).isFalse();
+    }
+    @Test void candidatesUseEveryOrderLineAndRejectIncompleteMappings(){
+        UUID second=UUID.randomUUID();
+        var rows=new ArrayList<Map<String,Object>>();
+        rows.add(candidateRow("one","line1",item,2,3));
+        rows.add(candidateRow("one","line2",second,1,2));
+        var candidates=ShopifyOrderProfitRepository.packageCandidates(rows);
+        assertThat(candidates).hasSize(1);
+        assertThat(candidates.getFirst().basis().items()).containsEntry(item,new BigDecimal("6")).containsEntry(second,new BigDecimal("2"));
+        assertThat(candidates.getFirst().basis().matches(new ShopifyOrderProfitRepository.Basis(Map.of(item,new BigDecimal("6")),Map.of()))).isFalse();
+        var unmapped=candidateRow("one","line3",item,1,1);unmapped.remove("item");rows.add(unmapped);
+        assertThat(ShopifyOrderProfitRepository.packageCandidates(rows)).isEmpty();
+    }
+    @Test void separateLinesOfSameProductAreSummedForPackageReuse(){
+        var candidates=ShopifyOrderProfitRepository.packageCandidates(List.of(candidateRow("one","a",item,2,1),candidateRow("one","b",item,2,1)));
+        assertThat(candidates.getFirst().basis().matches(new ShopifyOrderProfitRepository.Basis(Map.of(item,new BigDecimal("4")),Map.of()))).isTrue();
+    }
+    private Map<String,Object> candidateRow(String id,String line,UUID product,int quantity,int ordered){
+        var row=new HashMap<String,Object>();row.put("kind","Amazon order");row.put("candidate_id",id);row.put("packaging","FedEx Pak");row.put("stamp","2026-11-15");row.put("line_id",line);row.put("item",product);row.put("quantity",BigDecimal.valueOf(quantity));row.put("quantity_ordered",ordered);return row;
     }
     @Test void partialCostsAreUnknownAndPaymentFeesNeverBecomeAmazonReferralRates(){
         var lines=List.of(new ProfitRepository.Line("A","Product",2,new BigDecimal("20"),new BigDecimal("3.25"),null,null));

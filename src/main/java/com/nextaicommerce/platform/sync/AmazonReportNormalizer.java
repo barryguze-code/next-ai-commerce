@@ -193,6 +193,9 @@ public class AmazonReportNormalizer {
 
     private long listings(AmazonSyncStore.Job job,String text){
         Parsed report=parse(text);long count=0;
+        // Listing reports commonly omit currency; use only the job's trusted marketplace.
+        String marketplaceCurrency=jdbc.query("SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=?",
+            (rs,n)->rs.getString(1),job.marketplaceId()).stream().findFirst().orElse(null);
         for(String[] row:report.rows()){
             String sku=value(report,row,"seller-sku","sku");if(blank(sku))continue;
             jdbc.update("""
@@ -221,7 +224,7 @@ public class AmazonReportNormalizer {
                 value(report,row,"item-name","product-name"),value(report,row,"listing-id"),value(report,row,"status"),
                 value(report,row,"item-condition","condition-type"),value(report,row,"fulfillment-channel"),
                 value(report,row,"merchant-shipping-group"),decimal(value(report,row,"price")),
-                currency(value(report,row,"currency")),integer(value(report,row,"quantity")),
+                blank(value(report,row,"currency"))?marketplaceCurrency:currency(value(report,row,"currency")),integer(value(report,row,"quantity")),
                 integer(value(report,row,"pending-quantity")),time(value(report,row,"open-date"),job.marketplaceId()).instant(),
                 nullIfBlank(value(report,row,"image-url","main-image-url")));
             count++;

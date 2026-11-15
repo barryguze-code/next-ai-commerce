@@ -6,5 +6,5 @@
 .sku-refund-bars{display:flex;align-items:flex-start;gap:4px;height:10px;min-height:10px;width:88px;align-self:center;border-top:1px solid #c95b6440;box-sizing:border-box}
 .sku-refund-bars>span{flex:1;background:#d94a5b44;border:0;border-bottom:1px solid #d94a5b;border-radius:0 0 2px 2px}
 .sku-refund-bars>span[style="height: 0px;"]{border:0}
-.sku-refund-total{display:block;flex-shrink:0;color:#c73547;font-size:11px;font-weight:700;line-height:16px;min-height:16px;margin-top:3px;white-space:nowrap;overflow:visible}
+.sku-refund-total{display:block;flex-shrink:0;color:#c73547;font-size:11px;font-weight:700;line-height:16px;min-height:16px;margin-top:3px;width:100%;max-width:100%;min-width:0;box-sizing:border-box;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 html[data-theme=dark] .sku-refund-total{color:#ff8c9a}

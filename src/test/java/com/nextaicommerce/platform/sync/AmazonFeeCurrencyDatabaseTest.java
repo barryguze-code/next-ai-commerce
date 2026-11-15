@@ -38,4 +38,20 @@ class AmazonFeeCurrencyDatabaseTest {
   assertThat(jdbc.queryForObject("SELECT count(*) FROM amazon_import_rejections WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
   assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
  }
+ @Test void listingWithoutCurrencyRemainsEligibleForMarketplaceFeeCollection(){
+  UUID tenant=UUID.randomUUID(),connection=UUID.randomUUID();
+  jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,'Fixture')",tenant,tenant.toString());
+  jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON','fixture','ATVPDKIKX0DER','fixture','ACTIVE','Fixture','UTC',now())",connection,tenant);
+  var now=Instant.now();var job=new AmazonSyncStore.Job(UUID.randomUUID(),tenant,UUID.randomUUID(),connection,"LISTINGS_SNAPSHOT","RECONCILIATION","ATVPDKIKX0DER",now,now,null,0,0,false,null);
+  var mapper=org.mockito.Mockito.mock(com.nextaicommerce.platform.marketplace.MarketplaceSkuAutoMapper.class);
+  var normalizer=new AmazonReportNormalizer(jdbc,tx,new ObjectMapper(),mapper);
+  String report="seller-sku\tasin1\tprice\tstatus\tfulfillment-channel\nfixture-fee\tB07895D8Y6\t20.89\tActive\tAMAZON_NA\n";
+  assertThat(normalizer.normalize(job,report,null)).isEqualTo(1);
+  assertThat(jdbc.queryForObject("SELECT currency FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku='fixture-fee'",String.class,tenant,connection)).isEqualTo("USD");
+  // A later currency-less report must not erase the currency used by the fee collector.
+  assertThat(normalizer.normalize(job,report,null)).isEqualTo(1);
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM amazon_listings l JOIN marketplace_definitions d ON d.channel='AMAZON' AND d.marketplace_identifier=l.marketplace_id AND d.currency_code=l.currency WHERE l.tenant_id=? AND l.marketplace_connection_id=?",Integer.class,tenant,connection)).isEqualTo(1);
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
+ }
+
 }

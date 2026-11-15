@@ -18,12 +18,8 @@ public class ShopifyOrderProfitRepository {
     public ShopifyOrderProfitRepository(JdbcTemplate jdbc,ProfitCostRepository costs){this.jdbc=jdbc;this.named=new NamedParameterJdbcTemplate(jdbc);this.costs=costs;}
     record Identity(UUID item,UUID location){}
     record Basis(Map<UUID,BigDecimal> items,Map<Identity,BigDecimal> origins){
-        boolean complete(){
-            if(items.isEmpty()||origins.isEmpty())return false;
-            var totals=new HashMap<UUID,BigDecimal>();origins.forEach((id,q)->totals.merge(id.item(),q,BigDecimal::add));
-            return same(items,totals);
-        }
-        boolean matches(Basis other){return complete()&&other.complete()&&same(items,other.items)&&same(origins,other.origins);}
+        boolean complete(){return !items.isEmpty()&&items.values().stream().allMatch(q->q!=null&&q.signum()>0);}
+        boolean matches(Basis other){return complete()&&other.complete()&&same(items,other.items);}
     }
     private static <K> boolean same(Map<K,BigDecimal> a,Map<K,BigDecimal> b){return a.keySet().equals(b.keySet())&&a.entrySet().stream().allMatch(e->e.getValue().compareTo(b.get(e.getKey()))==0);}
     static ProfitEstimate.Breakdown totals(List<ProfitRepository.Line> lines,BigDecimal shipping){
@@ -137,6 +133,12 @@ public class ShopifyOrderProfitRepository {
               JOIN shopify_variants v ON v.tenant_id=m.tenant_id AND v.marketplace_connection_id=m.marketplace_connection_id AND v.id=m.shopify_variant_id AND v.mapping_hash=m.shopify_mapping_hash
               WHERE m.tenant_id=l.tenant_id AND m.marketplace_connection_id=l.marketplace_connection_id AND m.shopify_variant_id=l.variant_id AND m.status='ACTIVE'
                 AND NOT EXISTS(SELECT 1 FROM shopify_order_components f WHERE f.tenant_id=l.tenant_id AND f.marketplace_connection_id=l.marketplace_connection_id AND f.order_line_id=l.id)
+              UNION ALL
+              SELECT m.account_catalog_item_id,greatest(m.quantity_per_marketplace_unit,1) FROM marketplace_sku_mappings m
+              JOIN shopify_variants v ON v.tenant_id=m.tenant_id AND v.marketplace_connection_id=m.marketplace_connection_id AND v.id=m.shopify_variant_id AND v.mapping_hash=m.shopify_mapping_hash
+              WHERE m.tenant_id=l.tenant_id AND m.marketplace_connection_id=l.marketplace_connection_id AND m.shopify_variant_id=l.variant_id AND m.status='ACTIVE' AND m.account_catalog_item_id IS NOT NULL
+                AND NOT EXISTS(SELECT 1 FROM marketplace_sku_mapping_components c WHERE c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id)
+                AND NOT EXISTS(SELECT 1 FROM shopify_order_components f WHERE f.tenant_id=l.tenant_id AND f.marketplace_connection_id=l.marketplace_connection_id AND f.order_line_id=l.id)
             ) part ON true
             LEFT JOIN LATERAL (
               SELECT CASE WHEN v.currency=o.currency THEN round(v.list_cost*(1-v.discount_rate/100),4) END cost
@@ -149,8 +151,8 @@ public class ShopifyOrderProfitRepository {
             ORDER BY o.id,l.id,part.item
             """,args);
         var grouped=new LinkedHashMap<String,List<Map<String,Object>>>();for(var r:rows)grouped.computeIfAbsent(text(r,"order_id"),k->new ArrayList<>()).add(r);
-        var origins=origins(tenant,connection,ids);
-        var candidates=candidates(tenant); // One bounded batch for the page, never one query per row.
+        var targetItems=rows.stream().map(r->(UUID)r.get("item")).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        var candidates=targetItems.isEmpty()?List.<Candidate>of():candidates(tenant,targetItems); // One bounded batch for the page, never one query per row.
         var packageIdentities=new java.util.ArrayList<String>();rows.forEach(r->packageIdentities.add(text(r,"package_name")));candidates.forEach(c->packageIdentities.add(c.name()));
         var independent=costs.packageRates(tenant,packageIdentities);var rates=costs.rates(tenant);LocalDate today=LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"));
         var result=new LinkedHashMap<String,ProfitRepository.View>();
@@ -166,12 +168,12 @@ public class ShopifyOrderProfitRepository {
                 lines.add(new ProfitRepository.Line(text(line,"seller_sku"),text(line,"title"),qty,sale==null?null:sale.divide(BigDecimal.valueOf(qty),12,RoundingMode.HALF_UP),known?cost:null,otherCost(text(first,"currency"),(BigDecimal)line.get("profit_other_cost"),text(line,"profit_other_currency")),null,(UUID)line.get("variant_id")));
             }
             String packageName=text(first,"package_name"),source="Explicit saved order package";
-            var basis=new Basis(complete?composition:Map.of(),origins.getOrDefault(entry.getKey(),Map.of()));
-            if(packageName.isBlank())for(var candidate:candidates)if(basis.matches(candidate.basis())){packageName=candidate.name();source="Reused saved package · "+candidate.source()+" · exact mapped quantities and warehouse locations";break;}
+            var basis=new Basis(complete?composition:Map.of(),Map.of());
+            if(packageName.isBlank())for(var candidate:candidates)if(basis.matches(candidate.basis())){packageName=candidate.name();source="Reused saved package · "+candidate.source()+" · exact mapped product quantities";break;}
             var type=ProfitRepository.packageType("",packageName,"");
             BigDecimal shipping="USD".equals(first.get("currency"))?independent.cost(packageName,today,ProfitShippingRates.cost(rates,type,today)):null;
             var packages=shipping==null?List.<ProfitRepository.PackageCost>of():List.of(new ProfitRepository.PackageCost(packageName,shipping));
-            String note="Mapped catalogue costs are current estimates. "+(packageName.isBlank()?"No compatible saved package with complete composition and origin evidence was found in the latest 500 saved orders.":source+". Package: "+packageName+". ")+" Shipping uses the account planning-rate schedule as of "+today+"; this is not a carrier quote. Estimated profit before payment fees = item sales − product cost − planning shipping − other cost. Other cost defaults to USD 1 per sold SKU unit for insulation/ice. Payment fees, customer shipping, taxes and refund effects are excluded; this is not settled net profit.";
+            String note="Mapped catalogue costs are current estimates. "+(packageName.isBlank()?"No saved package matches this complete mapped product composition.":source+". Package: "+packageName+". ")+" Shipping uses the account planning-rate schedule as of "+today+"; this is not a carrier quote. Estimated profit before payment fees = item sales − product cost − planning shipping − other cost. Other cost defaults to USD 1 per sold SKU unit for insulation/ice. Payment fees, customer shipping, taxes and refund effects are excluded; this is not settled net profit.";
             var totals=first.get("cancelled_at")!=null||!Boolean.TRUE.equals(first.get("evidence_complete"))?null:totals(lines,shipping);
             result.put(entry.getKey(),new ProfitRepository.View(entry.getKey(),"SHOPIFY_ORDER",text(first,"order_name"),text(first,"currency"),today,List.copyOf(lines),packages,totals,note,type==null?"":type.name()));
         }
@@ -189,45 +191,61 @@ public class ShopifyOrderProfitRepository {
         return out;
     }
     record Candidate(String name,String source,Basis basis){}
-    private List<Candidate> candidates(UUID tenant){
-        // Raw reports and shipping purchases are never changed or used as live quotes.
-        // Only saved package names with complete mapped physical stock evidence qualify.
+    private List<Candidate> candidates(UUID tenant,Set<UUID> targetItems){
+        // Filter candidates by mapped products before the bounded history scan. A package
+        // is reusable across this account's stores; reservations are not package identity.
         var data=named.queryForList("""
-            WITH saved AS MATERIALIZED (
-              SELECT p.marketplace_connection_id,p.amazon_order_id,p.packaging,p.imported_at
-              FROM temporary_order_packaging_lookup p JOIN amazon_orders o ON o.tenant_id=p.tenant_id AND o.marketplace_connection_id=p.marketplace_connection_id AND o.amazon_order_id=p.amazon_order_id
+            WITH mappings AS MATERIALIZED (
+              SELECT m.id,m.marketplace_connection_id,m.marketplace_sku,m.shopify_variant_id,m.shopify_mapping_hash,c.account_catalog_item_id item,c.quantity
+              FROM marketplace_sku_mappings m LEFT JOIN LATERAL (
+                SELECT p.account_catalog_item_id,p.quantity FROM marketplace_sku_mapping_components p WHERE p.tenant_id=m.tenant_id AND p.marketplace_sku_mapping_id=m.id
+                UNION ALL SELECT m.account_catalog_item_id,greatest(m.quantity_per_marketplace_unit,1) WHERE m.account_catalog_item_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM marketplace_sku_mapping_components p WHERE p.tenant_id=m.tenant_id AND p.marketplace_sku_mapping_id=m.id)
+              ) c ON true WHERE m.tenant_id=:tenant AND m.status='ACTIVE'
+            ), amazon_saved AS MATERIALIZED (
+              SELECT p.* FROM temporary_order_packaging_lookup p JOIN amazon_orders o ON o.tenant_id=p.tenant_id AND o.marketplace_connection_id=p.marketplace_connection_id AND o.amazon_order_id=p.amazon_order_id
               WHERE p.tenant_id=:tenant AND nullif(btrim(p.packaging),'') IS NOT NULL AND o.order_status NOT IN ('Canceled','Cancelled')
-              ORDER BY p.imported_at DESC,p.amazon_order_id LIMIT 500
-            )
-            SELECT s.marketplace_connection_id,s.amazon_order_id,packing_package_cost(:tenant,s.packaging) packaging,s.imported_at,i.id line_id,i.quantity_ordered,
-              c.account_catalog_item_id item,c.quantity,
-              r.location_id,r.stock_quantity,
-              EXISTS(SELECT 1 FROM order_inventory_reservations extra WHERE extra.tenant_id=i.tenant_id AND extra.marketplace_connection_id=i.marketplace_connection_id AND extra.amazon_order_item_id=i.id AND extra.status IN ('ACTIVE','SHIPPED')
-                AND NOT EXISTS(SELECT 1 FROM marketplace_sku_mapping_components cp WHERE cp.tenant_id=m.tenant_id AND cp.marketplace_sku_mapping_id=m.id AND cp.account_catalog_item_id=extra.account_catalog_item_id)
-                AND (m.account_catalog_item_id IS NULL OR extra.account_catalog_item_id<>m.account_catalog_item_id OR EXISTS(SELECT 1 FROM marketplace_sku_mapping_components cp WHERE cp.tenant_id=m.tenant_id AND cp.marketplace_sku_mapping_id=m.id))) unexpected_stock
-            FROM saved s JOIN amazon_order_items i ON i.tenant_id=:tenant AND i.marketplace_connection_id=s.marketplace_connection_id AND i.amazon_order_id=s.amazon_order_id AND i.quantity_ordered>0
-            LEFT JOIN marketplace_sku_mappings m ON m.tenant_id=i.tenant_id AND m.marketplace_connection_id=i.marketplace_connection_id AND m.marketplace_sku=i.seller_sku AND m.shopify_variant_id IS NULL AND m.status='ACTIVE'
-            LEFT JOIN LATERAL (
-              SELECT part.account_catalog_item_id,part.quantity FROM marketplace_sku_mapping_components part WHERE part.tenant_id=m.tenant_id AND part.marketplace_sku_mapping_id=m.id
-              UNION ALL SELECT m.account_catalog_item_id,greatest(m.quantity_per_marketplace_unit,1) WHERE m.account_catalog_item_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM marketplace_sku_mapping_components x WHERE x.tenant_id=m.tenant_id AND x.marketplace_sku_mapping_id=m.id)
-            ) c ON true
-            LEFT JOIN LATERAL (
-              SELECT r.location_id,sum(r.quantity) stock_quantity FROM order_inventory_reservations r
-              JOIN warehouse_locations loc ON loc.tenant_id=r.tenant_id AND loc.id=r.location_id AND loc.status='ACTIVE'
-              WHERE r.tenant_id=i.tenant_id AND r.marketplace_connection_id=i.marketplace_connection_id AND r.amazon_order_item_id=i.id AND r.account_catalog_item_id=c.account_catalog_item_id AND r.status IN ('ACTIVE','SHIPPED')
-              GROUP BY r.location_id
-            ) r ON true
-            ORDER BY s.imported_at DESC,s.amazon_order_id,i.id,c.account_catalog_item_id,r.location_id
-            """,Map.of("tenant",tenant));
-        var groups=new LinkedHashMap<String,List<Map<String,Object>>>();for(var r:data)groups.computeIfAbsent(text(r,"marketplace_connection_id")+":"+text(r,"amazon_order_id"),k->new ArrayList<>()).add(r);
+                AND EXISTS(SELECT 1 FROM amazon_order_items i JOIN mappings m ON m.marketplace_connection_id=i.marketplace_connection_id AND m.marketplace_sku=i.seller_sku AND m.shopify_variant_id IS NULL WHERE i.tenant_id=:tenant AND i.marketplace_connection_id=p.marketplace_connection_id AND i.amazon_order_id=p.amazon_order_id AND m.item IN (:items))
+              ORDER BY p.imported_at DESC LIMIT 500
+            ), shopify_saved AS MATERIALIZED (
+              SELECT o.* FROM shopify_orders o WHERE o.tenant_id=:tenant AND o.cancelled_at IS NULL AND o.evidence_complete AND nullif(btrim(o.package_name),'') IS NOT NULL
+                AND EXISTS(SELECT 1 FROM shopify_order_lines l WHERE l.tenant_id=o.tenant_id AND l.marketplace_connection_id=o.marketplace_connection_id AND l.order_id=o.id AND (
+                  EXISTS(SELECT 1 FROM shopify_order_components f WHERE f.tenant_id=l.tenant_id AND f.marketplace_connection_id=l.marketplace_connection_id AND f.order_line_id=l.id AND f.account_catalog_item_id IN (:items))
+                  OR EXISTS(SELECT 1 FROM mappings m WHERE m.marketplace_connection_id=l.marketplace_connection_id AND m.shopify_variant_id=l.variant_id AND m.item IN (:items))))
+              ORDER BY o.source_updated_at DESC LIMIT 500
+            ), candidate_rows AS (
+              SELECT 'Amazon order' kind,s.marketplace_connection_id::text||':'||s.amazon_order_id candidate_id,packing_package_cost(:tenant,s.packaging) packaging,s.imported_at stamp,i.id::text line_id,i.quantity_ordered quantity_ordered,m.item,m.quantity
+              FROM amazon_saved s JOIN amazon_order_items i ON i.tenant_id=:tenant AND i.marketplace_connection_id=s.marketplace_connection_id AND i.amazon_order_id=s.amazon_order_id AND i.quantity_ordered>0
+              LEFT JOIN mappings m ON m.marketplace_connection_id=i.marketplace_connection_id AND m.marketplace_sku=i.seller_sku AND m.shopify_variant_id IS NULL
+              UNION ALL
+              SELECT 'SKU package',m.id::text,packing_package_cost(:tenant,p.name),d.updated_at,m.id::text,1,m.item,m.quantity
+              FROM marketplace_sku_package_defaults d JOIN shipping_package_profiles p ON p.tenant_id=d.tenant_id AND p.id=d.package_profile_id AND p.status='ACTIVE'
+              JOIN mappings m ON m.marketplace_connection_id=d.marketplace_connection_id AND m.marketplace_sku=d.seller_sku AND m.shopify_variant_id IS NULL
+              WHERE d.tenant_id=:tenant AND EXISTS(SELECT 1 FROM mappings x WHERE x.id=m.id AND x.item IN (:items))
+              UNION ALL
+              SELECT 'Shopify order',o.id::text,packing_package_cost(:tenant,o.package_name),o.source_updated_at,l.id::text,l.ordered_quantity,c.item,c.quantity
+              FROM shopify_saved o JOIN shopify_order_lines l ON l.tenant_id=o.tenant_id AND l.marketplace_connection_id=o.marketplace_connection_id AND l.order_id=o.id AND l.ordered_quantity>0
+              LEFT JOIN LATERAL (
+                SELECT f.account_catalog_item_id item,f.quantity FROM shopify_order_components f WHERE f.tenant_id=l.tenant_id AND f.marketplace_connection_id=l.marketplace_connection_id AND f.order_line_id=l.id
+                UNION ALL SELECT m.item,m.quantity FROM mappings m JOIN shopify_variants v ON v.tenant_id=l.tenant_id AND v.marketplace_connection_id=l.marketplace_connection_id AND v.id=l.variant_id AND v.mapping_hash=m.shopify_mapping_hash
+                  WHERE m.marketplace_connection_id=l.marketplace_connection_id AND m.shopify_variant_id=l.variant_id AND NOT EXISTS(SELECT 1 FROM shopify_order_components f WHERE f.tenant_id=l.tenant_id AND f.marketplace_connection_id=l.marketplace_connection_id AND f.order_line_id=l.id)
+              ) c ON true
+              WHERE o.tenant_id=:tenant AND o.cancelled_at IS NULL AND o.evidence_complete AND nullif(btrim(o.package_name),'') IS NOT NULL
+            ) SELECT * FROM candidate_rows ORDER BY stamp DESC,candidate_id,line_id,item
+            """,Map.of("tenant",tenant,"items",targetItems));
+        return packageCandidates(data);
+    }
+    static List<Candidate> packageCandidates(List<Map<String,Object>> data){
+        var groups=new LinkedHashMap<String,List<Map<String,Object>>>();
+        for(var r:data)groups.computeIfAbsent(text(r,"kind")+":"+text(r,"candidate_id"),k->new ArrayList<>()).add(r);
         var result=new ArrayList<Candidate>();
         for(var rows:groups.values()){
-            var items=new HashMap<UUID,BigDecimal>();var locations=new HashMap<Identity,BigDecimal>();var seen=new HashSet<String>();boolean complete=true;
-            for(var r:rows){if(Boolean.TRUE.equals(r.get("unexpected_stock"))||r.get("item")==null||r.get("location_id")==null){complete=false;continue;}UUID item=(UUID)r.get("item");String line=text(r,"line_id")+":"+item;
+            var items=new HashMap<UUID,BigDecimal>();var seen=new HashSet<String>();boolean complete=true;
+            for(var r:rows){if(r.get("item")==null||r.get("quantity")==null){complete=false;continue;}
+                UUID item=(UUID)r.get("item");String line=text(r,"line_id")+":"+item;
                 if(seen.add(line))items.merge(item,((BigDecimal)r.get("quantity")).multiply(BigDecimal.valueOf(((Number)r.get("quantity_ordered")).longValue())),BigDecimal::add);
-                locations.merge(new Identity(item,(UUID)r.get("location_id")),(BigDecimal)r.get("stock_quantity"),BigDecimal::add);
             }
-            if(complete)result.add(new Candidate(text(rows.getFirst(),"packaging"),"Amazon packaging history · "+text(rows.getFirst(),"imported_at"),new Basis(items,locations)));
+            var basis=new Basis(items,Map.of());var first=rows.getFirst();
+            if(complete&&basis.complete()&&!text(first,"packaging").isBlank())result.add(new Candidate(text(first,"packaging"),text(first,"kind")+" · "+text(first,"stamp"),basis));
         }
         return result;
     }

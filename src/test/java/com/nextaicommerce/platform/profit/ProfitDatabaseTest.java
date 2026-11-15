@@ -197,7 +197,7 @@ class ProfitDatabaseTest {
   jdbc.update("UPDATE amazon_orders SET fulfillment_channel='AFN' WHERE tenant_id=?",tenant);
   jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_fee,referral_fee,currency,effective_at) VALUES (?,?,'ATVPDKIKX0DER','SKU',5.25,2.17,'USD',now())",tenant,connection);
   jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_fee,referral_fee,currency,effective_at) VALUES (?,?,'ATVPDKIKX0DER','SKU',100,40,'MXN',now()+interval '1 second')",tenant,connection);
-  var sku=repo.skus(tenant,connection,List.of("SKU")).get("SKU");assertThat(sku.fba()).isTrue();assertThat(sku.fbaFee()).isEqualByComparingTo("5.25");assertThat(sku.packages()).isEmpty();assertThat(sku.inboundShippingCost()).isNull();
+  var sku=repo.skus(tenant,connection,List.of("SKU")).get("SKU");assertThat(sku.fba()).isTrue();assertThat(sku.fbaFee()).isEqualByComparingTo("5.25");assertThat(sku.packages()).isEmpty();assertThat(sku.inboundShippingCost()).isEqualByComparingTo("1");
   assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").fbaFee()).isEqualByComparingTo("15.75");
   assertThat(sku.fbaReferralFee()).isEqualByComparingTo("2.17");
   assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").fbaReferralFee()).isEqualByComparingTo("6.51");
@@ -217,6 +217,18 @@ class ProfitDatabaseTest {
   jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_fee,referral_fee,currency,effective_at,raw_payload) VALUES (?,?,'ATVPDKIKX0DER','SKU',9,6,'USD',now(),'{\"FeesEstimateIdentifier\":{\"IdType\":\"SellerSKU\",\"IdValue\":\"SKU\"}}')",tenant,connection);
   assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").fbaFee()).isNull();
  });}
+ @Test void fbaUsesOneCombinedInboundFallbackAndExcludesFbmOtherCost(){tx.executeWithoutResult(s->{
+  jdbc.update("UPDATE amazon_listings SET fulfillment_channel='AFN',other_cost_per_sku=9 WHERE tenant_id=?",tenant);
+  var missing=repo.skus(tenant,connection,List.of("SKU")).get("SKU");
+  assertThat(missing.inboundShippingCost().add(missing.placementFee())).isEqualByComparingTo("1");
+  assertThat(missing.totals().otherCost()).isEqualByComparingTo("0");
+  assertThat(missing.totals().profit()).isNull();
+  assertThat(missing.fbaFee()).isNull();
+  jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_fee,referral_fee,currency,effective_at) VALUES (?,?,'ATVPDKIKX0DER','SKU',5.25,2.17,'USD',now())",tenant,connection);
+  var quoted=repo.skus(tenant,connection,List.of("SKU")).get("SKU");
+  assertThat(quoted.totals().profit()).isEqualByComparingTo("7.58");
+  assertThat(quoted.inboundSource()).contains("$1.00 estimated per SKU unit");
+ });}
  @Test void latestCompletePostedShipmentCostsRemainExplicitEstimates(){tx.executeWithoutResult(s->{
   jdbc.update("UPDATE amazon_listings SET fulfillment_channel='AFN' WHERE tenant_id=?",tenant);
   jdbc.update("INSERT INTO amazon_fee_estimates(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillment_fee,referral_fee,currency,effective_at) VALUES (?,?,'ATVPDKIKX0DER','SKU',5.25,2.17,'USD',now())",tenant,connection);
@@ -226,9 +238,9 @@ class ProfitDatabaseTest {
    for(String description:List.of("FBAPostInboundTransportation","FBAInboundConvenience"))jdbc.update("INSERT INTO amazon_financial_transactions(tenant_id,marketplace_connection_id,transaction_key,transaction_type,amazon_order_id,description,amount,currency,posted_date,raw_payload) VALUES (?,?,?,'ServiceFee',?,?,-20,'USD',?::timestamptz,'{\"transactionStatus\":\"RELEASED\"}')",tenant,connection,shipment+description,shipment,description,shipment.equals("FBA-NEW")?"2026-10-10T00:00:00Z":"2026-09-01T00:00:00Z");
   }
   var view=repo.skus(tenant,connection,List.of("SKU")).get("SKU");assertThat(view.inboundShippingCost()).isEqualByComparingTo("1");assertThat(view.placementFee()).isEqualByComparingTo("1");assertThat(view.note()).contains("FBA-NEW").doesNotContain("FBA-OLD");
-  assertThat(view.totals().profit()).isEqualByComparingTo("5.58");
+  assertThat(view.totals().profit()).isEqualByComparingTo("6.58");
   jdbc.update("DELETE FROM amazon_financial_transactions WHERE tenant_id=? AND transaction_key='FBA-NEWFBAInboundConvenience'",tenant);
-  view=repo.skus(tenant,connection,List.of("SKU")).get("SKU");assertThat(view.placementFee()).isEqualByComparingTo("1");assertThat(view.totals().profit()).isEqualByComparingTo("5.58");assertThat(view.note()).contains("FBA-OLD").doesNotContain("FBA-NEW");assertThat(view.inboundSource()).contains("Estimate","2026-08-31");
+  view=repo.skus(tenant,connection,List.of("SKU")).get("SKU");assertThat(view.placementFee()).isEqualByComparingTo("1");assertThat(view.totals().profit()).isEqualByComparingTo("6.58");assertThat(view.note()).contains("FBA-OLD").doesNotContain("FBA-NEW");assertThat(view.inboundSource()).contains("Estimate","2026-08-31");
  });}
  @Test void changingSkuCostsDoesNotChangeSellingPrice(){tx.executeWithoutResult(s->{repo.saveSku(tenant,connection,"SKU",ProfitShippingRates.PackageType.UPS,new BigDecimal("2.00"));assertThat(jdbc.queryForObject("SELECT price FROM amazon_listings WHERE tenant_id=?",BigDecimal.class,tenant)).isEqualByComparingTo("20");});}
  @Test void skuUsesSingleUnitPackingHistoryWithoutNewProfile(){tx.executeWithoutResult(s->{
