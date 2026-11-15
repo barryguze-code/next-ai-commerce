@@ -2,6 +2,10 @@ name: CI
 on:
   workflow_dispatch:
     inputs:
+      amazon_fee_hotfix:
+        description: Run approved Amazon fee and package reuse focused checks
+        type: boolean
+        default: false
       release_recovery:
         description: Run full Java verification and focused first-render checks for the approved release
         type: boolean
@@ -14,6 +18,7 @@ permissions:
   contents: read
 jobs:
   test:
+    if: inputs.amazon_fee_hotfix != true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -164,4 +169,23 @@ jobs:
         with:
           name: catalogue-collaboration-1.14.16-package
           path: target/next-ai-commerce-1.14.16.jar
+          if-no-files-found: error
+
+  amazon-fee-hotfix:
+    if: inputs.amazon_fee_hotfix == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn --batch-mode -Dtest=AmazonFeeCurrencyDatabaseTest,ProfitDatabaseTest,AmazonProductFeeSyncTest,ShopifyOrderProfitTest test
+      - run: mvn --batch-mode -Dmaven.test.skip=true package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amazon-fee-1.14.17-package
+          path: target/next-ai-commerce-1.14.17.jar
           if-no-files-found: error
