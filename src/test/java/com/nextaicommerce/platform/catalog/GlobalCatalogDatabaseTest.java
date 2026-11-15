@@ -61,10 +61,10 @@ class GlobalCatalogDatabaseTest {
         var service=new CatalogRemovalService(jdbc);
         jdbc.execute("CREATE ROLE catalogue_app NOINHERIT NOSUPERUSER NOBYPASSRLS");
         jdbc.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO catalogue_app");
-        assertThat(transaction.execute(state->{jdbc.execute("SET LOCAL ROLE catalogue_app");jdbc.queryForObject("SELECT set_config('app.user_email','removal-admin@example.test',true)",String.class);var review=service.review(null,id,true);assertThat(jdbc.queryForObject("SELECT current_setting('app.user_email',true)",String.class)).isEqualTo("removal-admin@example.test");assertThat(jdbc.queryForObject("SELECT current_setting('app.collaboration_queue_mutation',true)",String.class)).isNotEqualTo("true");return review;}).operation()).isEqualTo("ARCHIVE");
+        assertThat(transaction.execute(state->{jdbc.execute("SET LOCAL ROLE catalogue_app");jdbc.queryForObject("SELECT set_config('app.user_email','removal-admin@example.test',true)",String.class);var review=service.review(null,id,true);assertThat(jdbc.queryForObject("SELECT current_setting('app.user_email',true)",String.class)).isEqualTo("removal-admin@example.test");assertThat(jdbc.queryForObject("SELECT current_setting('app.collaboration_queue_mutation',true)",String.class)).isNotEqualTo("true");return review;}).operation()).isEqualTo("RETAINED_DELETE");
         jdbc.update("DELETE FROM collaboration_tasks WHERE id=?",task);
-        assertThat(transaction.execute(state->{jdbc.execute("SET LOCAL ROLE catalogue_app");jdbc.queryForObject("SELECT set_config('app.user_email','removal-admin@example.test',true)",String.class);return service.review(null,id,true);}).operation()).isEqualTo("DELETE");
-        transaction.executeWithoutResult(state->{jdbc.execute("SET LOCAL ROLE catalogue_app");jdbc.queryForObject("SELECT set_config('app.user_email','removal-admin@example.test',true)",String.class);service.remove(null,id,true,"DELETE");});
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_catalog_products WHERE id=?",Integer.class,id)).isZero();
+        assertThat(transaction.execute(state->{jdbc.execute("SET LOCAL ROLE catalogue_app");jdbc.queryForObject("SELECT set_config('app.user_email','removal-admin@example.test',true)",String.class);return service.review(null,id,true);}).operation()).isEqualTo("RETAINED_DELETE");
+        transaction.executeWithoutResult(state->{jdbc.execute("SET LOCAL ROLE catalogue_app");jdbc.queryForObject("SELECT set_config('app.user_email','removal-admin@example.test',true)",String.class);service.remove(null,id,true,"RETAINED_DELETE");});
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_catalog_products WHERE id=? AND deleted_at IS NULL",Integer.class,id)).isZero();
     }
 }

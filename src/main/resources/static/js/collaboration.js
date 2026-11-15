@@ -72,12 +72,15 @@
     $$('[data-thread-composer-hint]',elements.dialog).forEach(hint=>hint.textContent=globalScope()?'Shared with platform administrators across accounts. Email notifications are off.':state.messageType==='PRIVATE_NOTE'?'Visible only to your signed-in account.':'Type @ to notify a teammate by email.');
   }
   async function sendGlobal(form,submitter){
+    const completing=submitter?.name==='status'&&submitter.value==='CLOSED';
+    if(completing&&hasUnsentDraft()){const error=$('[data-thread-management-error]');error.textContent='Send your message or discard unsent changes before closing the conversation.';error.hidden=false;error.scrollIntoView({block:'nearest'});return;}
     const current=state,reviewId=state.currentReviewId,mode=state.messageType;if(form.dataset.saving)return;form.dataset.saving='true';const field=$('textarea',form),fileInput=$('input[type=file]',form),sentText=field.value,sentFiles=[...(fileInput?.files||[])];
     let feedback=form.querySelector('[data-global-feedback]')||form.querySelector('[data-thread-composer-hint]');if(!feedback){feedback=document.createElement('p');feedback.dataset.globalFeedback='';feedback.setAttribute('role','status');form.append(feedback);}feedback.textContent='Saving…';const send=$('button[type=submit]',form);if(send)send.disabled=true;
+    if(completing)submitter.disabled=true;
     const data=new FormData(form);if(submitter?.name==='status')data.set('status',submitter.value);
     const url=submitter?.name==='reopen'?api('/reviews/'+encodeURIComponent(submitter.value)+'/reopen'):form.action;
-    try{const response=await fetch(url,{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||'The shared discussion could not be saved.');if(state!==current||state.currentReviewId!==reviewId||state.messageType!==mode)return;if(field.value===sentText)field.value='';if(fileInput&&[...fileInput.files].every((f,i)=>f===sentFiles[i])&&fileInput.files.length===sentFiles.length)fileInput.value='';feedback.textContent='';const refreshed=await loadConversation(result.reviewId,state.showBack,true);if(refreshed===false&&state===current&&state.currentReviewId===reviewId&&state.messageType===mode)feedback.textContent='Reply saved. Refresh to see it in the conversation.';if(globalScope())await markRecordConversationActive('GLOBAL_PRODUCT',state.key);else window.dispatchEvent(new Event('personal-collaboration-updated'));}
-    catch(error){if(state===current&&state.currentReviewId===reviewId&&state.messageType===mode)feedback.textContent=error.message;}finally{delete form.dataset.saving;if(send)send.disabled=false;}
+    try{const response=await fetch(url,{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||'The shared discussion could not be saved.');if(state!==current||state.currentReviewId!==reviewId||state.messageType!==mode)return;if(field.value===sentText)field.value='';if(fileInput&&[...fileInput.files].every((f,i)=>f===sentFiles[i])&&fileInput.files.length===sentFiles.length)fileInput.value='';feedback.textContent='';if(completing){dialog().close();window.dispatchEvent(new Event('personal-collaboration-updated'));return;}const refreshed=await loadConversation(result.reviewId,state.showBack,true);if(refreshed===false&&state===current&&state.currentReviewId===reviewId&&state.messageType===mode)feedback.textContent='Reply saved. Refresh to see it in the conversation.';if(globalScope())await markRecordConversationActive('GLOBAL_PRODUCT',state.key);else window.dispatchEvent(new Event('personal-collaboration-updated'));}
+    catch(error){if(state===current&&state.currentReviewId===reviewId&&state.messageType===mode)feedback.textContent=error.message;}finally{delete form.dataset.saving;if(send)send.disabled=false;if(completing)submitter.disabled=false;}
   }
   function subjectText(review){return review.title==='Conversation about '+review.subjectLabel?review.subjectLabel:review.title||review.subjectLabel;}
   function renderSubject(review,initial){
@@ -231,16 +234,6 @@
     const root=$('#thread-management');if(!root)return;prepareAssignmentOverlay(root);updateAssignment(review);
     $('[data-thread-draft-date]',root).hidden=true;
     const close=$('.conversation-close-button',root);if(close)close.hidden=false;
-    if(close){
-      close.removeAttribute('onclick');
-      close.onclick=async event=>{
-        event.preventDefault();
-        if(!window.NextAiConfirm)return;
-        const accepted=await window.NextAiConfirm({title:'Close conversation?',message:'Mark this conversation complete. Notifications follow your account’s existing notification settings.',accept:'Close conversation'});
-        if(accepted)close.form.requestSubmit(close);
-        else close.focus({preventScroll:true});
-      };
-    }
     if(globalScope()){root.hidden=!state.canCollaborate||review.status!=='ACTIVE';return;}
     const assigned=(review.assigneeEmail||'').toLowerCase().split(',').map(value=>value.trim()).includes((root.dataset.currentEmail||'').toLowerCase());
     const statusIcon=$('#thread-status-icon');if(statusIcon){statusIcon.src=window.NextAiIcons.source(review.status==='ACTIVE'&&assigned?'collaboration-assigned-red':review.messageCount>0?'collaboration-blue':'collaboration-no-message-gray');statusIcon.alt=assigned?'Assigned to you':review.messageCount>0?'Active conversation':'No messages';}

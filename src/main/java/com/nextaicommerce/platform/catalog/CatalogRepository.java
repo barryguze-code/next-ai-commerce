@@ -106,7 +106,7 @@ public class CatalogRepository {
                 rs->rs.next()?rs.getObject(1,UUID.class):null,type,identifier);
         }
         if(global!=null){
-            UUID existing=jdbc.query("SELECT id FROM account_catalog_items WHERE tenant_id=? AND global_product_id=?",
+            UUID existing=jdbc.query("SELECT id FROM account_catalog_items WHERE tenant_id=? AND global_product_id=? AND deleted_at IS NULL",
                 rs->rs.next()?rs.getObject(1,UUID.class):null,tenantId,global);
             if(existing!=null)return new AccountAddition(existing,false,identifier);
             if(selected==null){
@@ -424,7 +424,7 @@ public class CatalogRepository {
         "unit","product.unit_of_measure","handling","product.requires_expiration_date","status","product.status");
     public static String globalSort(String sort){return GLOBAL_SORTS.containsKey(sort==null?"":sort)?sort:"product";}
     private static final String GLOBAL_MATCHES="""
-        FROM global_catalog_products product WHERE (?='' OR lower(product.canonical_name) LIKE ? OR lower(coalesce(product.brand,'')) LIKE ?
+        FROM global_catalog_products product WHERE product.deleted_at IS NULL AND (?='' OR lower(product.canonical_name) LIKE ? OR lower(coalesce(product.brand,'')) LIKE ?
           OR EXISTS(SELECT 1 FROM global_product_identifiers matched WHERE matched.global_product_id=product.id AND lower(matched.identifier_value) LIKE ?)
           OR EXISTS(SELECT 1 FROM account_catalog_items own WHERE own.tenant_id=CAST(? AS uuid) AND own.global_product_id=product.id
             AND (lower(coalesce(own.account_sku,'')) LIKE ? OR EXISTS(SELECT 1 FROM vendor_catalog_offers offer
@@ -483,6 +483,7 @@ public class CatalogRepository {
                 SELECT identifier_type, identifier_value FROM global_product_identifiers
                 WHERE global_product_id=product.id ORDER BY is_primary DESC, created_at LIMIT 1
             ) identifier ON true
+            WHERE product.deleted_at IS NULL
             ORDER BY lower(product.canonical_name)
             """, (rs, row) -> new GlobalProductView(rs.getObject("id", UUID.class),
                 rs.getString("canonical_name"), rs.getString("brand"), rs.getString("vendor_name"),
@@ -537,7 +538,7 @@ public class CatalogRepository {
                        WHERE all_components.tenant_id=mapping.tenant_id AND all_components.marketplace_sku_mapping_id=mapping.id)=1
                 ORDER BY listing.last_seen_at DESC LIMIT 1
             ) image ON true
-            WHERE item.tenant_id=?
+            WHERE item.tenant_id=? AND item.deleted_at IS NULL AND product.deleted_at IS NULL
             ORDER BY lower(coalesce(item.display_name, product.canonical_name))
             """, (rs, row) -> new AccountItemView(rs.getObject("id", UUID.class),
                 rs.getObject("global_product_id", UUID.class), rs.getString("display_name"),
@@ -553,7 +554,7 @@ public class CatalogRepository {
     private record AccountQuery(String prefix,String from,List<Object> parameters) {}
     private static AccountQuery accountQuery(UUID tenantId,String query,String status){
         String from=" FROM account_catalog_items item JOIN global_catalog_products product ON product.id=item.global_product_id";
-        if(query.isEmpty())return new AccountQuery("",from+" WHERE item.tenant_id=?"+("ALL".equals(status)?"":" AND item.status=?"),"ALL".equals(status)?List.of(tenantId):List.of(tenantId,status));
+        if(query.isEmpty())return new AccountQuery("",from+" WHERE item.deleted_at IS NULL AND product.deleted_at IS NULL AND item.tenant_id=?"+("ALL".equals(status)?"":" AND item.status=?"),"ALL".equals(status)?List.of(tenantId):List.of(tenantId,status));
         String pattern="%"+query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";
         String prefix="""
             WITH search_input AS MATERIALIZED (SELECT ?::uuid tenant_id,?::text pattern),
@@ -583,7 +584,7 @@ public class CatalogRepository {
                 AND (mapping.asin ILIKE q.pattern OR mapping.marketplace_sku ILIKE q.pattern)
             )
             """;
-        return new AccountQuery(prefix,from+" WHERE item.tenant_id=(SELECT tenant_id FROM search_input)"
+        return new AccountQuery(prefix,from+" WHERE item.deleted_at IS NULL AND product.deleted_at IS NULL AND item.tenant_id=(SELECT tenant_id FROM search_input)"
             +" AND item.id IN(SELECT id FROM matched_items)"+("ALL".equals(status)?"":" AND item.status=?"),"ALL".equals(status)?List.of(tenantId,pattern):List.of(tenantId,pattern,status));
     }
     // Fixed SQL expressions only. User input is never an SQL identifier or fragment.
@@ -700,7 +701,7 @@ public class CatalogRepository {
             LEFT JOIN account_catalog_item_locations assignment ON assignment.tenant_id=item.tenant_id
                 AND assignment.account_catalog_item_id=item.id AND assignment.is_default
             LEFT JOIN warehouse_locations location ON location.tenant_id=assignment.tenant_id AND location.id=assignment.location_id
-            WHERE item.tenant_id=? AND item.status='ACTIVE'
+            WHERE item.tenant_id=? AND item.deleted_at IS NULL AND product.deleted_at IS NULL AND item.status='ACTIVE'
               AND (coalesce(item.display_name,product.canonical_name) ILIKE ?
                 OR coalesce(product.brand,'') ILIKE ? OR coalesce(item.account_sku,'') ILIKE ?
                 OR EXISTS (SELECT 1 FROM vendor_catalog_offers search_offer
@@ -854,7 +855,7 @@ public class CatalogRepository {
         return jdbc.queryForObject("""
             INSERT INTO account_catalog_items (tenant_id,global_product_id,account_sku,created_by)
             VALUES (?,?,?,?)
-            ON CONFLICT (tenant_id,global_product_id) DO UPDATE SET
+            ON CONFLICT (tenant_id,global_product_id) WHERE deleted_at IS NULL DO UPDATE SET
                 account_sku=coalesce(EXCLUDED.account_sku,account_catalog_items.account_sku), updated_at=now()
             RETURNING id
             """, UUID.class, tenantId, globalId, blankToNull(accountSku), actorId);
@@ -944,7 +945,7 @@ public class CatalogRepository {
         UUID itemId=jdbc.queryForObject("""
             INSERT INTO account_catalog_items (tenant_id,global_product_id,account_sku,created_by)
             VALUES (?,?,?,(SELECT id FROM app_users WHERE lower(email)=lower(?)))
-            ON CONFLICT (tenant_id,global_product_id) DO UPDATE SET
+            ON CONFLICT (tenant_id,global_product_id) WHERE deleted_at IS NULL DO UPDATE SET
                 account_sku=coalesce(EXCLUDED.account_sku,account_catalog_items.account_sku),updated_at=now()
             RETURNING id
             """,UUID.class,tenantId,globalId,blankToNull(accountSku),actorEmail);
@@ -989,7 +990,7 @@ public class CatalogRepository {
     }
     @Transactional public void updateGlobalProductWithPhysical(UUID id,String name,String brand,String type,String code,String unit,boolean expiry,String status,PhysicalAttributes physical,String originalRevision){CatalogIdentity.lock(jdbc);savePhysical(id,physical,originalRevision);updateGlobalProduct(id,name,brand,type,code,unit,expiry,status);}
     @Transactional public void updateAccountProductWithPhysical(UUID tenant,UUID item,String name,String code,String status,BigDecimal cost,UUID vendor,String vendorCode,String actor,PhysicalAttributes physical,String originalRevision){
-        if(physical!=null)physical.validate();setTenant(tenant);CatalogIdentity.lock(jdbc);UUID product=jdbc.query("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=? FOR UPDATE",r->r.next()?r.getObject(1,UUID.class):null,tenant,item);
+        if(physical!=null)physical.validate();setTenant(tenant);CatalogIdentity.lock(jdbc);UUID product=jdbc.query("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=? AND deleted_at IS NULL FOR UPDATE",r->r.next()?r.getObject(1,UUID.class):null,tenant,item);
         if(product==null)throw new IllegalArgumentException("Product not found in this account.");updateAccountProductVendor(tenant,item,name,code,status,cost,vendor,vendorCode,actor);savePhysical(product,physical,originalRevision);
     }
 
@@ -1036,7 +1037,7 @@ public class CatalogRepository {
         if(amount==null||amount.signum()<0||amount.scale()>4||amount.compareTo(new BigDecimal("100000"))>0)
             throw new IllegalArgumentException("Enter an item cost between 0 and 100,000 with up to four decimals.");
         CatalogIdentity.lock(jdbc);
-        var item=jdbc.queryForList("SELECT id FROM account_catalog_items WHERE tenant_id=? AND id=? FOR UPDATE",tenantId,itemId);
+        var item=jdbc.queryForList("SELECT id FROM account_catalog_items WHERE tenant_id=? AND id=? AND deleted_at IS NULL FOR UPDATE",tenantId,itemId);
         if(item.isEmpty())throw new IllegalArgumentException("Item not found in this account.");
         var offers=jdbc.queryForList("""
             SELECT vendor_id,vendor_item_code,currency,list_cost*(1-discount_rate/100) cost
@@ -1070,8 +1071,8 @@ public class CatalogRepository {
         setTenant(tenant);
         var vendors=jdbc.query("SELECT coalesce(vendor_code,name),distribution_center,currency FROM vendors WHERE tenant_id=? AND id=? AND status='ACTIVE'",(r,n)->new String[]{r.getString(1),r.getString(2),r.getString(3)},tenant,vendor);
         if(vendors.size()!=1)throw new IllegalArgumentException("Choose an active vendor from this account.");
-        String[] selected=vendors.getFirst();String accountSku=jdbc.query("SELECT account_sku FROM account_catalog_items WHERE tenant_id=? AND global_product_id=?",r->r.next()?r.getString(1):null,tenant,product);
-        var offers=jdbc.query("SELECT o.vendor_item_code,CASE WHEN o.currency=? THEN o.list_cost*(1-o.discount_rate/100) END cost FROM vendor_catalog_offers o JOIN account_catalog_items i ON i.tenant_id=o.tenant_id AND i.id=o.account_catalog_item_id WHERE o.tenant_id=? AND o.vendor_id=? AND i.global_product_id=? AND o.effective_from<=current_date AND (o.effective_to IS NULL OR o.effective_to>=current_date) ORDER BY o.is_default DESC,o.effective_from DESC,o.id LIMIT 1",(r,n)->new EntryDefaults(accountSku,r.getString(1),r.getBigDecimal(2),selected[2]),selected[2],tenant,vendor,product);
+        String[] selected=vendors.getFirst();String accountSku=jdbc.query("SELECT account_sku FROM account_catalog_items WHERE tenant_id=? AND global_product_id=? AND deleted_at IS NULL",r->r.next()?r.getString(1):null,tenant,product);
+        var offers=jdbc.query("SELECT o.vendor_item_code,CASE WHEN o.currency=? THEN o.list_cost*(1-o.discount_rate/100) END cost FROM vendor_catalog_offers o JOIN account_catalog_items i ON i.tenant_id=o.tenant_id AND i.id=o.account_catalog_item_id WHERE o.tenant_id=? AND o.vendor_id=? AND i.deleted_at IS NULL AND i.global_product_id=? AND o.effective_from<=current_date AND (o.effective_to IS NULL OR o.effective_to>=current_date) ORDER BY o.is_default DESC,o.effective_from DESC,o.id LIMIT 1",(r,n)->new EntryDefaults(accountSku,r.getString(1),r.getBigDecimal(2),selected[2]),selected[2],tenant,vendor,product);
         if(!offers.isEmpty())return offers.getFirst();
         List<String> codes=jdbc.query("SELECT vendor_item_code FROM global_product_vendor_codes WHERE global_product_id=? AND vendor_key=? AND catalog_scope=? AND source_tenant_id=? ORDER BY last_seen_at DESC,id",(r,n)->r.getString(1),product,normalizeVendorKey(selected[0]),CatalogIdentity.scope(tenant,selected[1]),tenant);
         Set<String> identities=new java.util.HashSet<>();for(String code:codes)identities.add(CatalogIdentity.vendorCode(code));

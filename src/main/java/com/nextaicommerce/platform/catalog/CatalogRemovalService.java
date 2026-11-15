@@ -17,14 +17,17 @@ public class CatalogRemovalService {
 
     @Transactional
     public String remove(UUID tenant,UUID id,boolean global,String expected){
+        // Follow receiving's tenant-lock-before-catalogue-lock order.
+        for(UUID scope:scopes(tenant,global))
+            jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",r->{},scope.toString());
         CatalogIdentity.lock(jdbc);
-        if("DELETE".equals(expected))lockLogicalReferences();
         Review review=inspect(tenant,id,global,true);
         if("BLOCKED".equals(review.operation()))throw new IllegalArgumentException(review.message());
         if(!review.operation().equals(expected))throw new IllegalArgumentException("This product’s dependencies changed. Review removal again; nothing was changed.");
         String table=global?"global_catalog_products":"account_catalog_items";
         String where=global?"id=?":"id=? AND tenant_id=?";
         Object[] args=global?new Object[]{id}:new Object[]{id,tenant};
+        if("RETAINED_DELETE".equals(expected)){retire(tenant,id,global);return "Product deleted from the catalogue. Inventory history is retained.";}
         if("DELETE".equals(expected))jdbc.update("DELETE FROM "+table+" WHERE "+where,args);
         else jdbc.update("UPDATE "+table+" SET status='"+(global?"ARCHIVED":"INACTIVE")+"',updated_at=now() WHERE "+where,args);
         return "DELETE".equals(expected)?"Product deleted.":global?"Product archived.":"Account product marked inactive.";
@@ -32,18 +35,81 @@ public class CatalogRemovalService {
 
     private Review inspect(UUID tenant,UUID id,boolean global,boolean lock){
         if(!global){if(tenant==null)throw new IllegalArgumentException("Choose an account.");jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
-        String sql=global?"SELECT canonical_name,status FROM global_catalog_products WHERE id=?":"SELECT coalesce(display_name,account_sku,'Product'),status FROM account_catalog_items WHERE id=? AND tenant_id=?";
+        String sql=global?"SELECT canonical_name,status FROM global_catalog_products WHERE id=? AND deleted_at IS NULL":"SELECT coalesce(display_name,account_sku,'Product'),status FROM account_catalog_items WHERE id=? AND tenant_id=? AND deleted_at IS NULL";
         var names=jdbc.query(sql+(lock?" FOR UPDATE":""),(r,n)->new String[]{r.getString(1),r.getString(2)},global?new Object[]{id}:new Object[]{id,tenant});
         if(names.isEmpty())throw new IllegalArgumentException("Product was not found in this catalogue.");
+        if(lock && global){
+            // Match stock writers' row guard before inspecting any linked balance.
+            try{
+                for(UUID scope:scopes(tenant,true)){
+                    context(scope);
+                    jdbc.query("SELECT id FROM account_catalog_items WHERE tenant_id=? AND global_product_id=? AND deleted_at IS NULL ORDER BY id FOR UPDATE",r->{},scope,id);
+                }
+            }finally{if(tenant!=null)context(tenant);}
+        }
         Boolean used=hasDependencies(id,global);
         if(used==null)return new Review(names.getFirst()[0],"BLOCKED","Delete product","We couldn’t verify linked records. Try again. Nothing was changed.");
-        boolean retained=global?"ARCHIVED".equals(names.getFirst()[1]):!"ACTIVE".equals(names.getFirst()[1]);
-        if(used&&retained)return new Review(names.getFirst()[0],"BLOCKED","Delete product",
-            global?"This product is already archived. It cannot be deleted while linked accounts or other dependent records remain. No changes will be made.":"This product is already inactive. It cannot be deleted while inventory, mappings, receipts or other dependent records remain. No changes will be made.");
-        String operation=used?(global?"ARCHIVE":"INACTIVE"):"DELETE";
-        return new Review(names.getFirst()[0],operation,used?(global?"Archive product":"Mark inactive"):"Delete product",
-            used?(global?"Archive this shared product? This change applies across accounts. Existing records and links will be retained.":"Mark this product inactive in your account? Existing records and links will be retained."):
-                "Permanently delete this unused "+(global?"shared global product":"account product")+"? This cannot be undone.");
+        if(hasStock(tenant,id,global))return new Review(names.getFirst()[0],"BLOCKED","Delete product",
+            "This product still has stock or active reservations. Zero out its inventory and resolve reservations before deleting it. Nothing will be changed.");
+        return new Review(names.getFirst()[0],"RETAINED_DELETE","Delete product",
+            "No stock remains. Remove this product from the catalogue and release its codes. Previous receipts and history remain available.");
+    }
+
+    private java.util.List<UUID> scopes(UUID tenant,boolean global){
+        if(!global)return java.util.List.of(tenant);
+        // Global removal is restricted to platform administrators by the controller.
+        if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT row_security_active('tenants'::regclass)",Boolean.class)))
+            throw new IllegalArgumentException("Could not verify all linked accounts. Nothing was changed.");
+        return jdbc.queryForList("SELECT id FROM tenants ORDER BY id",UUID.class);
+    }
+    private void context(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
+    private boolean hasStock(UUID tenant,UUID id,boolean global){
+        try{
+            for(UUID scope:scopes(tenant,global)){
+                context(scope);
+                Boolean stock=jdbc.queryForObject("""
+                    SELECT EXISTS(
+                      SELECT 1 FROM inventory_ledger_entries l JOIN account_catalog_items a
+                        ON a.tenant_id=l.tenant_id AND a.id=l.account_catalog_item_id
+                      WHERE a.tenant_id=? AND (CASE WHEN ? THEN a.global_product_id ELSE a.id END)=?
+                      GROUP BY l.account_catalog_item_id,l.location_id,l.expiration_date
+                      HAVING sum(l.quantity)<>0
+                    ) OR EXISTS(
+                      SELECT 1 FROM order_inventory_reservations r JOIN account_catalog_items a
+                        ON a.tenant_id=r.tenant_id AND a.id=r.account_catalog_item_id
+                      WHERE a.tenant_id=? AND (CASE WHEN ? THEN a.global_product_id ELSE a.id END)=?
+                        AND r.status='ACTIVE' AND r.quantity>0)
+                    """,Boolean.class,scope,global,id,scope,global,id);
+                if(Boolean.TRUE.equals(stock))return true;
+            }
+            return false;
+        }finally{if(tenant!=null)context(tenant);}
+    }
+    private void retire(UUID tenant,UUID id,boolean global){
+        for(UUID scope:scopes(tenant,global)){
+            context(scope);
+            jdbc.update("""
+                UPDATE account_catalog_items a SET deleted_identity=jsonb_build_object(
+                    'account_sku',a.account_sku,'actor',current_setting('app.user_email',true),
+                    'vendor_codes',coalesce((SELECT jsonb_agg(jsonb_build_object('vendor_id',o.vendor_id,'code',o.vendor_item_code))
+                      FROM vendor_catalog_offers o WHERE o.tenant_id=a.tenant_id AND o.account_catalog_item_id=a.id),'[]'::jsonb)),
+                    account_sku=NULL,status='INACTIVE',deleted_at=now(),updated_at=now()
+                WHERE a.tenant_id=? AND (CASE WHEN ? THEN a.global_product_id ELSE a.id END)=? AND a.deleted_at IS NULL
+                """,scope,global,id);
+        }
+        if(global){
+            jdbc.update("""
+                UPDATE global_catalog_products p SET deleted_identity=jsonb_build_object(
+                  'actor',current_setting('app.user_email',true),
+                  'identifiers',coalesce((SELECT jsonb_agg(to_jsonb(i)) FROM global_product_identifiers i WHERE i.global_product_id=p.id),'[]'::jsonb),
+                  'vendor_codes',coalesce((SELECT jsonb_agg(to_jsonb(v)) FROM global_product_vendor_codes v WHERE v.global_product_id=p.id),'[]'::jsonb)),
+                  status='ARCHIVED',deleted_at=now(),updated_at=now() WHERE id=? AND deleted_at IS NULL
+                """,id);
+            jdbc.update("DELETE FROM global_product_identifiers WHERE global_product_id=?",id);
+            jdbc.update("DELETE FROM global_product_vendor_codes WHERE global_product_id=?",id);
+            jdbc.update("UPDATE global_product_packaging_versions SET status='SUPERSEDED' WHERE global_product_id=? AND status='ACTIVE'",id);
+        }
+        if(tenant!=null)context(tenant);
     }
 
     private void lockLogicalReferences(){

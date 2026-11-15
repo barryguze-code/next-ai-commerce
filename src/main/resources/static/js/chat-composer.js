@@ -14,13 +14,6 @@
       const filename=tools.querySelector('[data-attachment-name]');if(filename){filename.setAttribute('aria-live','polite');filename.classList.add('chat-file-status');filename.hidden=true;tools.querySelector('input[type=file]')?.addEventListener('change',event=>filename.hidden=!event.target.files.length);}
       if(footer){footer.className='chat-compose-hint';footer.replaceChildren(document.createTextNode('Enter to send · Shift+Enter for a new line'));}
     });
-    const close=document.querySelector('#contextual-thread-dialog .conversation-close-button');
-    if(close){close.removeAttribute('onclick');close.addEventListener('click',event=>{
-      event.preventDefault();const confirmation=document.createElement('dialog');confirmation.className='huddle-close-dialog';confirmation.setAttribute('aria-label','Complete conversation');
-      const title=document.createElement('h2');title.textContent='Complete this conversation?';const text=document.createElement('p');text.textContent='The history stays available. Everyone involved will be notified that this conversation is complete.';
-      const actions=document.createElement('div');actions.className='huddle-close-actions';const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Keep open';cancel.onclick=()=>confirmation.close();
-      const accept=document.createElement('button');accept.type='button';accept.textContent='Complete conversation';accept.onclick=()=>{confirmation.close();document.getElementById('thread-conversation-reply').requestSubmit(close);};actions.append(cancel,accept);confirmation.append(title,text,actions);confirmation.addEventListener('close',()=>confirmation.remove());document.body.append(confirmation);confirmation.showModal();cancel.focus();
-    });}
     document.addEventListener('click',event=>document.querySelectorAll('.thread-assignment[open]').forEach(details=>{if(!details.contains(event.target))details.open=false;}));
     document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelectorAll('.thread-assignment[open]').forEach(details=>{details.open=false;details.querySelector('summary').focus();event.stopPropagation();});},true);
   }

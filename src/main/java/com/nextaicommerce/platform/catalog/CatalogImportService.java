@@ -330,7 +330,7 @@ public class CatalogImportService {
         jdbc.update("""
             UPDATE catalog_import_work work SET account_sku=coalesce(
               (SELECT CASE WHEN nullif(btrim(item.account_sku),'') IS NOT NULL THEN item.account_sku END FROM account_catalog_items item
-               WHERE item.tenant_id=? AND item.global_product_id=work.global_id),work.vendor_item_code)
+               WHERE item.tenant_id=? AND item.deleted_at IS NULL AND item.global_product_id=work.global_id),work.vendor_item_code)
             WHERE work.account_sku IS NULL
             """,tenantId);
         Integer skuConflicts=jdbc.queryForObject("""
@@ -345,12 +345,12 @@ public class CatalogImportService {
         jdbc.update("""
             INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku,created_by)
             SELECT ?,global_id,account_sku,? FROM catalog_import_work
-            ON CONFLICT(tenant_id,global_product_id) DO UPDATE SET
+            ON CONFLICT(tenant_id,global_product_id) WHERE deleted_at IS NULL DO UPDATE SET
               account_sku=coalesce(EXCLUDED.account_sku,account_catalog_items.account_sku),updated_at=now()
             """,tenantId,actorId);
         jdbc.update("""
             UPDATE catalog_import_work work SET item_id=item.id FROM account_catalog_items item
-            WHERE item.tenant_id=? AND item.global_product_id=work.global_id
+            WHERE item.tenant_id=? AND item.deleted_at IS NULL AND item.global_product_id=work.global_id
             """,tenantId);
         jdbc.update("""
             UPDATE global_catalog_products product SET category=coalesce(work.category,product.category),

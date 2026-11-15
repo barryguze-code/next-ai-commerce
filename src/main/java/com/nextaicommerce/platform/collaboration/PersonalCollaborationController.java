@@ -73,9 +73,9 @@ class PersonalCollaborationController {
         var windows=CollaborationCompletionWindow.at(java.time.Instant.now(),java.time.ZoneId.of("America/Los_Angeles"));
         var closed=page.rows();
         var dates=new java.util.LinkedHashMap<String,java.time.Instant>();
-        closed.forEach(r->dates.put(r.card().key().type()+r.card().key().id(),r.card().created().toInstant()));
+        closed.forEach(r->dates.put(r.card().key().type()+r.card().key().id(),(r.card().closed()?r.card().lastActivity():r.card().created()).toInstant()));
         for(var window:windows){
-            var ids=closed.stream().skip(5).filter(r->window.contains(r.card().created().toInstant()))
+            var ids=closed.stream().skip(5).filter(r->window.contains(dates.get(r.card().key().type()+r.card().key().id())))
                 .map(r->r.card().key().type()+r.card().key().id()).toList();
             if(!ids.isEmpty())buckets.put(window.key(),ids);
         }

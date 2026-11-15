@@ -27,6 +27,7 @@ public final class CatalogIdentity {
             JOIN account_catalog_items i ON i.tenant_id=o.tenant_id AND i.id=o.account_catalog_item_id
             LEFT JOIN global_product_identifiers b ON b.global_product_id=i.global_product_id
             WHERE o.tenant_id=? AND o.vendor_id=? AND o.effective_to IS NULL
+              AND i.deleted_at IS NULL
               AND nullif(trim(o.vendor_item_code),'') IS NOT NULL
               AND (?::text IS NULL OR CASE WHEN regexp_replace(upper(o.vendor_item_code),'[^A-Z0-9]','','g') ~ '^[0-9]+$'
                 THEN regexp_replace(regexp_replace(upper(o.vendor_item_code),'[^A-Z0-9]','','g'),'^0+(?!$)','')

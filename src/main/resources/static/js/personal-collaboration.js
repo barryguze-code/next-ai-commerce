@@ -33,6 +33,16 @@
         parent.append(node);
         return node;
     }
+    function solvedDuration(created,activity) {
+        const elapsed=Date.parse(activity)-Date.parse(created);
+        if(!Number.isFinite(elapsed)||elapsed<0)return '';
+        const minutes=Math.floor(elapsed/60000);
+        if(minutes<1)return '<1m';
+        if(minutes<60)return minutes+'m';
+        const hours=Math.floor(minutes/60);
+        if(hours<24)return hours+'h'+(minutes%60?' '+minutes%60+'m':'');
+        return Math.floor(hours/24)+'d'+(hours%24?' '+hours%24+'h':'');
+    }
     function render() {
         presentPeopleFilters();
         const filterCount=(appliedType?1:0)+selectedAssignees.size+selectedParticipants.size;let badge=filterControl.querySelector(':scope>summary .table-filter-count');if(!badge){badge=document.createElement('span');badge.className='table-filter-count';filterControl.querySelector(':scope>summary').append(badge);}badge.textContent=String(filterCount);badge.hidden=!filterCount;filterControl.querySelector(':scope>summary').setAttribute('aria-label',filterCount?'Filters, '+filterCount+' applied':'Filters');
@@ -165,7 +175,13 @@
                 initials(people,detail?.participants||'','People',true);
                 const date=value=>value?new Date(value).toLocaleDateString():'—';
                 element('time',date(detail?.createdAt),element('td','',article));
-                element('time',date(detail?.updatedAt),element('td','',article));
+                const activity=scope==='CLOSED'?page.dates?.[c.key.type+c.key.id]:detail?.updatedAt;
+                const activityCell=element('td','',article);
+                const activityLine=element('div','',activityCell);activityLine.className='personal-last-activity';
+                element('time',date(activity),activityLine);
+                const solved=scope==='CLOSED'?solvedDuration(detail?.createdAt||c.createdAt,activity):'';
+                if(solved){const duration=element('span',' · Solved in '+solved,activityLine);duration.className='personal-solved-duration';duration.title='Solved in '+solved;}
+
                 const assignedCell=element('td','',article),dueCell=element('td','',article);
                 if(detail){
                     const editable=(page.editableAccounts||[]).includes(c.account);
@@ -189,9 +205,9 @@
                 if(!closed)action.dataset.actionImage='/images/platform/optimized32/collaboration-complete.png?v=20261109-icons32-1';
                 action.onclick=async()=>{
                     if(busy) return;
-                    if(!window.NextAiConfirm)return;
-                    const accepted=await window.NextAiConfirm({title:closed?'Reopen conversation?':'Close conversation?',
-                        message:'Update this conversation’s status. Notifications follow the existing account settings.',accept:closed?'Reopen':'Close conversation'});
+                    if(closed&&!window.NextAiConfirm)return;
+                    const accepted=!closed||await window.NextAiConfirm({title:'Reopen conversation?',
+                        message:'Update this conversation’s status. Notifications follow the existing account settings.',accept:'Reopen'});
                     if(!accepted){const trigger=article.querySelector('.table-action-trigger');(trigger||article).focus({preventScroll:true});return;}
                     busy=true;
                     try {

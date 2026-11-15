@@ -42,3 +42,8 @@ html body.app-page .collaboration-search input[type=search]{height:24px!importan
 /* Keep the page introduction compact without squeezing its text. */
 .collaboration-workspace .workspace-header>div:first-child{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px 16px;min-width:0}
 .collaboration-workspace .workspace-header .page-intro{margin:0;max-width:none}
+
+/* Closed-task timing stays within the existing date cell and row height. */
+.personal-last-activity{display:flex;align-items:center;white-space:nowrap;max-width:100%}
+.personal-last-activity time{flex:none}
+.personal-solved-duration{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted,#718096);font-weight:400}

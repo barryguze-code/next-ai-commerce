@@ -67,6 +67,7 @@
  document.addEventListener('focusout',event=>{const input=event.target.closest('[data-po-cases]');if(!input||input.disabled||busy||readOnly())return;const row=input.closest('[data-replenishment-row]'),value=Number(input.value),pack=basket.get(row.dataset.item)?.pack||Number(row.dataset.pack),units=Math.round(value*pack),start=quantityFocusStart.get(input);quantityFocusStart.delete(input);if(input.value===''||!Number.isFinite(value)||value<0||!Number.isSafeInteger(units)||units>100000000)return;if(start!==undefined&&start!==units)confirmPoQuantity(input);});
 
 
+ let suggestedRetry;
  async function startSuggestedPo(explicit=false){
   if(!$('#rp-basket')||busy||(!explicit&&initialized)||$('#rp-basket').dataset.planCanEdit==='false')return;
   if(explicit&&(basket.size||plan.id)){
@@ -74,9 +75,9 @@
   }
   busy=true;controls();
   try{let result;for(let attempt=0;attempt<10;attempt++){result=await api('',undefined,'/app/inventory/replenishment/suggested-po');if(result.ready)break;showNotice('Preparing suggested PO…');if(attempt<9)await new Promise(resolve=>setTimeout(resolve,2000));}
-   if(!result.ready)throw Error('Forecast is still preparing. Your draft is unchanged. Try New suggested PO again shortly.');
+   if(!result.ready){if(!explicit) suggestedRetry=setTimeout(()=>{if(!forecastStopped)startSuggestedPo();},5000);throw Error('Forecast is still preparing. Your draft is unchanged.');}
    if(!Array.isArray(result.items)||!result.items.every(i=>i.id&&Number.isFinite(i.pack)&&i.pack>0&&Number.isSafeInteger(i.each)&&i.each>0))throw Error('Suggestions could not be verified. Your current draft is unchanged.');
-   basket.clear();result.items.forEach(i=>basket.set(i.id,i));plan={id:null,revision:0,name:defaultPlanName(),createdAt:null,status:'DRAFT'};markInitialized();showNotice('');basketView();feedback('');if(explicit)showNotice('Suggested PO ready · '+basket.size+' items.',true);
+   basket.clear();result.items.forEach(i=>basket.set(i.id,i));plan={id:null,revision:0,name:defaultPlanName(),createdAt:null,status:'DRAFT'};if(result.items.length||explicit)markInitialized();showNotice('');basketView();feedback('');if(explicit)showNotice('Suggested PO ready · '+basket.size+' items.',true);
    if(explicit&&!$('#rp-basket').open)$('#rp-basket').showModal();
   }catch(error){showNotice(error.message);}
   finally{busy=false;controls();syncPoRows();}
@@ -268,7 +269,7 @@
  document.querySelector('#thread-conversation-start')?.addEventListener('submit',rememberView);
  document.addEventListener('table:search-navigation',event=>{rememberView();if(!viewKey)return;try{const saved=JSON.parse(sessionStorage.getItem(viewKey));saved.url=event.detail.url;sessionStorage.setItem(viewKey,JSON.stringify(saved));}catch{}});
  function restoreView(){if(!viewKey)return;try{const saved=JSON.parse(sessionStorage.getItem(viewKey)||'null');sessionStorage.removeItem(viewKey);if(!saved||saved.url!==location.pathname+location.search)return;for(const id of saved.closed||[]){const section=document.getElementById('rp-skus-'+id);if(section&&!section.hidden)toggleSkus(id);}requestAnimationFrame(()=>window.scrollTo(0,saved.y||0));}catch{}}
- let forecastStopped=false;window.addEventListener('pagehide',()=>forecastStopped=true);window.addEventListener('pageshow',event=>{if(event.persisted&&forecastRoot?.dataset.forecastPending==='true'){forecastStopped=false;checkForecast();}});
+ let forecastStopped=false;window.addEventListener('pagehide',()=>{forecastStopped=true;clearTimeout(suggestedRetry);});window.addEventListener('pageshow',event=>{if(event.persisted&&forecastRoot?.dataset.forecastPending==='true'){forecastStopped=false;checkForecast();}});
  async function checkForecast(){
   if(forecastStopped)return;
   try{const response=await fetch('/app/inventory/replenishment/forecast-state',{headers:{Accept:'application/json'},cache:'no-store',signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error();const state=await response.json();

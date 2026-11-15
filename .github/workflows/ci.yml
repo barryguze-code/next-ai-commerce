@@ -28,7 +28,7 @@ jobs:
       - name: Catalogue removal recovery checks and package
         if: inputs.release_recovery == true
         run: |
-          mvn --batch-mode -Dtest=GlobalCatalogDatabaseTest,CatalogRemovalDatabaseTest,CatalogRemovalAccessTest test
+          mvn --batch-mode -Dtest=GlobalCatalogDatabaseTest,CatalogRemovalDatabaseTest,CatalogRemovalAccessTest,CollaborationQueueDatabaseTest,ReplenishmentSuggestedPoControllerTest test
           mvn --batch-mode -Dmaven.test.skip=true package
       - run: npm ci
       - run: npx playwright install --with-deps chromium
@@ -36,7 +36,7 @@ jobs:
         if: inputs.release_recovery != true
       - name: Recovery first-render regressions
         if: inputs.release_recovery == true
-        run: node --test src/test/js/inventory-first-paint.test.cjs
+        run: node --test src/test/js/inventory-first-paint.test.cjs src/test/js/collaboration-close-direct.test.cjs src/test/js/collaboration-solved-duration.test.cjs src/test/js/replenishment-suggested-po.test.cjs
       - name: Preserve tested notice hotfix artifact
         if: github.ref == 'refs/heads/codex/notice-only-hotfix'
         uses: actions/upload-artifact@v4
@@ -162,6 +162,6 @@ jobs:
         if: inputs.release_recovery == true
         uses: actions/upload-artifact@v4
         with:
-          name: catalogue-removal-1.14.15-package
-          path: target/next-ai-commerce-1.14.15.jar
+          name: catalogue-collaboration-1.14.16-package
+          path: target/next-ai-commerce-1.14.16.jar
           if-no-files-found: error

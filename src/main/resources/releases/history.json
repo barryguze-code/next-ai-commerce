@@ -1,5 +1,22 @@
 [
   {
+    "version": "1.14.16",
+    "title": "Catalogue and collaboration improvements",
+    "sections": [
+      {
+        "title": "Improvements",
+        "items": [
+          "Remove zero-stock catalogue products from view while retaining history and releasing account codes; global removal also releases shared identifiers.",
+          "Use consistent Shopify SKU actions, currency, profit controls, status and product pictures.",
+          "Close conversations directly without repeated confirmation.",
+          "Keep replenishment expansion controls visible and calculators beside profit only.",
+          "Group closed conversations by last activity and show compact resolution time.",
+          "Fill the initial replenishment basket after preparation while preserving edited drafts, and use the shared Sync now control."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.15",
     "title": "Catalogue pictures and safe deletion",
     "sections": [
@@ -46,7 +63,7 @@
       {
         "title": "Corrections",
         "items": [
-          "Calculate received cases from each product\u2019s current master-case quantity.",
+          "Calculate received cases from each product’s current master-case quantity.",
           "Show case totals beneath received units in smaller regular text.",
           "Require whole-number units per case and display without decimal padding."
         ]
@@ -265,7 +282,7 @@
       {
         "title": "Warehouses and storage locations",
         "items": [
-          "Organize each account\u2019s storage locations under warehouses, with optional addresses and contacts. Existing locations remain in Default Warehouse.",
+          "Organize each account’s storage locations under warehouses, with optional addresses and contacts. Existing locations remain in Default Warehouse.",
           "Filter Available Inventory by warehouse, find stock using mapped marketplace SKUs, and retain your current page when switching accounts.",
           "Unused warehouses can be deleted; warehouses with operational history become inactive while stock and historical records are preserved."
         ]
@@ -346,7 +363,7 @@
         "title": "Account and connection clarity",
         "items": [
           "Review accounts with consistent table styling and compact workspace headers.",
-          "See marketplace providers in Channel and edit a store\u2019s display name without changing its connection credentials.",
+          "See marketplace providers in Channel and edit a store’s display name without changing its connection credentials.",
           "Completed setup notices no longer remain across unrelated pages; connection warnings remain available in Marketplace Connections."
         ]
       }
@@ -1092,7 +1109,7 @@
       {
         "title": "Inventory hotfix",
         "items": [
-          "Open the same sliding inventory detail by clicking a sold-out catalogue item\u2019s title in Available Inventory, and review its complete movement history even when no current stock batch remains."
+          "Open the same sliding inventory detail by clicking a sold-out catalogue item’s title in Available Inventory, and review its complete movement history even when no current stock batch remains."
         ]
       }
     ]
@@ -1147,14 +1164,14 @@
         "title": "Easier inventory corrections",
         "items": [
           "Edit expiration dates beside inventory rows. Matching item, location and date positions combine, with correction history preserved and reservations refreshed.",
-          "Order inventory adjustments use the expiration date you enter, creating that date\u2019s stock position when needed.",
+          "Order inventory adjustments use the expiration date you enter, creating that date’s stock position when needed.",
           "Manage vendors and locations from Available Inventory. Edit or delete unused locations, with detailed explanations when records prevent changes."
         ]
       },
       {
         "title": "Clearer everyday tools",
         "items": [
-          "Right-click product pictures to sync Amazon\u2019s main image into Account and Global Catalogue.",
+          "Right-click product pictures to sync Amazon’s main image into Account and Global Catalogue.",
           "Dates display as MM/DD/YY, while native date pickers follow browser settings.",
           "Order action menus remain visible on short tables. Physical-count reviews scroll with accessible approval controls, and inventory dialogs use consistent styling."
         ]
@@ -1278,7 +1295,7 @@
       {
         "title": "Packing made simpler",
         "items": [
-          "Choose and save packaging for an ASIN and quantity combination, then print a compact 2 \u00d7 1 label with up to two items per page.",
+          "Choose and save packaging for an ASIN and quantity combination, then print a compact 2 × 1 label with up to two items per page.",
           "Labels show product brand, packaging, quantities, item details, expiry and location without unnecessary footer links.",
           "For UPS, Medium and OMBox packaging, open Veeqo directly and automatically copy the order ID, ready to paste."
         ]

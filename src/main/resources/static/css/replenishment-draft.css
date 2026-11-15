@@ -192,3 +192,6 @@ html[data-theme=dark] .app-page .rp-toggle-row .rp-sku-toggle{color:#AFCCF3}
 html[data-theme=dark] .app-page .rp-toggle-row .rp-sku-toggle::before{border-color:#46637F;background-image:linear-gradient(#718AA4,#718AA4),linear-gradient(#718AA4,#718AA4),linear-gradient(#718AA4,#718AA4),linear-gradient(#718AA4,#718AA4)}
 /* The handle's hitbox never paints an opaque rectangle around the pill. */
 html body.app-page .rp-toggle-row .rp-sku-toggle,html[data-theme=dark] body.app-page .rp-toggle-row .rp-sku-toggle{background:transparent!important;box-shadow:none!important}
+
+/* Keep the final boundary toggle and its focus outline inside the scroll viewport. */
+.app-page .table-wrap:has(>table[data-table-widget="replenishment-draft"]){padding-bottom:18px}

@@ -850,8 +850,11 @@ public class ReceivingRepository {
             // Multiple active offers for one item are not multiple product identities.
             // Legacy conflicts must be reviewed instead of choosing an arbitrary row.
             var matches=jdbc.queryForList("""
-                SELECT DISTINCT account_catalog_item_id FROM vendor_catalog_offers
-                WHERE tenant_id=? AND vendor_id=? AND effective_to IS NULL
+                SELECT DISTINCT o.account_catalog_item_id FROM vendor_catalog_offers o
+                JOIN account_catalog_items live ON live.tenant_id=o.tenant_id AND live.id=o.account_catalog_item_id
+                JOIN global_catalog_products shared ON shared.id=live.global_product_id
+                WHERE o.tenant_id=? AND o.vendor_id=? AND o.effective_to IS NULL
+                  AND live.deleted_at IS NULL AND shared.deleted_at IS NULL
                   AND CASE WHEN upper(regexp_replace(vendor_item_code,'[^A-Za-z0-9]','','g')) ~ '^[0-9]+$'
                     THEN regexp_replace(upper(regexp_replace(vendor_item_code,'[^A-Za-z0-9]','','g')),'^0+(?!$)','')
                     ELSE upper(regexp_replace(vendor_item_code,'[^A-Za-z0-9]','','g')) END=?
