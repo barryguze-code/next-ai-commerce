@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.14.20",
+    "title": "Dispose stock from inactive catalogue products",
+    "sections": [
+      {
+        "title": "Fixes",
+        "items": [
+          "Allow physical stock removal from inactive catalogue products while retaining reservation checks and blocking new stock increases.",
+          "Distinguish completed disposal from plan changes in the inventory ledger."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.19",
     "title": "Catalogue continuity and inactive FBA fee collection",
     "sections": [

@@ -182,10 +182,10 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - run: mvn --batch-mode -Dtest=CatalogGlobalChoiceMvcTest,AccountCatalogSelectionDatabaseTest,CollaborationQueueDatabaseTest,AmazonProductFeeJobsDatabaseTest,AmazonProductFeeBatchTest,AmazonProductFeeSyncTest test
+      - run: mvn --batch-mode -Dtest=InventoryPublicationDatabaseTest,InventoryControllerSafetyTest,InventoryLedgerLabelTest test
       - run: mvn --batch-mode -Dmaven.test.skip=true package
       - uses: actions/upload-artifact@v4
         with:
-          name: catalogue-fees-1.14.19-package
-          path: target/next-ai-commerce-1.14.19.jar
+          name: inventory-disposal-1.14.20-package
+          path: target/next-ai-commerce-1.14.20.jar
           if-no-files-found: error

@@ -172,6 +172,33 @@ class InventoryPublicationDatabaseTest {
   assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",java.math.BigDecimal.class,tenant,item)).isEqualByComparingTo("0");
   assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND notes LIKE '%Disposed%'",Integer.class,tenant,item)).isEqualTo(1);
  });}
+ @Test void inactiveProductCanBeDisposedOnceWithoutReactivation(){tx.executeWithoutResult(s->{
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);var expiry=java.time.LocalDate.now().plusDays(40);
+  UUID location=jdbc.queryForObject("SELECT location_id FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? LIMIT 1",UUID.class,tenant,item);
+  jdbc.update("UPDATE account_catalog_items SET status='INACTIVE' WHERE tenant_id=? AND id=?",tenant,item);
+  inventory.applyDisposition(tenant,user+"@example.test",item,expiry,location,"REMOVE","DISPOSE",null);
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",java.math.BigDecimal.class,tenant,item)).isEqualByComparingTo("0");
+  assertThat(jdbc.queryForObject("SELECT status FROM account_catalog_items WHERE id=?",String.class,item)).isEqualTo("INACTIVE");
+  assertThat(inventory.inventory(tenant,List.of(item))).isEmpty();
+  assertThatThrownBy(()->inventory.applyDisposition(tenant,user+"@example.test",item,expiry,location,"REMOVE","DISPOSE",null)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("already been removed");
+ });}
+ @Test void inactiveProductCannotGainStockThroughAdjustment(){tx.executeWithoutResult(s->{
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);var expiry=java.time.LocalDate.now().plusDays(40);
+  UUID location=jdbc.queryForObject("SELECT location_id FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? LIMIT 1",UUID.class,tenant,item);
+  jdbc.update("UPDATE account_catalog_items SET status='INACTIVE' WHERE tenant_id=? AND id=?",tenant,item);
+  assertThatThrownBy(()->inventory.adjustInventory(tenant,user+"@example.test",item,expiry,location,java.math.BigDecimal.ONE,"COUNT_CORRECTION",null)).isInstanceOf(IllegalArgumentException.class);
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",java.math.BigDecimal.class,tenant,item)).isEqualByComparingTo("12");
+ });}
+ @Test void inactiveDisposalCannotRemoveReservedStock(){tx.executeWithoutResult(s->{
+  repo.scope(tenant);order("reserved-disposal","SINGLE",2);
+  UUID line=jdbc.queryForObject("SELECT id FROM amazon_order_items WHERE tenant_id=? AND amazon_order_id='reserved-disposal'",UUID.class,tenant);
+  UUID location=jdbc.queryForObject("SELECT location_id FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? LIMIT 1",UUID.class,tenant,item);
+  jdbc.update("INSERT INTO order_inventory_reservations(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,account_catalog_item_id,expiration_date,quantity,location_id) VALUES (?,?,'reserved-disposal',?,?,current_date+40,2,?)",tenant,connection,line,item,location);
+  jdbc.update("UPDATE account_catalog_items SET status='INACTIVE' WHERE tenant_id=? AND id=?",tenant,item);
+  var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);
+  assertThatThrownBy(()->inventory.applyDisposition(tenant,user+"@example.test",item,java.time.LocalDate.now().plusDays(40),location,"REMOVE","DISPOSE",null)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("reserved");
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",java.math.BigDecimal.class,tenant,item)).isEqualByComparingTo("12");
+ });}
  @Test void clearPlanWithNoLocationUsesDefaultAndPreservesStock(){tx.executeWithoutResult(s->{
   var inventory=new com.nextaicommerce.platform.receiving.InventoryRepository(jdbc);var expiry=java.time.LocalDate.now().plusDays(40);
   UUID location=jdbc.queryForObject("SELECT location_id FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? LIMIT 1",UUID.class,tenant,item);

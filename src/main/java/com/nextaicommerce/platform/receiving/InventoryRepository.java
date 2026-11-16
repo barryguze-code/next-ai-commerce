@@ -141,11 +141,16 @@ public class InventoryRepository {
         }
         public String movementLabel(){
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())return "Physical count";
+            if("ADJUSTMENT".equals(entryType)&&"ADJUSTMENT".equals(sourceType)&&quantity.signum()<0&&notes!=null){
+                if(notes.equals("removal · Disposed")||notes.startsWith("removal · Disposed · "))return "Disposed";
+                if(notes.equals("donation · Donated")||notes.startsWith("donation · Donated · "))return "Donated";
+                if(notes.equals("return to vendor · Return completed")||notes.startsWith("return to vendor · Return completed · "))return "Return completed";
+            }
             return switch(entryType){
             case "RECEIPT" -> "Received";
             case "FBA_DEPLETION" -> "FBA shipment deducted";
             case "FBA_DEPLETION_ADJUSTMENT" -> "FBA deduction adjusted";
-            case "INVENTORY_PLAN" -> "Plan updated";
+            case "INVENTORY_PLAN" -> ("Plan cleared".equals(notes)||notes!=null&&notes.startsWith("Plan cleared · "))?"Plan cleared":notes!=null&&(notes.equals("HOLD")||notes.startsWith("HOLD · "))?"Hold applied":notes!=null&&notes.startsWith("REMOVE · RETURN_TO_VENDOR")?"Return planned":notes!=null&&(notes.startsWith("REMOVE · ")||notes.startsWith("DONATE · "))?"Removal planned":"Plan updated";
             case "SALE","SHIPMENT" -> "Order shipped";
             case "SHIPMENT_UNRECORDED" -> "Shipped";
             case "SHARED_STOCK_SALES" -> "Shared-stock sales";
@@ -160,6 +165,11 @@ public class InventoryRepository {
         };}
         public String sourceLabel(){
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())return "Physical count";
+            if("ADJUSTMENT".equals(entryType)&&"ADJUSTMENT".equals(sourceType)&&quantity.signum()<0&&notes!=null){
+                if(notes.equals("removal · Disposed")||notes.startsWith("removal · Disposed · "))return "Disposed";
+                if(notes.equals("donation · Donated")||notes.startsWith("donation · Donated · "))return "Donated";
+                if(notes.equals("return to vendor · Return completed")||notes.startsWith("return to vendor · Return completed · "))return "Return completed";
+            }
             return switch(sourceType){
             case "RECEIVING" -> "Invoice receiving";
             case "FBA_SHIPMENT" -> "FBA shipment";
@@ -730,8 +740,9 @@ public class InventoryRepository {
             LEFT JOIN LATERAL (SELECT currency,round(list_cost*(1-coalesce(discount_rate,0)/100),4) buying_cost FROM vendor_catalog_offers offer
               WHERE offer.tenant_id=item.tenant_id AND offer.account_catalog_item_id=item.id
                 AND offer.effective_to IS NULL ORDER BY offer.is_default DESC,offer.updated_at DESC LIMIT 1) offer ON true
-            WHERE item.tenant_id=? AND item.id=? AND item.status='ACTIVE'
-            """,rs->rs.next()?new ProductReceiptTarget(rs.getBoolean(1),rs.getString(2),rs.getBigDecimal(3)):null,tenantId,itemId);
+            WHERE item.tenant_id=? AND item.id=? AND item.deleted_at IS NULL
+              AND (item.status='ACTIVE' OR (?<0 AND item.status IN ('INACTIVE','DISCONTINUED')))
+            """,rs->rs.next()?new ProductReceiptTarget(rs.getBoolean(1),rs.getString(2),rs.getBigDecimal(3)):null,tenantId,itemId,quantityChange);
         if(target==null)throw new IllegalArgumentException("This account catalogue product is no longer active.");
         if(target.expirationRequired()&&expirationDate==null)
             throw new IllegalArgumentException("Choose the expiration batch for this product.");
