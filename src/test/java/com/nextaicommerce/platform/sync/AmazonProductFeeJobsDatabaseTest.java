@@ -137,6 +137,16 @@ class AmazonProductFeeJobsDatabaseTest {
         assertThat(count("amazon_source_documents")).isOne();assertThat(jdbc.queryForMap("SELECT * FROM amazon_source_documents")).isEqualTo(before);
     }
 
+    @Test void inactiveFbaListingStillReceivesAValidatedFeeQuote(){
+        batchScope();jdbc.update("UPDATE amazon_listings SET listing_status='Inactive' WHERE tenant_id=?",tenant);
+        var targets=jobs.batchNext(job);assertThat(targets).extracting(AmazonProductFeeJobs.Target::sku).containsExactly(SKU);
+        var response=batchResponse(targets,null,null);jobs.publishBatch(job,targets,response.verified(),response.response());
+        assertThat(count("amazon_fee_estimates")).isOne();
+    }
+    @Test void deletedListingIsNotAQuoteTarget(){
+        batchScope();jdbc.update("UPDATE amazon_listings SET listing_status='Deleted' WHERE tenant_id=?",tenant);
+        assertThat(jobs.batchNext(job)).isEmpty();assertThat(count("amazon_fee_estimates")).isZero();
+    }
     void batchScope(){jdbc.update("UPDATE amazon_listings SET listing_status='ACTIVE' WHERE tenant_id=?",tenant);jdbc.update("UPDATE marketplace_sync_jobs SET cursor=jsonb_set(cursor,'{shippingBasisConfirmed}','true') WHERE id=?",id);}
     @Test void batchManifestCacheUsesOneSetQueryForTwoHundredExactTargets(){
         batchScope();jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,price,currency,fulfillment_channel,listing_status) SELECT ?,?,?,'CACHE-'||n,30,'USD','AFN','ACTIVE' FROM generate_series(1,199) n",tenant,connection,MARKET);

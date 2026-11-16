@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.14.19",
+    "title": "Catalogue continuity and inactive FBA fee collection",
+    "sections": [
+      {
+        "title": "Fixes",
+        "items": [
+          "Keep catalogue edits in the filtered view and show conflicting vendor codes inside the editor.",
+          "Open Pending cost calculators immediately with clear loading feedback.",
+          "Request validated Amazon fee quotes for inactive FBA listings with a price, preserving deleted-listing and parent exclusions."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.18",
     "title": "Catalogue and planning refinements",
     "sections": [

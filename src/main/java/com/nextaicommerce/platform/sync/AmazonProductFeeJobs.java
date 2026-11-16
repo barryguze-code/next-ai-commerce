@@ -476,7 +476,7 @@ public class AmazonProductFeeJobs {
                 SELECT l.seller_sku,l.price,CASE WHEN ? THEN coalesce(nullif(trim(l.currency),''),d.currency_code) ELSE l.currency END currency FROM amazon_listings l JOIN marketplace_connections c
                  ON c.tenant_id=l.tenant_id AND c.id=l.marketplace_connection_id AND c.marketplace_identifier=l.marketplace_id
                 JOIN marketplace_definitions d ON d.channel='AMAZON' AND d.marketplace_identifier=l.marketplace_id AND (d.currency_code=l.currency OR (? AND nullif(trim(l.currency),'') IS NULL))
-                WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.marketplace_id=? AND upper(l.listing_status)='ACTIVE'
+                WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.marketplace_id=? AND upper(l.listing_status) IN ('ACTIVE','INACTIVE')
                  AND upper(l.fulfillment_channel) IN ('AMAZON','AMAZON_NA','AMAZON_EU','AMAZON_JP','FBA','AFN') AND l.price>0
                  AND (CAST(? AS jsonb) IS NULL OR l.seller_sku IN (SELECT jsonb_array_elements_text(CAST(? AS jsonb))))
                  AND NOT EXISTS(SELECT 1 FROM amazon_variation_classifications v WHERE v.tenant_id=l.tenant_id
@@ -556,7 +556,7 @@ public class AmazonProductFeeJobs {
         observe(r,response.rateLimit());
         for(var accepted:result.accepted()){
             var t=accepted.request().target();
-            var current=jdbc.queryForList("SELECT id FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=? AND price=? AND (currency=? OR (? AND nullif(trim(currency),'') IS NULL AND ?=(SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=?))) AND upper(listing_status)='ACTIVE' AND upper(fulfillment_channel) IN ('AMAZON','AMAZON_NA','AMAZON_EU','AMAZON_JP','FBA','AFN') FOR SHARE",UUID.class,j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),t.price(),t.currency(),currencyFallback,t.currency(),j.marketplaceId());
+            var current=jdbc.queryForList("SELECT id FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_id=? AND seller_sku=? AND price=? AND (currency=? OR (? AND nullif(trim(currency),'') IS NULL AND ?=(SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=?))) AND upper(listing_status) IN ('ACTIVE','INACTIVE') AND upper(fulfillment_channel) IN ('AMAZON','AMAZON_NA','AMAZON_EU','AMAZON_JP','FBA','AFN') FOR SHARE",UUID.class,j.tenantId(),j.connectionId(),j.marketplaceId(),t.sku(),t.price(),t.currency(),currencyFallback,t.currency(),j.marketplaceId());
             if(current.size()!=1){archive(r,"batch:"+r.fee().path("batchIndex").asInt(),response.body(),response.requestId(),false,0);stop(r,"FEE_BASIS_CHANGED");return false;}
         }
         UUID source=archive(r,"batch:"+r.fee().path("batchIndex").asInt(),response.body(),response.requestId(),!result.accepted().isEmpty(),result.accepted().size());
