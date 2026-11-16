@@ -45,7 +45,7 @@
  }
  function settings(section){if(section==='vendors'){document.dispatchEvent(new CustomEvent('rp:vendors-open'));return;}$('#rp-settings').showModal();window.NextAiStandardTables?.enhance();document.getElementById('rp-'+section)?.scrollIntoView({block:'start'});}
  const metaKey=storageKey?storageKey+':plan':null;
- const defaultPlanName=()=>{const d=new Date();return 'PO-'+[d.getMonth()+1,d.getDate(),d.getFullYear()%100].map(n=>String(n).padStart(2,'0')).join('')+'-Draft';};
+ const defaultPlanName=()=>{const d=new Date();return 'PO-'+[d.getMonth()+1,d.getDate(),d.getFullYear()%100].map(n=>String(n).padStart(2,'0')).join('')+'-'+[d.getHours(),d.getMinutes()].map(n=>String(n).padStart(2,'0')).join('')+'-Draft';};
  let plan={id:null,revision:0,name:defaultPlanName(),createdAt:null,status:'DRAFT'},busy=false;
  try{const saved=JSON.parse(sessionStorage.getItem(metaKey)||'null');if(saved&&typeof saved.name==='string'&&['DRAFT','SUBMITTED'].includes(saved.status)&&Number.isSafeInteger(saved.revision)&&saved.revision>=0)plan=saved;}catch{}
  if(!plan.id&&['Suggested PO','Purchase plan'].includes(plan.name))plan.name=defaultPlanName();

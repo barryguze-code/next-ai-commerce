@@ -660,3 +660,6 @@ html[data-theme="dark"] .reservation-sku{color:#d9e5f3}
 /* CD-reviewed removal/status states; preserve contrast in both themes. */
 #warehouse-directory .location-actions button:disabled{opacity:.45;cursor:not-allowed;color:var(--muted)}
 #warehouse-directory .location-status.inactive{background:var(--surface-muted,var(--surface));color:var(--muted);border:1px solid var(--line)}
+
+/* Keep the selected physical-stock action visible over the dark neutral rule. */
+html[data-theme="dark"] .removal-methods label:has(input:checked){border-color:#3f6591;background:#172b42;color:#e9f0f7;box-shadow:inset 0 0 0 1px #3f6591}

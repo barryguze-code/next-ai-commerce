@@ -60,3 +60,5 @@ html body.app-page dialog.catalog-edit-dialog{width:720px}
 @media(max-width:480px){.catalog-edit-dialog .catalog-reference-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .catalog-edit-dialog .catalog-reference-initial{display:grid;place-items:center;border:1px solid var(--line);font-weight:600;color:var(--muted)}
+
+.catalog-edit-dialog .catalog-field-caption{display:inline-flex;align-items:center;gap:6px}

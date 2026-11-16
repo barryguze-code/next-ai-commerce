@@ -1,6 +1,7 @@
 package com.nextaicommerce.platform.profit;
 
 import com.nextaicommerce.platform.web.AccountSelectionController;
+import com.nextaicommerce.platform.orders.PackingPackageNames;
 import com.nextaicommerce.platform.web.PageController;
 import jakarta.servlet.http.HttpSession;
 import java.math.BigDecimal;
@@ -18,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class ProfitController {
     private final ProfitRepository profit;private final ProfitCostRepository costs;
     private final ProfitPricePublisher prices;
+    @org.springframework.beans.factory.annotation.Autowired private PackingPackageNames packageNames;
     @org.springframework.beans.factory.annotation.Autowired private ShopifyOrderProfitRepository shopify;
     public ProfitController(ProfitRepository profit,ProfitCostRepository costs,ProfitPricePublisher prices){this.profit=profit;this.costs=costs;this.prices=prices;}
     @GetMapping("/price-support") @ResponseBody
@@ -52,6 +54,11 @@ public class ProfitController {
     }
     @GetMapping("/rates") @ResponseBody
     List<ProfitShippingRates.Rate> rates(HttpSession session){return costs.rates(tenant(session));}
+    @GetMapping("/package-choices") @ResponseBody
+    List<PackingPackageNames.Choice> packageChoices(HttpSession session,@RequestParam(required=false) LocalDate date){
+        UUID account=tenant(session);
+        return packageNames.choices(account,costs.rates(account),date==null?LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")):date);
+    }
     public record RateChange(ProfitShippingRates.PackageType packageType,LocalDate effectiveFrom,BigDecimal amount){}
     @PostMapping("/rates") @ResponseBody
     Map<String,String> rate(HttpSession session,Authentication auth,Model model,@RequestBody RateChange change){

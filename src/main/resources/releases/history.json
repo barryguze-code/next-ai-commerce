@@ -1,5 +1,21 @@
 [
   {
+    "version": "1.14.18",
+    "title": "Catalogue and planning refinements",
+    "sections": [
+      {
+        "title": "Improvements",
+        "items": [
+          "Keep catalogue help icons beside their field titles.",
+          "Make selected stock removal actions clear in dark mode.",
+          "Include the time in new purchase plan draft names.",
+          "Use account shipping package names and configured rates in replenishment.",
+          "Preserve the current account catalogue edit and save workflow."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.16",
     "title": "Catalogue and collaboration improvements",
     "sections": [

@@ -182,10 +182,10 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - run: mvn --batch-mode -Dtest=AmazonFeeCurrencyDatabaseTest,ProfitDatabaseTest,AmazonProductFeeSyncTest,ShopifyOrderProfitTest test
+      - run: mvn --batch-mode -Dtest=CatalogGlobalChoiceMvcTest,AccountCatalogSelectionDatabaseTest,ReplenishmentPurchasePlanControllerTest,ReplenishmentPurchasePlansDatabaseTest,ProfitCostRepositoryTest,ProfitPackageChoicesTest test
       - run: mvn --batch-mode -Dmaven.test.skip=true package
       - uses: actions/upload-artifact@v4
         with:
-          name: amazon-fee-1.14.17-package
-          path: target/next-ai-commerce-1.14.17.jar
+          name: catalogue-planning-1.14.18-package
+          path: target/next-ai-commerce-1.14.18.jar
           if-no-files-found: error
