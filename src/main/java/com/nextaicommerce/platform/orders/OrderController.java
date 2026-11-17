@@ -186,6 +186,12 @@ public class OrderController {
         try{packageNames.saveRate(tenant(session),name,effectiveFrom,amount,auth.getName());profitSummary.invalidate(tenant(session));return Map.of("status","saved");}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
     }
 
+    @PostMapping("/app/orders/packing-packages/dimensions") @ResponseBody
+    Map<String,String> savePackageDimensions(@RequestParam String name,@RequestParam(required=false) java.math.BigDecimal length,@RequestParam(required=false) java.math.BigDecimal width,@RequestParam(required=false) java.math.BigDecimal height,@RequestParam String unit,@RequestParam long revision,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{packageNames.saveDimensions(tenant(session),name,new PackingPackageNames.Dimensions(length,width,height,unit,revision),auth.getName());return Map.of("status","saved");}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
     private void requirePackageManagement(HttpSession session,Authentication auth){
         UUID account=tenant(session);
         boolean admin=auth!=null&&auth.getAuthorities().stream().anyMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));

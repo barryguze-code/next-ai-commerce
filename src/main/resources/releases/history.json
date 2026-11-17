@@ -1,5 +1,25 @@
 [
   {
+    "version": "1.14.21",
+    "title": "Account-managed packages and faster cost details",
+    "sections": [
+      {
+        "title": "Packages",
+        "items": [
+          "Use the same account package names in Orders, packing slips and SKU cost calculators.",
+          "Edit package names and dimensions beside the package; keep dated price history visible while editing rates.",
+          "Clean up legacy package aliases without changing saved costs or printed order history."
+        ]
+      },
+      {
+        "title": "Performance",
+        "items": [
+          "Show cost details without waiting for optional publishing availability; reuse package metadata briefly within the current page."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.20",
     "title": "Dispose stock from inactive catalogue products",
     "sections": [

@@ -30,3 +30,9 @@ html[data-theme=dark] #packing-name-dialog{background:#182838;border-color:#3448
 
 /* Price and its explicit edit affordance stay together; reuse the existing pen. */
 .package-list-price{display:flex;align-items:center;justify-content:flex-end;gap:4px;min-width:0}.package-list-price .package-list-cost{white-space:nowrap}.package-list-rate-edit{flex:0 0 40px}@media(max-width:480px){.package-list-rate-edit{flex-basis:32px}}
+
+#package-manager .package-list-heading,#package-manager .package-list-row{grid-template-columns:minmax(180px,1fr) 150px 110px}.package-list-identity{display:flex;align-items:center;gap:6px;min-width:0}.package-list-identity .package-list-name{min-width:0}.package-list-identity .package-list-edit{flex:none}
+
+.package-list-identity{display:grid;gap:4px}.package-list-name-line,.package-list-dimensions{display:flex;align-items:center;gap:6px;min-width:0}.package-list-dimensions small{color:var(--muted);font-size:12px}.package-dimension-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.package-dimension-fields label{display:grid;gap:6px}.package-dimension-fields input,.package-dimension-fields select{width:100%;min-width:0;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--white);color:var(--ink)}@media(max-width:540px){.package-dimension-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+@media(max-width:480px){#package-manager .package-list-heading,#package-manager .package-list-row{grid-template-columns:minmax(0,1fr) 104px 74px;gap:4px;padding:8px}.package-list-dimensions .package-list-edit{width:28px;height:28px}.package-list-name-line{gap:2px}}

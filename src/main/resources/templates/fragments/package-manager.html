@@ -2,7 +2,7 @@
 <link rel="stylesheet" th:href="@{/css/platform-controls.css(v=${buildVersion})}"><link rel="stylesheet" th:href="@{/css/package-manager.css(v=${buildVersion})}">
 <dialog id="package-manager" class="invite-dialog" aria-labelledby="package-manager-title"><section>
 <header><h2 id="package-manager-title">Packages</h2><button type="button" class="dialog-close" data-packages-close aria-label="Close packages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
-<div class="package-manager-body"><label class="package-search">Search packages<input type="search" data-package-search placeholder="Search packages"></label><div class="package-list"><div class="package-list-heading"><span>Package</span><span data-tooltip="Planning rate for the shown date and carrier; order or SKU overrides may differ.">Planning cost</span><span>Effective from</span><span>Edit</span></div><div data-package-rows></div></div></div>
+<div class="package-manager-body"><label class="package-search">Search packages<input type="search" data-package-search placeholder="Search packages"></label><div class="package-list"><div class="package-list-heading"><span>Package</span><span data-tooltip="Planning rate for the shown date and carrier; order or SKU overrides may differ.">Planning cost</span><span>Effective from</span></div><div data-package-rows></div></div></div>
 <footer><div><p data-package-context></p><p id="packing-status" role="status"></p></div><button type="button" class="secondary-button" data-packages-close>Close</button></footer>
 </section></dialog>
 <select id="packing-package" hidden></select><button id="rename-package" type="button" hidden></button>

@@ -31,7 +31,7 @@ window.NextAiPackageNameEditor=({select,packageName,showPackage,status,csrf,onSa
   rename.addEventListener('click',()=>{source=packageName();field.value=source;field.readOnly=false;review=null;summary.textContent='';error.textContent='';title.textContent='Rename package';confirmButton.textContent='Review';nameDialog.showModal();field.focus();field.select();});
   nameDialog.querySelectorAll('[data-name-cancel]').forEach(button=>button.addEventListener('click',()=>{if(!busy){nameDialog.close();rename.focus();}}));
   nameDialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});
-  field.addEventListener('input',()=>{review=null;confirmButton.textContent='Review';});
+  field.addEventListener('input',()=>{review=null;summary.textContent='';error.textContent='';confirmButton.textContent='Review';title.textContent='Rename package';});
   confirmButton.addEventListener('click',async()=>{
    if(busy)return;closeOptions();busy=true;confirmButton.disabled=true;error.textContent='';
    try{
@@ -39,7 +39,7 @@ window.NextAiPackageNameEditor=({select,packageName,showPackage,status,csrf,onSa
     const headers={'Content-Type':'application/x-www-form-urlencoded',Accept:'application/json'};if(csrf)headers[csrf.dataset.header||'X-CSRF-TOKEN']=csrf.value;
     const response=await fetch('/app/orders/packing-packages/'+(applying?'apply':'review'),{method:'POST',headers,body:form});
     const json=await response.json();if(!response.ok)throw Error(json.detail||json.message||'Could not update package.');
-    if(!applying){review=json;field.value=json.destination;field.readOnly=true;title.textContent=json.operation==='MERGE'?'Merge packages':'Rename package';summary.textContent=json.affectedAssignments+' saved assignments: '+json.source+' → '+json.destination+'. '+(json.operation==='MERGE'?'Move these assignments and remove the old package choice. Assignments will use the destination’s applicable package cost. Profit may change.':'Package name changes only. Costs and profit remain unchanged.');confirmButton.textContent=json.operation==='MERGE'?'Merge packages':'Save';}
+    if(!applying){review=json;field.value=json.destination;field.readOnly=false;title.textContent=json.operation==='MERGE'?'Merge packages':'Rename package';summary.textContent=json.affectedAssignments+' saved assignments: '+json.source+' → '+json.destination+'. '+(json.operation==='MERGE'?'Move these assignments and remove the old package choice. Assignments will use the destination’s applicable package cost. Destination dimensions and applicable rates are retained. Profit may change.':'Package name changes only. Costs and profit remain unchanged.');confirmButton.textContent=json.operation==='MERGE'?'Merge packages':'Save';}
     else{for(const option of [...select.options])if(key(option.value)===key(json.source))option.remove();select.value=remember(json.destination);showPackage();nameDialog.close();status.textContent=json.operation==='MERGE'?'Packages merged.':'Package renamed.';rename.focus();onSaved?.(json);}
    }catch(problem){error.textContent=problem.message;review=null;field.readOnly=false;confirmButton.textContent='Review';}
    finally{busy=false;confirmButton.disabled=false;}

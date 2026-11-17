@@ -17,14 +17,23 @@ public class PackingPackageNames {
  UNION ALL SELECT unnest(ARRAY['XSmall','Pak','UPS OMBox','Medium','Large','XLarge'])
  UNION ALL SELECT display_name FROM packing_package_aliases WHERE tenant_id=?
  """;
- public record Choice(String name,java.math.BigDecimal cost,String state,String currency,java.time.LocalDate date,String carrier,java.time.LocalDate effectiveFrom,String rateSource){}
+ private static final String MANAGED_SOURCES=SOURCES.replace("UNION ALL SELECT unnest(ARRAY['XSmall','Pak','UPS OMBox','Medium','Large','XLarge'])\n", "");
+ private static final Map<String,String> LEGACY=Map.of("FEDEX_XSMALL","XSmall","FEDEX_PAK","Pak","FEDEX_SMALL","Small","FEDEX_MEDIUM","Medium","FEDEX_LARGE","Large","FEDEX_XLARGE","XLarge");
+ public record Dimensions(java.math.BigDecimal length,java.math.BigDecimal width,java.math.BigDecimal height,String unit,long revision){}
+ public record Choice(String name,java.math.BigDecimal cost,String state,String currency,java.time.LocalDate date,String carrier,java.time.LocalDate effectiveFrom,String rateSource,List<String> legacyKeys,Dimensions dimensions){
+  public Choice(String name,java.math.BigDecimal cost,String state,String currency,java.time.LocalDate date,String carrier,java.time.LocalDate effectiveFrom,String rateSource){this(name,cost,state,currency,date,carrier,effectiveFrom,rateSource,List.of(),null);}
+ }
+
  @Transactional(readOnly=true) public List<Choice> choices(UUID tenant,List<com.nextaicommerce.platform.profit.ProfitShippingRates.Rate> rates,java.time.LocalDate date){
   scope(tenant);
   var rows=jdbc.queryForList("SELECT DISTINCT packing_package_display(?,name) display,packing_package_cost(?,name) cost_name FROM ("+SOURCES+") s WHERE nullif(btrim(name),'') IS NOT NULL",tenant,tenant,tenant,tenant,tenant,tenant);
-  var profiles=jdbc.queryForList("SELECT name,coalesce(preferred_carrier,'') carrier FROM shipping_package_profiles WHERE tenant_id=? AND status='ACTIVE'",tenant);
+  var profiles=jdbc.queryForList("SELECT name,coalesce(preferred_carrier,'') carrier,length,width,height,dimension_unit FROM shipping_package_profiles WHERE tenant_id=? AND status='ACTIVE'",tenant);
   var independent=new com.nextaicommerce.platform.profit.ProfitCostRepository(jdbc).packageRates(tenant,rows.stream().map(r->Objects.toString(r.get("cost_name"),"")).toList());
+  var dimensionRows=jdbc.queryForList("SELECT * FROM packing_package_dimensions WHERE tenant_id=?",tenant);
+  var aliases=jdbc.queryForList("SELECT source_key,display_name FROM packing_package_aliases WHERE tenant_id=?",tenant);
+  var managed=managedNames(tenant);
   var result=new ArrayList<Choice>();
-  for(String name:namesInScope(tenant)){
+  for(String name:managed){
    var types=new LinkedHashSet<com.nextaicommerce.platform.profit.ProfitShippingRates.PackageType>();var carriers=new LinkedHashSet<String>();boolean unknown=false;
    for(var row:rows)if(name.equalsIgnoreCase(clean(Objects.toString(row.get("display"),"")))){String identity=Objects.toString(row.get("cost_name"),"");
     var matched=profiles.stream().filter(p->Objects.toString(p.get("name"),"").equalsIgnoreCase(identity)).toList();
@@ -38,9 +47,31 @@ public class PackingPackageNames {
     if(rate!=null){effective=rate.effectiveFrom();rateSource="PACKAGE";}
     else if(cost!=null){effective=rates.stream().filter(r->types.contains(r.packageType())&&!r.effectiveFrom().isAfter(date)).map(r->r.effectiveFrom()).max(java.util.Comparator.naturalOrder()).orElse(null);rateSource="INHERITED";}
    }else cost=null;
-   result.add(new Choice(name,cost,identities.size()>1?"VARIES":cost==null?"UNKNOWN":"KNOWN","USD",date,carriers.size()==1?carriers.iterator().next():"",effective,rateSource));
+   var legacy=new LinkedHashSet<String>();
+   for(var alias:aliases)if(name.equalsIgnoreCase(Objects.toString(alias.get("display_name"),"")))legacy.add(Objects.toString(alias.get("source_key"),""));
+   for(var entry:LEGACY.entrySet()){
+    String display=aliases.stream().filter(a->Objects.toString(a.get("source_key"),"").equals(entry.getValue().toLowerCase(Locale.ROOT))).map(a->Objects.toString(a.get("display_name"),"")).findFirst().orElse(entry.getValue());
+    if(name.equalsIgnoreCase(display))legacy.add(entry.getKey());
+   }
+   Dimensions dimensions=null;
+   if(identities.size()==1){var identity=identities.getFirst();var stored=dimensionRows.stream().filter(d->identity.equals(d.get("package_key"))).findFirst();
+    if(stored.isPresent()){var d=stored.get();dimensions=new Dimensions((java.math.BigDecimal)d.get("length"),(java.math.BigDecimal)d.get("width"),(java.math.BigDecimal)d.get("height"),Objects.toString(d.get("dimension_unit")),((Number)d.get("revision")).longValue());}
+    else{var matching=profiles.stream().filter(p->identity.equals(Objects.toString(p.get("name"),"").trim().toLowerCase(Locale.ROOT))).map(p->new Dimensions((java.math.BigDecimal)p.get("length"),(java.math.BigDecimal)p.get("width"),(java.math.BigDecimal)p.get("height"),Objects.toString(p.get("dimension_unit")),0)).distinct().toList();if(matching.size()==1)dimensions=matching.getFirst();}
+   }
+   result.add(new Choice(name,cost,identities.size()>1?"VARIES":cost==null?"UNKNOWN":"KNOWN","USD",date,carriers.size()==1?carriers.iterator().next():"",effective,rateSource,List.copyOf(legacy),dimensions));
   }
   return List.copyOf(result);
+ }
+ @Transactional public void saveDimensions(UUID tenant,String name,Dimensions dimensions,String actor){
+  scope(tenant);if(actor==null||actor.isBlank())throw new IllegalArgumentException("Sign in again.");
+  if(dimensions==null||dimensions.revision()<0||!List.of("inches","centimeters").contains(dimensions.unit()))throw new IllegalArgumentException("Choose inches or centimeters.");
+  boolean empty=dimensions.length()==null&&dimensions.width()==null&&dimensions.height()==null;
+  if(!empty)for(var value:Arrays.asList(dimensions.length(),dimensions.width(),dimensions.height()))if(value==null||value.signum()<=0||value.scale()>3||value.compareTo(new java.math.BigDecimal("999999999.999"))>0)throw new IllegalArgumentException("Enter positive length, width and height with up to three decimals.");
+  jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,137))",Object.class,tenant.toString());
+  String current=existing(tenant,clean(name));if(current==null)throw new IllegalArgumentException("This package changed. Refresh and try again.");String key=key(identity(tenant,current));
+  if(empty){int removed=jdbc.update("DELETE FROM packing_package_dimensions WHERE tenant_id=? AND package_key=? AND revision=?",tenant,key,dimensions.revision());if(dimensions.revision()>0&&removed!=1)throw new IllegalArgumentException("These dimensions changed. Reopen the package before editing.");return;}
+  int updated=dimensions.revision()==0?jdbc.update("INSERT INTO packing_package_dimensions(tenant_id,package_key,length,width,height,dimension_unit,updated_by) VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",tenant,key,dimensions.length(),dimensions.width(),dimensions.height(),dimensions.unit(),actor):jdbc.update("UPDATE packing_package_dimensions SET length=?,width=?,height=?,dimension_unit=?,revision=revision+1,updated_by=?,updated_at=now() WHERE tenant_id=? AND package_key=? AND revision=?",dimensions.length(),dimensions.width(),dimensions.height(),dimensions.unit(),actor,tenant,key,dimensions.revision());
+  if(updated!=1)throw new IllegalArgumentException("These dimensions changed. Reopen the package before editing.");
  }
  public record History(String name,String currency,List<com.nextaicommerce.platform.profit.ProfitCostRepository.PackageRate> rates,Choice baseline){}
  @Transactional(readOnly=true) public History history(UUID tenant,String name,List<com.nextaicommerce.platform.profit.ProfitShippingRates.Rate> inherited,java.time.LocalDate date){
@@ -64,15 +95,16 @@ public class PackingPackageNames {
  /** Called before saving a new free-format package, in the caller's transaction. */
  @Transactional public void registerCustom(UUID tenant,String name){
   scope(tenant);name=clean(name);jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,137))",Object.class,tenant.toString());
-  if(existing(tenant,name)==null)jdbc.update("INSERT INTO packing_package_aliases(tenant_id,source_key,display_name,cost_name,independent_rate_only) VALUES (?,?,?,?,true) ON CONFLICT DO NOTHING",tenant,key(name),name,name);
+  if(!managedNames(tenant).stream().map(n->n.toLowerCase(Locale.ROOT)).toList().contains(name.toLowerCase(Locale.ROOT)))jdbc.update("INSERT INTO packing_package_aliases(tenant_id,source_key,display_name,cost_name,independent_rate_only) VALUES (?,?,?,?,true) ON CONFLICT DO NOTHING",tenant,key(name),name,name);
  }
  public record Change(String source,String destination,String operation,int affectedAssignments,String revision){}
- @Transactional(readOnly=true) public List<String> names(UUID tenant){scope(tenant);return namesInScope(tenant);}
+ @Transactional(readOnly=true) public List<String> names(UUID tenant){scope(tenant);return managedNames(tenant);}
+ private List<String> managedNames(UUID tenant){return jdbc.queryForList("SELECT DISTINCT packing_package_display(?,name) FROM ("+MANAGED_SOURCES+") s WHERE nullif(btrim(name),'') IS NOT NULL ORDER BY 1",String.class,tenant,tenant,tenant,tenant,tenant).stream().filter(n->!LEGACY.containsKey(n)&&!n.equals("UPS")).toList();}
  private List<String> namesInScope(UUID tenant){var unique=new LinkedHashMap<String,String>();for(String name:jdbc.queryForList("SELECT DISTINCT packing_package_display(?,name) FROM ("+SOURCES+") s WHERE nullif(btrim(name),'') IS NOT NULL ORDER BY 1",String.class,tenant,tenant,tenant,tenant,tenant)){String value=clean(name);unique.putIfAbsent(value.toLowerCase(Locale.ROOT),value);}return List.copyOf(unique.values());}
  private void scope(UUID tenant){Objects.requireNonNull(tenant);jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
  static String clean(String value){String name=value==null?"":value.trim().replaceAll("\\s+"," ");if(name.isEmpty()||name.length()>120)throw new IllegalArgumentException("Enter a package name of up to 120 characters.");return name;}
  private String key(String value){return jdbc.queryForObject("SELECT packing_package_key(?)",String.class,value);}
- private String existing(UUID tenant,String name){String normalized=key(name);return namesInScope(tenant).stream().filter(n->clean(n).toLowerCase(Locale.ROOT).equals(normalized)).findFirst().orElse(null);}
+ private String existing(UUID tenant,String name){String normalized=key(name);return managedNames(tenant).stream().filter(n->clean(n).toLowerCase(Locale.ROOT).equals(normalized)).findFirst().orElse(null);}
  @Transactional(readOnly=true) public Change preview(UUID tenant,String source,String destination){scope(tenant);return inspect(tenant,clean(source),clean(destination));}
  private Change inspect(UUID tenant,String source,String destination){
   String current=existing(tenant,source);if(current==null)throw new IllegalArgumentException("This package changed. Refresh and try again.");
@@ -95,7 +127,7 @@ public class PackingPackageNames {
   String targetCost=jdbc.queryForObject("SELECT packing_package_cost(?,?)",String.class,tenant,change.destination());
   var originals=jdbc.queryForList("SELECT DISTINCT name FROM ("+SOURCES+") s WHERE packing_package_key(packing_package_display(?,name))=packing_package_key(?)",String.class,tenant,tenant,tenant,tenant,tenant,change.source());
   // Include the current display name so later Save operations retain the original cost identity.
-  var all=new LinkedHashSet<>(originals);all.add(change.source());all.add(change.destination());
+  var all=new LinkedHashSet<>(originals);all.addAll(jdbc.queryForList("SELECT source_key FROM packing_package_aliases WHERE tenant_id=? AND packing_package_key(display_name)=packing_package_key(?)",String.class,tenant,change.source()));all.add(change.source());all.add(change.destination());
   String sourceCost=jdbc.queryForObject("SELECT packing_package_cost(?,?)",String.class,tenant,change.source());
   for(String raw:all){String cost="MERGE".equals(change.operation())?targetCost:jdbc.queryForObject("SELECT packing_package_cost(?,?)",String.class,tenant,raw);
    if(key(raw).equals(key(change.destination())))cost="MERGE".equals(change.operation())?targetCost:sourceCost;
