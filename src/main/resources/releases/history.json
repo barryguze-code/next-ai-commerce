@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.14.23",
+    "title": "Faster calculator package selection",
+    "sections": [
+      {
+        "title": "Performance",
+        "items": [
+          "Reuse account package choices across calculator sections and avoid refreshing underlying tables when choosing a package.",
+          "Preserve existing package names, dated rates and all previous release improvements."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.22",
     "title": "Approved replenishment, packages and refund improvements",
     "sections": [

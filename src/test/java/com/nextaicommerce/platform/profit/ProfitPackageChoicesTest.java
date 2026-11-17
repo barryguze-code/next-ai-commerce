@@ -13,20 +13,20 @@ import static org.mockito.Mockito.*;
 
 class ProfitPackageChoicesTest {
  @Test void choicesUseSelectedAccountAndRequestedRateDate(){
-  var costs=mock(ProfitCostRepository.class);var names=mock(PackingPackageNames.class);
+  var costs=mock(ProfitCostRepository.class);var names=mock(com.nextaicommerce.platform.orders.PackageCatalogueReadService.class);
   var controller=new ProfitController(mock(ProfitRepository.class),costs,mock(ProfitPricePublisher.class));
-  ReflectionTestUtils.setField(controller,"packageNames",names);
+  ReflectionTestUtils.setField(controller,"packageCatalogue",names);
   UUID tenant=UUID.randomUUID();var session=new MockHttpSession();session.setAttribute(AccountSelectionController.TENANT_ID,tenant);
   var date=LocalDate.of(2026,11,16);List<ProfitShippingRates.Rate> rates=List.of();
   var choices=List.of(new PackingPackageNames.Choice("Account Pak",null,"MISSING","USD",date,"",null,""));
-  when(costs.rates(tenant)).thenReturn(rates);when(names.choices(tenant,rates,date)).thenReturn(choices);
+  when(names.choices(tenant,date)).thenReturn(choices);
   assertThat(controller.packageChoices(session,date)).isEqualTo(choices);
-  verify(names).choices(tenant,rates,date);
+  verify(names).choices(tenant,date);
  }
  @Test void missingAccountCannotReadPackageRates(){
-  var costs=mock(ProfitCostRepository.class);var names=mock(PackingPackageNames.class);
+  var costs=mock(ProfitCostRepository.class);var names=mock(com.nextaicommerce.platform.orders.PackageCatalogueReadService.class);
   var controller=new ProfitController(mock(ProfitRepository.class),costs,mock(ProfitPricePublisher.class));
-  ReflectionTestUtils.setField(controller,"packageNames",names);
+  ReflectionTestUtils.setField(controller,"packageCatalogue",names);
   assertThatThrownBy(()->controller.packageChoices(new MockHttpSession(),null)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
   verifyNoInteractions(costs,names);
  }

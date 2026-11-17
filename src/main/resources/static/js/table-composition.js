@@ -77,7 +77,11 @@
   }
  document.querySelectorAll('[data-table-widget]').forEach(prepare);for(const target of document.querySelectorAll('.shared-table-composition .table-shortcut-target')){target.setAttribute('aria-label','Edit action shortcuts');target.dataset.tooltip='Edit action shortcuts';if(!target.dataset.sharedPinArt){target.dataset.sharedPinArt='true';target.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l-1 6 3 3v2H4v-2l3-3-1-6ZM10 14v7M17 4h6M20 1v6"/></svg>';}}}
  function schedule(){if(!queued){queued=true;requestAnimationFrame(refresh);}}
- new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+ new MutationObserver(records=>{
+  // Package option/total changes do not alter the table behind the calculator.
+  // Actual inserted tables still receive the shared table treatment.
+  if(records.some(record=>!record.target.closest?.('#profit-dialog')||record.target.closest?.('table,[data-table-widget]')||[...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&(node.matches('table,[data-table-widget]')||node.querySelector('table,[data-table-widget]')))))schedule();
+ }).observe(document.documentElement,{childList:true,subtree:true});
  document.addEventListener('table:rows-replaced',schedule);document.addEventListener('table:refresh',schedule);refresh();
  window.NextAiTableComposition={refresh,prepare,placeCommands};
 })();

@@ -19,7 +19,7 @@
   const units=Number(field('[data-match-units]').value);if(!Number.isInteger(units)||units<1||units>10000){loading=false;status('Enter 1–10000 whole SKU units.');controls();return;}
   const query=new URLSearchParams({kind:current.view.kind,key:current.view.key,units});if(current.connection)query.set('connection',current.connection);
   try{
-   const [saved,available]=await Promise.all([json(base+'/packaging-match?'+query),json(base+'/package-choices?date='+encodeURIComponent(current.view.date))]);
+   const [saved,available]=await Promise.all([json(base+'/packaging-match?'+query),window.NextAiPackageChoices?window.NextAiPackageChoices(current.view.date):json(base+'/package-choices?date='+encodeURIComponent(current.view.date))]);
    if(request!==sequence||context!==current)return;match=saved;loadedUnits=units;choices=available;dirty=false;field('[data-match-contents]').textContent=saved.contents.map(c=>c.eaches+' each · '+c.name).join(' + ');
    field('[data-match-packages]').replaceChildren();const draft=drafts.get(contextKey(current));if(draft&&draft.units===units){draft.packages.forEach(add);dirty=true;status(draft.compositionKey===saved.compositionKey?'Unsaved packaging match restored.': 'Product mapping changed. Review these retained package selections before saving.');}else{saved.packages.forEach(add);if(!saved.packages.length)add();status(saved.message);}
   }catch(error){if(request===sequence){field('[data-match-contents]').textContent='';status(error.message);}}

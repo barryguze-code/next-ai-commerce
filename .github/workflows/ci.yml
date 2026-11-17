@@ -2,6 +2,10 @@ name: CI
 on:
   workflow_dispatch:
     inputs:
+      package_selection_performance:
+        description: Run scoped calculator package performance checks and package
+        type: boolean
+        default: false
       amazon_fee_hotfix:
         description: Run approved package, refund and replenishment focused checks
         type: boolean
@@ -18,7 +22,7 @@ permissions:
   contents: read
 jobs:
   test:
-    if: inputs.amazon_fee_hotfix != true
+    if: inputs.amazon_fee_hotfix != true && inputs.package_selection_performance != true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -188,4 +192,26 @@ jobs:
         with:
           name: approved-local-1.14.22-package
           path: target/next-ai-commerce-1.14.22.jar
+          if-no-files-found: error
+
+  package-selection-performance:
+    if: inputs.package_selection_performance == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn --batch-mode -Dtest=PackageCatalogueReadServiceTest,ProfitPackageChoicesTest,PackageManagementAccessTest,PlatformReadCacheTest test
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: node --test src/test/js/package-selection-performance.test.cjs src/test/js/package-recipes.test.cjs src/test/js/profit-managed-packages.test.cjs src/test/js/table-composition.test.cjs src/test/js/table-composition-consumers.test.cjs
+      - run: mvn --batch-mode -Dmaven.test.skip=true package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-selection-performance-1.14.23
+          path: target/next-ai-commerce-1.14.23.jar
           if-no-files-found: error

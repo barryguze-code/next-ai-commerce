@@ -182,11 +182,12 @@ public class OrderController {
     }
 
     @Autowired private PackingPackageNames packageNames;
+    @Autowired private PackageCatalogueReadService packageCatalogue;
     @Autowired private com.nextaicommerce.platform.profit.ProfitCostRepository packageCosts;
     @GetMapping("/app/orders/packing-packages") @ResponseBody
     java.util.List<PackingPackageNames.Choice> packageChoices(HttpSession session,Authentication auth){
         requirePackageManagement(session,auth);
-        return packageNames.choices(tenant(session),packageCosts.rates(tenant(session)),java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")));
+        return packageCatalogue.choices(tenant(session),java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")));
     }
 
     @GetMapping("/app/orders/packing-packages/history") @ResponseBody

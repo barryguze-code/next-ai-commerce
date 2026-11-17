@@ -20,7 +20,7 @@ public class ProfitController {
     @org.springframework.beans.factory.annotation.Autowired private PackageRecipes recipes;
     private final ProfitRepository profit;private final ProfitCostRepository costs;
     private final ProfitPricePublisher prices;
-    @org.springframework.beans.factory.annotation.Autowired private PackingPackageNames packageNames;
+    @org.springframework.beans.factory.annotation.Autowired private com.nextaicommerce.platform.orders.PackageCatalogueReadService packageCatalogue;
     @org.springframework.beans.factory.annotation.Autowired private ShopifyOrderProfitRepository shopify;
     public ProfitController(ProfitRepository profit,ProfitCostRepository costs,ProfitPricePublisher prices){this.profit=profit;this.costs=costs;this.prices=prices;}
     @GetMapping("/price-support") @ResponseBody
@@ -58,7 +58,7 @@ public class ProfitController {
     @GetMapping("/package-choices") @ResponseBody
     List<PackingPackageNames.Choice> packageChoices(HttpSession session,@RequestParam(required=false) LocalDate date){
         UUID account=tenant(session);
-        return packageNames.choices(account,costs.rates(account),date==null?LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")):date);
+        return packageCatalogue.choices(account,date==null?LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")):date);
     }
     @GetMapping("/packaging-match") @ResponseBody
     PackageRecipes.Match packagingMatch(HttpSession session,@RequestParam String kind,@RequestParam String key,@RequestParam(defaultValue="1") int units,@RequestParam(required=false) UUID connection){
