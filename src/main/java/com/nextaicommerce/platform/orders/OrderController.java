@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
@@ -46,6 +47,19 @@ public class OrderController {
         if(!(store instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a store");
         try{return refundHistory.orders(tenant(session),connection,sku,days,week,page,asOf);}
         catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+    @GetMapping("/app/orders/product-refund-history") @ResponseBody
+    SkuRefundHistory.RefundPage productRefundOrders(@RequestParam UUID product,@RequestParam(defaultValue="28") int days,
+            @RequestParam(defaultValue="-1") int week,@RequestParam(defaultValue="0") int page,
+            @RequestParam(required=false) java.time.Instant asOf,HttpSession session,Authentication auth){
+        UUID account=tenant(session);
+        if(auth==null)throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        boolean admin=auth.getAuthorities().stream().anyMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));
+        var accounts=workspace.listAccountOptions(auth.getName(),admin);
+        if(accounts.stream().noneMatch(a->a.id().equals(account)))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        var visible=accounts.stream().filter(a->a.id().equals(account)).flatMap(a->a.stores().stream()).map(s->s.id()).collect(java.util.stream.Collectors.toSet());
+        if(!workspace.listConnections(account,"").stream().allMatch(c->visible.contains(c.id())))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Account-wide refund history requires access to all stores in this account.");
+        try{return refundHistory.productOrders(account,product,days,week,page,asOf);}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
     }
     @GetMapping("/app/orders/profit-summary") @ResponseBody
     OrderProfitSummary.Result profitSummary(@RequestParam(defaultValue="ALL") String status,@RequestParam(defaultValue="") String q,@RequestParam Map<String,String> parameters,HttpSession session){
@@ -163,7 +177,7 @@ public class OrderController {
         if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
         if(!mayEditPacking(tenant(session),connection,auth))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         try{if("SHOPIFY".equals(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null)return Map.of("packageName",shopifyOrders.savePackage(tenant(session),connection,UUID.fromString(orderId),packageName,auth));
-            return Map.of("packageName",packingSlips.savePackaging(tenant(session),connection,orderId,packageName));}
+            return Map.of("packageName",packingSlips.savePackaging(tenant(session),connection,orderId,packageName,auth.getName()));}
         catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
     }
 
@@ -184,6 +198,23 @@ public class OrderController {
     Map<String,String> savePackageRate(@RequestParam String name,@RequestParam @org.springframework.format.annotation.DateTimeFormat(iso=org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate effectiveFrom,@RequestParam java.math.BigDecimal amount,HttpSession session,Authentication auth){
         requirePackageManagement(session,auth);
         try{packageNames.saveRate(tenant(session),name,effectiveFrom,amount,auth.getName());profitSummary.invalidate(tenant(session));return Map.of("status","saved");}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
+    @GetMapping("/app/orders/packing-packages/removal") @ResponseBody
+    PackingPackageNames.Removal reviewPackageRemoval(@RequestParam String name,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{return packageNames.removal(tenant(session),name);}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.CONFLICT,e.getMessage());}
+    }
+    @PostMapping("/app/orders/packing-packages/remove") @ResponseBody
+    Map<String,String> removePackage(@RequestBody Map<String,String> body,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{packageNames.remove(tenant(session),body.get("name"),auth.getName());profitSummary.invalidate(tenant(session));return Map.of("status","removed");}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.CONFLICT,e.getMessage());}
+    }
+
+    @PostMapping("/app/orders/packing-packages/details") @ResponseBody
+    Map<String,String> savePackageDetails(@RequestBody PackingPackageNames.DetailsChange change,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{packageNames.saveDetails(tenant(session),change,auth.getName());profitSummary.invalidate(tenant(session));return Map.of("status","saved");}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
     }
 
     @PostMapping("/app/orders/packing-packages/dimensions") @ResponseBody

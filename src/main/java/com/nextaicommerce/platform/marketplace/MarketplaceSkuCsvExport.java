@@ -101,7 +101,7 @@ public class MarketplaceSkuCsvExport {
         String placeholders=String.join(",",Collections.nCopies(keys.size(),"?"));var args=new ArrayList<Object>();args.add(tenant);args.add(connection);args.addAll(keys);
         var rows=jdbc.queryForList("""
             SELECT l.seller_sku,l.quantity,l.currency,l.fulfillment_channel,m.account_catalog_item_id item_id,a.account_sku,
-                (SELECT count(*) FROM amazon_sku_refunds r WHERE r.tenant_id=l.tenant_id AND r.marketplace_connection_id=l.marketplace_connection_id AND r.seller_sku=l.seller_sku
+                (SELECT count(*) FROM canonical_amazon_sku_refunds r WHERE r.tenant_id=l.tenant_id AND r.marketplace_connection_id=l.marketplace_connection_id AND r.seller_sku=l.seller_sku
                  AND r.posted_date>=now()-interval '28 days' AND r.posted_date<=now() AND (r.currency IS NULL OR r.currency='')) unknown_currency,
                 shipping.shipping_count,shipping.shipping_currency,shipping.shipping_complete
             FROM amazon_listings l

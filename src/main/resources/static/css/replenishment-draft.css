@@ -195,3 +195,16 @@ html body.app-page .rp-toggle-row .rp-sku-toggle,html[data-theme=dark] body.app-
 
 /* Keep the final boundary toggle and its focus outline inside the scroll viewport. */
 .app-page .table-wrap:has(>table[data-table-widget="replenishment-draft"]){padding-bottom:18px}
+
+/* Current purchase plan and forecast are separate quantities. */
+.rp-current-po-art{object-fit:contain;flex:none}.rp-heading-copy{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.app-page .table-widget td.rp-suggested strong{display:block;font-size:var(--ui-section-title,18px);font-weight:750}.rp-suggested .cell-note{display:block}
+.rp-po-quantity input,.rp-basket-line input[type=number]{appearance:textfield;-moz-appearance:textfield}
+.rp-po-quantity input::-webkit-inner-spin-button,.rp-po-quantity input::-webkit-outer-spin-button,.rp-basket-line input::-webkit-inner-spin-button,.rp-basket-line input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.rp-name-po{width:min(520px,94vw)}.rp-name-po label{display:grid;gap:8px}.rp-name-po input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink)}
+.rp-chooser-option{display:flex;align-items:center;gap:12px;width:100%;padding:14px;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--white);color:var(--ink);cursor:pointer;margin-bottom:10px;font:inherit}
+.rp-chooser-option img{width:32px;height:32px;object-fit:contain}.rp-chooser-option strong,.rp-chooser-option small{display:block}.rp-chooser-option small{color:var(--muted);font-size:.8rem;margin-top:4px}.rp-chooser-option:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.rp-po-history{padding-block:12px}.rp-po-history summary{cursor:pointer;margin-bottom:12px}.rp-suggested{min-width:110px}
+[data-current-po-name]{max-width:360px;overflow-wrap:anywhere}
+
+.rp-po-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rp-heading-copy{flex:1;min-width:180px}.rp-po-header-actions .secondary-button{font-size:13px;white-space:nowrap}

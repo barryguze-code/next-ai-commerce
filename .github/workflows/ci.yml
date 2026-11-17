@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       amazon_fee_hotfix:
-        description: Run approved Amazon fee and package reuse focused checks
+        description: Run approved package, refund and replenishment focused checks
         type: boolean
         default: false
       release_recovery:
@@ -182,10 +182,10 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - run: mvn --batch-mode -Dtest=ProfitDatabaseTest,ProfitPackageChoicesTest,PackageRateMigrationDatabaseTest,PackageManagementAccessTest test
+      - run: mvn --batch-mode -Dtest=ProfitDatabaseTest,ProfitPackageChoicesTest,PackageRateMigrationDatabaseTest,PackageManagementAccessTest,RefundOrdersDatabaseTest,SkuRefundHistoryTest,ShopifyOrderProfitTest,ShopifyOrderPageAccessTest,ReplenishmentPurchasePlansDatabaseTest,ReplenishmentDraftReadinessTest test
       - run: mvn --batch-mode -Dmaven.test.skip=true package
       - uses: actions/upload-artifact@v4
         with:
-          name: managed-packages-1.14.21-package
-          path: target/next-ai-commerce-1.14.21.jar
+          name: approved-local-1.14.22-package
+          path: target/next-ai-commerce-1.14.22.jar
           if-no-files-found: error

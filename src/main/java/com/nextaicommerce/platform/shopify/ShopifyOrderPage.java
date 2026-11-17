@@ -50,7 +50,7 @@ public class ShopifyOrderPage {
         model.addAttribute("pickupMarked",packing.marked(tenant,connection,order));
         model.addAttribute("canEditPacking",access.canOperateAccount(tenant,actor.getName()));model.addAttribute("packageNames",packing.packageNames(tenant));model.addAttribute("packingLocations",catalog==null||!access.canOperateAccount(tenant,actor.getName())?List.of():catalog.listLocations(tenant));return "packing-slip";
     }
-    public String savePackage(UUID tenant,UUID connection,UUID order,String name,Authentication actor){requireOperate(tenant,connection,actor);return packing.savePackage(tenant,connection,order,name);}
+    public String savePackage(UUID tenant,UUID connection,UUID order,String name,Authentication actor){requireOperate(tenant,connection,actor);return packing.savePackage(tenant,connection,order,name,actor.getName());}
     public void pickup(UUID tenant,UUID connection,UUID order,boolean waiting,Authentication actor){requireOperate(tenant,connection,actor);packing.mark(tenant,connection,order,waiting,actor.getName());}
     public UUID sync(UUID tenant,UUID connection,String actor){connections.renewOrdersAuthorization(tenant,connection,()->jobs.authorizeActor(tenant,connection,actor));jobs.enablePolling(tenant,connection,actor);UUID id=jobs.enqueue(tenant,connection,actor);worker.start(tenant,connection,id);return id;}
     public boolean initialize(UUID tenant,UUID connection,String actor){if(!jobs.enabled()||!connections.setupState(tenant,connection).ordersPermitted()||!jobs.catalogueReady(tenant,connection))return false;sync(tenant,connection,actor);return true;}

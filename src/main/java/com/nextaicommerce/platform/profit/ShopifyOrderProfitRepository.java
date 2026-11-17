@@ -15,6 +15,9 @@ public class ShopifyOrderProfitRepository {
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate named;
     private final ProfitCostRepository costs;
+    private PackageRecipes recipes;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureRecipes(PackageRecipes value){recipes=value;}
     public ShopifyOrderProfitRepository(JdbcTemplate jdbc,ProfitCostRepository costs){this.jdbc=jdbc;this.named=new NamedParameterJdbcTemplate(jdbc);this.costs=costs;}
     record Identity(UUID item,UUID location){}
     record Basis(Map<UUID,BigDecimal> items,Map<Identity,BigDecimal> origins){
@@ -99,14 +102,17 @@ public class ShopifyOrderProfitRepository {
             GROUP BY v.id,p.title
             """,Map.of("tenant",tenant,"connection",connection,"ids",ids));
         var result=new LinkedHashMap<String,ProfitRepository.View>();
+        var recipePackages=recipes==null?Map.<String,List<ProfitRepository.PackageCost>>of():recipes.packages(tenant,connection,"SHOPIFY_SKU",keys,null);
         for(var r:rows){
             UUID id=(UUID)r.get("id");String currency=text(r,"currency");
             var lines=List.of(new ProfitRepository.Line(text(r,"seller_sku"),text(r,"title"),1,
                 (BigDecimal)r.get("price"),(BigDecimal)r.get("product_cost"),
                 otherCost(currency,(BigDecimal)r.get("profit_other_cost"),text(r,"profit_other_currency")),null,id));
+            var packages="USD".equals(currency)?recipePackages.getOrDefault(id.toString(),List.of()):List.<ProfitRepository.PackageCost>of();
+            BigDecimal shipping=packages.isEmpty()?null:packages.stream().map(ProfitRepository.PackageCost::amount).reduce(BigDecimal.ZERO,BigDecimal::add);
             result.put(id.toString(),new ProfitRepository.View(id.toString(),"SHOPIFY_SKU",text(r,"title"),currency,
-                LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")),lines,List.of(),totals(lines,null),
-                "Per sold SKU unit. Current mapped catalogue costs are estimates. Shipping is not established for this listing, so estimated profit remains Pending. Other cost defaults to USD 1 per sold SKU unit. Payment fees, customer shipping, taxes and refunds are excluded.",""));
+                LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")),lines,packages,totals(lines,shipping),
+                "Per sold SKU unit. Current mapped catalogue costs are estimates. Shipping uses an exact saved product-quantity match when available; otherwise it remains Pending. Other cost defaults to USD 1 per sold SKU unit. Payment fees, customer shipping, taxes and refunds are excluded.",""));
         }
         return result;
     }
@@ -151,7 +157,8 @@ public class ShopifyOrderProfitRepository {
             ORDER BY o.id,l.id,part.item
             """,args);
         var grouped=new LinkedHashMap<String,List<Map<String,Object>>>();for(var r:rows)grouped.computeIfAbsent(text(r,"order_id"),k->new ArrayList<>()).add(r);
-        var targetItems=rows.stream().map(r->(UUID)r.get("item")).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        var orderRecipes=recipes==null?Map.<String,List<ProfitRepository.PackageCost>>of():recipes.packages(tenant,connection,"SHOPIFY_ORDER",keys,null);
+        var targetItems=rows.stream().filter(r->!orderRecipes.containsKey(text(r,"order_id"))).map(r->(UUID)r.get("item")).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
         var candidates=targetItems.isEmpty()?List.<Candidate>of():candidates(tenant,targetItems); // One bounded batch for the page, never one query per row.
         var packageIdentities=new java.util.ArrayList<String>();rows.forEach(r->packageIdentities.add(text(r,"package_name")));candidates.forEach(c->packageIdentities.add(c.name()));
         var independent=costs.packageRates(tenant,packageIdentities);var rates=costs.rates(tenant);LocalDate today=LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"));
@@ -173,6 +180,10 @@ public class ShopifyOrderProfitRepository {
             var type=ProfitRepository.packageType("",packageName,"");
             BigDecimal shipping="USD".equals(first.get("currency"))?independent.cost(packageName,today,ProfitShippingRates.cost(rates,type,today)):null;
             var packages=shipping==null?List.<ProfitRepository.PackageCost>of():List.of(new ProfitRepository.PackageCost(packageName,shipping));
+            if(text(first,"package_name").isBlank()&&"USD".equals(first.get("currency"))&&orderRecipes.containsKey(entry.getKey())){
+                packages=orderRecipes.get(entry.getKey());shipping=packages.isEmpty()?null:packages.stream().map(ProfitRepository.PackageCost::amount).reduce(BigDecimal.ZERO,BigDecimal::add);
+                packageName=packages.isEmpty()?"Saved packaging match · account rate missing":packages.stream().map(ProfitRepository.PackageCost::description).collect(java.util.stream.Collectors.joining(" + "));source="User-defined account packaging match";
+            }
             String note="Mapped catalogue costs are current estimates. "+(packageName.isBlank()?"No saved package matches this complete mapped product composition.":source+". Package: "+packageName+". ")+" Shipping uses the account planning-rate schedule as of "+today+"; this is not a carrier quote. Estimated profit before payment fees = item sales − product cost − planning shipping − other cost. Other cost defaults to USD 1 per sold SKU unit for insulation/ice. Payment fees, customer shipping, taxes and refund effects are excluded; this is not settled net profit.";
             var totals=first.get("cancelled_at")!=null||!Boolean.TRUE.equals(first.get("evidence_complete"))?null:totals(lines,shipping);
             result.put(entry.getKey(),new ProfitRepository.View(entry.getKey(),"SHOPIFY_ORDER",text(first,"order_name"),text(first,"currency"),today,List.copyOf(lines),packages,totals,note,type==null?"":type.name()));

@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** Internal packing only. No provider transport or retrospective stock allocation. */
 @Repository
 public class ShopifyOrderPacking {
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private com.nextaicommerce.platform.profit.PackageRecipes recipes;
     private final JdbcTemplate jdbc;private final ShopifyOrderInventory inventory;
     @org.springframework.beans.factory.annotation.Autowired(required=false) private LocalShopifyShippingUat uat;
     public ShopifyOrderPacking(JdbcTemplate jdbc,ShopifyOrderInventory inventory){this.jdbc=jdbc;this.inventory=inventory;}
@@ -166,7 +167,9 @@ public class ShopifyOrderPacking {
             WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.order_id=? ORDER BY l.line_gid,r.expiration_date NULLS LAST,r.id
             """,(rs,n)->new PackingSlipRepository.Line(rs.getString(1),rs.getString(2),rs.getBigDecimal(3).intValueExact(),rs.getObject(4,LocalDate.class),rs.getString(5),rs.getString(6),rs.getObject(7,UUID.class),null,!"—".equals(rs.getString(5))),tenant,connection,id);
         String gid=(String)o.get("order_gid"),name=(String)o.get("package_name");
-        return new PackingSlipRepository.Slip(id.toString(),"https://"+domain+"/admin/orders/"+gid.substring(gid.lastIndexOf('/')+1),(String)o.get("order_name"),name==null?"Package to confirm":jdbc.queryForObject("SELECT packing_package_display(?,?)",String.class,tenant,name),name!=null,lines);
+        var recipePackages=List.<String>of();
+        if(name==null&&recipes!=null){recipePackages=recipes.suggestedNames(tenant,connection,"SHOPIFY_ORDER",id.toString());if(!recipePackages.isEmpty())name=PackingSlipRepository.packageSummary(recipePackages);}
+        return new PackingSlipRepository.Slip(id.toString(),"https://"+domain+"/admin/orders/"+gid.substring(gid.lastIndexOf('/')+1),(String)o.get("order_name"),name==null?"Package to confirm":jdbc.queryForObject("SELECT packing_package_display(?,?)",String.class,tenant,name),name!=null,lines,recipePackages);
     }
     @Transactional(readOnly=true)
     public List<String> packageNames(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());
@@ -175,10 +178,13 @@ public class ShopifyOrderPacking {
     @Transactional(readOnly=true)
     public boolean marked(UUID tenant,UUID connection,UUID id){return Boolean.TRUE.equals(order(tenant,connection,id,false).get("platform_waiting_for_pickup"));}
     @Transactional
-    public String savePackage(UUID tenant,UUID connection,UUID id,String name){
+    public String savePackage(UUID tenant,UUID connection,UUID id,String name){return savePackage(tenant,connection,id,name,"Packing slip");}
+    @Transactional
+    public String savePackage(UUID tenant,UUID connection,UUID id,String name,String actor){
         order(tenant,connection,id,true);String clean=name==null?"":name.trim().replaceAll("\\s+"," ");
-        if(clean.isBlank()||clean.length()>120)throw new IllegalArgumentException("Choose a package name of up to120 characters.");
+        if(clean.isBlank()||clean.equals("__recipe")||clean.length()>120)throw new IllegalArgumentException("Choose a package name of up to120 characters.");
         new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc).registerCustom(tenant,clean);
-        jdbc.update("UPDATE shopify_orders SET package_name=? WHERE tenant_id=? AND marketplace_connection_id=? AND id=?",clean,tenant,connection,id);return clean;
+        jdbc.update("UPDATE shopify_orders SET package_name=? WHERE tenant_id=? AND marketplace_connection_id=? AND id=?",clean,tenant,connection,id);
+        if(recipes!=null)recipes.recordChoice(tenant,connection,"SHOPIFY_ORDER",id.toString(),List.of(clean),actor);return clean;
     }
 }

@@ -14,6 +14,9 @@ public class ProfitRepository {
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate named;
     private final ProfitCostRepository costs;
+    private PackageRecipes recipes;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureRecipes(PackageRecipes value){recipes=value;}
     private com.nextaicommerce.platform.fees.AmazonFeeVarianceRepository acceptedFees;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     void configureAcceptedFees(com.nextaicommerce.platform.fees.AmazonFeeVarianceRepository value){acceptedFees=value;}
@@ -103,11 +106,13 @@ public class ProfitRepository {
         for(var saved:named.queryForList("SELECT seller_sku,packing_package_display(tenant_id,description) description,amount FROM profit_sku_packages WHERE tenant_id=:tenant AND marketplace_connection_id=:connection AND seller_sku IN (:keys) ORDER BY sequence",Map.of("tenant",tenant,"connection",connection,"keys",keys)))
             skuPackages.computeIfAbsent(text(saved,"seller_sku"),k->new ArrayList<>()).add(new PackageCost(text(saved,"description"),decimal(saved,"amount")));
         LocalDate today=planningDate==null?LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")):planningDate;
+        var recipePackages=recipes==null?Map.<String,List<PackageCost>>of():recipes.packages(tenant,connection,"SKU",keys,today);
         for(var r:rows){
             String key=text(r,"seller_sku"),currency=text(r,"currency");
             var type=packageType(text(r,"profit_package_type"),text(r,"package_name"),text(r,"carrier"));
             BigDecimal amount=independent.cost(text(r,"package_name"),today,ProfitShippingRates.cost(rates,type,today));
             var packages=(Boolean.TRUE.equals(r.get("package_merged"))?Map.<String,List<PackageCost>>of():skuPackages).getOrDefault(key,amount==null?List.<PackageCost>of():List.of(new PackageCost(text(r,"package_display").isBlank()?(type==null?text(r,"package_name"):type.name()):text(r,"package_display"),amount)));
+            if(recipePackages.containsKey(key)&&!Set.of("AFN","AMAZON").contains(text(r,"fulfillment_channel")))packages=recipePackages.get(key);
             var lines=List.of(new Line(key,text(r,"item_name"),1,decimal(r,"price"),decimal(r,"cost"),decimal(r,"other_cost_per_sku"),BigDecimal.ZERO));
             result.put(key,view(key,"SKU",text(r,"item_name"),currency,today,lines,packages,text(r,"fulfillment_channel"),type));
         }
@@ -124,14 +129,14 @@ public class ProfitRepository {
               (i.item_price-coalesce(i.promotion_discount,0))/nullif(i.quantity_ordered,0) unit_price,
               coalesce(i.shipping_price,0)-coalesce(i.shipping_discount,0) customer_shipping,
               coalesce(l.other_cost_per_sku,1.00) other_cost_per_sku,coalesce(l.product_cost_override,product.cost) cost,
-              CASE WHEN packing_package_merged(o.tenant_id,coalesce(packing.packaging,profile.name)) THEN '' ELSE l.profit_package_type END profit_package_type,packing_package_merged(o.tenant_id,coalesce(packing.packaging,profile.name)) package_merged,packing_package_cost(l.tenant_id,profile.name) package_name,CASE WHEN packing_package_merged(o.tenant_id,coalesce(packing.packaging,profile.name)) THEN '' ELSE profile.preferred_carrier END carrier,packing_package_cost(o.tenant_id,packing.packaging) order_package,packing_package_display(o.tenant_id,coalesce(packing.packaging,profile.name)) package_display
+              CASE WHEN packing_package_merged(o.tenant_id,coalesce(packing.packaging,profile.name)) THEN '' ELSE l.profit_package_type END profit_package_type,packing_package_merged(o.tenant_id,coalesce(packing.packaging,profile.name)) package_merged,packing_package_cost(l.tenant_id,profile.name) package_name,CASE WHEN packing_package_merged(o.tenant_id,coalesce(packing.packaging,profile.name)) THEN '' ELSE profile.preferred_carrier END carrier,packing.amazon_order_id=o.amazon_order_id own_package,packing_package_cost(o.tenant_id,packing.packaging) order_package,packing_package_display(o.tenant_id,coalesce(packing.packaging,profile.name)) package_display
             FROM amazon_orders o JOIN amazon_order_items i ON i.tenant_id=o.tenant_id
               AND i.marketplace_connection_id=o.marketplace_connection_id AND i.amazon_order_id=o.amazon_order_id
             JOIN marketplace_connections mc ON mc.tenant_id=o.tenant_id AND mc.id=o.marketplace_connection_id
             LEFT JOIN amazon_listings l ON l.tenant_id=i.tenant_id AND l.marketplace_connection_id=i.marketplace_connection_id
               AND l.seller_sku=i.seller_sku
             LEFT JOIN LATERAL (
-              SELECT p.packaging FROM temporary_order_packaging_lookup p
+              SELECT p.packaging,p.amazon_order_id FROM temporary_order_packaging_lookup p
               WHERE p.tenant_id=o.tenant_id AND p.marketplace_connection_id=o.marketplace_connection_id
                 AND (p.amazon_order_id=o.amazon_order_id OR p.order_item_summary=(
                   SELECT string_agg(coalesce(nullif(oi.asin,''),'UNKNOWN')||'-'||oi.quantity_ordered::text,',' ORDER BY oi.asin,oi.quantity_ordered)
@@ -146,6 +151,7 @@ public class ProfitRepository {
         Map<String,List<Map<String,Object>>> grouped=new LinkedHashMap<>();
         rows.forEach(r->grouped.computeIfAbsent(text(r,"amazon_order_id"),k->new ArrayList<>()).add(r));
         var rates=costs.rates(tenant);var independent=costs.packageRates(tenant,rows.stream().flatMap(r->java.util.stream.Stream.of(text(r,"package_name"),text(r,"order_package"))).toList());var result=new LinkedHashMap<String,View>();
+        var orderRecipes=recipes==null?Map.<String,List<PackageCost>>of():recipes.packages(tenant,connection,"ORDER",keys,null);
         for(var entry:grouped.entrySet()){
             var first=entry.getValue().getFirst();Object date=first.get("purchase_day");
             LocalDate day=date instanceof java.sql.Date d?d.toLocalDate():date instanceof LocalDate d?d:null;
@@ -165,6 +171,7 @@ public class ProfitRepository {
                 var amount=independent.cost(identity,day,inherited);
                 if(amount!=null)packages=List.of(new PackageCost(text(first,"package_display").isBlank()?(type==null?identity:type.name()):text(first,"package_display"),amount));
             }
+            if(!packageMap.containsKey(entry.getKey())&&!Boolean.TRUE.equals(first.get("own_package"))&&orderRecipes.containsKey(entry.getKey())&&!Set.of("AFN","AMAZON").contains(text(first,"fulfillment_channel")))packages=orderRecipes.get(entry.getKey());
             var estimate=view(entry.getKey(),"ORDER",entry.getKey(),text(first,"currency"),day,lines,packages,text(first,"fulfillment_channel"),type);
             String status=text(first,"order_status").replaceAll("[^A-Za-z]","").toUpperCase(Locale.ROOT);
             if(Set.of("CANCELLED","CANCELED").contains(status))

@@ -29,6 +29,18 @@ class ReplenishmentPurchasePlansDatabaseTest {
  void offer(UUID id,UUID v,String cost){jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,vendor_item_code,list_cost,is_default) VALUES (?,?,?,'000123',?,true)",tenant,v,id,new BigDecimal(cost));}
  Command command(UUID id,long revision,List<InputLine> lines,String quote){return new Command(id,revision,"November plan",lines,quote);}
  Plan save(Command c,boolean submit){return tx.execute(s->repo.save(tenant,email,c,submit));}
+ @Test void savedPoCanBeEmptiedRetriedAndRefilledWithoutLosingRevisionProtection(){
+  UUID id=UUID.randomUUID();save(command(id,0,List.of(new InputLine(item,24)),null),false);
+  var empty=save(command(id,1,List.of(),null),false);assertThat(empty.lines()).isEmpty();assertThat(empty.revision()).isEqualTo(2);
+  assertThat(save(command(id,1,List.of(),null),false).revision()).isEqualTo(2);
+  assertThatThrownBy(()->save(command(id,1,List.of(new InputLine(item,12)),null),false)).hasMessageContaining("draft changed");
+  var filled=save(command(id,2,List.of(new InputLine(item,12)),null),false);assertThat(filled.revision()).isEqualTo(3);assertThat(filled.lines().getFirst().each()).isEqualTo(12);
+  assertThatThrownBy(()->save(command(id,3,List.of(),null),true)).hasMessageContaining("at least one item");
+ }
+ @Test void draftWordIsReservedForUnsavedSuggestions(){
+  assertThatThrownBy(()->save(new Command(UUID.randomUUID(),0,"PO-111626-Draft",List.of(new InputLine(item,12)),null),false)).hasMessageContaining("without Draft");
+  var drafts=tx.execute(t->repo.list(tenant,"DRAFT"));assertThat(drafts).isEmpty();
+ }
  @Test void draftPersistsAcrossRepositoryInstancesAndEditsKeepCreationDate(){var lines=List.of(new InputLine(item,24));UUID id=UUID.randomUUID();var p=save(command(id,0,lines,null),false);assertThat(p.lines().getFirst().code()).isEqualTo("000123");assertThat(p.lines().getFirst().each()).isEqualTo(24);assertThat(p.lines().getFirst().pack()).isEqualByComparingTo("12");
   var read=tx.execute(s->new ReplenishmentPurchasePlans(jdbc).get(tenant,id));assertThat(read).isEqualTo(p);
   var changed=save(command(id,1,List.of(new InputLine(item,36)),null),false);assertThat(changed.createdAt()).isEqualTo(p.createdAt());assertThat(changed.revision()).isEqualTo(2);assertThat(changed.lines().getFirst().each()).isEqualTo(36);

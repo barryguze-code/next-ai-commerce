@@ -23,13 +23,13 @@ document.addEventListener('submit',event=>{
   dialog.querySelector('#platform-confirm-title').textContent=form.dataset.confirmTitle||'Confirm action';
   dialog.querySelector('#platform-confirm-message').textContent=form.dataset.confirmMessage;
   dialog.querySelector('[data-confirm-cancel]').textContent='Cancel';
-  dialog.querySelector('[data-confirm-accept]').textContent=form.dataset.confirmAccept||'Continue';
+  dialog.querySelector('[data-confirm-accept]').textContent=form.dataset.confirmAccept||'Continue';dialog.querySelector('[data-confirm-accept]').classList.remove('danger-button');
   dialog.showModal();
 },true);
-window.NextAiConfirm=({title='Confirm action',message='Continue with this action?',accept='Continue',cancel='Cancel'}={})=>new Promise(resolve=>{
+window.NextAiConfirm=({title='Confirm action',message='Continue with this action?',accept='Continue',cancel='Cancel',danger=false}={})=>new Promise(resolve=>{
   build();pendingForm=null;pendingResolve=resolve;const dialog=document.getElementById('platform-confirm-dialog');
   dialog.querySelector('#platform-confirm-title').textContent=title;dialog.querySelector('#platform-confirm-message').textContent=message;
   dialog.querySelector('[data-confirm-cancel]').textContent=cancel;
-  dialog.querySelector('[data-confirm-accept]').textContent=accept;dialog.showModal();
+  dialog.querySelector('[data-confirm-accept]').textContent=accept;dialog.querySelector('[data-confirm-accept]').classList.toggle('danger-button',danger);dialog.showModal();
 });
 })();

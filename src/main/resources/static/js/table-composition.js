@@ -53,7 +53,7 @@
    }
   }
   if(header)for(const control of header.querySelectorAll('button,a')){
-   if(control.closest('form,nav,.table-widget-tools,.table-column-control,.table-filter-control')||control.hasAttribute('data-table-command')||control.matches('.table-export,[data-suggest-action]'))continue;
+   if(control.closest('form,nav,.table-widget-tools,.table-column-control,.table-filter-control')||control.hasAttribute('data-table-command')||control.hasAttribute('data-table-inline-action')||control.matches('.table-export,[data-suggest-action]'))continue;
    if(/^(add|create|new|upload|import|manage|settings|locations|physical count)\b/i.test(text(control))){control.setAttribute('data-table-command','');control.dataset.commandId||=(control.id||text(control).toLowerCase().replace(/[^a-z0-9]+/g,'-'));}
   }
   const commands=own(card,'[data-table-command]').filter(n=>!n.closest('.table-command-menu'));

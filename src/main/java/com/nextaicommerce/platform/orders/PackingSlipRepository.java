@@ -11,9 +11,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class PackingSlipRepository {
     private final JdbcTemplate jdbc;
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private com.nextaicommerce.platform.profit.PackageRecipes recipes;
     public PackingSlipRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
 
-    public record Slip(String orderId,String sellerCentralUrl,String brandName,String packageName,boolean packageMatched,List<Line> lines){
+    public record Slip(String orderId,String sellerCentralUrl,String brandName,String packageName,boolean packageMatched,List<Line> lines,List<String> recipePackages){
+        public Slip(String orderId,String sellerCentralUrl,String brandName,String packageName,boolean packageMatched,List<Line> lines){this(orderId,sellerCentralUrl,brandName,packageName,packageMatched,lines,List.of());}
         /** Thermal labels stay readable: two pick lines per physical 2 × 1 inch page. */
         public List<Line> editableLines(){
             var unique=new java.util.LinkedHashMap<UUID,Line>();
@@ -55,6 +57,9 @@ public class PackingSlipRepository {
               AND (amazon_order_id=? OR order_item_summary=?)
             ORDER BY CASE WHEN amazon_order_id=? THEN 0 ELSE 1 END,imported_at DESC LIMIT 1
             """,rs->rs.next()?rs.getString(1):null,tenantId,connectionId,orderId,orderSummary,orderId);
+        var recipePackages=List.<String>of();
+        boolean explicitPackage=Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM temporary_order_packaging_lookup WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?)",Boolean.class,tenantId,connectionId,orderId));
+        if(!explicitPackage&&recipes!=null){recipePackages=recipes.suggestedNames(tenantId,connectionId,"ORDER",orderId);if(!recipePackages.isEmpty())packageName=packageSummary(recipePackages);}
         String brand=jdbc.queryForObject("""
             SELECT coalesce(min(nullif(product.brand,'')),'NextAI Commerce')
             FROM amazon_order_items item
@@ -106,13 +111,17 @@ public class PackingSlipRepository {
         String marketplace=(String)order.getFirst()[1];
         return new Slip(orderId,sellerCentralUrl((String)order.getFirst()[0],marketplace),brand,
             packageName==null||packageName.isBlank()?"Package to confirm":packageName,
-            packageName!=null&&!packageName.isBlank(),lines);
+            packageName!=null&&!packageName.isBlank(),lines,recipePackages);
     }
 
+    public static String packageSummary(List<String> packages){var counts=new java.util.LinkedHashMap<String,Integer>();for(String name:packages)counts.merge(name,1,Integer::sum);return counts.entrySet().stream().map(e->e.getKey()+(e.getValue()>1?" × "+e.getValue():"")).collect(java.util.stream.Collectors.joining(" + "));}
+
     @Transactional
-    public String savePackaging(UUID tenantId,UUID connectionId,String orderId,String packageName){
+    public String savePackaging(UUID tenantId,UUID connectionId,String orderId,String packageName){return savePackaging(tenantId,connectionId,orderId,packageName,"Packing slip");}
+    @Transactional
+    public String savePackaging(UUID tenantId,UUID connectionId,String orderId,String packageName,String actor){
         setTenant(tenantId);String clean=packageName==null?"":packageName.trim().replaceAll("\\s+"," ");
-        if(clean.isBlank()||clean.length()>120)throw new IllegalArgumentException("Choose a package name of up to 120 characters.");
+        if(clean.isBlank()||clean.equals("__recipe")||clean.length()>120)throw new IllegalArgumentException("Choose a package name of up to 120 characters.");
         String orderSummary=signature(tenantId,connectionId,orderId,"asin");
         String skuSummary=signature(tenantId,connectionId,orderId,"seller_sku");
         if(orderSummary.isBlank())throw new IllegalArgumentException("This order has no items to package.");
@@ -124,6 +133,7 @@ public class PackingSlipRepository {
               order_item_summary=EXCLUDED.order_item_summary,packaging=EXCLUDED.packaging,
               order_sku_qty_list=EXCLUDED.order_sku_qty_list,source_note=EXCLUDED.source_note,imported_at=now()
             """,tenantId,connectionId,orderId,orderSummary,clean,skuSummary);
+        if(recipes!=null)recipes.recordChoice(tenantId,connectionId,"ORDER",orderId,List.of(clean),actor);
         return jdbc.queryForObject("SELECT packing_package_display(?,?)",String.class,tenantId,clean);
     }
 

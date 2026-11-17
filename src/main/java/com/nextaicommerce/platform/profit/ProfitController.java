@@ -17,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Controller
 @RequestMapping("/app/inventory/profit")
 public class ProfitController {
+    @org.springframework.beans.factory.annotation.Autowired private PackageRecipes recipes;
     private final ProfitRepository profit;private final ProfitCostRepository costs;
     private final ProfitPricePublisher prices;
     @org.springframework.beans.factory.annotation.Autowired private PackingPackageNames packageNames;
@@ -58,6 +59,15 @@ public class ProfitController {
     List<PackingPackageNames.Choice> packageChoices(HttpSession session,@RequestParam(required=false) LocalDate date){
         UUID account=tenant(session);
         return packageNames.choices(account,costs.rates(account),date==null?LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")):date);
+    }
+    @GetMapping("/packaging-match") @ResponseBody
+    PackageRecipes.Match packagingMatch(HttpSession session,@RequestParam String kind,@RequestParam String key,@RequestParam(defaultValue="1") int units,@RequestParam(required=false) UUID connection){
+        return recipes.preview(tenant(session),store(session,connection),kind,key,units);
+    }
+    public record RecipeChange(String kind,String key,UUID connection,int units,String compositionKey,long revision,List<String> packages){}
+    @PostMapping("/packaging-match") @ResponseBody
+    PackageRecipes.Match packagingMatch(HttpSession session,Authentication auth,Model model,@RequestBody RecipeChange change){
+        edit(auth,model);return recipes.save(tenant(session),store(session,change.connection()),change.kind(),change.key(),change.units(),change.compositionKey(),change.revision(),change.packages(),auth.getName());
     }
     public record RateChange(ProfitShippingRates.PackageType packageType,LocalDate effectiveFrom,BigDecimal amount){}
     @PostMapping("/rates") @ResponseBody

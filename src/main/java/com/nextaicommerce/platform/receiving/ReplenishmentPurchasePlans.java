@@ -24,7 +24,7 @@ public class ReplenishmentPurchasePlans {
  private void scope(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
  @Transactional(readOnly=true)
  public List<Map<String,Object>> list(UUID tenant,String status){scope(tenant);return jdbc.queryForList("""
-  SELECT p.id,p.name,p.status,p.revision,p.created_at,(SELECT count(*) FROM replenishment_purchase_plan_lines l WHERE l.tenant_id=p.tenant_id AND l.plan_id=p.id) items,
+  SELECT p.id,p.name,p.status,p.revision,p.created_at,p.updated_at,p.submitted_at,(SELECT count(*) FROM replenishment_purchase_plan_lines l WHERE l.tenant_id=p.tenant_id AND l.plan_id=p.id) items,
   (SELECT count(DISTINCT vendor_id) FROM replenishment_purchase_plan_lines l WHERE l.tenant_id=p.tenant_id AND l.plan_id=p.id) vendors
   FROM replenishment_purchase_plans p WHERE p.tenant_id=? AND p.status=? AND p.request_hash<>'DELETED' ORDER BY p.updated_at DESC,p.id LIMIT 100
   """,tenant,"SUBMITTED".equals(status)?"SUBMITTED":"DRAFT");}
@@ -61,19 +61,19 @@ public class ReplenishmentPurchasePlans {
  }
  @Transactional
  public Plan save(UUID tenant,String email,Command command,boolean submit){
-  validate(command);scope(tenant);
+  validate(command);if(submit&&command.lines().isEmpty())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Add at least one item before submitting.");if(command.name().toLowerCase(Locale.ROOT).contains("draft"))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Choose a PO name without Draft; Draft is reserved for unsaved suggestions.");scope(tenant);
   UUID actor=jdbc.queryForObject("SELECT id FROM app_users WHERE lower(email)=lower(?) AND status='ACTIVE'",UUID.class,email);
   String hash=hash(command,submit);
   // The caller's UUID makes lost-response retries safe, including the first insert.
-  jdbc.update("INSERT INTO replenishment_purchase_plans(id,tenant_id,name,request_hash,created_by,updated_by) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",command.id(),tenant,command.name().trim(),hash,actor,actor);
+  int inserted=jdbc.update("INSERT INTO replenishment_purchase_plans(id,tenant_id,name,request_hash,created_by,updated_by) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",command.id(),tenant,command.name().trim(),hash,actor,actor);
   var heads=jdbc.queryForList("SELECT * FROM replenishment_purchase_plans WHERE tenant_id=? AND id=? FOR UPDATE",tenant,command.id());
   if(heads.isEmpty())throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a new purchase plan ID");var h=heads.getFirst();
   if("DELETED".equals(h.get("request_hash")))throw new ResponseStatusException(HttpStatus.CONFLICT,"This draft was deleted. Start a new PO.");
   long revision=((Number)h.get("revision")).longValue();
-  boolean hasLines=Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM replenishment_purchase_plan_lines WHERE tenant_id=? AND plan_id=?)",Boolean.class,tenant,command.id()));
-  if(hasLines&&hash.equals(h.get("request_hash")))return read(tenant,command.id());
+  boolean persisted=inserted==0;
+  if(persisted&&hash.equals(h.get("request_hash")))return read(tenant,command.id());
   if("SUBMITTED".equals(h.get("status")))throw new ResponseStatusException(HttpStatus.CONFLICT,"This PO is already submitted");
-  if((hasLines?revision:0)!=command.revision())throw new ResponseStatusException(HttpStatus.CONFLICT,"This draft changed. Reopen the saved draft before editing.");
+  if((persisted?revision:0)!=command.revision())throw new ResponseStatusException(HttpStatus.CONFLICT,"This draft changed. Reopen the saved draft before editing.");
   List<Line> lines=resolve(tenant,command.lines());
   if(submit){
    if(!termsHash(lines).equals(command.termsRevision()))throw new ResponseStatusException(HttpStatus.CONFLICT,"Buying terms changed. Review the refreshed basket before submitting.");
@@ -87,14 +87,15 @@ public class ReplenishmentPurchasePlans {
    BigDecimal total=group.stream().map(l->l.cost().multiply(BigDecimal.valueOf(l.each()))).reduce(BigDecimal.ZERO,BigDecimal::add).setScale(2,RoundingMode.HALF_UP);
    UUID po=UUID.randomUUID();jdbc.update("INSERT INTO replenishment_vendor_pos(id,tenant_id,plan_id,vendor_id,po_number,currency,total,created_by) VALUES (?,?,?,?,?,?,?,?)",po,tenant,command.id(),vendor,"PO-"+po.toString().replace("-","").toUpperCase(Locale.ROOT),group.getFirst().currency(),total,actor);
   }
-  jdbc.update("UPDATE replenishment_purchase_plans SET name=?,status=?,revision=?,request_hash=?,updated_by=?,updated_at=now(),submitted_at=CASE WHEN ? THEN now() ELSE NULL END WHERE tenant_id=? AND id=?",command.name().trim(),submit?"SUBMITTED":"DRAFT",hasLines?revision+1:1,hash,actor,submit,tenant,command.id());
+  jdbc.update("UPDATE replenishment_purchase_plans SET name=?,status=?,revision=?,request_hash=?,updated_by=?,updated_at=now(),submitted_at=CASE WHEN ? THEN now() ELSE NULL END WHERE tenant_id=? AND id=?",command.name().trim(),submit?"SUBMITTED":"DRAFT",persisted?revision+1:1,hash,actor,submit,tenant,command.id());
   return read(tenant,command.id());
  }
  static void validate(Command c){
-  if(c==null||c.id()==null||c.revision()<0||c.name()==null||c.name().isBlank()||c.name().trim().length()>160||c.lines()==null||c.lines().isEmpty()||c.lines().size()>500)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Enter a plan name and 1–500 items.");
+  if(c==null||c.id()==null||c.revision()<0||c.name()==null||c.name().isBlank()||c.name().trim().length()>160||c.lines()==null||c.lines().size()>500)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Enter a plan name and up to 500 items.");
   Set<UUID> ids=new HashSet<>();for(var l:c.lines())if(l==null||l.id()==null||!ids.add(l.id())||l.each()<1||l.each()>100000000)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Enter unique items with whole positive quantities.");
  }
  private List<Line> resolve(UUID tenant,List<InputLine> input){
+  if(input.isEmpty())return List.of();
   String placeholders=String.join(",",Collections.nCopies(input.size(),"?"));var args=new ArrayList<Object>();args.add(tenant);input.forEach(l->args.add(l.id()));
   // One bounded catalogue query; never trust browser costs, vendor identity or account scope.
   var rows=jdbc.query("""

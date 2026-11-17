@@ -4,9 +4,10 @@
  const printed=[...document.querySelectorAll('[data-printed-package]')],normal=name=>String(name).replace(/\s+/g,' ').trim(),key=name=>normal(name).toLowerCase();
  const seen=new Set();for(const option of [...select.options]){if(option.value==='__custom')continue;const value=normal(option.value);if(!value||seen.has(key(value))){option.remove();continue;}seen.add(key(value));option.value=value;option.textContent=value;}
  function remember(name){const value=normal(name);let option=[...select.options].find(o=>o.value!=='__custom'&&key(o.value)===key(value));if(!option){option=document.createElement('option');option.value=option.textContent=value;select.insertBefore(option,select.querySelector('[value="__custom"]'));}return option.value;}
+ const multiple=select.dataset.multiplePackages==='true',savePackageButton=document.querySelector('#save-package'),canSavePackage=savePackageButton&&!savePackageButton.disabled;
  const current=normal(printed[0]?.textContent||'');const known=[...select.options].find(o=>o.value!=='__custom'&&key(o.value)===key(current));
- if(known)select.value=known.value;else{select.value='__custom';customWrap.hidden=false;custom.value=current;}
- const packageName=()=>select.value==='__custom'?normal(custom.value):select.value;
+ if(multiple){const option=new Option(current,'__recipe');option.disabled=true;select.prepend(option);select.value='__recipe';status.textContent='Multiple packages matched. Edit this match in the calculator.';}else if(known)select.value=known.value;else{select.value='__custom';customWrap.hidden=false;custom.value=current;}
+ const packageName=()=>select.value==='__recipe'?current:select.value==='__custom'?normal(custom.value):select.value;
  const updatePrinted=name=>printed.forEach(node=>node.textContent=name);
  const locationRows=[...document.querySelectorAll('.packing-slip article')];
  const savedLocations=new Map(locationRows.map(row=>[row,row.querySelector('.packing-line-location')?.textContent||'—']));
@@ -22,7 +23,7 @@
  }
  document.querySelectorAll('.packing-product-form select[name=locationId]').forEach(choice=>choice.addEventListener('change',previewLocations));
  previewLocations();
- const showPackage=()=>{const edit=document.querySelector('#rename-package');if(edit)edit.disabled=select.value==='__custom';customWrap.hidden=select.value!=='__custom';if(packageName())updatePrinted(packageName());};
+ const showPackage=()=>{const edit=document.querySelector('#rename-package');if(edit)edit.disabled=select.value==='__custom'||select.value==='__recipe';if(savePackageButton)savePackageButton.disabled=!canSavePackage||select.value==='__recipe';customWrap.hidden=select.value!=='__custom';if(packageName())updatePrinted(packageName());};
  select.addEventListener('change',showPackage);custom.addEventListener('input',showPackage);showPackage();
  function preparePrint(){
   const value=packageName();

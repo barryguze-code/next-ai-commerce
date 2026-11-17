@@ -13,9 +13,10 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 @Controller
 public class ReplenishmentDraftController {
+ private final com.nextaicommerce.platform.orders.SkuRefundHistory refunds;
  private final ReplenishmentSuggestions suggestions;
  private final com.nextaicommerce.platform.catalog.CatalogRepository catalog;
- public ReplenishmentDraftController(ReplenishmentSuggestions suggestions,com.nextaicommerce.platform.catalog.CatalogRepository catalog){this.suggestions=suggestions;this.catalog=catalog;}
+ public ReplenishmentDraftController(ReplenishmentSuggestions suggestions,com.nextaicommerce.platform.catalog.CatalogRepository catalog,com.nextaicommerce.platform.orders.SkuRefundHistory refunds){this.suggestions=suggestions;this.catalog=catalog;this.refunds=refunds;}
  @GetMapping("/app/inventory/replenishment")
  String draft(HttpSession session,Authentication auth,Model model,@RequestParam(defaultValue="") String q,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="25") int size,@RequestParam(defaultValue="forecast") String status){
   if(!PageController.addTenantModel(session,model))return "redirect:/app/select-account";
@@ -28,7 +29,9 @@ public class ReplenishmentDraftController {
   model.addAttribute("status",selected);model.addAttribute("forecastCount",all.stream().filter(r->((Number)r.get("cases")).longValue()>0).count());model.addAttribute("allCount",all.size());
   int pageSize=Set.of(25,50,100).contains(size)?size:25;
   int current=Math.min(Math.max(0,page),Math.max(0,(filtered.size()-1)/pageSize)),start=current*pageSize;
-  model.addAttribute("items",filtered.subList(start,Math.min(start+pageSize,filtered.size())));
+  var visible=filtered.subList(start,Math.min(start+pageSize,filtered.size()));
+  model.addAttribute("items",visible);
+  model.addAttribute("productRefundHistory",refunds.productFourWeeks(tenant,visible.stream().map(row->(UUID)row.get("id")).toList()));
   model.addAttribute("q",q);model.addAttribute("page",current);model.addAttribute("more",start+pageSize<filtered.size());
   model.addAttribute("pageSize",pageSize);model.addAttribute("pageMax",Math.max(1,(filtered.size()+pageSize-1)/pageSize));
   model.addAttribute("generatedAt",snapshot==null?null:snapshot.generatedAt());model.addAttribute("pending",snapshot==null||suggestions.pending(tenant)||snapshot!=suggestions.snapshot(tenant));

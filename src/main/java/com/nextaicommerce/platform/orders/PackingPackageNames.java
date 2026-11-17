@@ -73,12 +73,14 @@ public class PackingPackageNames {
   int updated=dimensions.revision()==0?jdbc.update("INSERT INTO packing_package_dimensions(tenant_id,package_key,length,width,height,dimension_unit,updated_by) VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",tenant,key,dimensions.length(),dimensions.width(),dimensions.height(),dimensions.unit(),actor):jdbc.update("UPDATE packing_package_dimensions SET length=?,width=?,height=?,dimension_unit=?,revision=revision+1,updated_by=?,updated_at=now() WHERE tenant_id=? AND package_key=? AND revision=?",dimensions.length(),dimensions.width(),dimensions.height(),dimensions.unit(),actor,tenant,key,dimensions.revision());
   if(updated!=1)throw new IllegalArgumentException("These dimensions changed. Reopen the package before editing.");
  }
- public record History(String name,String currency,List<com.nextaicommerce.platform.profit.ProfitCostRepository.PackageRate> rates,Choice baseline){}
+ public record RateCorrection(String oldDate,java.math.BigDecimal oldAmount,String newDate,java.math.BigDecimal newAmount,String actor,java.time.Instant changedAt){}
+ public record History(String name,String currency,List<com.nextaicommerce.platform.profit.ProfitCostRepository.PackageRate> rates,Choice baseline,List<RateCorrection> corrections){}
  @Transactional(readOnly=true) public History history(UUID tenant,String name,List<com.nextaicommerce.platform.profit.ProfitShippingRates.Rate> inherited,java.time.LocalDate date){
   scope(tenant);String current=existing(tenant,clean(name));if(current==null)throw new IllegalArgumentException("This package changed. Refresh and try again.");
   String identity=identity(tenant,current);var data=new com.nextaicommerce.platform.profit.ProfitCostRepository(jdbc).packageRates(tenant,List.of(identity));
   var baseline=choices(tenant,inherited,date).stream().filter(c->c.name().equals(current)).findFirst().orElseThrow();
-  return new History(current,"USD",data.entries().getOrDefault(key(identity),List.of()),baseline);
+  var corrections=jdbc.query("SELECT e.details->>'oldDate',(e.details->>'oldAmount')::numeric,e.details->>'newDate',(e.details->>'newAmount')::numeric,u.display_name,e.created_at FROM audit_events e JOIN app_users u ON u.id=e.actor_user_id WHERE e.tenant_id=? AND e.action='PACKING_PACKAGE_RATE_CHANGED' AND e.target_type='PACKING_PACKAGE' AND e.target_id=? ORDER BY e.created_at DESC LIMIT 100",(rs,n)->new RateCorrection(rs.getString(1),rs.getBigDecimal(2),rs.getString(3),rs.getBigDecimal(4),rs.getString(5),rs.getTimestamp(6).toInstant()),tenant,key(identity));
+  return new History(current,"USD",data.entries().getOrDefault(key(identity),List.of()),baseline,corrections);
  }
  private String identity(UUID tenant,String name){
   var identities=jdbc.queryForList("SELECT DISTINCT packing_package_key(packing_package_cost(?,name)) FROM ("+SOURCES+") s WHERE packing_package_key(packing_package_display(?,name))=packing_package_key(?)",String.class,tenant,tenant,tenant,tenant,tenant,tenant,name);
@@ -92,10 +94,78 @@ public class PackingPackageNames {
   int inserted=jdbc.update("INSERT INTO packing_package_rates(tenant_id,package_key,currency,effective_from,amount,created_by) VALUES (?,?,'USD',?,?,?) ON CONFLICT DO NOTHING",tenant,identity(tenant,current),date,amount,actor);
   if(inserted!=1)throw new IllegalArgumentException("A rate already exists for this package and date. Choose another effective date.");
  }
+ public record DetailsChange(String name,Dimensions dimensions,boolean rateChanged,java.time.LocalDate originalDate,
+  java.math.BigDecimal originalAmount,String originalSource,java.time.LocalDate effectiveFrom,java.math.BigDecimal amount){}
+ /** Atomic row edit. Correct package-specific dates without rewriting shared carrier rates or order overrides. */
+ @Transactional public void saveDetails(UUID tenant,DetailsChange change,String actor){
+  scope(tenant);if(actor==null||actor.isBlank())throw new IllegalArgumentException("Sign in again.");
+  jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,137))",Object.class,tenant.toString());
+  if(change.rateChanged()){
+   var date=change.effectiveFrom();var amount=change.amount();
+   if(date==null||date.isBefore(com.nextaicommerce.platform.profit.ProfitShippingRates.START)||amount==null||amount.signum()<0||amount.scale()>2||amount.compareTo(new java.math.BigDecimal("9999999999.99"))>0)throw new IllegalArgumentException("Enter a valid effective date and a nonnegative cost with two decimals.");
+   var costs=new com.nextaicommerce.platform.profit.ProfitCostRepository(jdbc);
+   var current=choices(tenant,costs.rates(tenant),java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"))).stream().filter(c->c.name().equals(change.name())).findFirst().orElseThrow(()->new IllegalArgumentException("This package changed. Reload it before editing."));
+   boolean sameAmount=current.cost()==null?change.originalAmount()==null:change.originalAmount()!=null&&current.cost().compareTo(change.originalAmount())==0;
+   if(!sameAmount||!Objects.equals(current.effectiveFrom(),change.originalDate())||!Objects.equals(current.rateSource(),change.originalSource()))throw new IllegalArgumentException("This rate changed. Reload the package before editing; your entries are kept.");
+   String identity=identity(tenant,current.name());
+   int actorCount=jdbc.queryForObject("SELECT count(*) FROM app_users WHERE lower(email)=lower(?)",Integer.class,actor);if(actorCount!=1)throw new IllegalArgumentException("Sign in again before changing a rate.");
+   if("PACKAGE".equals(current.rateSource())){
+    if(!date.equals(change.originalDate())&&Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM packing_package_rates WHERE tenant_id=? AND package_key=? AND currency='USD' AND effective_from=?)",Boolean.class,tenant,identity,date)))throw new IllegalArgumentException("Another rate already starts on this date. Choose a different effective date.");
+    int updated=jdbc.update("UPDATE packing_package_rates SET effective_from=?,amount=?,created_by=?,created_at=clock_timestamp() WHERE tenant_id=? AND package_key=? AND currency='USD' AND effective_from=? AND amount=?",date,amount,actor,tenant,identity,change.originalDate(),change.originalAmount());
+    if(updated!=1)throw new IllegalArgumentException("This rate changed. Reload the package before editing.");
+   }else saveRate(tenant,current.name(),date,amount,actor);
+   jdbc.update("""
+    INSERT INTO audit_events(tenant_id,actor_user_id,action,target_type,target_id,details)
+    SELECT ?,id,'PACKING_PACKAGE_RATE_CHANGED','PACKING_PACKAGE',?,
+     jsonb_build_object('oldDate',?::text,'oldAmount',?::numeric,'oldSource',?::text,'newDate',?::text,'newAmount',?::numeric)
+    FROM app_users WHERE lower(email)=lower(?)
+    """,tenant,identity,change.originalDate()==null?null:change.originalDate().toString(),change.originalAmount(),change.originalSource(),date.toString(),amount,actor);
+  }
+  if(change.dimensions()!=null)saveDimensions(tenant,change.name(),change.dimensions(),actor);
+ }
  /** Called before saving a new free-format package, in the caller's transaction. */
  @Transactional public void registerCustom(UUID tenant,String name){
   scope(tenant);name=clean(name);jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,137))",Object.class,tenant.toString());
   if(!managedNames(tenant).stream().map(n->n.toLowerCase(Locale.ROOT)).toList().contains(name.toLowerCase(Locale.ROOT)))jdbc.update("INSERT INTO packing_package_aliases(tenant_id,source_key,display_name,cost_name,independent_rate_only) VALUES (?,?,?,?,true) ON CONFLICT DO NOTHING",tenant,key(name),name,name);
+ }
+ public record PackageUsage(String category,long count){}
+ public record Removal(String name,boolean removable,List<PackageUsage> dependencies){}
+ @Transactional(readOnly=true) public Removal removal(UUID tenant,String name){scope(tenant);return inspectRemoval(tenant,clean(name));}
+ private Removal inspectRemoval(UUID tenant,String name){
+  String current=existing(tenant,name);
+  // An old merged name is already absent. Never resolve it into deletion of the survivor.
+  if(current==null)throw new IllegalArgumentException("This package is no longer in the list. Refresh packages.");
+  var params=new org.springframework.jdbc.core.namedparam.MapSqlParameterSource().addValue("tenant",tenant).addValue("name",current);
+  var usage=new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(jdbc).query("""
+   SELECT category,links FROM (
+    SELECT 'Order packing records' category,count(*) links FROM temporary_order_packaging_lookup WHERE tenant_id=:tenant AND packing_package_key(packing_package_display(tenant_id,packaging))=packing_package_key(:name)
+    UNION ALL SELECT 'Shopify orders',count(*) FROM shopify_orders WHERE tenant_id=:tenant AND packing_package_key(packing_package_display(tenant_id,package_name))=packing_package_key(:name)
+    UNION ALL SELECT 'Order cost records',count(*) FROM profit_order_packages WHERE tenant_id=:tenant AND packing_package_key(packing_package_display(tenant_id,description))=packing_package_key(:name)
+    UNION ALL SELECT 'SKU package assignments',count(*) FROM profit_sku_packages WHERE tenant_id=:tenant AND packing_package_key(packing_package_display(tenant_id,description))=packing_package_key(:name)
+    UNION ALL SELECT 'Saved packaging matches',count(*) FROM account_package_recipes r WHERE tenant_id=:tenant AND EXISTS(SELECT 1 FROM jsonb_array_elements_text(r.packages) p(name) WHERE packing_package_key(packing_package_display(r.tenant_id,p.name))=packing_package_key(:name))
+    UNION ALL SELECT 'Legacy SKU assignments',count(*) FROM amazon_listings WHERE tenant_id=:tenant AND packing_package_key(packing_package_display(tenant_id,CASE profit_package_type WHEN 'FEDEX_XSMALL' THEN 'XSmall' WHEN 'FEDEX_PAK' THEN 'Pak' WHEN 'FEDEX_SMALL' THEN 'Small' WHEN 'FEDEX_MEDIUM' THEN 'Medium' WHEN 'FEDEX_LARGE' THEN 'Large' WHEN 'FEDEX_XLARGE' THEN 'XLarge' ELSE profit_package_type END))=packing_package_key(:name)
+    UNION ALL SELECT 'Shipping profile assignments',count(*) FROM (
+     SELECT d.tenant_id,d.package_profile_id FROM marketplace_sku_package_defaults d WHERE d.tenant_id=:tenant
+     UNION ALL SELECT d.tenant_id,d.package_profile_id FROM shipping_order_packages d WHERE d.tenant_id=:tenant
+     UNION ALL SELECT d.tenant_id,d.package_profile_id FROM buy_shipping_shipments d WHERE d.tenant_id=:tenant
+     UNION ALL SELECT d.tenant_id,d.package_profile_id FROM buy_shipping_batch_orders d WHERE d.tenant_id=:tenant
+    ) used JOIN shipping_package_profiles p ON p.tenant_id=used.tenant_id AND p.id=used.package_profile_id WHERE packing_package_key(packing_package_display(p.tenant_id,p.name))=packing_package_key(:name)
+   ) dependencies WHERE links>0 ORDER BY category
+   """,params,(rs,n)->new PackageUsage(rs.getString(1),rs.getLong(2)));
+  return new Removal(current,usage.isEmpty(),List.copyOf(usage));
+ }
+ @Transactional public void remove(UUID tenant,String name,String actor){
+  scope(tenant);if(actor==null||actor.isBlank())throw new IllegalArgumentException("Sign in again.");
+  jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,137))",Object.class,tenant.toString());
+  // Briefly serialize definition removal with assignment writes; recheck after acquiring locks.
+  jdbc.execute("LOCK TABLE temporary_order_packaging_lookup,shopify_orders,profit_order_packages,profit_sku_packages,account_package_recipes,amazon_listings,marketplace_sku_package_defaults,shipping_order_packages,buy_shipping_shipments,buy_shipping_batch_orders,shipping_package_profiles IN SHARE ROW EXCLUSIVE MODE");
+  var review=inspectRemoval(tenant,clean(name));
+  if(!review.removable())throw new IllegalArgumentException("Package is still used: "+review.dependencies().stream().map(d->d.category()+" ("+d.count()+")").collect(java.util.stream.Collectors.joining(", "))+". Review these linked records before deleting. Nothing was deleted.");
+  int actors=jdbc.queryForObject("SELECT count(*) FROM app_users WHERE lower(email)=lower(?)",Integer.class,actor);if(actors!=1)throw new IllegalArgumentException("Sign in again.");
+  jdbc.update("UPDATE shipping_package_profiles SET status='INACTIVE',updated_at=now() WHERE tenant_id=? AND packing_package_key(packing_package_display(tenant_id,name))=packing_package_key(?)",tenant,review.name());
+  jdbc.update("DELETE FROM packing_package_aliases WHERE tenant_id=? AND packing_package_key(display_name)=packing_package_key(?)",tenant,review.name());
+  jdbc.update("INSERT INTO audit_events(tenant_id,actor_user_id,action,target_type,target_id,details) SELECT ?,id,'PACKING_PACKAGE_DELETED','PACKING_PACKAGE',?,jsonb_build_object('name',?::text) FROM app_users WHERE lower(email)=lower(?)",tenant,key(review.name()),review.name(),actor);
+  // Dated prices and dimension/audit metadata remain available; no order or stock records are removed.
  }
  public record Change(String source,String destination,String operation,int affectedAssignments,String revision){}
  @Transactional(readOnly=true) public List<String> names(UUID tenant){scope(tenant);return managedNames(tenant);}

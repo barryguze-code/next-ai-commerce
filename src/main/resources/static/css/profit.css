@@ -85,3 +85,9 @@
 
 /* Native hidden semantics must win over shared button/grid display rules. */
 .profit-dialog [hidden]{display:none!important}
+
+#profit-dialog .profit-packaging-match{font-size:12px;margin:8px 0}
+#profit-dialog .profit-packaging-match>summary{font-weight:600;cursor:pointer;padding:6px 0}
+#profit-dialog [data-match-units-label]{max-width:130px;margin:8px 0}
+#profit-dialog [data-match-packages] .profit-package{grid-template-columns:minmax(0,1fr) 36px}
+#profit-dialog .profit-packaging-match .profit-section-title{justify-content:flex-start;flex-wrap:wrap;gap:8px}
