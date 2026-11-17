@@ -232,14 +232,14 @@ public class OrderController {
         if(!workspace.listConnections(account,"").stream().allMatch(c->visible.contains(c.id())))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Managing account-wide packages requires access to all its stores.");
     }
     @PostMapping("/app/orders/packing-packages/review") @ResponseBody
-    PackingPackageNames.Change reviewPackageName(@RequestParam String source,@RequestParam String destination,HttpSession session,Authentication auth){
+    org.springframework.http.ResponseEntity<?> reviewPackageName(@RequestParam String source,@RequestParam String destination,HttpSession session,Authentication auth){
         requirePackageManagement(session,auth);
-        try{return packageNames.preview(tenant(session),source,destination);}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+        try{return org.springframework.http.ResponseEntity.ok(packageNames.preview(tenant(session),source,destination));}catch(IllegalArgumentException e){return org.springframework.http.ResponseEntity.badRequest().body(Map.of("detail",e.getMessage()));}
     }
     @PostMapping("/app/orders/packing-packages/apply") @ResponseBody
-    PackingPackageNames.Change applyPackageName(@RequestParam String source,@RequestParam String destination,@RequestParam String revision,@RequestParam int affectedAssignments,HttpSession session,Authentication auth){
+    org.springframework.http.ResponseEntity<?> applyPackageName(@RequestParam String source,@RequestParam String destination,@RequestParam String revision,@RequestParam int affectedAssignments,HttpSession session,Authentication auth){
         requirePackageManagement(session,auth);
-        try{return packageNames.apply(tenant(session),source,destination,revision,affectedAssignments,auth.getName());}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.CONFLICT,e.getMessage());}
+        try{return org.springframework.http.ResponseEntity.ok(packageNames.apply(tenant(session),source,destination,revision,affectedAssignments,auth.getName()));}catch(IllegalArgumentException e){return org.springframework.http.ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("detail",e.getMessage()));}
     }
 
     private boolean mayEditPacking(UUID tenantId,UUID connection,Authentication auth){

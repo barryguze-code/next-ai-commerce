@@ -635,6 +635,7 @@ class TemplateRenderingTest {
         c.setVariable("configuration",Map.of("low",7,"target",14,"overstock",35,"vendors",Map.of(vendorId.toString(),Map.of("lead","2"))));
         c.setVariable("vendors",List.of(Map.of("id",vendorId,"name","KEHE","code","KEHE","dc","41")));
         c.setVariable("pending",false);c.setVariable("counts",Map.of("low",1,"oos",0,"healthy",0,"overstock",0));
+        c.setVariable("productRefundHistory",Map.of());
         String html=templateEngine().process("replenishment-draft",c);
         assertThat(html).contains("inventory-history-dialog","history-position-select","replenishment-inventory-history.js");
         assertThat(html).contains("75.0%","Observed time: 80%","6 of these soon to expire","rp-sku-details","role=\"listitem\"","Low 2","Target 12","Over 20","To order","5 cases","B000TEST","rp-sku-picture","Export basket","rp-sku-toggle","Available","Last synced","Search ASIN in Seller Central","× 6, B000TEST","2 cases");
@@ -645,8 +646,10 @@ class TemplateRenderingTest {
         assertThat(html).contains("data-column-weight=\"0.45\"","rp-vendor-badge","data-settings-open=\"vendors\"");
         assertThat(html).doesNotContain("<dialog id=\"rp-skus-");
         assertThat(html).contains("Refresh forecast","/app/inventory/replenishment/refresh","rp-week-numbers","$12.99","six hours");
-        assertThat(html).contains("Shared item","SHARED-6PACK","SKU product title","Basket preview","/app/inventory/ledger?itemId=", "Suggested PO", "Saved drafts").doesNotContain("Local design draft", "Replenishment <small>Draft</small>", "Replenishment · Draft");
+        assertThat(html).contains("Shared item","SHARED-6PACK","SKU product title","Basket preview","/app/inventory/ledger?itemId=", "Suggested PO", "Load saved PO").doesNotContain("Local design draft", "Replenishment <small>Draft</small>", "Replenishment · Draft");
         assertThat(html).contains("rp-sku-head").doesNotContain("3 expired","OOS · duration unknown","Sessions not collected","Conversions not collected");
+        assertThat(html.split("id=\"package-manager\"",-1)).hasSize(2);
+        assertThat(html).contains("Manage packages", "data-package-rows").doesNotContain("data-profit-rate-form");
         c.setVariable("items",List.of());
         assertThat(templateEngine().process("replenishment-draft",c)).contains("No items with sales in the last four weeks");
     }

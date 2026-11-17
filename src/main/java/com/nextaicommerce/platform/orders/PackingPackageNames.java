@@ -26,7 +26,7 @@ public class PackingPackageNames {
 
  @Transactional(readOnly=true) public List<Choice> choices(UUID tenant,List<com.nextaicommerce.platform.profit.ProfitShippingRates.Rate> rates,java.time.LocalDate date){
   scope(tenant);
-  var rows=jdbc.queryForList("SELECT DISTINCT packing_package_display(?,name) display,packing_package_cost(?,name) cost_name FROM ("+SOURCES+") s WHERE nullif(btrim(name),'') IS NOT NULL",tenant,tenant,tenant,tenant,tenant,tenant);
+  var rows=jdbc.queryForList("SELECT DISTINCT packing_package_display(?,name) display,packing_package_cost(?,name) cost_name FROM (SELECT DISTINCT name FROM ("+SOURCES+") raw WHERE nullif(btrim(name),'') IS NOT NULL) s",tenant,tenant,tenant,tenant,tenant,tenant);
   var profiles=jdbc.queryForList("SELECT name,coalesce(preferred_carrier,'') carrier,length,width,height,dimension_unit FROM shipping_package_profiles WHERE tenant_id=? AND status='ACTIVE'",tenant);
   var independent=new com.nextaicommerce.platform.profit.ProfitCostRepository(jdbc).packageRates(tenant,rows.stream().map(r->Objects.toString(r.get("cost_name"),"")).toList());
   var dimensionRows=jdbc.queryForList("SELECT * FROM packing_package_dimensions WHERE tenant_id=?",tenant);
@@ -169,8 +169,8 @@ public class PackingPackageNames {
  }
  public record Change(String source,String destination,String operation,int affectedAssignments,String revision){}
  @Transactional(readOnly=true) public List<String> names(UUID tenant){scope(tenant);return managedNames(tenant);}
- private List<String> managedNames(UUID tenant){return jdbc.queryForList("SELECT DISTINCT packing_package_display(?,name) FROM ("+MANAGED_SOURCES+") s WHERE nullif(btrim(name),'') IS NOT NULL ORDER BY 1",String.class,tenant,tenant,tenant,tenant,tenant).stream().filter(n->!LEGACY.containsKey(n)&&!n.equals("UPS")).toList();}
- private List<String> namesInScope(UUID tenant){var unique=new LinkedHashMap<String,String>();for(String name:jdbc.queryForList("SELECT DISTINCT packing_package_display(?,name) FROM ("+SOURCES+") s WHERE nullif(btrim(name),'') IS NOT NULL ORDER BY 1",String.class,tenant,tenant,tenant,tenant,tenant)){String value=clean(name);unique.putIfAbsent(value.toLowerCase(Locale.ROOT),value);}return List.copyOf(unique.values());}
+ private List<String> managedNames(UUID tenant){return jdbc.queryForList("SELECT DISTINCT packing_package_display(?,name) FROM (SELECT DISTINCT name FROM ("+MANAGED_SOURCES+") raw WHERE nullif(btrim(name),'') IS NOT NULL) s ORDER BY 1",String.class,tenant,tenant,tenant,tenant,tenant).stream().filter(n->!LEGACY.containsKey(n)&&!n.equals("UPS")).toList();}
+ private List<String> namesInScope(UUID tenant){var unique=new LinkedHashMap<String,String>();for(String name:jdbc.queryForList("SELECT DISTINCT packing_package_display(?,name) FROM (SELECT DISTINCT name FROM ("+SOURCES+") raw WHERE nullif(btrim(name),'') IS NOT NULL) s ORDER BY 1",String.class,tenant,tenant,tenant,tenant,tenant)){String value=clean(name);unique.putIfAbsent(value.toLowerCase(Locale.ROOT),value);}return List.copyOf(unique.values());}
  private void scope(UUID tenant){Objects.requireNonNull(tenant);jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
  static String clean(String value){String name=value==null?"":value.trim().replaceAll("\\s+"," ");if(name.isEmpty()||name.length()>120)throw new IllegalArgumentException("Enter a package name of up to 120 characters.");return name;}
  private String key(String value){return jdbc.queryForObject("SELECT packing_package_key(?)",String.class,value);}
@@ -178,7 +178,12 @@ public class PackingPackageNames {
  @Transactional(readOnly=true) public Change preview(UUID tenant,String source,String destination){scope(tenant);return inspect(tenant,clean(source),clean(destination));}
  private Change inspect(UUID tenant,String source,String destination){
   String current=existing(tenant,source);if(current==null)throw new IllegalArgumentException("This package changed. Refresh and try again.");
-  String target=existing(tenant,destination);if(target!=null&&key(target).equals(key(current)))throw new IllegalArgumentException("Choose a different package name.");
+  String target=existing(tenant,destination);
+  if(target!=null&&key(target).equals(key(current))){
+   if(current.equals(destination))throw new IllegalArgumentException("Choose a different package name.");
+   // A capitalization-only edit changes presentation, not the package or its cost identity.
+   target=null;
+  }
   String operation=target==null?"RENAME":"MERGE",name=target==null?destination:target;
   int count=jdbc.queryForObject("""
    SELECT (SELECT count(*) FROM temporary_order_packaging_lookup WHERE tenant_id=? AND packing_package_key(packing_package_display(tenant_id,packaging))=packing_package_key(?))

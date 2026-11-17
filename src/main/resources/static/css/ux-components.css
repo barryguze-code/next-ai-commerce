@@ -65,3 +65,17 @@ html[data-theme=dark] body.app-page .store-shortcut-managing form:has([name=stor
 html[data-theme=dark] body.app-page .store-shortcut-managing form:has([name=storeId]) button[aria-pressed=true]:not(.selected):is(:hover,:focus-visible){background:#243C54!important}
 html[data-theme=dark] body.app-page .store-shortcut-managing form:has([name=storeId]) button:is([aria-pressed=true],.selected),html[data-theme=dark] body.app-page .store-shortcut-managing form:has([name=storeId]) button:is([aria-pressed=true],.selected) strong{color:#E6EEF8!important}
 html[data-theme=dark] body.app-page .store-shortcut-managing form:has([name=storeId]) button:is([aria-pressed=true],.selected) small{color:#B6C5D4!important}
+
+/* Shared dark close colors win over domain-specific light surface fallbacks. */
+html[data-theme="dark"] :is(.dialog-close,.ux-dialog-close){background:#1b2b3d!important;border-color:#34465a!important;color:#b9c5d2!important}
+html[data-theme="dark"] :is(.dialog-close,.ux-dialog-close):is(:hover,:focus-visible){background:#26384c!important;border-color:#57708d!important}
+html[data-theme="dark"] .dialog-close:before,html[data-theme="dark"] .dialog-close:after{background:#b9c5d2!important}
+
+/* Shared Actions surfaces: row menus, table commands and shortcut menus. */
+html[data-theme=dark] body.app-page :is(.table-warning-panel,.table-shortcut-menu,.order-compact-action-panel,.stock-action-popover){background:#1b2b3c!important;border-color:#34465b!important;color:#e6eef8!important}
+html[data-theme=dark] body.app-page :is(.table-warning-panel,.table-shortcut-menu,.order-compact-action-panel,.stock-action-popover) :is(.table-action-entry,.table-shortcut-command,.context-action){color:#e6eef8!important;background:transparent!important}
+html[data-theme=dark] body.app-page :is(.table-warning-panel,.table-shortcut-menu,.order-compact-action-panel,.stock-action-popover) :is(strong,.table-action-label){color:#e6eef8!important}
+html[data-theme=dark] body.app-page :is(.table-warning-panel,.table-shortcut-menu,.order-compact-action-panel,.stock-action-popover) :is(small,.cell-note,p){color:#b6c5d4!important}
+html[data-theme=dark] body.app-page :is(.table-warning-panel,.table-shortcut-menu,.order-compact-action-panel,.stock-action-popover) :is(.table-action-entry,.table-shortcut-command,.context-action):not(:disabled):is(:hover,:focus-visible){background:#243c54!important}
+html[data-theme=dark] body.app-page .table-warning-panel :is(.table-action-heading,.table-action-footer){background:transparent!important;border-color:#34465b!important}
+html[data-theme=dark] body.app-page .table-warning-panel .table-action-heading>button{background:#1b2b3d!important;color:#b9c5d2!important;border-color:#34465b!important}

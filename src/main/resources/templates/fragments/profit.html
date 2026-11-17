@@ -9,11 +9,12 @@
    <section class="profit-packages"><div class="profit-section-title"><strong>Shipping packages</strong><button type="button" class="secondary-button" data-profit-add>+ Package</button></div><div data-profit-packages></div></section>
    <details class="profit-packaging-match" data-packaging-match hidden><summary>Packaging match</summary><p class="cell-note">Reuse these packages for this exact product combination across this account. One row represents one package. Save this match separately; calculator Save &amp; Close does not save it.</p><label data-match-units-label>SKU units<input data-match-units type="number" min="1" max="10000" step="1" value="1"></label><p class="cell-note" data-match-contents></p><div data-match-packages></div><div class="profit-section-title"><button type="button" class="secondary-button" data-match-add>+ Package</button><button type="button" class="secondary-button" data-match-reload>Reload saved match</button><button type="button" class="secondary-button" data-match-save>Save packaging match</button></div><p class="cell-note" data-match-status role="status"></p></details>
    <dl class="profit-totals" aria-live="polite" data-profit-totals></dl>
-   <details class="profit-rate-settings"><summary>Package rates</summary><p class="cell-note">Dated account estimates for these packages. Existing order overrides stay unchanged.</p><div data-profit-rate-history></div><form data-profit-rate-form th:if="${canEditCatalog}"><label>Package<select name="packageType" aria-label="Account package" data-standard-choice data-choice-chevron required></select></label><label>Effective from<input name="effectiveFrom" type="date" min="2025-01-01" required></label><label>Cost · $<input name="amount" type="number" min="0" step="0.01" required></label><button class="primary-button" type="submit">Add rate</button></form></details>
+   <button type="button" class="secondary-button" data-open-packages th:if="${canEditCatalog}">Manage packages</button>
    <div data-profit-publish role="status"></div><p data-profit-feedback role="status"></p>
   </div>
   <footer class="dialog-actions"><small>Saving costs does not publish prices. Historical sales stay unchanged.</small><button type="button" class="secondary-button" data-profit-cancel>Cancel</button><button type="button" class="primary-button" data-profit-save th:if="${canEditCatalog}">Save &amp; Close</button></footer>
  <input th:if="${_csrf != null}" type="hidden" data-profit-csrf th:value="${_csrf.token}" th:attr="data-header=${_csrf.headerName}">
  </section>
 </dialog>
+<th:block th:replace="~{fragments/package-manager :: runtime}"></th:block>
 </th:block></body></html>

@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       package_selection_performance:
-        description: Run scoped calculator package performance checks and package
+        description: Run scoped package performance, rename and shared menu checks
         type: boolean
         default: false
       amazon_fee_hotfix:
@@ -205,13 +205,13 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - run: mvn --batch-mode -Dtest=PackageCatalogueReadServiceTest,ProfitPackageChoicesTest,PackageManagementAccessTest,PlatformReadCacheTest test
+      - run: mvn --batch-mode -Dtest=PackageCatalogueReadServiceTest,ProfitPackageChoicesTest,PackageManagementAccessTest,PlatformReadCacheTest,PackageRenameResponseTest,ProfitDatabaseTest,TemplateRenderingTest test
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
-      - run: node --test src/test/js/package-selection-performance.test.cjs src/test/js/package-recipes.test.cjs src/test/js/profit-managed-packages.test.cjs src/test/js/table-composition.test.cjs src/test/js/table-composition-consumers.test.cjs
+      - run: node --test src/test/js/package-selection-performance.test.cjs src/test/js/package-recipes.test.cjs src/test/js/profit-managed-packages.test.cjs src/test/js/table-composition.test.cjs src/test/js/table-composition-consumers.test.cjs src/test/js/dialog-close-theme.test.cjs src/test/js/package-columns.test.cjs src/test/js/packing-package-names.test.cjs
       - run: mvn --batch-mode -Dmaven.test.skip=true package
       - uses: actions/upload-artifact@v4
         with:
-          name: package-selection-performance-1.14.23
-          path: target/next-ai-commerce-1.14.23.jar
+          name: unified-packages-1.14.24
+          path: target/next-ai-commerce-1.14.24.jar
           if-no-files-found: error

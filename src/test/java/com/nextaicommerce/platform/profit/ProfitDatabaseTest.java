@@ -240,6 +240,15 @@ class ProfitDatabaseTest {
   assertThat(jdbc.queryForObject("SELECT packaging FROM temporary_order_packaging_lookup WHERE tenant_id=?",String.class,tenant)).isEqualTo("Pak");
   assertThat(names.names(tenant)).doesNotContain("Pak");
  });}
+ @Test void capitalizationOnlyRenamePreservesCostsAndAssignments(){tx.executeWithoutResult(s->{
+  packageFixture();var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);var before=repo.orders(tenant,connection,List.of("ORDER")).get("ORDER");
+  var p=names.preview(tenant,"Pak","PAK");assertThat(p.operation()).isEqualTo("RENAME");assertThat(p.destination()).isEqualTo("PAK");
+  names.apply(tenant,p.source(),p.destination(),p.revision(),p.affectedAssignments(),"tester");
+  assertThat(names.names(tenant)).contains("PAK").doesNotContain("Pak");
+  assertThat(jdbc.queryForObject("SELECT packaging FROM temporary_order_packaging_lookup WHERE tenant_id=?",String.class,tenant)).isEqualTo("Pak");
+  assertThat(repo.orders(tenant,connection,List.of("ORDER")).get("ORDER").totals().profit()).isEqualByComparingTo(before.totals().profit());
+  assertThatThrownBy(()->names.preview(tenant,"PAK","PAK")).hasMessageContaining("different package name");
+ });}
  @Test void equalDestinationRateLeavesProfitUnchanged(){tx.executeWithoutResult(s->{
   packageFixture();jdbc.update("INSERT INTO profit_shipping_rates(tenant_id,package_type,effective_from,amount,created_by) VALUES (?,'UPS','2025-01-01',12.08,'tester')",tenant);
   var names=new com.nextaicommerce.platform.orders.PackingPackageNames(jdbc);var before=repo.orders(tenant,connection,List.of("ORDER")).get("ORDER");

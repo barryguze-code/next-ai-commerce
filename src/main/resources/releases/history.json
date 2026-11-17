@@ -1,5 +1,24 @@
 [
   {
+    "version": "1.14.24",
+    "title": "Consistent packages and dark action menus",
+    "sections": [
+      {
+        "title": "Packages",
+        "items": [
+          "Open the same package manager with dimensions and dated rates from every calculator.",
+          "Faster package loading and clearer edit icons before each value. Capitalization-only renames are supported."
+        ]
+      },
+      {
+        "title": "Dark appearance",
+        "items": [
+          "Readable shared Actions menus and close buttons in dark appearance."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.23",
     "title": "Faster calculator package selection",
     "sections": [
