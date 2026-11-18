@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       package_selection_performance:
-        description: Run scoped receiving, collaboration and platform polish checks
+        description: Run scoped shared calculator opening checks
         type: boolean
         default: false
       amazon_fee_hotfix:
@@ -205,13 +205,13 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - run: mvn --batch-mode -Dtest=TemplateRenderingTest,PersonalCollaborationPresentationTest,PersonalCollaborationActionsTest,ReceivingWorkflowControllerTest test
+      - run: mvn --batch-mode -Dtest=TemplateRenderingTest,ShopifyOrderPageAccessTest test
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
-      - run: node --test src/test/js/standard-multiple-choice.test.cjs src/test/js/platform-polish.test.cjs src/test/js/personal-collaboration-store-scope.test.cjs src/test/js/receiving-outstanding-defaults.test.cjs src/test/js/receiving-focus.test.cjs src/test/js/receiving-master-case.test.cjs
+      - run: node --test src/test/js/profit-dialog-open.test.cjs src/test/js/shopify-profit-transition.test.cjs src/test/js/package-selection-performance.test.cjs src/test/js/profit-managed-packages.test.cjs
       - run: mvn --batch-mode -Dmaven.test.skip=true package
       - uses: actions/upload-artifact@v4
         with:
-          name: platform-polish-1.14.25
-          path: target/next-ai-commerce-1.14.25.jar
+          name: shopify-calculator-1.14.26
+          path: target/next-ai-commerce-1.14.26.jar
           if-no-files-found: error

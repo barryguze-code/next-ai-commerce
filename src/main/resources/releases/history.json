@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.14.26",
+    "title": "Reliable calculator opening",
+    "sections": [
+      {
+        "title": "Orders",
+        "items": [
+          "Shopify order calculators open correctly with loading feedback and the shared package manager. Existing cost calculations stay unchanged."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.25",
     "title": "Clearer dark views and receiving defaults",
     "sections": [
