@@ -1,5 +1,24 @@
 [
   {
+    "version": "1.14.25",
+    "title": "Clearer dark views and receiving defaults",
+    "sections": [
+      {
+        "title": "Workspace",
+        "items": [
+          "Consistent dark callouts, image frames and pinned shortcut sizing. Replenishment parent rows use one surface with distinct child rows.",
+          "Collaboration supports multiple record types and accessible account filters using standard option lists."
+        ]
+      },
+      {
+        "title": "Receiving",
+        "items": [
+          "Receipt entry starts with the remaining quantity, ready for review and editing before saving."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.24",
     "title": "Consistent packages and dark action menus",
     "sections": [

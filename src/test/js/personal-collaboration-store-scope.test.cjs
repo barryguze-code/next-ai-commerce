@@ -3,7 +3,7 @@ const source=fs.readFileSync('src/main/resources/static/js/personal-collaboratio
 const fragment=source.slice(source.indexOf('    function filteredRows(){'),source.indexOf("    root.querySelector('#personal-download').onclick"));
 function filtered(account,store,scope='ASSIGNED',type=''){
  const cards=[['account-wide','a',null,'CATALOG'],['selected-store','a','s1','MARKETPLACE_SKU'],['other-store','a','s2','ORDER'],['foreign-account','b',null,'CATALOG']];
- const context=vm.createContext({account:{value:account},store,scope,type:{value:type},page:{rows:cards.map(([id,account,store,subjectType],i)=>({position:i+1,card:{key:{id,type:'REVIEW'},account,subjectType,store}})),reviews:{},dates:{}}});
+ const context=vm.createContext({account:{value:account},selectedAccounts:new Set(account?[account]:[]),store,scope,appliedType:type?[type]:[],matchesPeople:()=>true,page:{rows:cards.map(([id,account,store,subjectType],i)=>({position:i+1,card:{key:{id,type:'REVIEW'},account,subjectType,store}})),reviews:{},dates:{}}});
  return Array.from(vm.runInContext(fragment+';filteredRows()',context),r=>r.card.key.id);
 }
 for(const tab of ['ASSIGNED','ACTIVE','CLOSED'])test(`${tab}: selected store retains same-account module tasks without including another store/account`,()=>{
@@ -37,7 +37,7 @@ test('a committed update during an in-flight refresh triggers a trailing read',a
 test('a dialog opened during a background read defers rendering',async()=>{
  let resolve,rendered=0;
  const context=vm.createContext({generation:0,search:{value:''},scope:'ASSIGNED',URLSearchParams,fetch:()=>new Promise(r=>resolve=r),busy:false,dragged:null,refreshQueued:false,document:{hidden:false,querySelector:()=>({})},render:()=>rendered++});
- vm.runInContext(source.slice(source.indexOf('    async function load('),source.indexOf('    type.onchange=')),context);
+ vm.runInContext(source.slice(source.indexOf('    async function load('),source.indexOf('    const filterControl=',source.indexOf('    async function load('))),context);
  const pending=vm.runInContext('load(true)',context);resolve({ok:true,json:async()=>({rows:[]})});assert.equal(await pending,false);assert.equal(rendered,0);assert.equal(context.refreshQueued,true);
 });
 test('mutation completion resumes a queued refresh after busy clears',()=>{
@@ -47,3 +47,5 @@ test('mutation completion resumes a queued refresh after busy clears',()=>{
   vm.runInContext(body,context);assert.equal(resumed,1);
  }
 });
+
+test('multiple type and account filters match any selected authorized value',()=>{const page={rows:[{card:{key:{id:'a',type:'REVIEW'},account:'one',subjectType:'INVENTORY'}},{card:{key:{id:'b',type:'REVIEW'},account:'two',subjectType:'ORDER'}},{card:{key:{id:'c',type:'REVIEW'},account:'three',subjectType:'CATALOG'}}],reviews:{},dates:{}};const context=vm.createContext({page,selectedAccounts:new Set(['one','two']),store:'',scope:'ACTIVE',appliedType:['INVENTORY','ORDER'],matchesPeople:()=>true});assert.deepEqual(Array.from(vm.runInContext(fragment+';filteredRows()',context),r=>r.card.key.id),['a','b']);});

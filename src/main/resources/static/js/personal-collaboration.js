@@ -9,10 +9,14 @@
     search.value = filters.search || '';
     try { size.value = Math.max(1,Math.min(50,Number(localStorage.getItem(storage+'.initialRows'))||Number(filters.size)||5)); } catch { size.value=filters.size||5; }
     account.value=filters.account||'';
-    const type=root.querySelector('#personal-type');let appliedType=filters.type||'';type.value=appliedType;
+    const type=root.querySelector('#personal-type');let appliedType=Array.isArray(filters.type)?filters.type:filters.type?[filters.type]:[];const applyType=values=>{for(const o of type.options)o.selected=values.includes(o.value);type.dispatchEvent(new Event('platform-choice-sync'));};applyType(appliedType);
     let store=filters.store||'';
     const workspaceKey=(root.dataset.workspaceAccount||'')+'|'+(root.dataset.workspaceStore||'');
     if(root.dataset.workspaceAccount&&filters.workspace!==workspaceKey){account.value=root.dataset.workspaceAccount;store=root.dataset.workspaceStore||'';}
+    const accountFilter=root.querySelector('#personal-accounts'),selectedAccounts=new Set(Array.isArray(filters.accounts)?filters.accounts:account.value?[account.value]:[]);
+    const allowedAccounts=new Map();root.querySelectorAll('[data-collaboration-account]:not([data-collaboration-store])').forEach(b=>{if(b.dataset.collaborationAccount)allowedAccounts.set(b.dataset.collaborationAccount,b.dataset.name||b.textContent.trim());});
+    for(const [id,name] of allowedAccounts){const o=new Option(name,id);o.selected=selectedAccounts.has(id);accountFilter.append(o);}for(const id of selectedAccounts)if(!allowedAccounts.has(id))selectedAccounts.delete(id);
+    const applyAccounts=values=>{for(const o of accountFilter.options)o.selected=values.includes(o.value);accountFilter.dispatchEvent(new Event('platform-choice-sync'));};
     const viewport=window.NextAiCollaborationBoardState.create(root,root.dataset.user,'personal');
     window.addEventListener('pagehide',()=>{
         const {focused,...anchor}=viewport.capture();
@@ -25,7 +29,7 @@
     const extent = filters.extent || {};
     const expanded=filters.expanded||{};
     function save() {
-        sessionStorage.setItem(storage, JSON.stringify({workspace:workspaceKey,account:account.value, search:search.value, size:size.value, extent, expanded, scope, store, type:appliedType,assignedUsers:[...selectedAssignees],participantUsers:[...selectedParticipants]}));
+        sessionStorage.setItem(storage, JSON.stringify({workspace:workspaceKey,account:account.value, search:search.value, size:size.value, extent, expanded, scope, store, type:appliedType,accounts:[...selectedAccounts],assignedUsers:[...selectedAssignees],participantUsers:[...selectedParticipants]}));
     }
     function element(tag, text, parent) {
         const node = document.createElement(tag);
@@ -45,8 +49,8 @@
     }
     function render() {
         presentPeopleFilters();
-        const filterCount=(appliedType?1:0)+selectedAssignees.size+selectedParticipants.size;let badge=filterControl.querySelector(':scope>summary .table-filter-count');if(!badge){badge=document.createElement('span');badge.className='table-filter-count';filterControl.querySelector(':scope>summary').append(badge);}badge.textContent=String(filterCount);badge.hidden=!filterCount;filterControl.querySelector(':scope>summary').setAttribute('aria-label',filterCount?'Filters, '+filterCount+' applied':'Filters');
-        let summary=root.querySelector('.personal-applied-filter-summary');if(!summary){summary=document.createElement('span');summary.className='personal-applied-filter-summary table-applied-filter-summary';filterControl.after(summary);}summary.textContent=[appliedType?type.querySelector('option[value="'+appliedType+'"]').textContent:'',selectedAssignees.size?selectedAssignees.size+' assigned users':'',selectedParticipants.size?selectedParticipants.size+' participants':''].filter(Boolean).join(' · ');summary.hidden=!filterCount;
+        const filterCount=appliedType.length+selectedAccounts.size+selectedAssignees.size+selectedParticipants.size;let badge=filterControl.querySelector(':scope>summary .table-filter-count');if(!badge){badge=document.createElement('span');badge.className='table-filter-count';filterControl.querySelector(':scope>summary').append(badge);}badge.textContent=String(filterCount);badge.hidden=!filterCount;filterControl.querySelector(':scope>summary').setAttribute('aria-label',filterCount?'Filters, '+filterCount+' applied':'Filters');
+        let summary=root.querySelector('.personal-applied-filter-summary');if(!summary){summary=document.createElement('span');summary.className='personal-applied-filter-summary table-applied-filter-summary';filterControl.after(summary);}summary.textContent=[selectedAccounts.size?[...selectedAccounts].map(id=>allowedAccounts.get(id)).filter(Boolean).join(', '):'',appliedType.length?[...type.options].filter(o=>appliedType.includes(o.value)).map(o=>o.textContent).join(', '):'',selectedAssignees.size?selectedAssignees.size+' assigned users':'',selectedParticipants.size?selectedParticipants.size+' participants':''].filter(Boolean).join(' · ');summary.hidden=!filterCount;
         const focusedGroup=document.activeElement?.closest('.personal-group-toggle')?.dataset.groupKey;
         clearInsertion();
         root.dataset.loadedScope=scope;
@@ -229,7 +233,7 @@
         }
         if(filtered.length){
             const noun=ranked?'assigned conversation':scope==='CLOSED'?'closed conversation':scope==='PRIVATE'?'private note':'active conversation';
-            const accountName=account.value?[...root.querySelectorAll('[data-collaboration-account]:not([data-collaboration-store])')].find(b=>b.dataset.collaborationAccount===account.value)?.dataset.name||'this account':'all accessible accounts';
+            const accountName=selectedAccounts.size?[...selectedAccounts].map(id=>allowedAccounts.get(id)||'Selected account').join(', '):'all accessible accounts';
             status.textContent=filtered.length+' '+noun+(filtered.length===1?'':'s')+' across '+accountName+' · Showing '+table.querySelectorAll('tr[data-card-id]').length;
         }
         window.NextAiTableWidget?.refresh();
@@ -373,20 +377,21 @@
         render();
     }
     const filterControl=type.closest('.table-filter-control'), filterPanel=type.closest('.table-filter-panel');
-    let draftPeople={type:appliedType,assignedUsers:[...selectedAssignees],participantUsers:[...selectedParticipants]};
+    let draftPeople={type:appliedType,accounts:[...selectedAccounts],assignedUsers:[...selectedAssignees],participantUsers:[...selectedParticipants]};
     const filterDraft=window.NextAiFilterDrafts.create({
-        readApplied:()=>({type:appliedType,assignedUsers:[...selectedAssignees],participantUsers:[...selectedParticipants]}),
-        emptyState:()=>({type:'',assignedUsers:[],participantUsers:[]}),
-        renderDraft:value=>{draftPeople=value;type.value=value.type;if(page)presentPeopleFilters();},
-        commit:value=>{appliedType=value.type;selectedAssignees.clear();value.assignedUsers.forEach(id=>selectedAssignees.add(id));selectedParticipants.clear();value.participantUsers.forEach(id=>selectedParticipants.add(id));save();render();return true;}
+        readApplied:()=>({type:appliedType,accounts:[...selectedAccounts],assignedUsers:[...selectedAssignees],participantUsers:[...selectedParticipants]}),
+        emptyState:()=>({type:[],accounts:[],assignedUsers:[],participantUsers:[]}),
+        renderDraft:value=>{draftPeople=value;applyType(value.type);applyAccounts(value.accounts||[]);if(page)presentPeopleFilters();},
+        commit:value=>{appliedType=value.type;selectedAccounts.clear();(value.accounts||[]).filter(id=>allowedAccounts.has(id)).forEach(id=>selectedAccounts.add(id));store='';selectedAssignees.clear();value.assignedUsers.forEach(id=>selectedAssignees.add(id));selectedParticipants.clear();value.participantUsers.forEach(id=>selectedParticipants.add(id));save();render();return true;}
     });
     filterDraft.mountFooter(filterPanel,{close:()=>{filterControl.open=false;}});
     filterControl.addEventListener('toggle',()=>{if(filterControl.open)filterDraft.open();else filterDraft.discard();});
-    type.onchange=()=>{draftPeople.type=type.value;filterDraft.update(draftPeople);};
+    accountFilter.onchange=()=>{draftPeople.accounts=[...accountFilter.selectedOptions].map(o=>o.value);filterDraft.update(draftPeople);};
+    type.onchange=()=>{draftPeople.type=[...type.selectedOptions].map(o=>o.value);filterDraft.update(draftPeople);};
     root.querySelectorAll('[data-collaboration-account]').forEach(button=>{
         button.onclick=()=>{
             if(busy)return;
-            account.value=button.dataset.collaborationAccount;store=button.dataset.collaborationStore||'';
+            account.value=button.dataset.collaborationAccount;selectedAccounts.clear();if(account.value)selectedAccounts.add(account.value);store=button.dataset.collaborationStore||'';
             const picker=button.closest('details');picker.open=false;
             scopeIdentity(button);
             root.dataset.filterAccount=account.value;root.dataset.filterStore=store;save();render();picker.querySelector('summary').focus();
@@ -429,9 +434,9 @@
         }
     }
     function filteredRows(){
-        return page.rows.filter(({card})=>(!account.value||account.value===(card.contextAccount||card.account))&&
+        return page.rows.filter(({card})=>(!selectedAccounts.size||selectedAccounts.has(card.contextAccount||card.account))&&
             (!store||!(card.contextStore||card.store||page.reviews?.[card.key.id]?.storeId)||store===(card.contextStore||card.store||page.reviews?.[card.key.id]?.storeId))&&
-            (!appliedType||(card.subjectType||page.reviews?.[card.key.id]?.subjectType)===appliedType)&&matchesPeople(card))
+            (!appliedType.length||appliedType.includes(card.subjectType||page.reviews?.[card.key.id]?.subjectType))&&matchesPeople(card))
             .sort((a,b)=>{
                 if(scope==='ASSIGNED')return (a.position??Number.MAX_SAFE_INTEGER)-(b.position??Number.MAX_SAFE_INTEGER);
                 const x=page.dates?.[a.card.key.type+a.card.key.id]||'',y=page.dates?.[b.card.key.type+b.card.key.id]||'';

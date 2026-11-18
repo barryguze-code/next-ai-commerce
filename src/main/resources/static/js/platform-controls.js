@@ -31,8 +31,24 @@
     });
   }
   let activePicker;
+  function multipleChoice(select){
+    if(select.dataset.locationPickerReady)return;select.dataset.locationPickerReady='true';
+    const trigger=document.createElement('button');trigger.type='button';trigger.className='location-picker-trigger standard-choice-trigger';
+    const popup=document.createElement('div');popup.className='location-picker-popup standard-choice-popup';popup.hidden=true;popup.setAttribute('role','listbox');popup.setAttribute('aria-multiselectable','true');popup.id='multiple-choice-'+(++locationPicker.counter);
+    const label=select.getAttribute('aria-label')||'Options';popup.setAttribute('aria-label',label);trigger.setAttribute('aria-haspopup','listbox');trigger.setAttribute('aria-controls',popup.id);trigger.setAttribute('aria-expanded','false');
+    const close=()=>{popup.hidden=true;trigger.setAttribute('aria-expanded','false');if(activePicker?.trigger===trigger)activePicker=null;};
+    const position=()=>{const r=trigger.getBoundingClientRect();popup.style.position='fixed';popup.style.left=Math.max(8,Math.min(r.left,innerWidth-Math.max(r.width,220)-8))+'px';popup.style.width=Math.max(r.width,220)+'px';const below=innerHeight-r.bottom-8;popup.style.maxHeight=Math.max(100,Math.min(300,below>100?below:r.top-12))+'px';popup.style.top=(below>100?r.bottom+4:Math.max(8,r.top-304))+'px';};
+    const sync=()=>{const chosen=[...select.selectedOptions];trigger.textContent=chosen.length?label+' · '+chosen.length:select.dataset.emptyLabel||'All options';trigger.setAttribute('aria-label',trigger.textContent);trigger.insertAdjacentHTML('beforeend','<svg class="location-choice-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>');trigger.disabled=select.disabled;popup.replaceChildren();
+      const add=(text,selected,action,disabled=false)=>{const b=document.createElement('button');b.type='button';b.setAttribute('role','option');b.setAttribute('aria-selected',String(selected));b.disabled=disabled;b.textContent=text;b.onclick=()=>{action();select.dispatchEvent(new Event('change',{bubbles:true}));sync();[...popup.children].find(n=>n.textContent===text)?.focus();};popup.append(b);};
+      add(select.dataset.emptyLabel||'All options',!chosen.length,()=>{for(const o of select.options)o.selected=false;});for(const o of select.options)if(!o.hidden)add(o.textContent,o.selected,()=>{o.selected=!o.selected;},o.disabled);
+    };
+    trigger.onclick=()=>{if(!popup.hidden){close();return;}activePicker?.close();sync();popup.hidden=false;trigger.setAttribute('aria-expanded','true');activePicker={trigger,popup,close,position};position();popup.querySelector('button')?.focus();};
+    popup.onkeydown=e=>{const buttons=[...popup.children],i=buttons.indexOf(document.activeElement);if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();trigger.focus();}else if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(i+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}else if(e.key==='Tab')close();};
+    select.addEventListener('platform-choice-sync',sync);select.addEventListener('change',sync);select.after(trigger);select.hidden=true;(trigger.closest('dialog')||document.body).append(popup);sync();
+  }
   function locationPicker(select) {
-    if(select.dataset.locationPickerReady || select.multiple)return;
+    if(select.multiple){if(select.hasAttribute('data-standard-choice'))multipleChoice(select);return;}
+    if(select.dataset.locationPickerReady)return;
     select.dataset.locationPickerReady='true';
     const trigger=document.createElement('button');trigger.type='button';trigger.className='location-picker-trigger';
     const compact=Boolean(select.closest('.default-location-form,td'));trigger.classList.toggle('is-compact',compact);

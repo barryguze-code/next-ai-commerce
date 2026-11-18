@@ -79,3 +79,14 @@ html[data-theme=dark] body.app-page :is(.table-warning-panel,.table-shortcut-men
 html[data-theme=dark] body.app-page :is(.table-warning-panel,.table-shortcut-menu,.order-compact-action-panel,.stock-action-popover) :is(.table-action-entry,.table-shortcut-command,.context-action):not(:disabled):is(:hover,:focus-visible){background:#243c54!important}
 html[data-theme=dark] body.app-page .table-warning-panel :is(.table-action-heading,.table-action-footer){background:transparent!important;border-color:#34465b!important}
 html[data-theme=dark] body.app-page .table-warning-panel .table-action-heading>button{background:#1b2b3d!important;color:#b9c5d2!important;border-color:#34465b!important}
+/* Owner-approved shared polish; keep domain states and scrolling behavior. */
+html[data-theme=dark] :is(.operation-note,#quick-saved-plan,#quick-saved-plan:not([hidden])+#quick-action-clear){background:#1b2b3c!important;border-color:#34465b!important;color:#b6c5d4!important}
+html[data-theme=dark] :is(.operation-note,#quick-saved-plan) strong{color:#e6eef8!important}
+html[data-theme=dark] #quick-action-clear :is(strong,small,p){color:inherit!important}
+[data-table-widget="replenishment-draft"] [data-replenishment-row]:not(.is-selected):not([aria-selected=true]):not(:hover)>td{background:#fff!important}
+html[data-theme=dark] [data-table-widget="replenishment-draft"] [data-replenishment-row]:not(.is-selected):not([aria-selected=true]):not(:hover)>td{background:#17212b!important}
+.platform-standard-tables :is(.vendor-directory,.receiving-home) .table-overview-picture{overflow:hidden}
+.platform-standard-tables :is(.vendor-directory,.receiving-home) .table-overview-picture img{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center;padding:0!important}
+html body.app-page .table-shortcut-item>:not(.table-shortcut-remove) :is(img,svg){width:20px!important;height:20px!important;min-width:20px!important;min-height:20px!important;object-fit:contain}
+.product-nav{scrollbar-width:none}.product-nav::-webkit-scrollbar{display:none}
+html[data-theme=dark] #quick-action-clear strong{color:#ffb8bd!important}
