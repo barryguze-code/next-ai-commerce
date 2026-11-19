@@ -663,3 +663,5 @@ html[data-theme="dark"] .reservation-sku{color:#d9e5f3}
 
 /* Keep the selected physical-stock action visible over the dark neutral rule. */
 html[data-theme="dark"] .removal-methods label:has(input:checked){border-color:#3f6591;background:#172b42;color:#e9f0f7;box-shadow:inset 0 0 0 1px #3f6591}
+
+.inventory-inline-location.table-warning-panel{display:grid;gap:6px;width:240px;min-width:0;max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);overflow-y:auto;margin:0}.inventory-inline-location label{min-width:0}.inventory-location-actions{display:flex;gap:6px}.inventory-inline-location [role="alert"]:empty{display:none}.inventory-inline-location [role="alert"]{white-space:normal;color:var(--ink)}

@@ -99,6 +99,23 @@ class ReceivingWorkflowDatabaseTest {
         assertThat(inventory.inventorySkuSearchTerms(tenant,List.of(connection))).doesNotContainKeys(first.product(),second.product());
     }
 
+    @Test void inlineLocationCorrectionMovesWholeBatchAndCombinesWithoutChangingTotalOrHistory(){
+        var f=twelve();var c=context.getBean(CatalogRepository.class);UUID bin=c.addLocation(tenant,"FIX-A","Corrected shelf",c.listWarehouses(tenant).getFirst().id());
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),new BigDecimal("6"),expiry,f.location(),"Source");
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),new BigDecimal("2"),expiry,bin,"Destination");
+        String before=tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT json_agg(row_to_json(x) ORDER BY id)::text FROM inventory_ledger_entries x WHERE tenant_id=?",String.class,tenant);});
+        inventory.correctInventoryLocation(tenant,actor,f.product(),f.location(),bin,expiry,new BigDecimal("6"));
+        tx.executeWithoutResult(t->{setTenant();assertThat(jdbc.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=?",BigDecimal.class,tenant,f.product(),f.location())).isZero();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=?",BigDecimal.class,tenant,f.product(),bin)).isEqualByComparingTo("8");assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND entry_type='TRANSFER'",Integer.class,tenant)).isEqualTo(2);assertThat(jdbc.queryForObject("SELECT json_agg(row_to_json(x) ORDER BY id)::text FROM inventory_ledger_entries x WHERE tenant_id=? AND entry_type<>'TRANSFER'",String.class,tenant)).isEqualTo(before);});
+        assertThatThrownBy(()->inventory.correctInventoryLocation(tenant,actor,f.product(),f.location(),bin,expiry,new BigDecimal("6"))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("quantity changed");
+    }
+    @Test void inlineLocationCorrectionRejectsReservationsStaleQuantityAndOtherWarehouse(){
+        var f=twelve();var c=context.getBean(CatalogRepository.class);UUID bin=c.addLocation(tenant,"FIX-B","Shelf",c.listWarehouses(tenant).getFirst().id());inventory.receiveUninvoicedItem(tenant,actor,f.product(),new BigDecimal("6"),expiry,f.location(),"Source");
+        assertThatThrownBy(()->inventory.correctInventoryLocation(tenant,actor,f.product(),f.location(),bin,expiry,BigDecimal.ONE)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("quantity changed");
+        UUID foreign=c.addLocation(tenant,"FIX-X","Other warehouse",c.addWarehouse(tenant,"Other"));assertThatThrownBy(()->inventory.correctInventoryLocation(tenant,actor,f.product(),f.location(),foreign,expiry,new BigDecimal("6"))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("same warehouse");
+        reserve(f,2);assertThatThrownBy(()->inventory.correctInventoryLocation(tenant,actor,f.product(),f.location(),bin,expiry,new BigDecimal("6"))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("reserved stock");assertThat(stock(f)).isEqualByComparingTo("6");
+        assertThatThrownBy(()->inventory.correctInventoryLocation(UUID.randomUUID(),actor,f.product(),f.location(),bin,expiry,new BigDecimal("6"))).isInstanceOf(IllegalArgumentException.class);assertThat(stock(f)).isEqualByComparingTo("6");
+    }
+
     @Test void warehousesInitializeAndLocationsPreserveInventoryAndAccountScope(){
         var catalog=context.getBean(CatalogRepository.class);var f=twelve();
         var defaults=catalog.listWarehouses(tenant);assertThat(defaults).hasSize(1);

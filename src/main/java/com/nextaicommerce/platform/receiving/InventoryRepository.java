@@ -140,6 +140,7 @@ public class InventoryRepository {
             return quantity.signum()==0?"0":quantity.signum()>0?"+"+units:"-"+units;
         }
         public String movementLabel(){
+            if("LOCATION_TRANSFER".equals(sourceType)&&notes!=null&&notes.startsWith("Location corrected"))return "Location corrected";
             if("PHYSICAL_COUNT".equals(sourceType)||isPhysicalCountNote())return "Physical count";
             if("ADJUSTMENT".equals(entryType)&&"ADJUSTMENT".equals(sourceType)&&quantity.signum()<0&&notes!=null){
                 if(notes.equals("removal · Disposed")||notes.startsWith("removal · Disposed · "))return "Disposed";
@@ -783,10 +784,28 @@ public class InventoryRepository {
         jdbc.execute("SET LOCAL lock_timeout='750ms'");
     }
 
-    /** Moves an unreserved quantity from one expiration position without rewriting its audit history. */
+    /** Correct one complete shelf position; reservations never silently follow a correction. */
+    @Transactional
+    public void correctInventoryLocation(UUID tenantId,String actorEmail,UUID itemId,UUID sourceLocationId,
+            UUID destinationLocationId,LocalDate expirationDate,BigDecimal expectedQuantity){
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        lockStockCorrection(tenantId);
+        BigDecimal current=jdbc.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=? AND expiration_date IS NOT DISTINCT FROM ?",BigDecimal.class,tenantId,itemId,sourceLocationId,expirationDate);
+        if(expectedQuantity==null||current.signum()<=0||current.compareTo(expectedQuantity)!=0)
+            throw new IllegalArgumentException("This batch quantity changed. Refresh the table and try again.");
+        Integer reserved=jdbc.queryForObject("SELECT count(*) FROM order_inventory_reservations WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=? AND expiration_date IS NOT DISTINCT FROM ? AND status='ACTIVE' AND quantity>0",Integer.class,tenantId,itemId,sourceLocationId,expirationDate);
+        if(reserved!=null&&reserved>0)throw new IllegalArgumentException("This batch has reserved stock. Release or complete those orders before changing its location.");
+        moveInventoryPosition(tenantId,actorEmail,itemId,sourceLocationId,destinationLocationId,expirationDate,current,false,true);
+    }
+
+    /** Moves an unreserved quantity without rewriting its audit history. */
     @Transactional
     public void moveInventoryPosition(UUID tenantId,String actorEmail,UUID itemId,UUID sourceLocationId,
             UUID destinationLocationId,LocalDate expirationDate,BigDecimal quantity,boolean makeDefault){
+        moveInventoryPosition(tenantId,actorEmail,itemId,sourceLocationId,destinationLocationId,expirationDate,quantity,makeDefault,false);
+    }
+    private void moveInventoryPosition(UUID tenantId,String actorEmail,UUID itemId,UUID sourceLocationId,
+            UUID destinationLocationId,LocalDate expirationDate,BigDecimal quantity,boolean makeDefault,boolean correction){
         jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
         lockStockCorrection(tenantId);
         if(itemId==null||sourceLocationId==null||destinationLocationId==null)
@@ -835,15 +854,15 @@ public class InventoryRepository {
         jdbc.update("""
             INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,entry_type,quantity,
               expiration_date,unit_cost,currency,source_type,source_id,occurred_at,idempotency_key,notes,created_by,cost_status)
-            VALUES (?,?,?,'TRANSFER',?,?,?,?,'LOCATION_TRANSFER',?,now(),?, 'Moved to another storage location',?,?)
+            VALUES (?,?,?,'TRANSFER',?,?,?,?,'LOCATION_TRANSFER',?,now(),?, ?,?,?)
             """,tenantId,itemId,sourceLocationId,quantity.negate(),expirationDate,value[0],value[1],transferId,
-            "location-transfer-out:"+transferId,actor,value[2]);
+            "location-transfer-out:"+transferId,correction?"Location corrected (batch reassignment)":"Moved to another storage location",actor,value[2]);
         jdbc.update("""
             INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,entry_type,quantity,
               expiration_date,unit_cost,currency,source_type,source_id,occurred_at,idempotency_key,notes,created_by,cost_status)
-            VALUES (?,?,?,'TRANSFER',?,?,?,?,'LOCATION_TRANSFER',?,now(),?, 'Moved from another storage location',?,?)
+            VALUES (?,?,?,'TRANSFER',?,?,?,?,'LOCATION_TRANSFER',?,now(),?, ?,?,?)
             """,tenantId,itemId,destination,quantity,expirationDate,value[0],value[1],transferId,
-            "location-transfer-in:"+transferId,actor,value[2]);
+            "location-transfer-in:"+transferId,correction?"Location corrected (batch reassignment)":"Moved from another storage location",actor,value[2]);
         if(makeDefault)setDefaultLocation(tenantId,itemId,destination);
     }
 

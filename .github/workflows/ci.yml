@@ -2,6 +2,10 @@ name: CI
 on:
   workflow_dispatch:
     inputs:
+      inventory_location_hotfix:
+        description: Run scoped whole-batch location correction safety and refresh checks
+        type: boolean
+        default: false
       package_selection_performance:
         description: Run scoped shared calculator opening checks
         type: boolean
@@ -22,7 +26,7 @@ permissions:
   contents: read
 jobs:
   test:
-    if: inputs.amazon_fee_hotfix != true && inputs.package_selection_performance != true
+    if: inputs.amazon_fee_hotfix != true && inputs.package_selection_performance != true && inputs.inventory_location_hotfix != true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -214,4 +218,28 @@ jobs:
         with:
           name: shopify-calculator-1.14.26
           path: target/next-ai-commerce-1.14.26.jar
+          if-no-files-found: error
+
+  inventory-location-hotfix:
+    if: inputs.inventory_location_hotfix == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn --batch-mode '-Dtest=InventoryLocationCorrectionTest,InventoryTransferConfirmationTest,InventoryControllerSafetyTest,ReceivingWorkflowDatabaseTest#inlineLocationCorrection*+warehousesInitializeAndLocationsPreserveInventoryAndAccountScope,TemplateRenderingTest' test
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: node --test src/test/js/inventory-location-editor.test.cjs src/test/js/frontend-standardization.test.cjs
+      - run: node --test --test-name-pattern='confirmed relocation refreshes' src/test/js/relocation-event-unit.test.cjs
+      - run: node scripts/check-release-history.cjs
+      - run: mvn --batch-mode -Dmaven.test.skip=true package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inventory-location-1.14.27
+          path: target/next-ai-commerce-1.14.27.jar
           if-no-files-found: error

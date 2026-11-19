@@ -265,6 +265,17 @@ public class InventoryController {
         catch(Exception e){log.error("Inventory adjustment failed itemId={}",itemId,e);redirect.addFlashAttribute("inventoryError","The inventory adjustment could not be saved. Nothing was changed.");}
         return "redirect:/app/inventory";
     }
+    @PostMapping("/app/inventory/location-correction") @ResponseBody
+    ResponseEntity<InlineAdjustmentResponse> correctLocation(Authentication auth,HttpSession session,
+            @RequestParam UUID itemId,@RequestParam UUID sourceLocationId,@RequestParam UUID destinationLocationId,
+            @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate expirationDate,
+            @RequestParam BigDecimal expectedQuantity){
+        try{inventory.correctInventoryLocation(tenant(session),auth.getName(),itemId,sourceLocationId,destinationLocationId,expirationDate,expectedQuantity);
+            return ResponseEntity.ok(new InlineAdjustmentResponse("Location updated."));
+        }catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(new InlineAdjustmentResponse(e.getMessage()));}
+        catch(Exception e){log.error("Inventory location correction failed itemId={}",itemId,e);return ResponseEntity.internalServerError().body(new InlineAdjustmentResponse("The location could not be updated. Refresh the table before trying again."));}
+    }
+
     @PostMapping("/app/inventory/locations") String moveLocation(Authentication auth,HttpSession session,
             @RequestParam UUID itemId,@RequestParam UUID sourceLocationId,@RequestParam UUID destinationLocationId,
             @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate expirationDate,
