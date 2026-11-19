@@ -8,9 +8,13 @@ POLICY='afa81cc0e337ef77995c95bf6b42ca1cd3e5957c61857525178d76bd5e69c68b'
 START_SHA='1d64a7491d679e3dcfade6c60e2daf1da5d14b1d2a9e1f15a516956199a4fb4b'
 FLAGS={'APP_FBA_REPLENISHMENT_ENABLED':'true','APP_AMAZON_FBA_MANUAL_ENABLED':'true','APP_FBA_SHIPMENT_WRITE_ENABLED':'false','APP_FBA_CHARGE_WRITE_ENABLED':'false'}
 MIGRATIONS={'V145__fba_replenishment_plans.sql':'5db0a6374f3afb8e939733d8eccbdb12a352a1976b1a63ec3067f42effacb446','V146__fba_replenishment_documents.sql':'69a898c6dca8ca154489801fd4f9ce82a15b9eb9178e17a31230e03bc59a0be4'}
-CAP=1536*1024**2;MARGIN=1024**3;SCRATCH=256*1024**2
+CAP=1536*1024**2;WAL=1024**3;RESERVE=1024**3;SCRATCH=128*1024**2;META=50*1024**2
 GUARD_ENTRY='BOOT-INF/classes/com/nextaicommerce/platform/fba/FbaDepletionRepository.class'
-def digest(p):return hashlib.sha256(P(p).read_bytes()).hexdigest()
+def digest(p):
+ value=hashlib.sha256()
+ with open(p,'rb') as source:
+  while chunk:=source.read(1024**2):value.update(chunk)
+ return value.hexdigest()
 def run(args,**kw):return subprocess.run(args,check=True,**kw)
 def read(args):return subprocess.check_output(args,text=True).strip()
 def query(sql):return read(['sudo','-u','postgres','psql','-d','next_ai_commerce','-XAtqc',sql])
@@ -59,7 +63,9 @@ def main():
  assert digest(package)==expected and digest(rollback)==rollback_sha and queue()==0
  assert query("SELECT max(version::int) FROM flyway_schema_history WHERE success AND version ~ '^[0-9]+$'")=='144'
  prepared_start=new_start(start.read_bytes());largest=max(package.stat().st_size,rollback.stat().st_size,live.stat().st_size)
- require_space(CAP+5*largest+SCRATCH+MARGIN)
+ # The two staged input JARs already consume current free space. Three further copies
+ # are budgeted: previous.jar, installed guarded rollback, and installed new release.
+ require_space(CAP+3*largest+SCRATCH+META+WAL+RESERVE)
  with zipfile.ZipFile(package) as new,zipfile.ZipFile(live) as old,zipfile.ZipFile(rollback) as back:
   prior=[n for n in old.namelist() if n.startswith('BOOT-INF/classes/db/migration/') and n.endswith('.sql')];assert len(prior)==144 and all(new.read(n)==old.read(n) for n in prior)
   additions={n for n in new.namelist() if n.startswith('BOOT-INF/classes/db/migration/') and n.endswith('.sql')}-set(prior);assert additions=={'BOOT-INF/classes/db/migration/'+n for n in MIGRATIONS}
@@ -70,25 +76,26 @@ def main():
  evidence=P(tempfile.mkdtemp(prefix='.deploy-'+VERSION+'-',dir=APP/'releases'));evidence.chmod(0o700)
  shutil.copy2(start,evidence/'start');shutil.copy2(live,evidence/'previous.jar');guarded=APP/'releases'/('next-ai-commerce-1.14.27-schema146-rollback-'+rollback_sha[:12]+'.jar');shutil.copy2(rollback,guarded);os.chown(guarded,int(read(['id','-u','nextaicommerce'])),int(read(['id','-g','nextaicommerce'])));guarded.chmod(0o640)
  (evidence/'baseline-policy.json').write_text(json.dumps({'fingerprint':POLICY}))
- bounded_backup(evidence/'database.dump',evidence/'backup.log');require_space(3*largest+SCRATCH+MARGIN)
+ bounded_backup(evidence/'database.dump',evidence/'backup.log');require_space(largest+SCRATCH+META+WAL+RESERVE)
  (evidence/'backup-manifest.json').write_text(json.dumps({'databaseSha256':digest(evidence/'database.dump'),'bytes':(evidence/'database.dump').stat().st_size,'previousSha256':BASE,'rollbackSha256':rollback_sha,'revision':revision}))
  libs_dir=evidence/'libs';migrations=evidence/'migrations';libs_dir.mkdir();migrations.mkdir()
  with zipfile.ZipFile(package) as z:
+  assert sum(i.file_size for i in z.infolist() if (i.filename.startswith('BOOT-INF/lib/') and i.filename.endswith('.jar')) or (i.filename.startswith('BOOT-INF/classes/db/migration/') and i.filename.endswith('.sql'))) < SCRATCH
   for n in z.namelist():
    if n.startswith('BOOT-INF/lib/') and n.endswith('.jar'):(libs_dir/P(n).name).write_bytes(z.read(n))
    if n.startswith('BOOT-INF/classes/db/migration/') and n.endswith('.sql'):(migrations/P(n).name).write_bytes(z.read(n))
  helper=P(__file__).with_name('ApplyFbaReleaseMigrations.java');assert helper.is_file()
  migration_env=dict(os.environ);migration_env.update(RELEASE_DB_URL=before.get('SPRING_DATASOURCE_URL',before.get('DB_URL','')),RELEASE_DB_USER=before.get('SPRING_DATASOURCE_USERNAME',before.get('DB_USER',before.get('DB_USERNAME',''))),RELEASE_DB_PASSWORD=before.get('SPRING_DATASOURCE_PASSWORD',before.get('DB_PASSWORD','')))
- java=['java','-cp',str(libs_dir/'*'),str(helper),str(migrations)]
+ java=['java','-Xmx256m','-cp',str(libs_dir/'*'),str(helper),str(migrations)]
  with open(evidence/'migration.log','ab') as log:run(java+['validate'],env=migration_env,stdout=log,stderr=subprocess.STDOUT)
  assert digest(live)==BASE and digest(start)==START_SHA and fingerprint(env(pid))==POLICY and queue()==0
  stopped=False
  try:
-  require_space(2*largest+MARGIN);run(['systemctl','stop','next-ai-commerce']);stopped=True;assert not P('/proc/'+pid).exists()
-  require_space(2*largest+MARGIN)
+  require_space(largest+META+WAL+RESERVE);run(['systemctl','stop','next-ai-commerce']);stopped=True;assert not P('/proc/'+pid).exists()
+  require_space(largest+META+WAL+RESERVE)
   with open(evidence/'migration.log','ab') as log:run(java+['migrate'],env=migration_env,stdout=log,stderr=subprocess.STDOUT)
   assert query("SELECT max(version::int) FROM flyway_schema_history WHERE success AND version ~ '^[0-9]+$'")=='146'
-  require_space(largest+MARGIN);release=APP/'releases'/('next-ai-commerce-'+VERSION+'-'+revision[:12]+'.jar');shutil.copy2(package,release);os.chown(release,int(read(['id','-u','nextaicommerce'])),int(read(['id','-g','nextaicommerce'])));release.chmod(0o640)
+  require_space(largest+META+RESERVE);release=APP/'releases'/('next-ai-commerce-'+VERSION+'-'+revision[:12]+'.jar');shutil.copy2(package,release);os.chown(release,int(read(['id','-u','nextaicommerce'])),int(read(['id','-g','nextaicommerce'])));release.chmod(0o640)
   temp=APP/'next-ai-commerce.jar.release-new';assert not temp.exists();temp.symlink_to(release);os.replace(temp,live)
   start.write_bytes(prepared_start);run(['systemctl','start','next-ai-commerce']);wait_health()
   after_pid=read(['systemctl','show','next-ai-commerce','-p','MainPID','--value']);after=env(after_pid)
