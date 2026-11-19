@@ -90,8 +90,10 @@ public class FbaDepletionRepository {
     UNION ALL
     SELECT old_origin.value FROM jsonb_each(coalesce(p.checkpoint->'inboundOriginHistory','{}'::jsonb)) history
      CROSS JOIN LATERAL jsonb_array_elements(history.value) old_origin
-   ) origin WHERE p.tenant_id=? AND p.marketplace_connection_id=? AND jsonb_exists(origin.value#>'{origin,children}',?))
-   """,Boolean.class,tenant,connection,shipment));
+   ) origin CROSS JOIN LATERAL jsonb_each(coalesce(origin.value#>'{origin,children}','{}'::jsonb)) child
+   WHERE p.tenant_id=? AND p.marketplace_connection_id=?
+    AND (child.key=? OR child.value->>'shipmentId'=? OR child.value->>'confirmationId'=?))
+   """,Boolean.class,tenant,connection,shipment,shipment,shipment));
  }
  @Transactional(readOnly=true) public Preview preview(UUID tenant,UUID connection,String shipment){
   scope(tenant);Source source=source(tenant,connection,shipment);List<String> blockers=new ArrayList<>();var warehouses=matches(tenant,source);

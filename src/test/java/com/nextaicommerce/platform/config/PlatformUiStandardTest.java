@@ -17,7 +17,8 @@ class PlatformUiStandardTest {
                 if (!html.contains("fragments/sidebar-nav")) continue;
                 String head = html.substring(0, html.indexOf("</head>"));
                 assertThat(head).as(file.getFileName().toString())
-                    .contains("/css/platform-ui.css?v=", "defer src=\"/js/platform-ui.js?v=");
+                    .matches(h -> h.contains("/css/platform-ui.css?v=") || (h.contains("'platform-ui'") && h.contains("th:each=\"sheet:") && h.contains("'.css'(v=${buildVersion})")))
+                    .matches(h -> h.contains("defer src=\"/js/platform-ui.js?v=") || h.contains("defer th:src=\"@{/js/platform-ui.js(v=${buildVersion})}"));
             }
         }
     }

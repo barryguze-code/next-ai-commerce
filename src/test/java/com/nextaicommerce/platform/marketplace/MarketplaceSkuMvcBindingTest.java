@@ -33,7 +33,7 @@ class MarketplaceSkuMvcBindingTest {
     var header=parameter.getAnnotation(org.springframework.web.bind.annotation.RequestHeader.class);if(header!=null){request.header(header.value(),UUID.randomUUID().toString());continue;}
     var param=parameter.getAnnotation(RequestParam.class);if(param==null||Map.class.isAssignableFrom(parameter.getType()))continue;
     String name=!param.name().isEmpty()?param.name():!param.value().isEmpty()?param.value():parameter.getName();
-    if(param.required()&&param.defaultValue().equals(ValueConstants.DEFAULT_NONE))request.param(name,name.equals("productId")?UUID.randomUUID().toString():name.equals("quantity")?"1":"00001");
+    if(param.required()&&param.defaultValue().equals(ValueConstants.DEFAULT_NONE))request.param(name,parameter.getType()==UUID.class?UUID.randomUUID().toString():name.equals("quantity")?"1":"00001");
    }
    var result=mvc.perform(request).andReturn();assertThat(result.getResolvedException()).as(route).isNull();assertThat(result.getResponse().getStatus()).as(route).isLessThan(400);
   }

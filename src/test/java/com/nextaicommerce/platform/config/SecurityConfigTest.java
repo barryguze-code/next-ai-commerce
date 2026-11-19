@@ -138,6 +138,7 @@ class SecurityConfigTest {
         @Bean com.nextaicommerce.platform.web.ShopifyConnectionAccess shopifyConnectionAccess(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.web.ShopifyConnectionAccess.class);}
         @Bean com.nextaicommerce.platform.fba.FbaReadRepository fbaReadRepository(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.fba.FbaReadRepository.class);}
         @Bean com.nextaicommerce.platform.orders.SkuRefundHistory skuRefundHistory(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.SkuRefundHistory.class);}
+        @Bean com.nextaicommerce.platform.orders.PackageCatalogueReadService packageCatalogueReadService(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.PackageCatalogueReadService.class);}
         @Bean com.nextaicommerce.platform.orders.OrderProfitSummary orderProfitSummary(){return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.OrderProfitSummary.class);}
         @Bean com.nextaicommerce.platform.orders.PackingSlipRepository packingSlips(){
             return org.mockito.Mockito.mock(com.nextaicommerce.platform.orders.PackingSlipRepository.class);

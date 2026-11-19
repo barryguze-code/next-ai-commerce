@@ -19,6 +19,7 @@ class ReplenishmentActivationTest {
    context.registerBean(TransactionTemplate.class,()->mock(TransactionTemplate.class));
    context.registerBean(InventoryRepository.class,()->mock(InventoryRepository.class));
    context.registerBean(CatalogRepository.class,()->mock(CatalogRepository.class));
+   context.registerBean(com.nextaicommerce.platform.orders.SkuRefundHistory.class,()->mock(com.nextaicommerce.platform.orders.SkuRefundHistory.class));
    context.registerBean(ObjectMapper.class,()->new ObjectMapper());
    context.register(ReplenishmentDataLoader.class,ReplenishmentSuggestions.class,ReplenishmentDraftController.class);
    context.refresh();

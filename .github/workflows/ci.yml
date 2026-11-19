@@ -43,6 +43,13 @@ jobs:
         run: |
           mvn --batch-mode -Dtest=GlobalCatalogDatabaseTest,CatalogRemovalDatabaseTest,CatalogRemovalAccessTest,CollaborationQueueDatabaseTest,ReplenishmentSuggestedPoControllerTest test
           mvn --batch-mode -Dmaven.test.skip=true package
+      - name: Verify feature release operational helpers
+        if: github.ref == 'refs/heads/codex/fba-release-1.14.28'
+        run: |
+          python3 -m py_compile scripts/release-feature-1.14.28.py
+          python3 scripts/test-feature-release-guards.py
+          mvn --batch-mode dependency:build-classpath -Dmdep.outputFile=target/release-migration-classpath.txt
+          javac -cp "$(cat target/release-migration-classpath.txt)" -d target/release-helpers scripts/ApplyFbaReleaseMigrations.java
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm test
