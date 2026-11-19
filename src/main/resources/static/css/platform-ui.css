@@ -17,7 +17,7 @@ html body.app-page input[type=search]{font-size:var(--ui-search-text)!important}
 html body.app-page .product-position-total{font-size:11px!important;line-height:1.45!important;white-space:normal!important}
 body.app-page :is(.table-widget th,.table-grid-header>[data-column]){font-size:10px!important;line-height:1.35;font-weight:750!important;letter-spacing:.1em!important}
 /* Scroll the table on compact screens instead of crushing words into letters. */
-html body.app-page table.table-widget{min-width:960px!important}
+html body.app-page table.table-widget{min-width:var(--table-min-width,960px)!important}
 html body.app-page table.available-inventory-table{min-width:1200px!important}
 html body.app-page .table-widget th{white-space:nowrap;word-break:normal;overflow-wrap:normal}
 body.app-page :is(.table-widget td,.table-widget-scroll){font-size:13px}
@@ -135,3 +135,21 @@ html body.app-page .table-widget .platform-action-control:not(.needs-attention):
 html body.app-page :is(.collaboration-view-tabs,.history-scope-switch)>:is(a,button):not(.active):not([aria-selected=true]):not([aria-pressed=true]){color:#596A80}
 
 .catalog-weight-field{display:grid;gap:8px;font-weight:600;align-content:start}.catalog-weight-field>.form-pair{margin:0}
+
+/* Identity artwork has a shared visual slot, independent of its control hit area. */
+body.app-page :is(.sku-identifier-icon,.order-identifier-market,.sku-mapping-icon,.order-inline-mapping-trigger,.ledger-preview-source,.platform-mapping-slot){box-sizing:border-box;width:22px!important;height:22px!important;min-width:22px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center}
+body.app-page :is(.sku-identifier-icon,.order-identifier-market,.sku-mapping-icon,.order-inline-mapping-trigger,.platform-mapping-slot)>:is(img,svg){width:22px!important;height:22px!important;max-width:22px!important;max-height:22px!important;object-fit:contain;aspect-ratio:1}
+body.app-page :is(.sku-identifier-line,.order-identifier-line){align-items:center;gap:5px}
+
+body.app-page :is(a.sku-identifier-icon,button.sku-mapping-icon,button.order-inline-mapping-trigger){position:relative}body.app-page :is(a.sku-identifier-icon,button.sku-mapping-icon,button.order-inline-mapping-trigger)::after{content:"";position:absolute;inset:-3px}
+
+.ledger-related-identity button.order-copy-value{border:0;background:transparent;padding:0;font:inherit;color:var(--muted);text-align:left;cursor:copy}
+
+.fba-item-copy .fba-item-title{font:inherit;font-weight:650;text-align:left;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+
+/* Product identity text stays readable; only the table scrolls when tracks do not fit. */
+.ui-product-trigger,.ui-identifier-copy{appearance:none;border:0;background:transparent;padding:0;margin:0;font:inherit;color:var(--ink);text-align:left;cursor:pointer}
+.ui-product-trigger{font-weight:650}.ui-identifier-copy{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ui-product-heading>:is(.ui-product-trigger,[data-ui-product],.fba-plan-description){flex:1 1 auto;min-width:0}.ui-product-heading>.ui-copy-title{flex:0 0 24px}
+.catalog-row :is(strong,small,span)[data-ui-copy]{display:block;max-width:24ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.catalog-row td.catalog-identifier-cell{min-width:140px}.catalog-row td[data-ui-copy]{white-space:nowrap;max-width:24ch;overflow:hidden;text-overflow:ellipsis}

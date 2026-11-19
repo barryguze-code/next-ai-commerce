@@ -1,12 +1,12 @@
 .fba-stock{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
 .fba-stock>.cell-note{font-size:12px}.fba-stock>strong{font-size:18px;font-variant-numeric:tabular-nums}
 .fba-stock-totals{display:grid;grid-template-columns:auto auto;gap:2px 8px;margin:2px 0;font-size:12px;line-height:1.5;text-align:left;color:var(--muted,#637287)}
-.fba-stock-totals dd{margin:0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:var(--text,#192b43)}
+.fba-stock-totals dd{margin:0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink,#192b43)}
 .sku-condition{display:block;font-size:12px;line-height:1.5;color:var(--muted,#637287);margin-top:4px}
 .fba-stock-details{font-size:13px;text-align:left;max-width:100%}
 .fba-stock-details summary{cursor:pointer;color:var(--primary,#2d67c8);padding:5px 2px;white-space:nowrap}
 .fba-stock-details summary:focus-visible{outline:2px solid var(--primary,#2d67c8);outline-offset:3px;border-radius:4px}
-.fba-stock-breakdown{width:260px;max-width:100%;padding:12px;border:1px solid var(--border,#dce4ee);border-radius:12px;background:var(--surface,#fff);color:var(--text,#192b43);line-height:1.5}
+.fba-stock-breakdown{width:260px;max-width:100%;padding:12px;border:1px solid var(--border,#dce4ee);border-radius:12px;background:var(--surface,#fff);color:var(--ink,#192b43);line-height:1.5}
 .fba-stock-breakdown p{font-size:12px;overflow-wrap:anywhere;color:var(--muted,#637287);margin:8px 0}
 .fba-stock-breakdown dl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;margin:10px 0}
 .fba-stock-breakdown dt{color:var(--muted,#637287)}.fba-stock-breakdown dd{margin:0;font-variant-numeric:tabular-nums;text-align:right}
@@ -18,7 +18,7 @@
 .fba-pagination{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:16px}
 .fba-pagination nav,.fba-pagination form{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .fba-pagination button:disabled{opacity:.45;cursor:default}
-.fba-stock-dialog{width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--border,#dce4ee);border-radius:20px;background:var(--surface,#fff);color:var(--text,#192b43)}
+.fba-stock-dialog{width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--border,#dce4ee);border-radius:20px;background:var(--surface,#fff);color:var(--ink,#192b43)}
 .fba-stock-dialog::backdrop{background:rgb(20 34 55 / 45%)}
 .fba-stock-dialog header,.fba-stock-dialog footer{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--border,#dce4ee)}
 .fba-stock-dialog h2{font-size:20px;margin:0}.fba-stock-dialog header button{width:40px;height:40px;border:1px solid var(--border,#dce4ee);border-radius:50%;font-size:24px;background:var(--surface-subtle,#f5f7fb);cursor:pointer}
@@ -33,7 +33,7 @@
 .fba-shipment-table .table-overview-picture b{display:none}
 .fba-origin-state{display:inline-grid;place-items:center;min-width:42px;min-height:38px;padding:4px;border:1px solid var(--line);border-radius:9px;background:var(--sky);color:var(--ink);font-size:13px;font-weight:650}
 .fba-shipment-table td,.fba-shipment-table button[data-fba-shipment]{font-size:14px;line-height:1.5}
-[data-fba-shipment]{appearance:none;background:transparent;border:1px solid transparent;border-radius:8px;padding:8px 10px;margin-left:-10px;font:inherit;font-weight:650;color:var(--text,#192b43);cursor:pointer;text-align:left}
+[data-fba-shipment]{appearance:none;background:transparent;border:1px solid transparent;border-radius:8px;padding:8px 10px;margin-left:-10px;font:inherit;font-weight:650;color:var(--ink,#192b43);cursor:pointer;text-align:left}
 [data-fba-shipment]:hover,[data-fba-shipment]:focus-visible{background:var(--primary-soft,#edf4ff);border-color:var(--primary,#2d67c8);color:var(--primary,#2d67c8);outline:none}
 #fba-shipment-dialog{width:min(1000px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0}
 #fba-shipment-dialog .dialog-shell{display:flex;flex-direction:column;max-height:calc(100dvh - 34px);min-height:0}
@@ -178,3 +178,69 @@ html body .fba-shipment-table .fba-row-icon:focus-visible{outline:2px solid var(
 #fba-depletion-dialog [data-location-cue]>span{display:block;color:var(--muted)}
 #fba-depletion-dialog [data-location-cue]>.fba-allocation-error{color:var(--danger,#b42335)}
 .location-option-description{display:block;font-size:12px;font-weight:400;line-height:20px;color:var(--muted)}
+/* Shared read-only detail control; Available uses the established primary-number scale. */
+.fba-stock-totals dt:first-of-type{font-weight:700;color:var(--ink);align-self:center}
+.fba-stock-totals dd:first-of-type{font-weight:700;font-size:18px;line-height:1.5}
+.fba-stock-trigger{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:4px;border:1px solid var(--line);border-radius:9px;background:var(--white);color:var(--ink);cursor:pointer}
+.fba-stock-trigger img{width:22px;height:22px;object-fit:contain}
+.fba-stock-trigger:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.fba-stock-dialog.invite-dialog{width:min(600px,calc(100vw - 32px));background:var(--white);color:var(--ink)}
+.fba-stock-dialog .dialog-header{display:flex;align-items:center;gap:14px;background:var(--white);border-color:var(--line)}
+.fba-stock-dialog .fba-stock-heading-copy{flex:1;min-width:0}
+.fba-stock-dialog .fba-stock-picture{width:64px;height:64px;flex:0 0 64px;object-fit:cover;border-radius:12px}
+.fba-stock-dialog .fba-stock-product-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:var(--ui-body,13px);margin:4px 0;color:var(--muted)}
+.fba-stock-dialog .fba-stock-breakdown{background:var(--white);color:var(--ink);border-color:var(--line)}
+.fba-stock-dialog .fba-shipment-table th{background:var(--white);color:var(--muted)}
+.fba-stock-dialog .fba-shipment-table td{font-size:var(--ui-body,13px);background:var(--white);color:var(--ink);padding:10px 8px}
+.fba-stock-dialog .dialog-actions{border-color:var(--line)}
+
+/* Contain this compact history table; the full shipment page keeps its 1100px minimum. */
+.fba-stock-dialog .dialog-shell,.fba-stock-dialog .dialog-body,.fba-stock-dialog .dialog-body>*,.fba-stock-dialog .table-wrap{min-width:0;max-width:100%}
+.fba-stock-dialog .dialog-body{grid-template-columns:minmax(0,1fr)}
+.fba-stock-dialog .table-wrap{width:100%;overflow:auto}
+html body.app-page .fba-stock-dialog .fba-shipment-table{width:100%;min-width:0!important;table-layout:fixed}
+.fba-stock-dialog .fba-shipment-table :is(th,td){white-space:normal;overflow-wrap:anywhere}
+.fba-stock-dialog .fba-shipment-table th:first-child{width:42%}
+.fba-stock-dialog .fba-shipment-table th:nth-child(2){width:22%}
+.fba-stock-dialog .fba-shipment-table th:last-child{width:36%}
+/* Verified parent/child rows reuse the compact disclosure pattern. */
+.fba-shipments-page .fba-parent-row>td{background:var(--white);padding:14px 18px}
+.fba-parent-row .rp-sku-toggle{display:inline-flex;gap:6px;align-items:center;margin-left:14px}
+.fba-parent-row .rp-chevron,.fba-stock-dialog .rp-chevron{display:inline-block;font-size:.7rem;transition:transform .15s}
+.fba-parent-row [aria-expanded=true] .rp-chevron,.fba-stock-dialog [aria-expanded=true] .rp-chevron{transform:rotate(90deg)}
+.fba-stock-dialog .fba-stock-child td:first-child{padding-left:18px}
+.fba-stock-dialog .rp-sku-toggle{display:inline-flex;align-items:flex-start;gap:5px;max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}
+.fba-stock-dialog .rp-sku-toggle span:last-child{min-width:0;overflow-wrap:anywhere}
+
+.fba-stock-dialog td .fba-stock-case-note{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.fba-stock-dialog .rp-sku-toggle span:last-child{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+
+/* Existing shared surface tokens keep incomplete fee evidence readable in both themes. */
+#fba-shipment-dialog [data-fba-shipment-cost]{background:var(--white);color:var(--ink);border-color:var(--line)}
+
+.fba-parent-row .fba-parent-origin-art{width:28px;height:28px;object-fit:contain}.fba-parent-row>td{vertical-align:middle}.fba-parent-row .cell-note{white-space:normal}
+
+/* Group stripes belong to top-level records; expanded children share Purchasing's inset detail surface. */
+html body.fba-shipments-page .fba-shipment-table>tbody>tr[data-fba-group-stripe=odd]>td{background:var(--table-stripe-odd)!important}
+html body.fba-shipments-page .fba-shipment-table>tbody>tr[data-fba-group-stripe=even]>td{background:var(--table-stripe-even)!important}
+html body.fba-shipments-page .fba-shipment-table>tbody>tr:is([data-fba-parent],[data-fba-child-heading])>td{background:var(--panel,#f7f9fc)!important}
+html[data-theme=dark] body.fba-shipments-page .fba-shipment-table>tbody>tr:is([data-fba-parent],[data-fba-child-heading])>td{background:var(--bg)!important}
+.fba-shipments-page tr[data-fba-parent]>td{font-size:.8rem;padding-top:10px;padding-bottom:10px}
+.fba-shipments-page tr[data-fba-parent]>td:first-child{position:relative;padding-left:60px}
+.fba-shipments-page tr[data-fba-parent]>td:first-child:before{content:"";position:absolute;left:44px;top:0;bottom:0;border-left:2px solid var(--line)}
+.fba-shipments-page tr[data-fba-parent] [data-fba-shipment]{font-size:.82rem;font-weight:700}
+.fba-shipments-page tr[data-fba-parent] .cell-note,.fba-shipments-page tr[data-fba-parent] .fba-difference{font-size:.68rem}
+html body.fba-shipments-page .fba-shipment-table>tbody>tr[data-fba-child-heading]>td{padding:6px 0 0 44px!important;border-bottom:0}
+.fba-shipments-page .fba-child-columns{display:grid;contain:inline-size;min-width:0;border-left:2px solid var(--line);padding-left:14px;color:var(--muted);font-size:.65rem;letter-spacing:.04em;text-transform:uppercase}
+.fba-child-columns>span{box-sizing:border-box;padding:7px 4px;border-bottom:1px solid var(--line);white-space:nowrap;overflow-wrap:normal;overflow:hidden;text-overflow:ellipsis}
+.fba-child-columns>span:first-child{padding-left:0}
+html body.fba-shipments-page .fba-shipment-table>tbody>tr[data-fba-parent].is-selected>td{background:var(--blue-soft)!important}
+.fba-shipments-page .fba-parent-title{font:inherit;font-weight:700;text-align:left;white-space:normal}
+.fba-shipments-page .table-wrap:has(>.fba-shipment-table){padding-bottom:18px}
+.fba-shipments-page .fba-parent-toggle-row>td{height:0!important;min-height:0;line-height:0}
+
+/* Preserve each identifier's own copy target and readable line in shipment contents. */
+#fba-shipment-dialog .fba-item-copy>.ui-product-trigger{display:block;max-width:100%;margin-bottom:4px}
+#fba-shipment-dialog .fba-item-copy>.ui-identifier-copy{display:block;max-width:100%;line-height:1.5;margin-top:3px}
+
+#fba-depletion-dialog .fba-add-location{justify-self:start;width:auto;max-width:100%}

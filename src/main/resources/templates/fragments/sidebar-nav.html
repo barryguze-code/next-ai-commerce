@@ -51,9 +51,10 @@
     <div>
       <a th:if="${canViewOperations}" th:classappend="${active == 'inventory' ? 'active' : ''}" href="/app/inventory">Available Inventory</a>
       <a th:if="${canViewOperations}" th:classappend="${active == 'inventory-ledger' ? 'active' : ''}" href="/app/inventory/ledger">Inventory Ledger</a>
+      <a th:if="${fbaReplenishmentEnabled == true and canViewOperations == true and selectedStore != null and selectedStore.channel == 'AMAZON'}" th:classappend="${active == 'fba-replenishment' ? 'active' : ''}" href="/app/inventory/fba-replenishment">FBA Replenishment</a>
       <a th:if="${canViewOperations == true and selectedStore != null and selectedStore.channel == 'AMAZON'}" th:classappend="${active == 'fba-shipments' ? 'active' : ''}" href="/app/inventory/fba-shipments">FBA Shipments</a>
       <a th:classappend="${active == 'receiving' ? 'active' : ''}" href="/app/receiving">Receiving</a>
-      <a th:if="${canViewOperations}" th:classappend="${active == 'replenishment' ? 'active' : ''}" href="/app/inventory/replenishment">Replenishment</a>
+      <a th:if="${canViewOperations}" th:classappend="${active == 'replenishment' ? 'active' : ''}" href="/app/inventory/replenishment">Purchasing</a>
     </div>
   </details>
 

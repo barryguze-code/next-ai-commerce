@@ -48,7 +48,7 @@
 </div>
 <div class="item-product-copy">
 <strong th:text="${item.title ?: item.sellerSku}">Product</strong>
-<button th:if="${item.sellerSku != null and !#strings.isEmpty(item.sellerSku)}" type="button" class="order-sku-copy" th:attr="data-copy-sku=${item.sellerSku},aria-label=${'Copy SKU '+item.sellerSku}"><code th:text="${item.sellerSku}">SKU</code><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg></button><code th:unless="${item.sellerSku != null and !#strings.isEmpty(item.sellerSku)}">No seller SKU</code>
+<button th:if="${item.sellerSku != null and !#strings.isEmpty(item.sellerSku)}" type="button" class="order-sku-copy" th:attr="data-copy-sku=${item.sellerSku},data-ui-copy=${item.sellerSku},aria-label=${'Copy SKU '+item.sellerSku}"><code th:text="${item.sellerSku}">SKU</code></button><code th:unless="${item.sellerSku != null and !#strings.isEmpty(item.sellerSku)}">No seller SKU</code>
 </div>
 <span class="marketplace-links listing-shortcuts order-marketplace-links">
 <a th:if="${item.inventoryUrl(order.marketplaceId) != null}" th:href="${item.inventoryUrl(order.marketplaceId)}" target="_blank" rel="noopener noreferrer" title="Manage this ASIN in Seller Central inventory" th:aria-label="${'Manage '+item.asin+' in Seller Central inventory'}">

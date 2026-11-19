@@ -208,3 +208,5 @@ html body.app-page .rp-toggle-row .rp-sku-toggle,html[data-theme=dark] body.app-
 [data-current-po-name]{max-width:360px;overflow-wrap:anywhere}
 
 .rp-po-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rp-heading-copy{flex:1;min-width:180px}.rp-po-header-actions .secondary-button{font-size:13px;white-space:nowrap}
+
+.rp-heading .rp-plan-identity{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.rp-heading .rp-plan-identity>small{margin:0;white-space:nowrap}

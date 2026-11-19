@@ -735,3 +735,5 @@ html[data-theme=dark] .table-command-panel .rw-selection-bar .table-action-entry
 
 /* Product master-case totals are secondary to received eaches. */
 .rw-received-cases{display:block;margin-top:2px;color:var(--muted);font-size:.9em;font-weight:400;line-height:1.25;white-space:nowrap}
+
+#receiving-columns-dialog .receiving-column-samples :is(th,td){min-width:100px;max-width:320px;white-space:normal;overflow-wrap:anywhere;padding:10px 12px;box-sizing:border-box}#receiving-columns-dialog .receiving-column-samples th{letter-spacing:.04em}

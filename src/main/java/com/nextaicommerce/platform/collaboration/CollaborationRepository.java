@@ -113,7 +113,10 @@ public class CollaborationRepository {
         """.replace("REVIEW_SOURCE_STORE",SOURCE_STORE).formatted(VIEWER,VIEWER,VIEWER)+","+UNREAD_MESSAGES;
 
     private final JdbcTemplate jdbc;
-    public CollaborationRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
+    private final com.nextaicommerce.platform.fba.FbaShipmentParents fbaParents;
+    public CollaborationRepository(JdbcTemplate jdbc){this(jdbc,null);}
+    @org.springframework.beans.factory.annotation.Autowired
+    public CollaborationRepository(JdbcTemplate jdbc,com.nextaicommerce.platform.fba.FbaShipmentParents fbaParents){this.jdbc=jdbc;this.fbaParents=fbaParents;}
 
     /** Accepted memberships, not the account currently selected in another browser tab. */
     @Transactional(readOnly=true)
@@ -656,6 +659,15 @@ public class CollaborationRepository {
         return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM (SELECT tenant_id,id marketplace_connection_id FROM marketplace_connections WHERE channel='SHOPIFY' AND status<>'DISABLED') sv WHERE sv.tenant_id=? AND sv.marketplace_connection_id=? AND "+SHOPIFY_STORE_ACCESS.replace(VIEWER,"(SELECT email FROM app_users WHERE id=?)")+")",Boolean.class,tenant,store,member));
     }
     private UUID sourceSubjectStore(UUID tenant,String type,String key){
+        if("FBA_PLAN".equalsIgnoreCase(type)){
+            String[] identity=key.split("\\|",2);if(identity.length!=2||identity[1].isBlank()||fbaParents==null)throw new IllegalArgumentException("Choose a verified shipping plan in its marketplace store.");
+            UUID connection=UUID.fromString(identity[0]);
+            var stores=jdbc.queryForList("SELECT sv.marketplace_connection_id FROM (SELECT tenant_id,id marketplace_connection_id FROM marketplace_connections WHERE channel='AMAZON' AND status='ACTIVE') sv WHERE sv.tenant_id=? AND sv.marketplace_connection_id=? AND "+SHOPIFY_STORE_ACCESS,UUID.class,tenant,connection);
+            if(stores.size()!=1)throw new org.springframework.security.access.AccessDeniedException("Source store access required.");
+            var imported=jdbc.queryForList("SELECT shipment_id FROM amazon_fba_shipments WHERE tenant_id=? AND marketplace_connection_id=?",String.class,tenant,connection);
+            if(imported.size()>50000||fbaParents.read(tenant,connection,imported).links().values().stream().noneMatch(p->p.id().equals(identity[1])))throw new IllegalArgumentException("This shipping plan is unavailable in your authorized store.");
+            return connection;
+        }
         if("FBA_SHIPMENT".equalsIgnoreCase(type)){
             String[] identity=key.split("\\|",2);
             if(identity.length!=2||identity[1].isBlank())throw new IllegalArgumentException("Choose an FBA shipment in its marketplace store.");

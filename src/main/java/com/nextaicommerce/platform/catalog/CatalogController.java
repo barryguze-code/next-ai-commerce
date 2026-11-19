@@ -536,7 +536,7 @@ public class CatalogController {
 
     private static Map<String,String> importMapping(Map<String,String> parameters){
         Map<String,String> mapping=new LinkedHashMap<>();
-        for(String key:java.util.List.of("productName","brand","identifier","accountSku","vendorItemCode","listCost","discountRate","expirationRequired","size","unitOfMeasure","casePack","unitOfSale","suggestedRetail","category","effectiveDate","minimumQuantity")){
+        for(String key:java.util.List.of("productName","brand","identifier","accountSku","vendorItemCode","listCost","discountRate","expirationRequired","size","unitOfMeasure","casePack","unitOfSale","suggestedRetail","category","effectiveDate","minimumQuantity","caseLength","caseWidth","caseHeight","caseWeight","caseDimensionUnit","caseWeightUnit","caseDimensionUnitDefault","caseWeightUnitDefault")){
             String value=parameters.get(key);if(value!=null&&!value.isBlank())mapping.put(key,value);
         }
         if(parameters.containsKey("distributionCenter"))mapping.put("distributionCenter",CatalogIdentity.distributionCenter(parameters.get("distributionCenter")));

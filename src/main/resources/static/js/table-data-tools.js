@@ -160,7 +160,7 @@ function composeTabs(card){
  }
 }
 function headers(root){return [...root.querySelectorAll('thead th,.table-grid-header [data-column]')].map((el,index)=>({id:el.dataset.column||'column-'+index,title:el.dataset.title||normalize(el.textContent).replace(/[↑↓]/g,''),el,index})).sort((a,b)=>Number(a.el.style.order||a.index)-Number(b.el.style.order||b.index));}
-function rows(root){return root.matches('table')?[...root.tBodies].flatMap(body=>[...body.rows]).filter(row=>![...row.cells].some(cell=>cell.colSpan>1)):[...root.querySelectorAll(root.dataset.gridRow||'.order-item')];}
+function rows(root){return root.matches('table')?[...root.tBodies].flatMap(body=>[...body.rows]).filter(row=>!row.hasAttribute('data-fba-parent-header')&&![...row.cells].some(cell=>cell.colSpan>1)):[...root.querySelectorAll(root.dataset.gridRow||'.order-item')];}
 function textOf(cell){
   if(!cell)return '';
   if(cell.dataset.exportValue!==undefined)return cell.dataset.exportValue;
@@ -232,6 +232,7 @@ function restoreRowOffset(element,top){
   const delta=element.getBoundingClientRect().top-top;
   if(scroller&&scroller!==document.body)scroller.scrollTop+=delta;else window.scrollBy(0,delta);
 }
+function recommendationCountLabel(filtered,page,size,context){const total=filtered.length,positive=filtered.filter(r=>r.dataset.recommended==='true').length,scope=context?' · '+context:'',range=total?(total>size?((page-1)*size+1)+'–'+Math.min(page*size,total):String(total)):'0';return total===positive?(total?'Showing '+range+' of '+total+' recommended':'0 recommended')+scope:'Showing '+range+' of '+total+' items · '+positive+' recommended'+scope;}
 function paginationTotal(text,kind){
   text=text.trim();
   const total=text.match(/^([\d,]+)\s+(documents|orders|items|results|movements)\b/)||text.match(/^Showing\b.*?\bof\s+([\d,]+)(?:\s+(\w+))?\s*$/);
@@ -445,7 +446,11 @@ const filterControl=document.createElement('div');filterControl.className='table
     let data=searchValues.get(row);if(!data){data=values(root,row,cols);searchValues.set(row,data);}
     return (!saved.query||data.join(' ').toLowerCase().includes(saved.query.toLowerCase()))&&cols.every((col,index)=>filterMatch(data[index],saved.filters[col.id]));
   }
-  function domainVisible(row){return !row.hidden&&row.style.display!=='none'&&!row.closest('[hidden]');}
+  function domainVisible(row){
+    // FBA child collapse is disclosure state, not a search/filter/export exclusion.
+    const collapsedFbaChild=root.matches('.fba-shipment-table')&&row.hasAttribute('data-fba-parent');
+    return !row.hidden&&(collapsedFbaChild||row.style.display!=='none')&&!row.closest('[hidden]');
+  }
   function render(){
     if(root.dataset.gridRow){const current=new Map(headers(root).map(c=>[c.id,c.el])),byIndex=new Map(cols.map(c=>[c.index,c]));rows(root).forEach(row=>[...row.children].forEach((cell,index)=>{const col=byIndex.get(index);if(!col)return;if(cell.dataset.column!==col.id)cell.dataset.column=col.id;const header=current.get(col.id),hidden=!!header?.hidden,order=header?.style.order||String(index);if(cell.hidden!==hidden)cell.hidden=hidden;if(cell.style.order!==order)cell.style.order=order}))}
     const all=rows(root),filtered=all.filter(row=>domainVisible(row)&&matches(row));
@@ -457,7 +462,7 @@ const filterControl=document.createElement('div');filterControl.className='table
     const orderEmpty=root.querySelector('.order-empty-state');
     if(orderEmpty){const hide=filtered.length>0;if(orderEmpty.hidden!==hide)orderEmpty.hidden=hide;root.classList.toggle('orders-is-empty',!hide);if(serverPager&&serverPager.hidden===hide)serverPager.hidden=!hide;}
     if(!exportButton.disabled)status.textContent=!filtered.length?(orderEmpty||!all.length?'':'Nothing found. Try another search or change your filters.'):count&&isServer?filtered.length+' matches on this page.':'';
-    if(footer){footer.dataset.pages=String(pages);updatePager(saved.page,pages,saved.size);pageLabel.textContent='Total: '+filtered.length.toLocaleString()+' results'}
+    if(footer){footer.dataset.pages=String(pages);updatePager(saved.page,pages,saved.size);pageLabel.textContent=root.hasAttribute('data-recommendation-count')?recommendationCountLabel(filtered,saved.page,saved.size,root.dataset.recommendationContext):'Total: '+filtered.length.toLocaleString()+' results'}
   }
   exportButton.onclick=async()=>{
     exportButton.disabled=true;status.textContent='Preparing CSV…';

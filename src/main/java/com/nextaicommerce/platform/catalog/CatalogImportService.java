@@ -206,6 +206,7 @@ public class CatalogImportService {
             if(itemCodes.getOrDefault(code,0)>1)problems.add("Vendor item code is duplicated in this file");
             if(!identifier.isBlank()&&identifiers.getOrDefault(identifier,0)>1)problems.add("UPC / EAN is duplicated in this file");
             try{BigDecimal cost=money(value(row.data(),mapping,"listCost"));if(cost.signum()<0)problems.add("Cost cannot be negative");}catch(Exception e){problems.add("Cost is missing or invalid");}
+            try{caseMeasurements(row.data(),mapping);}catch(IllegalArgumentException e){problems.add(e.getMessage());}
             String status=problems.isEmpty()?"VALID":"REJECTED";if(problems.isEmpty())valid++;else rejected++;
             updates.add(new Object[]{status,writeMessages(problems),tenantId,row.id()});
         }
@@ -252,6 +253,7 @@ public class CatalogImportService {
             if (value(row.data(),mapping,"vendorItemCode").isBlank()) errors.add("Row "+row.number()+": vendor item code is missing.");
             try { money(value(row.data(),mapping,"listCost")); }
             catch (Exception e) { errors.add("Row "+row.number()+": list cost is not a valid number."); }
+            try{caseMeasurements(row.data(),mapping);}catch(IllegalArgumentException e){errors.add("Row "+row.number()+": "+e.getMessage());}
             if (errors.size() >= 20) break;
         }
         if (!errors.isEmpty()) throw new IllegalArgumentException(String.join(" ", errors));
@@ -278,7 +280,8 @@ public class CatalogImportService {
               expiration_required boolean,category text,uom text,package_size text,units_per_case numeric,
               units_of_sale numeric,effective_from date,list_cost numeric,discount_rate numeric,
               suggested_retail numeric,minimum_quantity numeric,vendor_global_id uuid,identifier_global_id uuid,
-              global_id uuid,is_new boolean default false,item_id uuid,packaging_id uuid,offer_id uuid
+              global_id uuid,is_new boolean default false,item_id uuid,packaging_id uuid,offer_id uuid,
+              case_length numeric,case_width numeric,case_height numeric,case_dimension_unit text,case_weight numeric,case_weight_unit text
             ) ON COMMIT DROP
             """);
         List<Object[]> batch=new ArrayList<>(rows.size());
@@ -286,19 +289,20 @@ public class CatalogImportService {
             String code=value(row.data(),mapping,"vendorItemCode");
             String identifier=normalized(value(row.data(),mapping,"identifier"));
             BigDecimal discount=value(row.data(),mapping,"discountRate").isBlank()?source.discountRate():optionalMoney(value(row.data(),mapping,"discountRate"));
+            var physical=caseMeasurements(row.data(),mapping);
             batch.add(new Object[]{row.id(),row.number(),code,normalizedVendorCode(code),value(row.data(),mapping,"productName"),
                 blank(value(row.data(),mapping,"brand")),identifierType,blank(identifier),blank(value(row.data(),mapping,"accountSku")),
                 yes(value(row.data(),mapping,"expirationRequired")),blank(value(row.data(),mapping,"category")),
                 blank(value(row.data(),mapping,"unitOfMeasure")),blank(value(row.data(),mapping,"size")),
                 optionalPositive(value(row.data(),mapping,"casePack")),optionalPositive(value(row.data(),mapping,"unitOfSale")),
                 optionalDate(value(row.data(),mapping,"effectiveDate")),money(value(row.data(),mapping,"listCost")),discount,
-                optionalMoneyOrNull(value(row.data(),mapping,"suggestedRetail")),optionalPositive(value(row.data(),mapping,"minimumQuantity"))});
+                optionalMoneyOrNull(value(row.data(),mapping,"suggestedRetail")),optionalPositive(value(row.data(),mapping,"minimumQuantity")),physical.length(),physical.width(),physical.height(),physical.dimensionUnit(),physical.weight(),physical.weightUnit()});
         }
         jdbc.batchUpdate("""
             INSERT INTO catalog_import_work(row_id,row_number,vendor_item_code,normalized_code,product_name,brand,
               identifier_type,identifier_value,account_sku,expiration_required,category,uom,package_size,
-              units_per_case,units_of_sale,effective_from,list_cost,discount_rate,suggested_retail,minimum_quantity)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+              units_per_case,units_of_sale,effective_from,list_cost,discount_rate,suggested_retail,minimum_quantity,case_length,case_width,case_height,case_dimension_unit,case_weight,case_weight_unit)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,batch);
         reportProgress(tenantId,importId,Math.max(1,rows.size()/10));
         Integer duplicateKeys=jdbc.queryForObject("""
@@ -356,7 +360,9 @@ public class CatalogImportService {
             UPDATE global_catalog_products product SET category=coalesce(work.category,product.category),
               unit_of_measure=coalesce(upper(work.uom),product.unit_of_measure),
               package_size=coalesce(work.package_size,product.package_size),
-              units_per_case=coalesce(work.units_per_case,product.units_per_case),updated_at=now()
+              units_per_case=coalesce(work.units_per_case,product.units_per_case),
+              length=coalesce(work.case_length,product.length),width=coalesce(work.case_width,product.width),height=coalesce(work.case_height,product.height),
+              dimension_unit=coalesce(work.case_dimension_unit,product.dimension_unit),net_weight=coalesce(work.case_weight,product.net_weight),weight_unit=coalesce(work.case_weight_unit,product.weight_unit),updated_at=now()
             FROM catalog_import_work work WHERE product.id=work.global_id AND work.is_new
             """);
         jdbc.update("UPDATE account_catalog_items item SET preferred_vendor_id=coalesce(item.preferred_vendor_id,?),updated_at=now() FROM catalog_import_work work WHERE item.tenant_id=? AND item.id=work.item_id",source.vendorId(),tenantId);
@@ -631,7 +637,20 @@ public class CatalogImportService {
 
     private static List<List<String>> parseRecords(String text,char delimiter){List<List<String>> rows=new ArrayList<>();List<String> row=new ArrayList<>();StringBuilder value=new StringBuilder();boolean quoted=false;for(int i=0;i<text.length();i++){char ch=text.charAt(i);if(ch=='"'){if(quoted&&i+1<text.length()&&text.charAt(i+1)=='"'){value.append('"');i++;}else quoted=!quoted;}else if(ch==delimiter&&!quoted){row.add(value.toString());value.setLength(0);}else if((ch=='\n'||ch=='\r')&&!quoted){if(ch=='\r'&&i+1<text.length()&&text.charAt(i+1)=='\n')i++;row.add(value.toString());value.setLength(0);if(row.stream().anyMatch(v->!v.isBlank()))rows.add(row);row=new ArrayList<>();}else value.append(ch);}row.add(value.toString());if(row.stream().anyMatch(v->!v.isBlank()))rows.add(row);return rows;}
     private static String uniqueHeader(List<String> existing,String value,int index){String base=value==null||value.isBlank()?"Column "+(index+1):value.trim();String result=base;int n=2;while(existing.contains(result))result=base+" ("+n+++ ")";return result;}
-    private static Map<String,String> autoMap(List<String> headers){Map<String,String> map=new LinkedHashMap<>();for(String h:headers){String n=h.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");if(n.matches(".*(productname|itemdescription|description|title).*"))map.putIfAbsent("productName",h);if(n.matches(".*(upc|ean|gtin|barcode).*"))map.putIfAbsent("identifier",h);if(n.matches(".*brand.*"))map.putIfAbsent("brand",h);if(n.matches("(item|vendorsku|vendoritem|vendoritemcode|itemcode|itemnumber|itemno)"))map.putIfAbsent("vendorItemCode",h);if(n.matches(".*(accountsku|internalsku|sku).*"))map.putIfAbsent("accountSku",h);if(n.matches("(wholesale|unitcost|listcost|price|cost)"))map.putIfAbsent("listCost",h);if(n.matches(".*discount.*"))map.putIfAbsent("discountRate",h);if(n.equals("size"))map.putIfAbsent("size",h);if(n.matches("(unitofmeasure|uom)"))map.putIfAbsent("unitOfMeasure",h);if(n.matches("(casepack|packsize)"))map.putIfAbsent("casePack",h);if(n.matches("(unitofsale|unitssold)"))map.putIfAbsent("unitOfSale",h);if(n.matches("(suggestedretail|msrp|retailprice)"))map.putIfAbsent("suggestedRetail",h);if(n.equals("category"))map.putIfAbsent("category",h);if(n.matches("(effectivedate|priceeffectivedate)"))map.putIfAbsent("effectiveDate",h);if(n.matches("(minquantity|minimumquantity|moq)"))map.putIfAbsent("minimumQuantity",h);}map.put("identifierType","UPC");return map;}
+    private static Map<String,String> autoMap(List<String> headers){Map<String,String> map=new LinkedHashMap<>();for(String h:headers){String n=h.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]","");if(n.matches(".*(productname|itemdescription|description|title).*"))map.putIfAbsent("productName",h);if(n.matches(".*(upc|ean|gtin|barcode).*"))map.putIfAbsent("identifier",h);if(n.matches(".*brand.*"))map.putIfAbsent("brand",h);if(n.matches("(item|vendorsku|vendoritem|vendoritemcode|itemcode|itemnumber|itemno)"))map.putIfAbsent("vendorItemCode",h);if(n.matches(".*(accountsku|internalsku|sku).*"))map.putIfAbsent("accountSku",h);if(n.matches("(wholesale|unitcost|listcost|price|cost)"))map.putIfAbsent("listCost",h);if(n.matches(".*discount.*"))map.putIfAbsent("discountRate",h);if(n.equals("size"))map.putIfAbsent("size",h);if(n.matches("(unitofmeasure|uom)"))map.putIfAbsent("unitOfMeasure",h);if(n.matches("(mastercase|case|carton)(length|lengthin|lengthcm)"))map.putIfAbsent("caseLength",h);if(n.matches("(mastercase|case|carton)(width|widthin|widthcm)"))map.putIfAbsent("caseWidth",h);if(n.matches("(mastercase|case|carton)(height|heightin|heightcm)"))map.putIfAbsent("caseHeight",h);if(n.matches("(mastercase|case|carton)(weight|weightlb|weightkg|weightoz|weightg)"))map.putIfAbsent("caseWeight",h);if(n.matches("(mastercase|case|carton)(dimensionunit|dimensionsunit)"))map.putIfAbsent("caseDimensionUnit",h);if(n.matches("(mastercase|case|carton)weightunit"))map.putIfAbsent("caseWeightUnit",h);if(n.matches("(casepack|packsize)"))map.putIfAbsent("casePack",h);if(n.matches("(unitofsale|unitssold)"))map.putIfAbsent("unitOfSale",h);if(n.matches("(suggestedretail|msrp|retailprice)"))map.putIfAbsent("suggestedRetail",h);if(n.equals("category"))map.putIfAbsent("category",h);if(n.matches("(effectivedate|priceeffectivedate)"))map.putIfAbsent("effectiveDate",h);if(n.matches("(minquantity|minimumquantity|moq)"))map.putIfAbsent("minimumQuantity",h);}map.put("identifierType","UPC");return map;}
+    record CaseMeasurements(BigDecimal length,BigDecimal width,BigDecimal height,String dimensionUnit,BigDecimal weight,String weightUnit){}
+    static CaseMeasurements caseMeasurements(Map<String,String> row,Map<String,String> mapping){
+        BigDecimal length=measurement(value(row,mapping,"caseLength"),"Master case length"),width=measurement(value(row,mapping,"caseWidth"),"Master case width"),height=measurement(value(row,mapping,"caseHeight"),"Master case height"),weight=measurement(value(row,mapping,"caseWeight"),"Master case weight");
+        String du=value(row,mapping,"caseDimensionUnit").toLowerCase(Locale.ROOT),wu=value(row,mapping,"caseWeightUnit").toLowerCase(Locale.ROOT);
+        if(du.isBlank())du=mapping.getOrDefault("caseDimensionUnitDefault","");if(wu.isBlank())wu=mapping.getOrDefault("caseWeightUnitDefault","");
+        du=switch(du){case "inch","inches"->"in";case "centimeter","centimeters"->"cm";default->du;};
+        wu=switch(wu){case "lbs","pound","pounds"->"lb";case "ounce","ounces"->"oz";case "gram","grams"->"g";case "kilogram","kilograms"->"kg";default->wu;};
+        boolean dims=length!=null||width!=null||height!=null;
+        if(dims&&!Set.of("in","cm").contains(du))throw new IllegalArgumentException("Choose the master case dimension unit (in or cm).");
+        if(weight!=null&&!Set.of("oz","lb","g","kg").contains(wu))throw new IllegalArgumentException("Choose the master case weight unit (oz, lb, g or kg).");
+        return new CaseMeasurements(length,width,height,dims?du:null,weight,weight!=null?wu:null);
+    }
+    private static BigDecimal measurement(String raw,String label){if(raw.isBlank())return null;try{BigDecimal n=new BigDecimal(raw.replace(",",""));if(n.signum()<=0||n.scale()>4||n.compareTo(new BigDecimal("9999999999"))>0)throw new NumberFormatException();return n;}catch(NumberFormatException e){throw new IllegalArgumentException(label+" must be positive, with up to four decimals.");}}
     private static void require(Map<String,String> map,String key,String label){if(map.get(key)==null||map.get(key).isBlank())throw new IllegalArgumentException("Map the “"+label+"” field before importing.");}
     private static boolean hasRequiredMappings(Map<String,String> map){return java.util.stream.Stream.of("productName","vendorItemCode","listCost").allMatch(key->map.get(key)!=null&&!map.get(key).isBlank());}
     private static String value(Map<String,String> row,Map<String,String> mapping,String key){String header=mapping.get(key);return header==null?"":row.getOrDefault(header,"").trim();}

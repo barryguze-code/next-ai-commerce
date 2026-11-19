@@ -13,6 +13,8 @@
   if(!control.querySelector(':scope>img[data-platform-icon]')){const badges=[...control.querySelectorAll(':scope>b,:scope>.table-warning-count')];control.replaceChildren(window.NextAiIcons.create(control.classList.contains('needs-attention')?'alert':'actions'),...badges);}
  }}
  function placeCommands(card){
+  const utility=own(card,'[data-table-utility]')[0],table=own(card,'[data-table-widget]')[0],tools=own(card,'[data-column-control]').find(host=>host.dataset.columnControl===table?.dataset.tableWidget&&!host.matches('.table-standard-toolbar'));
+  if(utility&&tools&&!tools.contains(utility))tools.prepend(utility);
   const header=own(card,':scope>.card-toolbar')[0],toolbar=own(card,'.table-standard-toolbar')[0];
   const workspace=card.closest('.workspace'),pageHeader=workspace?.querySelector(':scope>.workspace-header'),copy=pageHeader?.firstElementChild;
   const firstRoot=workspace?.querySelector('[data-table-widget]');
@@ -28,7 +30,7 @@
   if(cluster){
    const strip=own(card,'.order-tab-panel,.table-status-strip')[0];
    if(strip&&header?.contains(strip)){header.after(strip);strip.hidden=false;}
-   const destination=strip||toolbar;
+   const destination=card.dataset.tableCommandPlacement==='header'?(header?.querySelector('.rp-po-header-actions')||header):strip||toolbar;
    if(destination){destination.classList.add('table-shared-command-row');if(cluster.parentElement!==destination||!strip&&destination.lastElementChild!==cluster)destination.append(cluster);}
    const old=own(card,'.table-header-commands')[0];if(old&&!old.children.length)old.remove();
   }

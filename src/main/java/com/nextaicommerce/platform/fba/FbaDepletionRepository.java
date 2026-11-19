@@ -78,6 +78,21 @@ public class FbaDepletionRepository {
   var line=current.lines().stream().filter(l->l.sku().equals(sku)).findFirst().orElseThrow(()->new IllegalArgumentException("SKU is unavailable."));
   jdbc.update("INSERT INTO fba_shipment_depletion_overrides(tenant_id,marketplace_connection_id,shipment_id,seller_sku,source_quantity,depletion_quantity,source_revision,reason,created_by) VALUES (?,?,?,?,?,?,?,?,?)",tenant,connection,shipment,sku,line.amazonShipped(),units,source(tenant,connection,shipment).revision(),reason.trim(),actor(email));
  }
+ /** Durable ownership survives disabling the feature flag. Guard the query for pre-V145 runtimes. */
+ boolean managedByReplenishment(UUID tenant,UUID connection,String shipment){
+  if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT to_regclass('public.fba_replenishment_allocations') IS NOT NULL",Boolean.class)))return false;
+  // Allocations retain the source-plan identity after partial dispatch, release and cancellation.
+  // Their reservations and FBA_REPLENISHMENT ledger movements are never a second imported-shipment deduction.
+  if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM fba_replenishment_allocations WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_shipment_id=?)",Boolean.class,tenant,connection,shipment)))return true;
+  return Boolean.TRUE.equals(jdbc.queryForObject("""
+   SELECT EXISTS(SELECT 1 FROM fba_replenishment_plans p CROSS JOIN LATERAL (
+    SELECT current_origin.value FROM jsonb_each(coalesce(p.checkpoint->'inboundOrigins','{}'::jsonb)) current_origin
+    UNION ALL
+    SELECT old_origin.value FROM jsonb_each(coalesce(p.checkpoint->'inboundOriginHistory','{}'::jsonb)) history
+     CROSS JOIN LATERAL jsonb_array_elements(history.value) old_origin
+   ) origin WHERE p.tenant_id=? AND p.marketplace_connection_id=? AND jsonb_exists(origin.value#>'{origin,children}',?))
+   """,Boolean.class,tenant,connection,shipment));
+ }
  @Transactional(readOnly=true) public Preview preview(UUID tenant,UUID connection,String shipment){
   scope(tenant);Source source=source(tenant,connection,shipment);List<String> blockers=new ArrayList<>();var warehouses=matches(tenant,source);
   UUID warehouse=warehouses.size()==1?warehouses.getFirst().id():null;String name=warehouse==null?"No unique ZIP match":warehouses.getFirst().name();
@@ -85,6 +100,7 @@ public class FbaDepletionRepository {
   if(!source.complete())blockers.add("Shipment items are not fully imported.");
   if(!Set.of("SHIPPED","IN_TRANSIT","DELIVERED","CHECKED_IN","RECEIVING","CLOSED").contains(Objects.toString(source.status(),"")))blockers.add("Shipment is not in a shipped state.");
   boolean depleted=Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM fba_shipment_depletions WHERE tenant_id=? AND marketplace_connection_id=? AND shipment_id=?)",Boolean.class,tenant,connection,shipment));
+  if(managedByReplenishment(tenant,connection,shipment))blockers.add("Managed by FBA Replenishment; dispatch from its saved plan to avoid a duplicate deduction.");
   var lines=jdbc.query("""
    SELECT i.seller_sku,i.quantity_shipped,coalesce(o.depletion_quantity,i.quantity_shipped) deduct,
     o.id IS NOT NULL modified,coalesce(o.revision,0) revision,coalesce(o.source_revision,'') override_source,coalesce(o.reason,'') reason,o.source_quantity,

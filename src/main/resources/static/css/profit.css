@@ -91,3 +91,5 @@
 #profit-dialog [data-match-units-label]{max-width:130px;margin:8px 0}
 #profit-dialog [data-match-packages] .profit-package{grid-template-columns:minmax(0,1fr) 36px}
 #profit-dialog .profit-packaging-match .profit-section-title{justify-content:flex-start;flex-wrap:wrap;gap:8px}
+
+#profit-dialog .profit-header-copy [data-profit-subtitle]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.35;max-height:2.7em}

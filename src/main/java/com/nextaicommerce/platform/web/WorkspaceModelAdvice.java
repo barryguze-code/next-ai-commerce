@@ -11,6 +11,8 @@ import org.springframework.ui.Model;
 @ControllerAdvice
 public class WorkspaceModelAdvice {
     private final WorkspaceAccessRepository repository;
+    @org.springframework.beans.factory.annotation.Value("${app.fba.replenishment-enabled:false}") private boolean fbaReplenishmentEnabled;
+    @ModelAttribute("fbaReplenishmentEnabled") boolean fbaReplenishmentEnabled(){return fbaReplenishmentEnabled;}
 
     WorkspaceModelAdvice(WorkspaceAccessRepository repository) {
         this.repository = repository;

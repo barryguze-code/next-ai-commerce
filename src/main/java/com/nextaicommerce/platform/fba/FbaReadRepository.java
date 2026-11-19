@@ -74,7 +74,8 @@ public class FbaReadRepository {
     }
 
     public record Shipment(String id,String name,String status,String destination,String shipFrom,
-            Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs,Long shippedCases,Long looseUnits,boolean itemsComplete,String shipFromPostalCode,String shipFromCity) {
+            Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs,Long shippedCases,Long looseUnits,boolean itemsComplete,String shipFromPostalCode,String shipFromCity,Instant importedCreation) {
+        public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs,Long shippedCases,Long looseUnits,boolean itemsComplete,String shipFromPostalCode,String shipFromCity){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,shipFromState,costs,shippedCases,looseUnits,itemsComplete,shipFromPostalCode,shipFromCity,null);}
         public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs,Long shippedCases,Long looseUnits,boolean itemsComplete,String shipFromPostalCode){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,shipFromState,costs,shippedCases,looseUnits,itemsComplete,shipFromPostalCode,null);}
         public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs,Long shippedCases,Long looseUnits,boolean itemsComplete){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,shipFromState,costs,shippedCases,looseUnits,itemsComplete,null);}
         public Shipment(String id,String name,String status,String destination,String shipFrom,Instant updatedAt,long skuCount,long shipped,long received,Instant createdAt,String shipFromState,ShipmentCosts costs){this(id,name,status,destination,shipFrom,updatedAt,skuCount,shipped,received,createdAt,shipFromState,costs,null,null,true);}
@@ -165,6 +166,27 @@ public class FbaReadRepository {
         var rows=jdbc.query("SELECT i.*,product.item_name,product.image_url "+from+" ORDER BY i.seller_sku LIMIT 100 OFFSET ?",(rs,n)->new ShipmentItem(rs.getString("seller_sku"),rs.getString("fnsku"),rs.getString("item_name"),rs.getInt("quantity_shipped"),rs.getInt("quantity_received"),rs.getString("image_url")),values.toArray());
         return new ShipmentItems(rows,total,page,100,shipmentCosts(tenant,connection,shipment));
     }
+    public record ParentItem(String sku,String fnsku,String title,long shipped,long received,String imageUrl){}
+    public record ParentItems(List<ParentItem> rows,long total,int page,int size,ShipmentCosts costs,int shipments){}
+    /** Exact SKU union across the complete verified group, including personally hidden children. */
+    @Transactional(readOnly=true)
+    public ParentItems parentItems(UUID tenant,UUID connection,List<String> references,String search,int requestedPage){
+        scope(tenant);if(references.isEmpty()||references.size()>1000)throw new IllegalArgumentException("Review a complete shipping plan of at most 1000 shipments.");
+        if(completedShipmentItems(tenant,connection,references).size()!=references.size())throw new IllegalArgumentException("Some shipment items are incomplete. No partial plan quantities are shown.");
+        String q=search==null?"":search.trim(),match="%"+q.replace("!","!!").replace("%","!%").replace("_","!_")+"%";
+        String from="""
+          FROM (SELECT seller_sku,CASE WHEN count(DISTINCT fnsku)=1 AND bool_and(fnsku IS NOT NULL) THEN min(fnsku) END fnsku,
+            sum(quantity_shipped)::bigint shipped,sum(quantity_received)::bigint received
+            FROM amazon_fba_shipment_items WHERE tenant_id=? AND marketplace_connection_id=? AND shipment_id=ANY(?::text[]) GROUP BY seller_sku) i
+          LEFT JOIN LATERAL (SELECT l.item_name,l.image_url FROM amazon_listings l WHERE l.tenant_id=? AND l.marketplace_connection_id=? AND l.seller_sku=i.seller_sku ORDER BY l.marketplace_id LIMIT 1) product ON true
+          WHERE (?='' OR i.seller_sku ILIKE ? ESCAPE '!' OR i.fnsku ILIKE ? ESCAPE '!' OR product.item_name ILIKE ? ESCAPE '!')
+          """;
+        Object[] args={tenant,connection,references.toArray(String[]::new),tenant,connection,q,match,match,match};
+        long total=jdbc.queryForObject("SELECT count(*) "+from,Long.class,args);int page=Math.min(Math.max(0,requestedPage),(int)Math.max(0,(total-1)/100));var values=new ArrayList<>(Arrays.asList(args));values.add(page*100);
+        var rows=jdbc.query("SELECT i.*,product.item_name,product.image_url "+from+" ORDER BY i.seller_sku LIMIT 100 OFFSET ?",(rs,n)->new ParentItem(rs.getString("seller_sku"),rs.getString("fnsku"),rs.getString("item_name"),rs.getLong("shipped"),rs.getLong("received"),rs.getString("image_url")),values.toArray());
+        var costs=jdbc.queryForObject("SELECT CASE WHEN count(DISTINCT currency)=1 AND bool_and(transportation IS NOT NULL AND currency IS NOT NULL) THEN sum(transportation) END transportation, CASE WHEN count(DISTINCT currency)=1 AND bool_and(placement IS NOT NULL AND currency IS NOT NULL) THEN sum(placement) END placement,CASE WHEN count(DISTINCT currency)=1 AND bool_and(currency IS NOT NULL) THEN min(currency) END currency, coalesce(sum(shipped),0) shipped FROM (SELECT s.shipment_id,charges.*, (SELECT sum(quantity_shipped) FROM amazon_fba_shipment_items i WHERE i.tenant_id=s.tenant_id AND i.marketplace_connection_id=s.marketplace_connection_id AND i.shipment_id=s.shipment_id) shipped FROM amazon_fba_shipments s LEFT JOIN LATERAL ("+CHARGE_TOTALS+") charges ON true WHERE s.tenant_id=? AND s.marketplace_connection_id=? AND s.shipment_id=ANY(?::text[])) scoped",(rs,n)->new ShipmentCosts(rs.getBigDecimal("transportation"),rs.getBigDecimal("placement"),rs.getString("currency"),rs.getLong("shipped")),tenant,connection,references.toArray(String[]::new));
+        return new ParentItems(rows,total,page,100,costs,references.size());
+    }
     public record ShipmentPage(List<Shipment> rows,long total,int page,int size) {
         public int pages(){return Math.max(1,(int)((total+size-1)/size));}
         public boolean previous(){return page>0;}
@@ -175,32 +197,13 @@ public class FbaReadRepository {
     public ShipmentPage shipments(UUID tenant,UUID connection,String search,int requestedPage,int requestedSize) {return shipments(tenant,connection,search,requestedPage,requestedSize,null,"",null,false);}
 
     @Transactional(readOnly=true)
-    public ShipmentPage shipments(UUID tenant,UUID connection,String search,int requestedPage,int requestedSize,String email,String status,UUID warehouse,boolean removed) {
+    public ShipmentPage shipments(UUID tenant,UUID connection,String search,int requestedPage,int requestedSize,String email,String status,UUID warehouse,boolean removed) {return shipments(tenant,connection,search,requestedPage,requestedSize,email,status,warehouse,removed,null);}
+
+    private ShipmentPage shipments(UUID tenant,UUID connection,String search,int requestedPage,int requestedSize,String email,String status,UUID warehouse,boolean removed,List<String> references) {
         scope(tenant);int size=TablePaging.size(requestedSize);
-        String q=search==null?"":search.trim();
-        String match="%"+q.replace("!","!!").replace("%","!%").replace("_","!_")+"%";
-        String where="""
-            FROM amazon_fba_shipments s WHERE s.tenant_id=? AND s.marketplace_connection_id=?
-            AND (?='' OR s.shipment_id ILIKE ? ESCAPE '!' OR s.shipment_name ILIKE ? ESCAPE '!'
-                OR s.destination_fulfillment_center ILIKE ? ESCAPE '!'
-                OR EXISTS(SELECT 1 FROM amazon_fba_shipment_items i WHERE i.tenant_id=s.tenant_id
-                    AND i.marketplace_connection_id=s.marketplace_connection_id AND i.shipment_id=s.shipment_id
-                    AND (i.seller_sku ILIKE ? ESCAPE '!' OR i.fnsku ILIKE ? ESCAPE '!'
-                        OR EXISTS(SELECT 1 FROM amazon_listings l WHERE l.tenant_id=i.tenant_id
-                          AND l.marketplace_connection_id=i.marketplace_connection_id AND l.seller_sku=i.seller_sku
-                          AND l.item_name ILIKE ? ESCAPE '!'))))
-            """;
-        where+="""
-            AND EXISTS(SELECT 1 FROM fba_shipment_user_preferences p JOIN app_users u ON u.id=p.user_id
-                WHERE p.tenant_id=s.tenant_id AND p.marketplace_connection_id=s.marketplace_connection_id AND p.shipment_id=s.shipment_id AND lower(u.email)=lower(?))=?
-            AND (?='' OR s.shipment_status=? OR (?='DIFFERENCE' AND jsonb_exists(s.raw_payload,'itemsCheckedAt') AND EXISTS(
-                SELECT 1 FROM amazon_fba_shipment_items i WHERE i.tenant_id=s.tenant_id AND i.marketplace_connection_id=s.marketplace_connection_id AND i.shipment_id=s.shipment_id
-                GROUP BY i.shipment_id HAVING sum(i.quantity_shipped)<>sum(i.quantity_received))))
-            AND (?::uuid IS NULL OR (SELECT CASE WHEN count(*)=1 THEN min(w.id::text) END FROM warehouses w WHERE w.tenant_id=s.tenant_id AND w.status='ACTIVE'
-                AND upper(w.country_code)=upper(s.raw_payload#>>'{ShipFromAddress,CountryCode}')
-                AND nullif(upper(replace(btrim(w.postal_code),' ','')),'')=upper(replace(btrim(s.raw_payload#>>'{ShipFromAddress,PostalCode}'),' ','')))=?::text)
-            """;
-        Object[] args={tenant,connection,q,match,match,match,match,match,match,email,removed,status,status,status,warehouse,warehouse};
+        var filter=shipmentFilter(tenant,connection,search,email,status,warehouse,removed);String where=filter.sql();var arguments=new ArrayList<Object>(Arrays.asList(filter.args()));
+        if(references!=null){where+=" AND s.shipment_id=ANY(?::text[])";arguments.add(references.toArray(String[]::new));size=Math.max(1,references.size());}
+        Object[] args=arguments.toArray();
         long total=Objects.requireNonNull(jdbc.queryForObject("SELECT count(*) "+where,Long.class,args));
         int page=Math.min(Math.max(0,requestedPage),(int)Math.max(0,(total-1)/size));
         var params=new ArrayList<>(Arrays.asList(args));params.add(size);params.add((long)page*size);
@@ -229,8 +232,58 @@ public class FbaReadRepository {
             """,(rs,n)->new Shipment(rs.getString("shipment_id"),rs.getString("shipment_name"),
                 rs.getString("shipment_status"),rs.getString("destination_fulfillment_center"),
                 rs.getString("ship_from"),instant(rs.getTimestamp("updated_date")),rs.getLong("skus"),
-                rs.getLong("shipped"),rs.getLong("received"),instant(rs.getTimestamp("display_date")),rs.getString("ship_from_state"),new ShipmentCosts(rs.getBigDecimal("transportation"),rs.getBigDecimal("placement"),rs.getString("currency"),rs.getLong("shipped")),(Long)rs.getObject("shipped_cases"),(Long)rs.getObject("loose_units"),rs.getBoolean("items_complete"),rs.getString("ship_from_postal_code"),rs.getString("ship_from_city")),params.toArray());
+                rs.getLong("shipped"),rs.getLong("received"),instant(rs.getTimestamp("display_date")),rs.getString("ship_from_state"),new ShipmentCosts(rs.getBigDecimal("transportation"),rs.getBigDecimal("placement"),rs.getString("currency"),rs.getLong("shipped")),(Long)rs.getObject("shipped_cases"),(Long)rs.getObject("loose_units"),rs.getBoolean("items_complete"),rs.getString("ship_from_postal_code"),rs.getString("ship_from_city"),instant(rs.getTimestamp("created_date"))),params.toArray());
         return new ShipmentPage(rows,total,page,size);
+    }
+
+    private record ShipmentFilter(String sql,Object[] args){}
+    private ShipmentFilter shipmentFilter(UUID tenant,UUID connection,String search,String email,String status,UUID warehouse,boolean removed){
+        String q=search==null?"":search.trim();
+        String match="%"+q.replace("!","!!").replace("%","!%").replace("_","!_")+"%";
+        String where="""
+            FROM amazon_fba_shipments s WHERE s.tenant_id=? AND s.marketplace_connection_id=?
+            AND (?='' OR s.shipment_id ILIKE ? ESCAPE '!' OR s.shipment_name ILIKE ? ESCAPE '!'
+                OR s.destination_fulfillment_center ILIKE ? ESCAPE '!'
+                OR EXISTS(SELECT 1 FROM amazon_fba_shipment_items i WHERE i.tenant_id=s.tenant_id
+                    AND i.marketplace_connection_id=s.marketplace_connection_id AND i.shipment_id=s.shipment_id
+                    AND (i.seller_sku ILIKE ? ESCAPE '!' OR i.fnsku ILIKE ? ESCAPE '!'
+                        OR EXISTS(SELECT 1 FROM amazon_listings l WHERE l.tenant_id=i.tenant_id
+                          AND l.marketplace_connection_id=i.marketplace_connection_id AND l.seller_sku=i.seller_sku
+                          AND l.item_name ILIKE ? ESCAPE '!'))))
+            """;
+        where+="""
+            AND EXISTS(SELECT 1 FROM fba_shipment_user_preferences p JOIN app_users u ON u.id=p.user_id
+                WHERE p.tenant_id=s.tenant_id AND p.marketplace_connection_id=s.marketplace_connection_id AND p.shipment_id=s.shipment_id AND lower(u.email)=lower(?))=?
+            AND (?='' OR s.shipment_status=? OR (?='DIFFERENCE' AND jsonb_exists(s.raw_payload,'itemsCheckedAt') AND EXISTS(
+                SELECT 1 FROM amazon_fba_shipment_items i WHERE i.tenant_id=s.tenant_id AND i.marketplace_connection_id=s.marketplace_connection_id AND i.shipment_id=s.shipment_id
+                GROUP BY i.shipment_id HAVING sum(i.quantity_shipped)<>sum(i.quantity_received))))
+            AND (?::uuid IS NULL OR (SELECT CASE WHEN count(*)=1 THEN min(w.id::text) END FROM warehouses w WHERE w.tenant_id=s.tenant_id AND w.status='ACTIVE'
+                AND upper(w.country_code)=upper(s.raw_payload#>>'{ShipFromAddress,CountryCode}')
+                AND nullif(upper(replace(btrim(w.postal_code),' ','')),'')=upper(replace(btrim(s.raw_payload#>>'{ShipFromAddress,PostalCode}'),' ','')))=?::text)
+            """;
+        Object[] args={tenant,connection,q,match,match,match,match,match,match,email,removed,status,status,status,warehouse,warehouse};
+        return new ShipmentFilter(where,args);
+    }
+    @Transactional(readOnly=true)
+    public List<String> matchingShipmentReferences(UUID tenant,UUID connection,String search,String email,String status,UUID warehouse,boolean removed){
+        scope(tenant);var filter=shipmentFilter(tenant,connection,search,email,status,warehouse,removed);
+        var ids=jdbc.queryForList("SELECT s.shipment_id "+filter.sql()+" ORDER BY coalesce(s.created_date,CASE WHEN s.raw_payload->>'LastUpdatedDate' IS NOT NULL THEN s.updated_date END) DESC NULLS LAST,s.shipment_id DESC LIMIT 50001",String.class,filter.args());
+        if(ids.size()>50000)throw new IllegalArgumentException("Narrow the shipment filters before grouping this many records.");return ids;
+    }
+    @Transactional(readOnly=true)
+    public ShipmentPage shipmentReferences(UUID tenant,UUID connection,List<String> references,String email,boolean removed){
+        if(references.isEmpty())return new ShipmentPage(List.of(),0,0,25);
+        if(references.size()>1000)throw new IllegalArgumentException("Narrow the filters to show at most 1000 matching children on one page.");
+        return shipments(tenant,connection,"",0,references.size(),email,"",null,removed,references);
+    }
+    public record CompletedShipmentItems(Set<String> skus,long shipped,long received){}
+    @Transactional(readOnly=true)
+    public Map<String,CompletedShipmentItems> completedShipmentItems(UUID tenant,UUID connection,List<String> references){
+        scope(tenant);if(references.isEmpty())return Map.of();if(references.size()>1000)throw new IllegalArgumentException("Narrow the shipment filters.");
+        var args=new ArrayList<Object>(List.of(tenant,connection));args.addAll(references);var result=new HashMap<String,CompletedShipmentItems>();
+        var evidence=jdbc.queryForList("SELECT s.shipment_id,s.raw_payload->>'itemEvidenceVersion' evidence_version,(s.raw_payload->'itemEvidence')::text item_evidence,s.raw_payload->>'itemsCheckedAt' observed_at,i.seller_sku,i.fnsku,i.quantity_shipped,i.quantity_received FROM amazon_fba_shipments s LEFT JOIN amazon_fba_shipment_items i ON i.tenant_id=s.tenant_id AND i.marketplace_connection_id=s.marketplace_connection_id AND i.shipment_id=s.shipment_id WHERE s.tenant_id=? AND s.marketplace_connection_id=? AND s.shipment_id IN ("+String.join(",",Collections.nCopies(references.size(),"?"))+")",args.toArray());
+        var groups=new LinkedHashMap<String,List<Map<String,Object>>>();for(var row:evidence)groups.computeIfAbsent(row.get("shipment_id").toString(),k->new ArrayList<>()).add(row);
+        for(var entry:groups.entrySet())if(FbaChildObservations.observed(entry.getValue().getFirst().get("observed_at"))!=null&&FbaChildObservations.completedEvidence(entry.getValue())){var skus=new HashSet<String>();boolean valid=true;long sent=0,receivedUnits=0;for(var row:entry.getValue()){if(!(row.get("seller_sku") instanceof String sku)||sku.isBlank()||!skus.add(sku)||!(row.get("quantity_shipped") instanceof Number shipped)||shipped.longValue()<0||!(row.get("quantity_received") instanceof Number received)||received.longValue()<0)valid=false;else{sent=Math.addExact(sent,shipped.longValue());receivedUnits=Math.addExact(receivedUnits,received.longValue());}}if(valid)result.put(entry.getKey(),new CompletedShipmentItems(Set.copyOf(skus),sent,receivedUnits));}return result;
     }
     private void scope(UUID tenant){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
     private static Instant instant(java.sql.Timestamp value){return value==null?null:value.toInstant();}

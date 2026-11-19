@@ -73,11 +73,11 @@
 </div>
 </div>
 </td>
-<td>
-<strong th:text="${product.identifier ?: 'Not assigned'}">UPC</strong>
+<td class="catalog-identifier-cell">
+<strong th:attr="data-ui-copy=${product.identifier}" th:text="${product.identifier ?: 'Not assigned'}">UPC</strong>
 <small class="cell-note" th:text="${product.identifierType ?: 'UPC'}">UPC</small>
 </td>
-<td th:text="${product.vendorItemCode ?: '—'}"></td>
+<td th:attr="data-ui-copy=${product.vendorItemCode}" th:text="${product.vendorItemCode ?: '—'}"></td>
 <td th:text="${product.unitOfMeasure}">EA</td>
 <td>
 <span class="catalog-pill" th:text="${product.expirationRequired ? 'Expiration tracked' : 'Standard'}">Standard</span>
@@ -121,5 +121,5 @@
 </dialog>
 </main>
 
-<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block><script defer th:src="@{/js/catalog-removal.js(v=${buildVersion})}" src="/js/catalog-removal.js"></script></body>
+<th:block th:replace="~{fragments/collaboration-runtime :: body}"></th:block><script defer th:src="@{/js/catalog-removal.js(v=${buildVersion})}" src="/js/catalog-removal.js"></script><th:block th:replace="~{fragments/inventory-history-panel :: runtime}"></th:block></body>
 </html>

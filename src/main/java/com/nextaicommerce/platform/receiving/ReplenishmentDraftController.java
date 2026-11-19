@@ -32,6 +32,9 @@ public class ReplenishmentDraftController {
   var visible=filtered.subList(start,Math.min(start+pageSize,filtered.size()));
   model.addAttribute("items",visible);
   model.addAttribute("productRefundHistory",refunds.productFourWeeks(tenant,visible.stream().map(row->(UUID)row.get("id")).toList()));
+  var skuRefundHistory=new java.util.HashMap<String,String>();var grouped=new java.util.HashMap<UUID,java.util.Set<String>>();
+  for(var item:visible)for(var raw:(java.util.List<?>)item.get("skus")){var sku=(java.util.Map<?,?>)raw;Object store=sku.get("connection_id");if(store instanceof UUID connection)grouped.computeIfAbsent(connection,k->new java.util.HashSet<>()).add((String)sku.get("sku"));}
+  grouped.forEach((connection,keys)->refunds.fourWeeks(tenant,connection,keys).forEach((sku,value)->skuRefundHistory.put(connection+":"+sku,value)));model.addAttribute("skuRefundHistory",skuRefundHistory);
   model.addAttribute("q",q);model.addAttribute("page",current);model.addAttribute("more",start+pageSize<filtered.size());
   model.addAttribute("pageSize",pageSize);model.addAttribute("pageMax",Math.max(1,(filtered.size()+pageSize-1)/pageSize));
   model.addAttribute("generatedAt",snapshot==null?null:snapshot.generatedAt());model.addAttribute("pending",snapshot==null||suggestions.pending(tenant)||snapshot!=suggestions.snapshot(tenant));

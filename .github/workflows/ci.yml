@@ -179,6 +179,16 @@ jobs:
           path: target/next-ai-commerce-1.14.16.jar
           if-no-files-found: error
 
+      - name: Preserve verified combined FBA feature release
+        if: github.ref == 'refs/heads/codex/fba-release-1.14.28'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fba-combined-1.14.28
+          path: |
+            target/next-ai-commerce-1.14.28.jar
+            target/surefire-reports/
+          if-no-files-found: error
+
   amazon-fee-hotfix:
     if: inputs.amazon_fee_hotfix == true
     runs-on: ubuntu-latest

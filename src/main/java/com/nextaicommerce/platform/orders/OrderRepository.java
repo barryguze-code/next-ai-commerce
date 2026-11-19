@@ -415,7 +415,7 @@ CASE
                      coalesce(sum(reservation.quantity),0) quantity
               FROM order_inventory_reservations reservation
               WHERE reservation.tenant_id=? AND reservation.marketplace_connection_id=?
-                AND reservation.status='ACTIVE'
+                AND reservation.status='ACTIVE' AND reservation.amazon_order_item_id IS NOT NULL
             ) active
             CROSS JOIN (
               SELECT count(*) FILTER (WHERE orders.fulfillment_state='INVENTORY_SHORTAGE') shortage_orders,

@@ -18,6 +18,7 @@ public final class SkuCondition {
         java.util.Map.entry("COLLECTIBLE_LIKE_NEW","Collectible · Like new"),java.util.Map.entry("COLLECTIBLE_VERY_GOOD","Collectible · Very good"),
         java.util.Map.entry("COLLECTIBLE_GOOD","Collectible · Good"),java.util.Map.entry("COLLECTIBLE_ACCEPTABLE","Collectible · Acceptable"),
         java.util.Map.entry("REFURBISHED","Refurbished"),java.util.Map.entry("UNKNOWN","Unknown / other"));
+    public static java.util.Map<String,String> orderedOptions(){var result=new java.util.LinkedHashMap<String,String>();for(String key:java.util.List.of("NEW","USED_LIKE_NEW","USED_VERY_GOOD","USED_GOOD","USED_ACCEPTABLE","COLLECTIBLE_LIKE_NEW","COLLECTIBLE_VERY_GOOD","COLLECTIBLE_GOOD","COLLECTIBLE_ACCEPTABLE","REFURBISHED","UNKNOWN"))result.put(key,OPTIONS.get(key));return java.util.Collections.unmodifiableMap(result);}
     public static String label(String value){
         if(value==null||value.isBlank())return "Condition pending";
         return switch(value.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]","")){

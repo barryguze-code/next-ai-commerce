@@ -1,19 +1,23 @@
 /* Shared presentation only. Inventory, assignment and fulfillment retain their own handlers. */
 (()=>{
  'use strict';
- const titles='.item-product-copy>strong,.sku-approved-title,.product-cell>div>strong,.ledger-product>strong,.receive-product>div>strong';
- const recordName=title=>({VENDOR:'Vendor',USER:'Member',ACCOUNT:'Account'}[title.closest('tr')?.dataset.entityType]||'Product');
+ const titles='.item-product-copy>strong,.sku-approved-title,.product-cell>div>strong,.ledger-product>strong,.receive-product>div>strong,.fba-plan-description,a.inventory-product-detail-link,.fba-item-title,.fba-supply-title';
+ const recordName=title=>{const row=title.closest('tr');return ({VENDOR:'Vendor',USER:'Member',ACCOUNT:'Account',STORE:'Connection',CONNECTION:'Connection',WAREHOUSE:'Warehouse'}[row?.dataset.pictureType||row?.querySelector('[data-entity-type]')?.dataset.entityType||row?.dataset.entityType]||'Product');};
  const make=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text)el.textContent=text;return el};
  let dialog,origin;
  function details(title){
   origin=title;
-  const row=title.closest('tr,.order-item');if(!row)return;
+  const row=title.closest('tr,.order-item,.rp-basket-line');if(!row)return;
   // Inventory has a richer, authoritative movement drawer. Reuse it.
   if(row.classList.contains('inventory-row')&&window.openInventoryHistory){window.openInventoryHistory(row);return;}
   // Mapped order products use the same ledger as their item-code links, not a
   // second modal repeating the order table's sales/status blocks.
   const ledger=row.matches('.order-item')&&row.querySelector('a[href*="/mappings/ledger"],a[data-order-ledger-item]');
   if(ledger&&window.openMappedInventoryLedger){const items=[...row.querySelectorAll('a[data-order-ledger-item]')].map(a=>({itemId:a.dataset.orderLedgerItem,accountSku:a.dataset.orderLedgerCode,quantity:a.dataset.orderLedgerQuantity}));window.openMappedInventoryLedger(ledger,true,title,items.length?items:undefined);return;}
+  if(row.matches('.order-item')&&window.openUnmappedOrderInventoryLedger){window.openUnmappedOrderInventoryLedger(title);return;}
+  const accountItem=row.dataset.pictureItem||row.dataset.accountItem;
+  if(accountItem&&window.openMappedInventoryLedger){const link=make('a');link.href='/app/inventory/ledger?itemId='+encodeURIComponent(accountItem);window.openMappedInventoryLedger(link,true,title,[{itemId:accountItem}]);return;}
+  if(recordName(title)==='Product'&&window.openUnmappedProductInventoryLedger){window.openUnmappedProductInventoryLedger(title,{message:'Select an account product to view inventory history.'});return;}
   if(!dialog){
    dialog=make('dialog','invite-dialog');dialog.id='ui-product-dialog';dialog.setAttribute('aria-labelledby','ui-product-title');
    dialog.innerHTML='<div class="dialog-shell"><header class="dialog-header"><img class="ui-product-picture" alt=""><div><span class="eyebrow dark">Product details</span><h2 id="ui-product-title"></h2></div><button type="button" class="dialog-close" aria-label="Close product details">×</button></header><div class="dialog-body"><dl class="ui-record-facts"></dl><nav class="ui-record-links" aria-label="Related inventory"></nav></div><footer class="dialog-actions"><button type="button" class="secondary-button">Close</button></footer></div>';
@@ -47,16 +51,18 @@
   dialog.showModal();
  }
  function enhance(root){
+  for(const el of [...(root.matches?.('[data-ui-copy]')?[root]:[]),...root.querySelectorAll('[data-ui-copy]')]){if(!el.dataset.uiCopy)continue;if(!el.matches('button,a,input')){el.tabIndex=0;el.setAttribute('role','button');el.setAttribute('aria-label','Copy '+el.dataset.uiCopy);}}
+
   const matches=[...(root.matches?.(titles)?[root]:[]),...root.querySelectorAll(titles)];
   matches.forEach(title=>{
-   if(title.dataset.uiTitleReady||title.dataset.uiProduct!==undefined||!title.closest('tbody tr,.order-item'))return;
+   if(title.dataset.uiTitleReady||title.dataset.uiProduct!==undefined||!title.closest('tbody tr,.order-item,.rp-basket-line'))return;
    title.dataset.uiTitleReady='true';
    const name=recordName(title).toLowerCase();
-   const action=title.closest('.inventory-row')||title.closest('.order-item')?.querySelector('.mapping-summary-button.is-mapped,a[data-order-ledger-item]')?'Inventory Ledger':'View '+name+' details';
-   if(!title.matches('.sku-approved-title')){title.dataset.uiProduct='';title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label',action+': '+title.textContent.trim());title.title=action;}
+   const action=recordName(title)==='Product'?'Inventory Ledger':'View '+name+' details';
+   if(!title.matches('.sku-approved-title,.fba-plan-description,.fba-item-title')){title.dataset.uiProduct='';title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label',action+': '+title.textContent.trim());title.title=action;}
    delete title.dataset.orderCopy;
    const heading=make('span','ui-product-heading');title.before(heading);heading.append(title);
-   const copy=make('button','ui-copy-title');copy.type='button';copy.title='Copy '+name+' name';copy.setAttribute('aria-label','Copy '+name+' name');copy.dataset.uiCopy=title.textContent.trim();
+   const copy=make('button','ui-copy-title');copy.type='button';copy.title='Copy '+(name==='product'?'product title':name+' name');copy.setAttribute('aria-label',copy.title);copy.dataset.uiCopy=title.textContent.trim();
    copy.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>';heading.append(copy);
   });
  }
@@ -66,14 +72,14 @@
   if(title){details(title);return;}
   try{await navigator.clipboard.writeText(copy.dataset.uiCopy);window.NextAiCopyFeedback?.success(copy);}catch(_){window.NextAiCopyFeedback?.failure(copy);}
  },true);
- document.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)&&event.target.matches('[data-ui-product]')){event.preventDefault();event.stopPropagation();details(event.target)}},true);
+ document.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)&&event.target.matches('[data-ui-copy]:not(button):not(a)')){event.preventDefault();event.target.click();return;}if(['Enter',' '].includes(event.key)&&event.target.matches('[data-ui-product]')){event.preventDefault();event.stopPropagation();details(event.target)}},true);
  function start(){
   enhance(document);
   const pending=new Set();let scheduled=false;
   new MutationObserver(records=>{
-   for(const record of records)for(const node of record.addedNodes)if(node.nodeType===1&&(node.matches(titles)||node.querySelector(titles)))pending.add(node);
+   for(const record of records)for(const node of record.addedNodes)if(node.nodeType===1&&(node.matches(titles+', [data-ui-copy]')||node.querySelector(titles+', [data-ui-copy]')))pending.add(node);
    if(!pending.size||scheduled)return;scheduled=true;queueMicrotask(()=>{scheduled=false;for(const root of pending)if(root.isConnected)enhance(root);pending.clear()});
-  }).observe(document.querySelector('main')||document.body,{childList:true,subtree:true});
+  }).observe(document.body,{childList:true,subtree:true});
  }
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();

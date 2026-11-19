@@ -82,6 +82,11 @@ public class AmazonSpApiClient {
         return send(tenantId, connectionId, "POST", path, body);
     }
 
+    /** Uses the same credential, write and rate safeguards as other mutations. */
+    public ApiResponse put(UUID tenantId, UUID connectionId, String path, String body) {
+        return send(tenantId, connectionId, "PUT", path, body);
+    }
+
     public interface RequestPermit extends java.util.function.BooleanSupplier {
         boolean oauth();
         Duration remaining();

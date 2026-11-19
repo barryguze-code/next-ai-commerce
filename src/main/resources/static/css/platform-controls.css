@@ -69,3 +69,8 @@ select[data-location-picker-ready][hidden]{display:none!important}
 .location-picker-popup .managed-choice-footer button{color:var(--ui-action-text,var(--blue,#2b6ce6));font-weight:650}
 
 .location-picker-popup button[aria-pressed=true]{background:#edf4ff}.location-picker-popup button[aria-pressed=true]:after{content:"✓";margin-left:auto;color:#2864b8;font-weight:800}html[data-theme=dark] .location-picker-popup button[aria-pressed=true]{background:#213752}
+
+/* Allocation actions stay reachable while only their location options scroll. */
+.location-picker-popup.has-allocation-action{display:flex;flex-direction:column;overflow:hidden}
+.location-picker-popup.has-allocation-action .platform-choice-options{min-height:0;overflow-y:auto;flex:1 1 auto}
+.location-picker-popup.has-allocation-action>.managed-choice-footer{flex:0 0 auto}

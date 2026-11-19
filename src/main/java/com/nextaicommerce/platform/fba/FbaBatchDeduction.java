@@ -26,16 +26,17 @@ public class FbaBatchDeduction {
    plans.add(new Plan(p,allocations));
   }return new Review(plans,List.copyOf(new LinkedHashSet<>(blockers)),hash(plans));
  }
- @Transactional public List<UUID> confirm(UUID tenant,UUID connection,String email,UUID request,String revision,List<Choice> choices){
+ @Transactional public List<UUID> confirm(UUID tenant,UUID connection,String email,UUID request,String revision,List<Choice> choices){return confirm(tenant,connection,email,request,revision,choices,Map.of());}
+ @Transactional public List<UUID> confirm(UUID tenant,UUID connection,String email,UUID request,String revision,List<Choice> choices,Map<String,Object> parent){
   if(request==null||revision==null||choices==null)throw new IllegalArgumentException("Review the selection first.");var ids=members(choices.stream().map(Choice::shipment).toList());scope(tenant);
   var member=access.current(tenant,email);if(!access.activePlatformAdministrator(email)&&(member==null||!Set.of("OWNER","ADMIN","OPERATOR").contains(member.role())||member.restricted()&&!member.stores().contains(connection)))throw new org.springframework.security.access.AccessDeniedException("Account or store access changed.");
   jdbc.execute("SET LOCAL lock_timeout='5s'");jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))",Object.class,tenant.toString());
-  var normalized=choices.stream().sorted(Comparator.comparing(Choice::shipment)).map(c->new Choice(c.shipment(),canonical(c.allocations()))).toList();String signature=hash(List.of(connection,revision,normalized));
+  var normalized=choices.stream().sorted(Comparator.comparing(Choice::shipment)).map(c->new Choice(c.shipment(),canonical(c.allocations()))).toList();String signature=hash(parent.isEmpty()?List.of(connection,revision,normalized):List.of(connection,revision,normalized,parent));
   var prior=jdbc.query("SELECT id,shipment_id,approval::text FROM fba_shipment_depletions WHERE tenant_id=? AND approval->'batch'->>'id'=? ORDER BY shipment_id",(r,n)->new Object[]{r.getObject(1,UUID.class),r.getString(2),r.getString(3)},tenant,request.toString());
   if(!prior.isEmpty()){if(prior.size()!=ids.size()||!prior.stream().map(v->(String)v[1]).sorted().toList().equals(ids)||prior.stream().anyMatch(v->!json.readTree((String)v[2]).path("batch").path("signature").asText().equals(signature)))throw new IllegalArgumentException("Batch request was already used with a different selection or allocation.");return prior.stream().sorted(Comparator.comparing(v->(String)v[1])).map(v->(UUID)v[0]).toList();}
   for(String id:ids)stock.lockShipment(tenant,connection,id);
   var review=preview(tenant,connection,ids);if(!review.blockers().isEmpty())throw new IllegalArgumentException(String.join(" ",review.blockers()));if(!review.revision().equals(revision))throw new IllegalArgumentException("Selection, stock or mapping changed. Review again.");
-  var result=new ArrayList<UUID>();Map<String,Object> batch=Map.of("id",request.toString(),"signature",signature,"members",ids);
+  var result=new ArrayList<UUID>();Map<String,Object> batch=new LinkedHashMap<>(Map.of("id",request.toString(),"signature",signature,"members",ids));if(!parent.isEmpty())batch.put("parent",parent);
   for(var c:normalized){var current=stock.preview(tenant,connection,c.shipment());UUID key=UUID.nameUUIDFromBytes((request+"|"+c.shipment()).getBytes(StandardCharsets.UTF_8));result.add(stock.deplete(tenant,connection,c.shipment(),email,key,current.revision(),c.allocations(),batch));}
   return result;
  }

@@ -99,12 +99,12 @@
 </div>
 </td>
 <td>
-<strong th:text="${!#strings.isEmpty(#strings.trim(item.vendorItemCode)) ? item.vendorItemCode : 'Vendor item code unavailable'}">Vendor code</strong>
-<small class="cell-note" th:if="${!#strings.isEmpty(#strings.trim(item.accountSku))}" th:text="${'Account SKU '+item.accountSku}">Account SKU</small>
+<strong th:attr="data-ui-copy=${item.vendorItemCode}" th:text="${!#strings.isEmpty(#strings.trim(item.vendorItemCode)) ? item.vendorItemCode : 'Vendor item code unavailable'}">Vendor code</strong>
+<small class="cell-note" th:attr="data-ui-copy=${item.accountSku}" th:if="${!#strings.isEmpty(#strings.trim(item.accountSku))}" th:text="${'Account SKU '+item.accountSku}">Account SKU</small>
 <small class="cell-note" th:if="${item.vendorName != null}" th:text="${item.vendorName}">Vendor</small>
 </td>
 <td th:with="refs=${skusByItem == null ? null : skusByItem[item.id]}"><div class="marketplace-sku-stack" th:if="${refs != null and !#lists.isEmpty(refs)}"><span th:each="ref,status:${refs}" th:if="${status.index < 3}"><strong th:text="${ref.sku}" th:title="${ref.sku}">SKU</strong><nav data-marketplace-shortcuts th:attr="data-sku=${ref.sku},data-asin=${ref.asin},data-channel=${ref.channel},data-amazon-domain=${ref.amazonDomain},data-shopify-admin=${ref.shopifyAdmin},data-shopify-storefront=${ref.shopifyStorefront}"></nav><small th:text="${'× '+#numbers.formatDecimal(ref.quantity,1,0)}">× 1</small></span><button th:if="${#lists.size(refs) > 3}" type="button" th:attr="data-target=|skus-${item.id}|" onclick="document.getElementById(this.dataset.target).showModal()" th:text="${'+'+(#lists.size(refs)-3)+' more'}">+2 more</button></div><span th:if="${refs == null or #lists.isEmpty(refs)}" class="cell-note">No marketplace SKU mapped</span></td>
-<td><strong th:text="${item.identifier ?: 'Not supplied'}">UPC</strong></td>
+<td class="catalog-identifier-cell"><strong th:attr="data-ui-copy=${item.identifier}" th:text="${item.identifier ?: 'Not supplied'}">UPC</strong></td>
 <td>
 <button th:if="${item.vendorCount > 0}" class="vendor-count-button" type="button" th:attr="data-target=|offers-${item.id}|" onclick="document.getElementById(this.dataset.target).showModal()">
 <strong th:text="${item.vendorCount}">0</strong>
@@ -378,5 +378,5 @@
 <script src="/js/mapping-widget.js" th:src="@{/js/mapping-widget.js(v=${buildVersion})}"></script>
 <script src="/js/product-mapping-review.js" th:src="@{/js/product-mapping-review.js(v=${buildVersion})}"></script>
 <script src="/js/stock-entry-points.js?v=20261002-2" th:src="@{/js/stock-entry-points.js(v=${buildVersion})}"></script>
-<script src="/js/catalog-product-editor.js?v=1.9.1" th:src="@{/js/catalog-product-editor.js(v=${buildVersion})}"></script><script defer th:src="@{/js/catalog-removal.js(v=${buildVersion})}" src="/js/catalog-removal.js"></script></body>
+<script src="/js/catalog-product-editor.js?v=1.9.1" th:src="@{/js/catalog-product-editor.js(v=${buildVersion})}"></script><script defer th:src="@{/js/catalog-removal.js(v=${buildVersion})}" src="/js/catalog-removal.js"></script><th:block th:replace="~{fragments/inventory-history-panel :: runtime}"></th:block></body>
 </html>

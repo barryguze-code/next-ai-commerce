@@ -123,13 +123,13 @@ public class MarketplaceSkuController {
         filters=MarketplaceSkuFilters.defaults(filters);
         model.addAttribute("selectedCondition",filters.get("f_condition"));
         model.addAttribute("selectedFulfillment",filters.getOrDefault("f_channel",""));
-        var conditionOptions=new java.util.LinkedHashMap<String,String>();conditionOptions.put("NEW","New");
-        conditionOptions.putAll(skus.conditionOptions(tenantId,connectionId));
-        if(SkuCondition.OPTIONS.containsKey(filters.get("f_condition")))conditionOptions.putIfAbsent(filters.get("f_condition"),SkuCondition.OPTIONS.get(filters.get("f_condition")));
+        var conditionOptions=SkuCondition.orderedOptions();
         model.addAttribute("conditionOptions",conditionOptions);
         String normalizedStatus = normalizeStatus(status);
         if(listingSync!=null && maySync(tenantId,connectionId,authentication))
             model.addAttribute("listingSync",listingSync.availability(tenantId,connectionId));
+        model.addAttribute("inventoryStore",connectionId);
+        model.addAttribute("canRefreshFbaInventory",maySync(tenantId,connectionId,authentication));
         model.addAttribute("selectedStatus", normalizedStatus);
         var policy=skus.inventoryPolicy(tenantId,connectionId);
         model.addAttribute("inventoryDecisions",policy.decisions());
@@ -186,6 +186,23 @@ public class MarketplaceSkuController {
             redirect.addFlashAttribute("mappingSuccess","Amazon SKU sync requested. It runs in the background after any current sync; refresh this page to see updated listings.");
         } catch(IllegalStateException ex) { redirect.addFlashAttribute("mappingError",ex.getMessage()); }
         return "redirect:/app/marketplace-skus";
+    }
+
+    @Autowired(required=false) private com.nextaicommerce.platform.sync.FbaInventoryRefresh inventoryRefresh;
+    @GetMapping("/app/marketplace-skus/fba-inventory") @ResponseBody
+    Object inventoryState(@RequestParam UUID store,Authentication authentication,HttpSession session){
+        var tenant=requiredTenant(session);var connection=requiredAmazonConnection(tenant,session);
+        if(!connection.equals(store)||!maySync(tenant,connection,authentication))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+        if(inventoryRefresh==null)throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
+        return inventoryRefresh.state(tenant,connection);
+    }
+    @PostMapping("/app/marketplace-skus/fba-inventory") @ResponseBody
+    Object refreshInventory(@RequestParam UUID store,Authentication authentication,HttpSession session){
+        var tenant=requiredTenant(session);var connection=requiredAmazonConnection(tenant,session);
+        if(!connection.equals(store)||!maySync(tenant,connection,authentication))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+        if(inventoryRefresh==null)throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
+        try{return java.util.Map.of("job",inventoryRefresh.request(tenant,connection));}
+        catch(IllegalStateException|IllegalArgumentException e){throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,e.getMessage());}
     }
 
     private boolean maySync(UUID tenant,UUID connection,Authentication authentication) {

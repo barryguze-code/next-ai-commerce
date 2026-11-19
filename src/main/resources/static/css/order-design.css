@@ -133,3 +133,6 @@ html[data-theme=dark] .order-action-summary{background:#3d2e1e;color:#ffd398}
 
 .order-identifier-line .order-identifier-copy{margin-left:0}
 .orders-workspace .order-mapping-values .order-identifier-line{width:max-content;max-width:100%}
+/* Orders titles remain ledger controls; identifier text is the copy control. */
+.orders-workspace .item-product-copy .ui-product-heading>[data-ui-product]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow:hidden;cursor:pointer;line-height:1.5}
+.orders-workspace .order-mapping-values button.order-copy-value{cursor:copy;text-decoration:none}

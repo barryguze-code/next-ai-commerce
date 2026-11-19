@@ -4,6 +4,23 @@
  const picker=document.getElementById('history-position-picker'),select=document.getElementById('history-position-select');
  const drawer=document.getElementById('inventory-history-dialog');
  if(!drawer)return;
+ // Orders without a mapped item retain the ledger frame without claiming stock data.
+ function emptyOrderLedger(title,context={}){
+  request?.abort();request=null;positions=[];components=[];source=null;
+  const body=drawer.querySelector('.inventory-position-body');if(!body)return;
+  const prior={hidden:body.hidden,inert:body.inert,display:body.style.getPropertyValue('display'),priority:body.style.getPropertyPriority('display')};body.hidden=true;body.inert=true;body.style.setProperty('display','none','important');
+  const note=document.createElement('p');note.className='dialog-body cell-note';note.textContent=context.message||'Map this SKU to view inventory history.';body.before(note);
+  const row=title.closest('tr,.order-item,.rp-basket-line'),stage=row?.querySelector('[data-picture-actions]');
+  document.getElementById('history-title').textContent=title.textContent;
+  document.getElementById('history-subtitle').textContent=context.sku||stage?.dataset.sellerSku||row?.querySelector('[data-copy-sku]')?.dataset.copySku||'';
+  const picture=document.getElementById('history-picture'),image=stage?.querySelector('img')||row?.querySelector('.table-overview-picture img,.product-avatar img,.product-image-upload img');picture.replaceChildren();picture.style.backgroundImage='';picture.classList.remove('has-image','ledger-has-photo');
+  if(image){picture.classList.add('ledger-has-photo');const clone=image.cloneNode(true);clone.alt='';clone.className='ledger-position-photo';picture.append(clone);}else picture.textContent=(title.textContent||'P').trim().charAt(0).toUpperCase();
+  for(const id of ['location-item','location-source','location-expiration']){const field=document.getElementById(id);if(field)field.value='';}
+  drawer.addEventListener('close',()=>{note.remove();body.hidden=prior.hidden;body.inert=prior.inert;if(prior.display)body.style.setProperty('display',prior.display,prior.priority);else body.style.removeProperty('display');if(title.isConnected)title.focus({preventScroll:true});},{once:true});
+  drawer.showModal();
+ }
+ window.openUnmappedOrderInventoryLedger=emptyOrderLedger;
+ window.openUnmappedProductInventoryLedger=emptyOrderLedger;
  function chooseItem(items,sku,active,origin){
   return new Promise(resolve=>{
    const modal=document.createElement('dialog');modal.className='invite-dialog bundle-ledger-choice';modal.setAttribute('aria-labelledby','bundle-ledger-title');

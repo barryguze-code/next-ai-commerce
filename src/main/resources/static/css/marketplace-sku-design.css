@@ -124,3 +124,9 @@ html[data-theme=dark] .sku-workspace .sku-sync-button{border-color:#385676;backg
 @media(any-pointer:coarse){.sku-workspace .sku-sync-status form{min-height:44px}.sku-workspace .sku-sync-button::after{height:max(100%,44px)}}
 
 .sku-component-ledgers{display:flex;gap:6px;flex-wrap:wrap;font-size:12px}.sku-approved-title[href]{color:inherit;text-decoration:none}.sku-approved-title[href]:hover{text-decoration:underline}.sku-approved-title[href]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+html body.app-page .sku-workspace .sku-approved-title{display:-webkit-box!important;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;white-space:normal!important;overflow:hidden!important;text-overflow:ellipsis;max-height:2.8em}
+.listing-movements-dialog #listing-movements-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.35;max-height:2.7em}
+
+/* Disabled collection is a neutral state, independent of the last successful check. */
+.sku-sync-indicator.paused{background:var(--panel);color:var(--muted)}

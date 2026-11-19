@@ -1,27 +1,36 @@
-/* One accessible dialog for all visible FBA rows. No background requests or observers. */
-(() => {
-  if (window.nextAiFbaStockReady) return;
-  window.nextAiFbaStockReady = true;
-  document.addEventListener('click', event => {
-    const summary = event.target.closest('.fba-stock-details > summary');
-    if (!summary || !window.HTMLDialogElement) return;
-    event.preventDefault();
-    const source = summary.parentElement.querySelector('.fba-stock-breakdown');
-    if (!source) return;
-    const dialog = document.createElement('dialog');
-    dialog.className = 'fba-stock-dialog';
-    dialog.setAttribute('aria-labelledby', 'fba-stock-dialog-title');
-    const header = document.createElement('header'), title = document.createElement('h2');
-    title.id = 'fba-stock-dialog-title'; title.textContent = 'FBA stock & fees';
-    const close = document.createElement('button');
-    close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Close FBA stock');
-    const content = source.cloneNode(true);
-    const footer = document.createElement('footer'), done = document.createElement('button');
-    done.type = 'button'; done.className = 'primary-button'; done.textContent = 'Done';
-    const dismiss = () => { dialog.close(); dialog.remove(); summary.focus(); };
-    close.addEventListener('click', dismiss); done.addEventListener('click', dismiss);
-    dialog.addEventListener('cancel', e => { e.preventDefault(); dismiss(); });
-    header.append(title, close); footer.append(done); dialog.append(header, content, footer);
-    document.body.append(dialog); dialog.showModal(); close.focus();
-  });
+/* Client adapter of fragments/fba-stock; source buckets and approved markup stay shared. */
+(()=>{'use strict';window.NextAiFbaStock={html(sku,stock){
+ const node=document.querySelector('#fba-stock-template').content.firstElementChild.cloneNode(true),a=stock||{},values={...a,inbound:[a.working,a.shipped,a.receiving].every(n=>n!=null)?a.working+a.shipped+a.receiving:null};
+ [...node.querySelectorAll('[data-fba-stock-value]'),...node.querySelector('template').content.querySelectorAll('[data-fba-stock-value]')].forEach(el=>{const key=el.dataset.fbaStockValue,value=values[key];el.textContent=value==null?'Pending':key==='fulfillmentFee'?(a.currency?new Intl.NumberFormat(undefined,{style:'currency',currency:a.currency}).format(value):'Pending'):Number(value).toLocaleString();});
+ const content=node.querySelector('template').content;node.querySelector('[data-fba-stock-open]').dataset.stockSku=sku;node.querySelector('[data-fba-stock-open]').dataset.stockConnection=document.body.dataset.fbaConnection||'';
+ content.querySelector('[data-fba-stock-sku]').textContent=sku;
+ const observed=content.querySelector('[data-fba-stock-observed]');observed.hidden=!a.observedAt;observed.textContent=a.observedAt?'Snapshot: '+new Date(a.observedAt).toLocaleString():'';
+ content.querySelector('[data-fba-stock-pending]').hidden=!!a.observedAt;
+ content.querySelector('[data-fba-stock-stale]').hidden=!a.observedAt||Date.now()-new Date(a.observedAt).getTime()<=86400000;
+ const fee=content.querySelector('[data-fba-stock-fee-observed]');fee.hidden=!a.feeObservedAt;fee.textContent=a.feeObservedAt?'Fee snapshot: '+new Date(a.feeObservedAt).toLocaleString():'';
+ content.querySelector('[data-fba-stock-shipments]').href='/app/inventory/fba-shipments?q='+encodeURIComponent(sku);return node.outerHTML;
+}};
+})();
+
+/* Keep the shared dialog handler beside the client renderer: server and dynamic rows use both. */
+(()=>{'use strict';if(window.nextAiFbaStockReady)return;window.nextAiFbaStockReady=true;
+ document.addEventListener('click',event=>{const trigger=event.target.closest('[data-fba-stock-open]');if(!trigger)return;const template=trigger.closest('.fba-stock')?.querySelector('[data-fba-stock-content]');if(!template)return;event.preventDefault();
+  const dialog=document.createElement('dialog');dialog.className='invite-dialog fba-stock-dialog';dialog.setAttribute('aria-labelledby','fba-stock-dialog-title');
+  const shell=document.createElement('section');shell.className='dialog-shell';const header=document.createElement('header');header.className='dialog-header';const copy=document.createElement('div');copy.className='fba-stock-heading-copy';const title=document.createElement('h2');title.id='fba-stock-dialog-title';title.textContent='Stock and fees';const sku=trigger.dataset.stockSku||template.content.querySelector('[data-fba-stock-sku]')?.textContent||'',context=document.createElement('p');context.className='cell-note';context.textContent=sku;copy.append(title,context);
+  const row=trigger.closest('.order-item,[data-sku],tr'),record=row?.querySelector('[data-title]'),product=row?.dataset.exportProduct||record?.dataset.title||row?.querySelector('.fba-plan-description')?.textContent;
+  if(product&&product!==sku){const name=document.createElement('p');name.className='fba-stock-product-title';name.textContent=product;copy.append(name);}
+  const image=row?.querySelector('.product-avatar img,.table-overview-picture img,.item-image img');if(image){const picture=image.cloneNode();picture.className='fba-stock-picture';picture.alt='';header.append(picture);}header.append(copy);
+  const close=document.createElement('button');close.type='button';close.className='dialog-close';close.setAttribute('aria-label','Close stock and fees');close.textContent='×';header.append(close);
+  const content=template.content.firstElementChild.cloneNode(true);content.classList.add('dialog-body');const footer=document.createElement('footer');footer.className='dialog-actions';const done=document.createElement('button');done.type='button';done.className='secondary-button';done.textContent='Close';footer.append(done);shell.append(header,content,footer);dialog.append(shell);document.body.append(dialog);
+  const abort=new AbortController();const dismiss=()=>dialog.close();close.addEventListener('click',dismiss);done.addEventListener('click',dismiss);dialog.addEventListener('click',e=>{if(e.target===dialog)dismiss();});dialog.addEventListener('close',()=>{abort.abort();dialog.remove();if(trigger.isConnected)trigger.focus({preventScroll:true});},{once:true});dialog.showModal();close.focus();
+  const historyStatus=content.querySelector('[data-fba-recent-status]'),tbody=content.querySelector('[data-fba-recent-rows]');async function history(){historyStatus.textContent='Loading shipment history…';historyStatus.replaceChildren(document.createTextNode('Loading shipment history…'));try{const response=await fetch('/app/inventory/fba-shipments/sku-history?connection='+encodeURIComponent(trigger.dataset.stockConnection||'')+'&sku='+encodeURIComponent(sku),{headers:{Accept:'application/json'},cache:'no-store',signal:abort.signal});if(!response.ok)throw Error('History unavailable');const shipments=await response.json();if(!Array.isArray(shipments)||shipments.length>3)throw Error('History unavailable');if(!dialog.open)return;tbody.replaceChildren();historyStatus.textContent=shipments.length?(shipments.some(s=>(s.children||[s]).some(c=>!c.date))?'SKU units · some shipment dates are unavailable':'SKU units · latest recorded shipment activity'):'No matching FBA shipments recorded';
+   const productNotes=(cell,products)=>{for(const p of products||[]){const q=p.quantity;if(q?.each==null)continue;const note=document.createElement('small');note.className='fba-stock-case-note';note.textContent=(p.code||p.name)+' · '+(q.cases==null?q.each+' each':q.cases+' cases'+(q.remainder?' + '+q.remainder+' each':'')+' · '+q.each+' each');note.title=note.textContent;cell.append(note);}};
+   const shipmentRow=(shipment,products)=>{const tr=document.createElement('tr'),id=document.createElement('td'),link=document.createElement('a');link.href='/app/inventory/fba-shipments?q='+encodeURIComponent(shipment.shipment);link.textContent=shipment.shipment;id.append(link);id.title=shipment.date?'Shipment date / Amazon activity: '+new Date(shipment.date).toLocaleString():'Shipment date unavailable; order cannot be confirmed';const postal=document.createElement('td');postal.textContent=shipment.postal||'—';postal.title=shipment.postal?'Ship-from postal code':'Origin postal code is not recorded';const qty=document.createElement('td');qty.className='numeric';qty.textContent=shipment.sent==null?'—':Number(shipment.sent).toLocaleString();qty.title=(shipment.note||shipment.source||'Quantity not verified')+(shipment.amazonShipped!=null?' Amazon: '+shipment.amazonShipped+' SKU units.':'');const source=document.createElement('small');source.textContent=shipment.source||'Not verified';qty.append(source);productNotes(qty,products);tr.append(id,postal,qty);return tr;};
+   let groupNumber=0;for(const group of shipments){if(!Array.isArray(group.children)){tbody.append(shipmentRow(group));continue;}
+    if(!group.verified){for(const child of group.children){const tr=shipmentRow(child,group.childProducts?.[child.shipment]);const note=document.createElement('small');note.textContent=group.name||'Parent unverified';tr.firstElementChild.append(note);tbody.append(tr);}continue;}
+    const tr=document.createElement('tr'),identity=document.createElement('td'),toggle=document.createElement('button');toggle.type='button';toggle.className='text-button rp-sku-toggle';toggle.setAttribute('aria-expanded','false');const chevron=document.createElement('span');chevron.className='rp-chevron';chevron.setAttribute('aria-hidden','true');chevron.textContent='▶';const name=document.createElement('span');name.textContent=group.name||group.parent;name.title=name.textContent;toggle.append(chevron,name);identity.append(toggle);const code=document.createElement('small');code.textContent=group.parent;code.title=group.parent;identity.append(code);const postal=document.createElement('td');postal.textContent=group.postal||'—';const qty=document.createElement('td');qty.className='numeric';qty.textContent=group.sent==null?'—':Number(group.sent).toLocaleString();productNotes(qty,group.products);tr.append(identity,postal,qty);tbody.append(tr);
+    const children=group.children.map(child=>shipmentRow(child,group.childProducts?.[child.shipment]));const ids=[];for(const [index,child] of children.entries()){child.id='fba-stock-history-'+(++groupNumber)+'-'+index;ids.push(child.id);child.hidden=true;child.classList.add('fba-stock-child');tbody.append(child);}toggle.setAttribute('aria-controls',ids.join(' '));toggle.onclick=()=>{const open=toggle.getAttribute('aria-expanded')!=='true';toggle.setAttribute('aria-expanded',open);children.forEach(child=>child.hidden=!open);};
+   }
+  }catch(e){if(abort.signal.aborted)return;historyStatus.textContent='Shipment history unavailable. ';const retry=document.createElement('button');retry.type='button';retry.className='text-button';retry.textContent='Retry';retry.addEventListener('click',history,{once:true});historyStatus.append(retry);}}history();
+ });
 })();
