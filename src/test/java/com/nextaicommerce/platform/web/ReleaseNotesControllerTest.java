@@ -27,7 +27,7 @@ class ReleaseNotesControllerTest {
         context.setVariables(model);
         assertThat(engine.process("release-notes",context))
             .contains("Amazon parent listings and initial rendering","v1.14.13","Deployment history","/css/release-notes.css");
-        assertThat(controller.history().getFirst().version()).isEqualTo("1.14.26");
+        assertThat(controller.history().getFirst().version()).isEqualTo("1.14.29");
         assertThat(controller.history()).extracting(ReleaseNotesController.Release::version)
             .containsSubsequence("1.14.13","1.14.12","1.14.11","1.14.10","1.14.8","1.14.7","1.14.6","1.14.5","1.14.4");
         assertThat(controller.history().subList(java.util.stream.IntStream.range(0,controller.history().size()).filter(i->controller.history().get(i).version().equals("1.11.0")).findFirst().orElseThrow(),controller.history().size())).extracting(ReleaseNotesController.Release::version)
