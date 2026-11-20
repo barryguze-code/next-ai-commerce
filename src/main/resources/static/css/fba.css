@@ -57,7 +57,6 @@
 /* FBA shipment table: approved compact utility and readable horizontal table. */
 .fba-shipments-page .fba-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .fba-toolbar h2{margin:0}.fba-sync-utility{display:flex;align-items:center;gap:12px;margin-left:auto}.fba-sync-utility small{color:var(--muted);font-size:11px}.fba-sync-utility form{margin:0}
-.fba-sync-utility button{border:1px solid var(--border,#cad8eb);border-radius:7px;background:var(--surface,#fff);color:var(--primary,#2867df);font:inherit;font-size:11px;font-weight:600;padding:4px 9px;cursor:pointer}.fba-sync-utility button:disabled{opacity:.55;cursor:default}
 .fba-search-toolbar{padding:16px 20px;border-top:1px solid var(--border,#dce3ed)}.fba-search-toolbar form{display:flex;gap:10px;align-items:center}.fba-search-toolbar .search-field{max-width:420px;width:100%}
 .fba-sync-feedback{padding:0 20px;color:var(--muted);font-size:12px}.fba-sync-feedback:empty{display:none}
 .fba-shipments-page .table-wrap{max-width:100%;overflow-x:auto}.fba-shipment-table{min-width:1100px!important}.fba-shipment-table th{white-space:nowrap}.fba-shipment-table td.numeric{white-space:nowrap;word-break:normal;overflow-wrap:normal}.fba-shipment-table td small{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
