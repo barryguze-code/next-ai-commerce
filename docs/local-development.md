@@ -1,135 +1,122 @@
-# Local development and UAT — 1.0.0
+# Local development and owner UAT
+
+Owner environment policy:2026-10-26. Follow [root governance](../AGENTS.md#one-local-database-no-staging--owner-decision-2026-10-26).
+One existing local test/UAT database serves development and owner testing; production
+is separate. No staging environment, separate local automated-test DB, per-feature
+preview DB or new rehearsal DB is a default prerequisite. Historical1.0 instructions
+are retained in the [original](archive/replaced-20261026/one-local-database/docs/local-development.md),
+not current instructions to provision extra environments.
 
 ## Required Eclipse startup workflow
 
-Use the repository's `Local PostgreSQL - Start.launch` and then
-`Local UAT - Start Application.launch` through Eclipse External Tools. Keep
-startup and runtime logs visible in Eclipse. Do not start replacement local
-application/database services in hidden terminal sessions. If GUI launch is
-unavailable, ask the user to start these configurations and wait for confirmation.
-Check existing listeners first; stop only identified obsolete services, not
-unrelated Java or PostgreSQL processes. Restart the application after Java/model
-changes: refreshing templates alone can mix new views with old loaded classes.
+Inspect actual listeners, current profile/connection target and existing guards first.
+Use `Local PostgreSQL - Start.launch`, then `Local UAT - Start Application.launch`
+in Eclipse External Tools, keeping logs visible in Console. Use Status/Stop controls
+only for identified related processes. Preserve every .launch file and the current
+approved canonical database target. No hidden terminal replacement services.
+If Eclipse GUI launch is unavailable, ask the owner to launch and wait for confirmation.
+Restart for changed Java/classes only when authorized runtime verification requires it;
+source/templates alone do not prove the running artifact changed.
 
-The 2026-09-16 blank Receiving page was caused by a v1.2.1 background process
-reading newer templates that called `Document.statusTone()`. Current source
-already contained that method; restarting with current compiled classes is the
-repair, not removing the template's status styling.
+Owner decision 2026-10-29: for an already authorized local reload, if Eclipse Stop
+fails, standing permission allows one graceful SIGTERM to the verified local app
+PID after checking its exact reviewed JAR/arguments and intended loopback listener.
+Confirm it stopped, then relaunch through Eclipse and verify the running artifact
+and guards. This does not authorize force-kill, stopping PostgreSQL/other apps or
+production, hidden terminal launches, or new feature/integration scope. Do not ask
+again for this same local fallback within authorized reload work.
 
-Local UAT, automated tests and production are separate databases. Flyway versions
-the schema; it is not a test database or an environment-isolation mechanism.
+## Canonical local database
 
-| Environment | Database | Integrations |
-| --- | --- | --- |
-| Local UAT | 127.0.0.1:55432 / next_ai_commerce_local | Amazon reads allowed; Amazon writes and mail disabled |
-| Automated database tests | 127.0.0.1:55432 / next_ai_commerce_test, disposable test schema | Synthetic records only |
-| CI | Disposable embedded PostgreSQL 18.6 | No production credentials |
-| Production | Existing managed deployment | Explicit production configuration |
+Use the effective loopback database from the existing approved Eclipse launch/profile
+and any current owner-authorized refresh. Verify actual target rather than assuming
+legacy names such as next_ai_commerce_local or next_ai_commerce_test. Do not start
+another target, rename/drop databases, switch datasource or remove old DBs merely to
+meet the one-database policy. Cleanup/consolidation requires separate scoped approval.
+Use the established local PostgreSQL runtime under `.local/postgres18/pgsql`; preserve
+data directory/version compatibility and scoped database roles. Never weaken tenant
+checks, RLS, credentials or production safeguards to make one shared test target work.
 
-The existing Eclipse launch points through port 15432 to AWS. **Do not relaunch
-that configuration to test migrations.** Use the explicit local profile below.
-The source was inspected read-only on 2026-09-11: PostgreSQL 18.6, with a
-non-superuser application role and enforced row-level security. That role is
-not a complete-backup role. Do not disable RLS or elevate it for UAT.
+## Unit tests and optional database checks
 
-## PostgreSQL installation (macOS)
-
-The workspace-local PostgreSQL 18.6 package is installed under
-`.local/postgres18/pgsql`. It does not install a system service or modify an
-existing database. The upstream archive is
-[EDB PostgreSQL 18.6 macOS binaries](https://get.enterprisedb.com/postgresql/postgresql-18.6-1-osx-binaries.zip).
-The downloaded archive SHA-256 is
-`2a6739fccbbc36474cb2446e4e7b4f377abb8471653d3a294e4e5092271e4796`.
-This is a recorded local checksum, not an independently signed vendor attestation.
-
-For another Mac, download this archive, verify the checksum, and extract
-`pgsql/bin`, `pgsql/lib` and `pgsql/share` to `.local/postgres18`.
-Do not overlay a different major version on an existing data directory.
-
-From the project directory, in a normal Terminal:
-
-```sh
-node scripts/local-database.cjs start
-```
-
-In Eclipse, refresh the project and use **Run > External Tools**. The included
-**Local PostgreSQL - Start**, **Local PostgreSQL - Stop**, and **Local
-PostgreSQL - Status** launchers run the same safe lifecycle commands without
-leaving Eclipse.
-
-Use **Local UAT - Start Application** from the same Eclipse menu to start the
-application with the local profile. Its output appears in Eclipse's Console;
-use the red stop button there when you are done.
-
-The agent sandbox cannot initialize PostgreSQL shared memory on this Mac.
-The normal Terminal startup is required once; afterward tests can connect over
-loopback. The script creates random credentials with owner-only file access,
-a non-superuser application role and two databases. It refuses nonempty
-uninitialized data and incompatible major versions. Stop/status commands are
-`node scripts/local-database.cjs stop` and `node scripts/local-database.cjs status`.
-Stopping preserves all data.
+Eligible hotfixes need passing focused unit tests only; owner runs UAT/other testing
+after local or production delivery under the [hotfix lane](../DEPLOYMENT.md#hotfix-lane).
+Prefer mocks/in-memory fixtures for unit tests; provision no new local PostgreSQL DB.
+If database integration checks are explicitly needed/authorized, use isolated fixtures
+and transactions within the canonical database without modifying the owner's records
+or dropping shared schemas. Existing runners may require separate DBs/clusters; that
+is an implementation constraint to report, not permission to run them against UAT,
+change their configuration or create more environments. Existing CI embedded test
+infrastructure is unchanged and does not constitute local staging.
+Keep full suites in CI as actually configured; do not repeat them locally by habit.
 
 ## Copy existing application data
 
-An authorized database administrator must supply a **trusted PostgreSQL 18
-custom-format backup** of the application database using the existing approved
-backup process. Copying account data is approved; weakening production RLS,
-changing production roles or exporting private application artifacts is not.
-Keep passwords out of chat and source control.
+An explicitly authorized refresh may use a trusted PostgreSQL18 custom-format backup
+and the reviewed existing copy/sanitization workflow. Verify exact loopback destination,
+owner-data preservation/recovery and source freshness before any replacement. Preserve
+business UUIDs, mappings, quantities/history and applicable account/private boundaries.
+Retain production authentication records, marketplace credentials and connection references
+with the matching encryption key for an owner-authorized refresh. Protect private/PII/label
+data in restricted local storage; keep outbound writes and automatic collection disabled.
+No export, restore, migration or overwrite follows from this Markdown policy itself.
+Never restore untrusted archives, bypass actual script destination/nonempty guards,
+or copy production secrets into launch files, logs, chat or source control.
+Do not treat the shared local database as disposable. The old copy/start scripts may
+still create two databases or refuse a populated destination: documentation changes
+neither behavior. Report that mismatch and use only an independently reviewed,
+explicitly authorized adaptation; do not improvise destructive cleanup.
 
-Store the backup locally with owner-only access, then run:
+Production-derived credentials survive ordinary local builds and restarts. Do not overlay
+older local credentials or sandbox carrier profiles during an owner-authorized refresh.
+Keep datasource, launch configuration and integration safety settings local. Before replacing
+data, retain a private recovery snapshot of the existing canonical database and runtime/config.
+Quarantine restored pending integration jobs locally before startup; a production queue is
+not authorization to call any integration from Local UAT.
 
-```sh
-node scripts/copy-local-uat.cjs /absolute/path/to/approved-backup.dump
-```
+## Manual reads and fail-closed outbound operations — 2026-11-20
 
-The restore grants `BYPASSRLS` only to the local application role so developers
-can inspect all copied tenants without setting session variables. Production
-roles and row-level-security policies are never changed. Marketplace credentials
-and shipping-label artifacts remain excluded from the local copy.
+Local marketplace/carrier reads require an explicit Sync now or supported manual read action.
+Opening a page, polling local progress, startup, credential setup and recurring schedules must
+not initiate collection. OAuth exchanges, scoped read-only GraphQL queries, report requests,
+fee estimates and rate lookups are legitimate reads even when their HTTP method is POST.
+The central local transport policy rejects business mutations regardless of individual flags:
+stock/price/listing publication, order/fulfillment changes, FBA creation/confirmation/charges,
+and carrier label purchases or shipment operations remain off for every integration.
+Local calculations, mappings, inventory drafts and planning remain available.
 
-The restore script has a fixed loopback destination and no source connection.
-It validates the archive, refuses a nonempty destination, restores in one
-transaction and omits marketplace credentials and shipping-label file data.
-The application role owns the restored objects; RLS policies remain intact.
-No `--clean`, source update, source role change or source migration is performed.
-Only accept a trusted backup: restores can execute database functions.
+Use `app.local.manual-sync-only=true` with general/legacy selective scheduling, recurring
+collection, polling, startup reconciliation, publication, external business writers and mail
+explicitly false. Only the existing Amazon worker pollers run, constrained to bounded,
+process-local run IDs registered by an explicit request; imported or previous-process queues
+have no grant. Manually started finite async workers inherit the request scope. A restart
+clears grants and does not resume remote work automatically. User-triggered retries retain
+the provider's existing rate limits and finite job budgets.
 
-The original backup is preserved. The restore selection is saved to
-`.local/uat-restore.list`; a second restore requires deliberate review rather
-than overwriting that file. All local data, credentials and builds are ignored
-by Git. Local copies may contain customer/business data and login password hashes;
-protect the computer and do not publish these files.
+Production release fixes may be integrated into local code without another approval when
+that integration is clean. Preserve every tracked/untracked change and branch; stop and
+report real content conflicts instead of overwriting work. An isolated candidate based on
+production does not mean the owner's dirty main checkout has been merged.
 
 ## Verify and launch
 
-```sh
-mvn -Pisolated-build -DlocalTestDatabase=true clean verify
-node --test src/test/js/table-preferences.test.cjs src/test/js/table-csv.test.cjs
-java -jar .local/verification-build/next-ai-commerce-1.0.0.jar --spring.profiles.active=local
-```
-
-The isolated Maven output avoids collisions with Eclipse's live `target`
-directory. Always use a clean verification build: duplicate generated `.class`
-files have appeared after repeated builds in this workspace and can invalidate
-test discovery. Run the Java command from the project directory so the local
-properties file is found. Stop the existing port-8080 preview first, only after
-tests pass. Do not pass the old Eclipse environment or production secrets.
-Flyway then migrates **only the local UAT copy**.
-
-Local startup rejects a nonlocal database URL, Amazon write access, email, or an
-email provider other than disabled. A central Amazon HTTP guard allows GET plus
-the report, pricing-query and shipping-quote POST operations required to read
-data, while rejecting listing patches, inventory/price changes, label purchases,
-refunds and every unrecognized mutation. Local testing never publishes prices,
-inventory or labels and never sends email.
-
-Database tests use synthetic fixtures in a uniquely named disposable schema
-inside the **test** database. They never use the UAT copy or deployment DB_URL.
-Without `localTestDatabase=true`, CI/tests start an isolated embedded cluster.
+For an authorized delivery, package the exact reviewed build without colliding with
+Eclipse output, then use the established Eclipse launch. Confirm expected artifact,
+local target and startup health; owner performs remaining hotfix testing. Local and
+production runtime profiles/safety settings remain separate; account credentials
+come from the approved production snapshot. Owner clarification (2026-10-29):
+Amazon-to-local listing/order/recipient/status synchronization and its scoped local
+persistence/reconciliation require the explicit manual actions above. Keep outbound Amazon regular/sale-price
+updates and inventory-quantity submissions fail-closed. Inbound-read authorization
+does not itself authorize charged label purchases, live shipment confirmations,
+new roles, production changes or unrelated marketplace mutations. Preserve manual
+mapping rules and existing Shopify UAT audit/idempotency when enabling inbound work.
 
 ## Release gate
 
-The source backup, local restore, full database suite, catalogue benchmarks and
-restarted-preview smoke tests must pass before declaring 1.0.0 ready. Code and
-unit checks alone are not production sign-off.
+No staging gate. Follow [DEPLOYMENT.md](../DEPLOYMENT.md) for scoped production approval,
+artifact identity, actual backup behavior and compatible rollback. Higher-risk migration/
+financial/inventory changes keep their recovery requirements; if required recovery
+proof cannot fit the existing environment safely, present that specific target/window
+decision rather than creating a second local database or overwriting owner data.
+Local test records/bootstrap datasets are not production migrations or production data.

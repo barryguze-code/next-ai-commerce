@@ -12,6 +12,7 @@ import org.springframework.security.core.Authentication;
 /** Provider data adapter into the existing Orders shell, table runtime and mapping/collaboration controls. */
 @Component
 public class ShopifyOrderPage {
+    @org.springframework.beans.factory.annotation.Autowired private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
     @org.springframework.beans.factory.annotation.Value("${app.shopify.shipping-sandbox-enabled:false}") private boolean shippingSandbox;
     private final ShopifyOrderReadRepository reads;private final ShopifyOrderJobs jobs;private final ShopifyOrderWorker worker;
     private final ShopifyConnectionService connections;private final WorkspaceAccessRepository access;private final CollaborationRepository collaboration;
@@ -52,8 +53,8 @@ public class ShopifyOrderPage {
     }
     public String savePackage(UUID tenant,UUID connection,UUID order,String name,Authentication actor){requireOperate(tenant,connection,actor);return packing.savePackage(tenant,connection,order,name,actor.getName());}
     public void pickup(UUID tenant,UUID connection,UUID order,boolean waiting,Authentication actor){requireOperate(tenant,connection,actor);packing.mark(tenant,connection,order,waiting,actor.getName());}
-    public UUID sync(UUID tenant,UUID connection,String actor){connections.renewOrdersAuthorization(tenant,connection,()->jobs.authorizeActor(tenant,connection,actor));jobs.enablePolling(tenant,connection,actor);UUID id=jobs.enqueue(tenant,connection,actor);worker.start(tenant,connection,id);return id;}
-    public boolean initialize(UUID tenant,UUID connection,String actor){if(!jobs.enabled()||!connections.setupState(tenant,connection).ordersPermitted()||!jobs.catalogueReady(tenant,connection))return false;sync(tenant,connection,actor);return true;}
+    public UUID sync(UUID tenant,UUID connection,String actor){connections.renewOrdersAuthorization(tenant,connection,()->jobs.authorizeActor(tenant,connection,actor));if(!localSafety.local())jobs.enablePolling(tenant,connection,actor);UUID id=jobs.enqueue(tenant,connection,actor);worker.start(tenant,connection,id);return id;}
+    public boolean initialize(UUID tenant,UUID connection,String actor){if(localSafety.local())return false;if(!jobs.enabled()||!connections.setupState(tenant,connection).ordersPermitted()||!jobs.catalogueReady(tenant,connection))return false;sync(tenant,connection,actor);return true;}
     public void cancel(UUID tenant,UUID connection,String actor){if(!jobs.enabled())throw new IllegalStateException("Shopify Orders sync is disabled.");jobs.cancel(tenant,connection,actor);}
     public String version(UUID tenant,UUID connection,Authentication actor){requireView(tenant,connection,actor);return versionUnchecked(tenant,connection);}
     private String versionUnchecked(UUID tenant,UUID connection){var status=jobs.status(tenant,connection);return status==null?"none":status.id()+":"+status.state()+":"+status.checked()+":"+reads.localVersion(tenant,connection);}

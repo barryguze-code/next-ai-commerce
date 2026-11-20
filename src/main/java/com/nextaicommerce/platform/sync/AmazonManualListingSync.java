@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 /** Requests an import through the existing background scheduler; never publishes prices or stock. */
 @Service
 public class AmazonManualListingSync {
+    private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalSafety(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.localSafety=safety;}
     private final JdbcTemplate jdbc;
     @org.springframework.beans.factory.annotation.Value("${app.amazon.sync-enabled:true}") private boolean workerEnabled=true;
     @org.springframework.beans.factory.annotation.Value("${app.amazon.recurring-enabled:true}") private boolean recurringEnabled=true;
@@ -41,7 +43,7 @@ public class AmazonManualListingSync {
                 if(!rs.next() || !"ACTIVE".equals(rs.getString(1))) return new Availability(false,"Verify the Amazon connection before syncing.");
                 var completed=rs.getTimestamp(3);
                 Instant last=completed==null?null:completed.toInstant();
-                return status(workerEnabled,recurringEnabled,rs.getBoolean(2),rs.getBoolean(5),rs.getBoolean(4),last);
+                return status(workerEnabled,recurringEnabled||localSafety.local(),localSafety.local()?false:rs.getBoolean(2),rs.getBoolean(5),localSafety.local()?false:rs.getBoolean(4),last);
             },tenant,connection);
     }
 
@@ -61,6 +63,12 @@ public class AmazonManualListingSync {
         jdbc.query("SELECT schedule_key FROM marketplace_sync_schedules WHERE tenant_id=? AND marketplace_connection_id=? AND schedule_key='LISTINGS' FOR UPDATE",rs->{},tenant,connection);
         var current=availability(tenant,connection);
         if(!current.allowed()) throw new IllegalStateException(current.message());
+        if(localSafety.local()){
+            localSafety.requireManualRead();
+            UUID run=jdbc.queryForObject("INSERT INTO marketplace_sync_runs(tenant_id,marketplace_connection_id,run_type,sync_profile,window_start,window_end,current_stage,user_message) VALUES (?,?,'RECONCILIATION','LISTINGS',now(),now(),'LISTINGS_SNAPSHOT','Manually refreshing Amazon listings') RETURNING id",UUID.class,tenant,connection);
+            jdbc.update("INSERT INTO marketplace_sync_jobs(tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,required_for_ready) VALUES (?,?,?,'LISTINGS_SNAPSHOT',1,false),(?,?,?,'FINAL_RECONCILIATION',2,false)",tenant,run,connection,tenant,run,connection);
+            localSafety.allowRun(run);return;
+        }
         jdbc.update("""
             INSERT INTO marketplace_sync_schedules(tenant_id,marketplace_connection_id,schedule_key,
                 run_type,cadence_seconds,lookback_seconds,priority,next_run_at)

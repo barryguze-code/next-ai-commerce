@@ -1,4 +1,4 @@
-# A local profile NEVER inherits the remote DB_URL from an Eclipse or production launch.
+# Local UAT uses the existing loopback database; no production datasource inheritance.
 spring:
   config:
     import: optional:file:./.local/app.properties
@@ -11,29 +11,48 @@ spring:
 server:
   address: 127.0.0.1
 app:
-  # Local pages read the real checkout branch; the version follows application.yml.
   local-development: true
-  build-version: 1.6.0
+  local:
+    manual-sync-only: true
   build-branch: local
   public-url: http://localhost:8080
   scheduling:
-    enabled: true
+    enabled: false
   integrations:
     external-enabled: true
   amazon:
     sync-enabled: true
-    # Read-only recipient import; encrypted locally and never sent to FedEx sandbox.
-    recipient-import-enabled: true
+    recurring-enabled: false
+    startup-order-reconciliation-enabled: false
+    local-read-only-scheduling: false
+    recipient-import-enabled: false
     write-enabled: false
-    # Local UAT continuously imports Amazon data, but write-enabled remains false.
-    recurring-enabled: true
-    startup-order-reconciliation-enabled: true
     listing-actions-enabled: false
     shelf-sale-enabled: false
-    shelf-sale-connections: ''
-    inventory-publication-enabled: true
+    inventory-publication-enabled: false
     inventory-publication-mode: DRY_RUN
-    unresolved-order-checks-enabled: true
+    buy-shipping-enabled: false
+    fee-pilot:
+      only-scheduling: false
+    variation:
+      trial-only-scheduling: false
+  shopify:
+    orders:
+      only-scheduling: false
+      polling-enabled: false
+    inventory:
+      write-enabled: false
+    prices:
+      write-enabled: false
+    sale-prices:
+      write-enabled: false
+  fba:
+    shipment-write-enabled: false
+    charge-write-enabled: false
+    depletion:
+      automatic-enabled: false
+  fedex:
+    confirmation-enabled: false
   local-packing-history:
     path: ${LOCAL_PACKING_HISTORY_FILE:}
   mail:

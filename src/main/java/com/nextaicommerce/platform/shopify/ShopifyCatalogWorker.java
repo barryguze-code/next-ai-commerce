@@ -10,11 +10,14 @@ import org.springframework.stereotype.Component;
 /** Explicitly started through the existing application async executor; never auto-enqueued at startup. */
 @Component
 public class ShopifyCatalogWorker {
+    private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalSafety(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.localSafety=safety;}
     private final ShopifyCatalogJobs jobs;private final ShopifyCatalogClient client;private final ShopifySkuRepository skus;
     @org.springframework.beans.factory.annotation.Autowired(required=false) private ShopifyOrderRepository orders;
     @org.springframework.beans.factory.annotation.Autowired(required=false) private ShopifyOrderPage orderPage;
     public ShopifyCatalogWorker(ShopifyCatalogJobs jobs,ShopifyCatalogClient client,ShopifySkuRepository skus){this.jobs=jobs;this.client=client;this.skus=skus;}
     @Async public void start(UUID tenant,UUID connection,UUID id){
+        localSafety.requireManualRead();
         if(!jobs.enabled())return;
         for(int step=0;step<2400&&!Thread.currentThread().isInterrupted();step++){
             var job=jobs.claim(tenant,connection,id);
