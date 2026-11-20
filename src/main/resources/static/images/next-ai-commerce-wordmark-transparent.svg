@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 140" role="img" aria-labelledby="title desc">
+  <title id="title">NextAI Commerce</title>
+  <desc id="desc">Green Next AI emblem with the NextAI Commerce wordmark</desc>
+  <g fill="none" stroke="#a8e63a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M63 17 25 39v52l38 22 38-22V39L81 27v51L47 58v42"/>
+    <path d="M63 17 81 27M47 58l34 20" stroke="#d2ff67" stroke-width="4"/>
+  </g>
+  <text x="125" y="70" fill="#f7f9fc" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" font-size="50" font-weight="700" letter-spacing="-2">Next<tspan fill="#92d52a">AI</tspan></text>
+  <text x="128" y="105" fill="#aeb7c7" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="650" letter-spacing="8">COMMERCE</text>
+</svg>

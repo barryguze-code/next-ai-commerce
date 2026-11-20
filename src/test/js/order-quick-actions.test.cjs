@@ -1,0 +1,32 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const vm=require('node:vm');
+const fs=require('node:fs');
+const path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../../main/resources/static/js/order-quick-actions.js'),'utf8');
+
+function harness(writeText){
+  const clicks=[];let notice,message;
+  const document={
+    addEventListener:(type,handler)=>{if(type==='click')clicks.push(handler);},
+    querySelector:()=>notice,
+    createElement:()=>({dataset:{},setAttribute(){},classList:{add(){},remove(){}}}),
+    body:{append:element=>{if(element.dataset.orderActionNotice!==undefined)notice=element;}}
+  };
+  vm.runInNewContext(source,{document,window:{addEventListener(){},NextAiCopyFeedback:{success:()=>message='Copied!',failure:(_target,text)=>message=text}},navigator:{clipboard:{writeText}},setTimeout:()=>1,clearTimeout(){}});
+  return {copy:async sku=>{for(const click of clicks)await click({target:{closest:()=>({dataset:{copySku:sku}})}});},message:()=>message};
+}
+
+test('copies full SKU and handles rows replaced by live refresh',async()=>{
+  const copied=[];const ui=harness(async value=>copied.push(value));
+  await ui.copy('IB-MKH-327842-XDRK-LILYS-4xEA');
+  await ui.copy('NEWLY-SYNCED-SKU');
+  assert.deepEqual(copied,['IB-MKH-327842-XDRK-LILYS-4xEA','NEWLY-SYNCED-SKU']);
+  assert.equal(ui.message(),'Copied!');
+});
+
+test('clipboard denial gives an honest error rather than a copied message',async()=>{
+  const ui=harness(async()=>{throw new Error('Denied');});
+  await ui.copy('SKU');
+  assert.match(ui.message(),/Could not copy SKU/);
+});

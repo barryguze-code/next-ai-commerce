@@ -1,0 +1,41 @@
+# A local profile NEVER inherits the remote DB_URL from an Eclipse or production launch.
+spring:
+  config:
+    import: optional:file:./.local/app.properties
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:55432/next_ai_commerce_local
+    username: nextcommerce_local
+    password: ${LOCAL_DB_PASSWORD:}
+  thymeleaf:
+    cache: false
+server:
+  address: 127.0.0.1
+app:
+  # Local pages read the real checkout branch; the version follows application.yml.
+  local-development: true
+  build-version: 1.6.0
+  build-branch: local
+  public-url: http://localhost:8080
+  scheduling:
+    enabled: true
+  integrations:
+    external-enabled: true
+  amazon:
+    sync-enabled: true
+    # Read-only recipient import; encrypted locally and never sent to FedEx sandbox.
+    recipient-import-enabled: true
+    write-enabled: false
+    # Local UAT continuously imports Amazon data, but write-enabled remains false.
+    recurring-enabled: true
+    startup-order-reconciliation-enabled: true
+    listing-actions-enabled: false
+    shelf-sale-enabled: false
+    shelf-sale-connections: ''
+    inventory-publication-enabled: true
+    inventory-publication-mode: DRY_RUN
+    unresolved-order-checks-enabled: true
+  local-packing-history:
+    path: ${LOCAL_PACKING_HISTORY_FILE:}
+  mail:
+    enabled: false
+    provider: disabled

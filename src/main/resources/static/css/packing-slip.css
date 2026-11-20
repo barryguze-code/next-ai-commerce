@@ -1,0 +1,102 @@
+/* Each physical page is one 2 × 1 inch thermal label. */
+.packing-steps{display:flex;gap:6px;border-bottom:1px solid #d9e4f0;padding-bottom:12px}.packing-steps a{flex:1;padding:9px 7px;border-radius:8px;text-decoration:none;color:#53657b;font-size:12px;font-weight:700;white-space:nowrap}.packing-steps a[aria-current]{background:#eaf2ff;color:#2864bb}.packing-controls button{border:1px solid #cbd9e9;border-radius:10px;padding:10px 12px;cursor:pointer;font-weight:700;background:#f3f7fc;color:#243a54}.packing-controls .primary-button{background:#2d6cdf;color:white;border-color:#2d6cdf}.packing-controls .packing-complete{display:flex;align-items:center;justify-content:center;gap:9px;background:#e7f6ef;color:#18754f;border-color:#a8d8c1;min-height:42px}.packing-complete svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7}.packing-complete:disabled{cursor:default;opacity:.7}[hidden]{display:none!important}
+html[data-theme=dark] body{background:#0e1a27;color:#e2ebf6}html[data-theme=dark] .packing-controls{background:#182838;border-color:#34485e}html[data-theme=dark] .packing-controls p,html[data-theme=dark] .packing-controls label{color:#acbed3}html[data-theme=dark] .packing-controls input,html[data-theme=dark] .packing-controls select{background:#112131;color:#e2ebf6;border-color:#405671}html[data-theme=dark] .packing-steps a{color:#b7cce6}html[data-theme=dark] .packing-steps a[aria-current]{background:#294365;color:#c5dcff}html[data-theme=dark] .packing-controls .packing-complete{background:#163e32;color:#a8e5c9;border-color:#376c57}
+@page { size: 2in 1in; margin: 0; }
+* { box-sizing: border-box; }
+body { min-height: 100vh; margin: 0; background: #eef3f9; color: #16253a; font-family: Inter, Arial, sans-serif; }
+.packing-workspace { display: grid; grid-template-columns: minmax(270px,360px) minmax(430px,1fr); gap: 48px; align-items: stretch; min-height: 100vh; max-width: 1040px; margin: 0 auto; padding: 48px; }
+.packing-controls { display: grid; gap: 16px; padding: 28px; border: 1px solid #d9e4f0; border-radius: 20px; background: #fff; box-shadow: 0 16px 40px #19355412; }
+.eyebrow { color: #2d6cdf; font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.packing-controls h1 { margin: 2px 0; font-size: 1.55rem; }.packing-controls p { margin: 0; color: #68788e; font-size: .86rem; line-height: 1.45; }
+.packing-controls label { display: grid; gap: 7px; color: #53657b; font-size: .72rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.packing-controls select,.packing-controls input { height: 44px; border: 1px solid #cbd9e9; border-radius: 10px; background: #fff; color: #17283c; padding: 0 12px; font: 700 .92rem/1 inherit; }
+.packing-control-actions { display: flex; gap: 9px; }.packing-control-actions button { min-height: 42px; flex: 1; }
+.packing-status { min-height: 18px; color: #25845d !important; font-weight: 700; }
+.packing-popup-help{display:grid;gap:10px;padding:14px;border:1px solid #e6be70;border-radius:12px;background:#fff8e9;color:#70470c;font-size:.82rem;line-height:1.5;min-width:0}
+.packing-popup-help>strong{font-size:.95rem}.packing-controls .packing-popup-help p{color:inherit;font-size:.8rem}
+.packing-popup-help a{color:#245faa;font-weight:700}.packing-popup-help .popup-order-link{display:block;padding:9px 12px;background:#fff;border:1px solid #d8bc88;border-radius:8px;text-align:center;text-decoration:none}
+.packing-popup-help summary{cursor:pointer;font-weight:700}.packing-popup-help ol{padding-left:20px;margin:10px 0}.packing-popup-help li+li{margin-top:7px}.packing-popup-help code{overflow-wrap:anywhere;font-size:.78rem}.packing-popup-help details p{margin:10px 0}.packing-popup-help .popup-help-note{font-size:.74rem}
+html[data-theme=dark] .packing-popup-help{background:#30291c;border-color:#86683b;color:#f1d6a6}html[data-theme=dark] .packing-popup-help a{color:#accfff}html[data-theme=dark] .packing-popup-help .popup-order-link{background:#203247;border-color:#52647d}
+.seller-central-shortcut { display: flex; align-items: center; gap: 9px; width: max-content; color: #2769c7; font-size: .82rem; font-weight: 800; text-decoration: none; }.seller-central-shortcut img { width: 25px; height: 25px; border-radius: 6px; }
+
+/* The preview has a dedicated column. The extra grid gap reserves the scale-up height. */
+.packing-preview{display:grid;align-content:start;gap:20px;min-width:0}
+.packing-labels { display: grid; align-content: start; gap: 1.1in; padding-block:.5in; }
+.packing-product-editor{align-self:start;gap:12px;padding:20px;min-width:0}
+.packing-product-editor h2{font-size:1rem;margin:0}
+.packing-product-form{display:grid;gap:10px;min-width:0}
+.packing-product-form+.packing-product-form{padding-top:14px;border-top:1px solid #d9e4f0}
+.packing-product-form>strong{font-size:.85rem;overflow-wrap:anywhere}
+.packing-product-form textarea{width:100%;resize:vertical;min-height:60px;border:1px solid #cbd9e9;border-radius:10px;background:#fff;color:#17283c;padding:10px;font:inherit;line-height:1.4}
+.packing-product-save{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+.packing-product-save label{flex:1 1 160px;min-width:0}
+.packing-product-save button{min-height:44px}
+.packing-product-status{font-size:.8rem;line-height:1.4}
+.packing-product-status:empty{display:none}
+html[data-theme=dark] .packing-product-form textarea{background:#112131;color:#e2ebf6;border-color:#405671}
+.packing-slip { justify-self: start; width: 2in; height: 1in; overflow: hidden; padding: .045in .06in; background: #fff; color: #000; font-family: Arial,sans-serif; line-height: 1.02; box-shadow: 0 16px 42px #152c4b2b; transform: scale(2); transform-origin: left center; }
+.packing-slip header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .02in .06in; min-height: .105in; border-bottom: 2px solid #000; padding-bottom: .025in; font-size: 6.5pt; font-weight: 800; }
+.packing-slip header strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Package descriptions take their natural width and wrap instead of disappearing. */
+.packing-slip header span { flex: 0 1 auto; max-width: 100%; margin-left: auto; text-align: right; overflow-wrap: anywhere; white-space: normal; }
+.lines { display: grid; gap: .018in; padding-top: .018in; }.lines article { display: grid; grid-template-columns: .24in 1fr .38in; gap: .028in; align-items: center; min-height: .295in; border-top: 1px solid #000; padding-top: .018in; }
+.lines article:first-child { border-top: 0; }.quantity { display: grid; place-items: center; min-height: .25in; border: 2px solid #000; font-size: 14pt; line-height: 1; }.lines div { min-width: 0; }
+.lines div strong,.lines div span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.lines div strong { font-size: 6.3pt; white-space:normal; overflow-wrap:break-word; line-height:1.05; }.lines div span { margin-top: .01in; font-size: 5.4pt; }
+.lines small { display: grid; gap: .018in; font-size: 5.2pt; text-align: right; }.lines small b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.lines small span { border: 1px solid #000; padding: .01in; font-size: 4.9pt; }
+/* Match package emphasis while keeping the full actual pick-location code. */
+.lines article { grid-template-columns: .24in minmax(0,1fr) .55in; }
+.lines .packing-line-location { font-size:6.5pt; font-weight:800; color:#000; overflow-wrap:anywhere; }
+
+@media (max-width: 900px) { .packing-workspace { grid-template-columns: 1fr; gap: 44px; padding: 30px; }.packing-labels { justify-items: center; gap: .85in; }.packing-slip { justify-self: center; transform: scale(1.7); transform-origin: center; } }
+@media print {
+  html,body { width: 2in !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
+  .packing-workspace { display: block !important; width: 2in !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; }
+  .packing-controls,.packing-product-editor { display: none !important; }.packing-preview{display:block!important;margin:0!important;padding:0!important}.packing-preview>:not(.packing-labels){display:none!important}.packing-labels { display: block !important; padding:0!important; }.packing-slip { display: block !important; width: 2in !important; height: 1in !important; min-height: 0 !important; max-height: 1in !important; margin: 0 !important; padding: .045in .06in !important; overflow: hidden !important; box-shadow: none !important; transform: none !important; break-inside: avoid !important; page-break-inside: avoid !important; }
+  .packing-labels .packing-slip:not(:last-child) { break-after: page !important; page-break-after: always !important; }
+}
+
+/* Screen controls share compact form sizing; physical label rules stay unchanged. */
+@media screen {
+ .packing-workspace{max-width:1280px;padding:24px;gap:24px;grid-template-columns:minmax(340px,1fr) minmax(400px,1fr);align-items:start}
+ .packing-controls{padding:20px;gap:12px;align-content:start}
+ .packing-controls button{font:600 14px/1.2 Inter,Arial,sans-serif;min-height:40px;padding:9px 12px}
+ .packing-controls label{font-size:13px;letter-spacing:0;text-transform:none}
+ .packing-controls input,.packing-controls select{font:600 14px/1.2 Inter,Arial,sans-serif;width:100%;min-width:0;height:40px}
+ .packing-package-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+ .packing-package-controls>label{flex:1 1 180px;min-width:0}
+ .packing-control-actions{flex:1 1 240px}
+ .packing-status:empty{display:none}
+}
+@media screen and (max-width:900px){.packing-workspace{grid-template-columns:minmax(0,1fr);padding:16px;gap:24px}}
+
+#rename-package{align-self:end;flex:0 0 40px;font-size:20px;background:transparent}
+#packing-name-dialog{width:min(540px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid #d9e4f0;border-radius:20px;color:inherit;background:#fff;overflow:auto}
+#packing-name-dialog::backdrop{background:#17283c66}
+#packing-name-dialog header,#packing-name-dialog footer{padding:16px 20px;border-bottom:1px solid #d9e4f0}
+#packing-name-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#packing-name-dialog h2{font-size:20px;margin:0}
+#packing-name-dialog header button{border-radius:50%;width:40px;font-size:24px}
+.packing-name-body{padding:20px;display:grid;gap:12px}
+#packing-name-dialog footer{border-top:1px solid #d9e4f0;border-bottom:0}
+#packing-name-dialog footer>div{display:flex;justify-content:flex-end;gap:8px}
+#packing-name-error{color:#b42332!important;margin-bottom:8px}
+#packing-name-error:empty{display:none}
+html[data-theme=dark] #packing-name-dialog{background:#182838;border-color:#34485e}
+@media print{#packing-name-dialog{display:none!important}}
+
+#rename-package svg,#packing-name-dialog header button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#rename-package,#packing-name-dialog header button{display:inline-grid;place-items:center}
+
+.packing-name-combo{position:relative;display:block}.packing-name-combo input{padding-right:44px!important}.packing-name-combo #packing-name-toggle{position:absolute;right:2px;top:2px;bottom:2px;width:40px;padding:0;border:0;background:transparent;display:grid;place-items:center}.packing-name-combo svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7}#packing-name-options{margin:0}#packing-name-options button{font-size:14px}.packing-name-combo:has(input[readonly]) #packing-name-toggle{display:none}
+
+#packing-name-options button{border:0;background:transparent;border-radius:9px;box-shadow:none;color:inherit;font-weight:400}#packing-name-options button:hover,#packing-name-options button[aria-selected="true"]{background:#edf4ff}html[data-theme=dark] #packing-name-options button:hover,html[data-theme=dark] #packing-name-options button[aria-selected="true"]{background:#213752}
+
+/* Approved compact screen composition; physical label and print rules remain unchanged. */
+@media screen{
+ .packing-product-form textarea{font:400 14px/1.4 Inter,Arial,sans-serif}
+ .packing-preview{grid-column:2}
+ .packing-preview>.packing-controls{min-width:0}
+ .packing-preview .packing-package-controls{gap:8px}
+ .packing-preview .packing-control-actions{gap:8px}
+}
+@media screen and (max-width:900px){.packing-preview{grid-column:auto}}

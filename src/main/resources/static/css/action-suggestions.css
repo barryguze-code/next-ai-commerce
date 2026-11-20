@@ -1,0 +1,12 @@
+.suggest-action-entry{display:flex!important;align-items:center;gap:9px;width:100%;margin-top:10px;padding:10px 12px!important;border:1px solid var(--ui-action-line,#c7dafa)!important;border-radius:12px!important;background:var(--ui-action-soft,#edf4ff)!important;text-align:left;color:var(--muted,#6b7c93);cursor:pointer;font:inherit}
+.suggest-action-entry>span{flex:0 0 22px;color:var(--blue,#2865bd);font-size:18px;text-align:center;background:none!important}.suggest-action-entry .platform-icon{display:none!important}
+.suggest-action-entry strong,.suggest-action-entry small{display:block}.suggest-action-entry strong{font-size:12px!important;font-weight:650!important;color:var(--ui-action-text,#245db7)!important}.suggest-action-entry small{font-size:11px!important;font-weight:400!important;line-height:1.4;color:var(--muted)!important;margin-top:2px}
+.suggest-action-entry:hover{background:var(--surface,#f5f8fc)}
+#action-suggestion-dialog{width:min(560px,calc(100vw - 32px));max-height:90dvh;overflow:auto;border:1px solid var(--line,#dce4ed);border-radius:20px;padding:24px;color:var(--ink,#17283d);background:var(--white,#fff);box-shadow:0 24px 72px #15263833}
+#action-suggestion-dialog::backdrop{background:#15263880;backdrop-filter:blur(3px)}
+#action-suggestion-dialog header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}#action-suggestion-dialog h2{margin:8px 0;font-size:1.4rem}
+#action-suggestion-dialog header button{border:1px solid var(--line);border-radius:50%;width:36px;height:36px;background:var(--surface,#f5f8fc);font-size:22px;color:var(--muted)}
+#action-suggestion-dialog p{font-size:.8125rem;line-height:1.5;color:var(--muted)}#action-suggestion-dialog label{display:grid;gap:8px;margin:16px 0;font-size:.875rem;font-weight:600}
+#action-suggestion-dialog input:not([type=hidden]),#action-suggestion-dialog textarea{width:100%;box-sizing:border-box;border:1px solid var(--line,#dce4ed);border-radius:10px;padding:12px;font:inherit;background:var(--white,#fff);color:var(--ink)}
+#action-suggestion-dialog footer{display:flex;justify-content:flex-end;gap:10px;padding-top:16px;border-top:1px solid var(--line)}
+.suggestion-review{padding:20px;margin-bottom:16px}.suggestion-review p{white-space:pre-wrap}.suggestion-review form{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.suggestion-review textarea{flex:1;min-width:220px;padding:10px}.suggestion-review small{color:var(--muted)}

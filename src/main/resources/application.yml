@@ -7,12 +7,142 @@ spring:
     password: ${DB_PASSWORD:local-only-password}
   flyway:
     enabled: true
+    # JSON history backfills are many tiny queries, not analytical scans.
+    init-sqls: SET jit = off
   thymeleaf:
-    cache: false
+    # Cache parsed templates, never rendered account/order HTML. Local profile overrides this.
+    cache: true
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # Revalidate public assets on navigation; unchanged files return 304.
+          # No long freshness window: unversioned assets also update immediately on release.
+          no-cache: true
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 80MB
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+  task:
+    scheduling:
+      pool:
+        size: 4
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSSXXX} %-5level %msg%n%wEx"
+  level:
+    com.nextaicommerce.platform.sync: INFO
+    org.springframework.web: INFO
+    org.springframework.jdbc.core: INFO
+    org.hibernate.orm.jdbc.bind: "OFF"
+    jdk.httpclient: "OFF"
 server:
+  compression:
+    enabled: true
+    min-response-size: 2KB
+    mime-types: text/css,application/javascript,text/javascript,image/svg+xml
+  # Bounded recovery headroom: legacy table cookies must reach the page once
+  # so the browser can migrate and expire them. New preferences use localStorage.
+  max-http-request-header-size: ${APP_MAX_REQUEST_HEADER_SIZE:64KB}
   error:
     include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
 app:
+  read-cache:
+    enabled: ${APP_READ_CACHE_ENABLED:true}
+    ttl: ${APP_READ_CACHE_TTL:10s}
+    maximum-entries: ${APP_READ_CACHE_MAXIMUM_ENTRIES:256}
+  build-version: ${APP_BUILD_VERSION:1.14.29}
+  inventory:
+    publication-simulation-enabled: ${INVENTORY_PUBLICATION_SIMULATION_ENABLED:false}
+  public-url: ${APP_PUBLIC_URL:http://localhost:8080}
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    provider: ${MAIL_PROVIDER:disabled}
+    from: ${MAIL_FROM:}
+    from-name: ${MAIL_FROM_NAME:Next AI Commerce}
+    sender-mailbox: ${MAIL_SENDER_MAILBOX:${MAIL_FROM:}}
+    reply-to: ${MAIL_REPLY_TO:${MAIL_FROM:}}
+    local-uat-recipients: ${LOCAL_EMAIL_UAT_RECIPIENTS:}
+    graph:
+      tenant-id: ${MICROSOFT_TENANT_ID:}
+      client-id: ${MICROSOFT_CLIENT_ID:}
+      client-secret: ${MICROSOFT_CLIENT_SECRET:}
+  shopify:
+    shipping-sandbox-enabled: ${SHOPIFY_SHIPPING_SANDBOX_ENABLED:false}
+    inventory:
+      write-enabled: false
+      publication-variants: ${SHOPIFY_INVENTORY_PUBLICATION_VARIANTS:}
+    prices:
+      write-enabled: false
+    sale-prices:
+      write-enabled: false
+    connections:
+      enabled: ${SHOPIFY_CONNECTIONS_ENABLED:false}
+    catalog:
+      enabled: ${SHOPIFY_CATALOG_ENABLED:false}
+      mapping-enabled: ${SHOPIFY_CATALOG_MAPPING_ENABLED:false}
+    orders:
+      enabled: ${SHOPIFY_ORDERS_ENABLED:false}
+      inventory-enabled: ${SHOPIFY_ORDER_INVENTORY_ENABLED:false}
+      inventory-scopes: ${SHOPIFY_ORDER_INVENTORY_SCOPES:}
+      bootstrap-scopes: ${SHOPIFY_ORDER_BOOTSTRAP_SCOPES:}
+      polling-enabled: ${SHOPIFY_ORDER_POLLING_ENABLED:false}
+      only-scheduling: ${SHOPIFY_ORDER_ONLY_SCHEDULING:false}
+  credentials:
+    encryption-key: ${APP_CREDENTIAL_ENCRYPTION_KEY:}
+  fedex:
+    simulation-enabled: ${FEDEX_SIMULATION_ENABLED:false}
+    registered-customer-enabled: ${FEDEX_REGISTERED_CUSTOMER_ENABLED:false}
+    sandbox-rate-api: ${FEDEX_SANDBOX_RATE_API:STANDARD}
+    sandbox-label-test-enabled: ${FEDEX_SANDBOX_LABEL_TEST_ENABLED:false}
+    confirmation-enabled: ${APP_FEDEX_CONFIRMATION_ENABLED:false}
+  amazon:
+    product-fees-enabled: ${AMAZON_PRODUCT_FEES_ENABLED:false}
+    product-fees-batch-enabled: ${AMAZON_PRODUCT_FEES_BATCH_ENABLED:false}
+    product-fees-recurring-enabled: ${AMAZON_PRODUCT_FEES_RECURRING_ENABLED:false}
+    product-fees-zero-shipping-approved: ${AMAZON_PRODUCT_FEES_ZERO_SHIPPING_APPROVED:false}
+    product-fees-marketplace-currency-fallback: ${AMAZON_PRODUCT_FEES_MARKETPLACE_CURRENCY_FALLBACK:false}
+    fee-evidence-enabled: ${AMAZON_FEE_EVIDENCE_ENABLED:false}
+    fee-variance-ui-enabled: ${AMAZON_FEE_VARIANCE_UI_ENABLED:false}
+    fee-approvals-enabled: ${AMAZON_FEE_APPROVALS_ENABLED:false}
+    fee-pilot:
+      enabled: ${AMAZON_FEE_PILOT_ENABLED:false}
+      only-scheduling: ${AMAZON_FEE_PILOT_ONLY_SCHEDULING:false}
+    product-fees-requests-per-second: ${AMAZON_PRODUCT_FEES_REQUESTS_PER_SECOND:0.5}
+    variation:
+      operator-enabled: false
+      sync-enabled: false
+      inventory-enforcement-enabled: false
+    recipient-import-enabled: ${APP_AMAZON_RECIPIENT_IMPORT_ENABLED:false}
+    sync-enabled: ${AMAZON_SYNC_ENABLED:true}
+    write-enabled: ${AMAZON_WRITE_ENABLED:true}
+    buy-shipping-enabled: ${AMAZON_BUY_SHIPPING_ENABLED:false}
+    listing-actions-enabled: ${AMAZON_LISTING_ACTIONS_ENABLED:false}
+    inventory-publication-enabled: ${AMAZON_INVENTORY_PUBLICATION_ENABLED:false}
+    inventory-publication-mode: ${AMAZON_INVENTORY_PUBLICATION_MODE:DRY_RUN}
+    inventory-publication-connections: ${AMAZON_INVENTORY_PUBLICATION_CONNECTIONS:}
+    inventory-publication-skus: ${AMAZON_INVENTORY_PUBLICATION_SKUS:}
+    unresolved-order-checks-enabled: ${AMAZON_UNRESOLVED_ORDER_CHECKS_ENABLED:false}
+    recurring-enabled: ${AMAZON_RECURRING_SYNC_ENABLED:true}
+    startup-order-reconciliation-enabled: ${AMAZON_STARTUP_ORDER_RECONCILIATION_ENABLED:true}
+    worker-delay-ms: ${AMAZON_WORKER_DELAY_MS:5000}
+    order-worker-delay-ms: ${AMAZON_ORDER_WORKER_DELAY_MS:2000}
+    order-worker-initial-delay-ms: ${AMAZON_ORDER_WORKER_INITIAL_DELAY_MS:1000}
+    scheduler-delay-ms: ${AMAZON_SCHEDULER_DELAY_MS:60000}
+    buy-shipping-worker-delay-ms: ${AMAZON_BUY_SHIPPING_WORKER_DELAY_MS:1500}
+    buy-shipping-worker-initial-delay-ms: ${AMAZON_BUY_SHIPPING_WORKER_INITIAL_DELAY_MS:5000}
+    shipping-desk-worker-delay-ms: ${AMAZON_SHIPPING_DESK_WORKER_DELAY_MS:1000}
+    shipping-desk-worker-initial-delay-ms: ${AMAZON_SHIPPING_DESK_WORKER_INITIAL_DELAY_MS:6000}
   local-admin:
     email: ${APP_ADMIN_EMAIL:admin@nextaicommerce.local}
     password: ${APP_ADMIN_PASSWORD:change-me-local}

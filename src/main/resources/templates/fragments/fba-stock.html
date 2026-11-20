@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><body>
+<div th:fragment="stock(sku,stock)" class="fba-stock">
+  <dl class="fba-stock-totals">
+    <dt>Available</dt><dd data-fba-stock-value="available" th:text="${stock == null or stock.available == null ? 'Pending' : stock.available}">Pending</dd>
+    <dt>Inbound</dt><dd data-fba-stock-value="inbound" th:text="${stock == null or stock.totalInbound() == null ? 'Pending' : stock.totalInbound()}"></dd>
+    <dt>FC transfer</dt><dd data-fba-stock-value="fcTransfer" th:text="${stock == null or stock.fcTransfer == null ? 'Pending' : stock.fcTransfer}"></dd>
+    <dt>Reserved</dt><dd data-fba-stock-value="reserved" th:text="${stock == null or stock.reserved == null ? 'Pending' : stock.reserved}"></dd>
+  </dl>
+  <button type="button" class="fba-stock-trigger" data-fba-stock-open aria-label="Stock and fees" title="Stock and fees" aria-haspopup="dialog" th:attr="data-stock-sku=${sku},data-stock-connection=${session.selectedStoreId}"><img data-platform-icon="action:stockFees" src="/images/platform/actions/stockFees.svg?v=20261119" alt=""></button>
+  <template data-fba-stock-content>
+    <div class="fba-stock-breakdown">
+      <strong>FBA inventory</strong>
+      <p data-fba-stock-sku th:text="${sku}">SKU</p>
+      <p data-fba-stock-pending th:hidden="${stock != null and stock.observedAt != null}">Waiting for an Amazon inventory snapshot.</p>
+      <p data-fba-stock-observed th:hidden="${stock == null or stock.observedAt == null}" th:text="${stock == null ? '' : 'Snapshot: '+stock.observedDisplay()}"></p>
+      <p data-fba-stock-stale th:hidden="${stock == null or stock.observedAt == null or !stock.stale()}">May be outdated · over 24 hours old</p>
+      <dl>
+        <dt>Available at Amazon</dt><dd data-fba-stock-value="available" th:text="${stock == null ? 'Pending' : (stock.available ?: 'Pending')}"></dd>
+        <dt>Inbound · working</dt><dd data-fba-stock-value="working" th:text="${stock == null ? 'Pending' : (stock.working ?: 'Pending')}"></dd>
+        <dt>Inbound · shipped</dt><dd data-fba-stock-value="shipped" th:text="${stock == null ? 'Pending' : (stock.shipped ?: 'Pending')}"></dd>
+        <dt>Inbound · receiving</dt><dd data-fba-stock-value="receiving" th:text="${stock == null ? 'Pending' : (stock.receiving ?: 'Pending')}"></dd>
+        <dt>Reserved total</dt><dd data-fba-stock-value="reserved" th:text="${stock == null ? 'Pending' : (stock.reserved ?: 'Pending')}"></dd>
+        <dt>FC transfer</dt><dd data-fba-stock-value="fcTransfer" th:text="${stock == null ? 'Pending' : (stock.fcTransfer ?: 'Pending')}"></dd>
+        <dt>Unfulfillable</dt><dd data-fba-stock-value="unfulfillable" th:text="${stock == null ? 'Pending' : (stock.unfulfillable ?: 'Pending')}"></dd>
+        <dt>Warehouse available</dt><dd data-fba-stock-value="warehouseAvailable" th:text="${stock == null or stock.warehouseAvailable == null ? 'Needs mapping' : #numbers.formatDecimal(stock.warehouseAvailable,1,0)}"></dd>
+        <dt>Estimated FBA fee / unit</dt><dd data-fba-stock-value="fulfillmentFee" th:text="${stock == null or stock.fulfillmentFee == null ? 'Pending' : (stock.currency ?: '')+' '+#numbers.formatDecimal(stock.fulfillmentFee,1,2)}"></dd>
+      </dl>
+      <p data-fba-stock-fee-observed th:hidden="${stock == null or stock.feeObservedAt == null}" th:text="${stock == null ? '' : 'Fee snapshot: '+stock.feeObservedDisplay()}"></p>
+      <p>Warehouse availability is separate, in complete mapped SKU units. Reserved quantities are not added twice.</p>
+      <section aria-labelledby="fba-recent-title"><h3 id="fba-recent-title">Recent FBA shipments</h3><p data-fba-recent-status role="status">Loading shipment history…</p><div class="table-wrap"><table class="fba-shipment-table" aria-label="Recent FBA shipments for this SKU"><thead><tr><th>FBA shipment ID</th><th>From ZIP</th><th class="numeric">Qty sent</th></tr></thead><tbody data-fba-recent-rows></tbody></table></div></section>
+      <a data-fba-stock-shipments class="secondary-button compact-button" th:href="@{/app/inventory/fba-shipments(q=${sku})}">FBA shipments →</a>
+    </div>
+  </template>
+</div>
+</body></html>

@@ -1,0 +1,395 @@
+package com.nextaicommerce.platform.shopify;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.*;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.*;
+import org.springframework.transaction.support.TransactionTemplate;
+import com.nextaicommerce.platform.marketplace.ShopifySkuRepository;
+import com.nextaicommerce.platform.profit.*;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
+
+/** CI-only disposable database. Never connects to or migrates Local UAT/production. */
+@EnabledIfEnvironmentVariable(named="CI",matches="true")
+class ShopifyPublicationDatabaseTest {
+ static io.zonky.test.db.postgres.embedded.EmbeddedPostgres postgres;
+ static JdbcTemplate jdbc;static TransactionTemplate tx;static String schema;
+ UUID tenant,connection,item,variant,binding,main,other,run,job;Instant startup;
+ ShopifyInventoryPublications repository;
+ @BeforeAll static void database()throws Exception{
+  postgres=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();
+  schema="public"; // This fixture owns and closes its disposable cluster.
+  String url=postgres.getJdbcUrl("postgres","postgres");
+  var ds=new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema,"postgres",null);
+  org.flywaydb.core.Flyway.configure().dataSource(ds).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+  jdbc=new JdbcTemplate(ds);tx=new TransactionTemplate(new DataSourceTransactionManager(ds));
+  for(String f:List.of("ensure_item_default_location","fill_inventory_ledger_location","fill_receiving_receipt_location","fill_order_reservation_location"))jdbc.execute("ALTER FUNCTION "+schema+"."+f+"() SET search_path TO "+schema);
+  jdbc.execute("CREATE ROLE publication_reader NOLOGIN NOSUPERUSER NOBYPASSRLS");
+  jdbc.execute("GRANT USAGE ON SCHEMA "+schema+" TO publication_reader");
+  jdbc.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA "+schema+" TO publication_reader");
+ }
+ @AfterAll static void close()throws Exception{if(postgres!=null)postgres.close();}
+ void scope(){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
+ @BeforeEach void fixture(){
+  tenant=UUID.randomUUID();connection=UUID.randomUUID();item=UUID.randomUUID();run=UUID.randomUUID();job=UUID.randomUUID();binding=UUID.randomUUID();startup=Instant.now().minusSeconds(60);repository=new ShopifyInventoryPublications(jdbc,tx);
+  tx.executeWithoutResult(s->{
+   jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES(?,?,'Publication fixture')",tenant,tenant.toString());scope();
+   jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone,inventory_activated_at) VALUES(?,?,'SHOPIFY','fixture.myshopify.com','fixture.myshopify.com','ACTIVE','Fixture','fixture://none','UTC',now())",connection,tenant);
+   UUID global=UUID.randomUUID();jdbc.update("INSERT INTO global_catalog_products(id,canonical_name,unit_of_measure) VALUES(?,'Fixture product','EA')",global);
+   jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES(?,?,?,'000001')",item,tenant,global);
+   main=jdbc.queryForObject("SELECT location_id FROM account_catalog_item_locations WHERE tenant_id=? AND account_catalog_item_id=? AND is_default",UUID.class,tenant,item);
+   other=UUID.randomUUID();jdbc.update("INSERT INTO warehouse_locations(id,tenant_id,code,name) VALUES(?,?,'EXCLUDED','Excluded source')",other,tenant);
+   jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,status,window_start,window_end) VALUES(?,?,?,'INCREMENTAL','SHOPIFY_ORDERS','COMPLETED',now()-interval '30 days',now())",run,tenant,connection);
+   jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,marketplace_connection_id,sync_run_id,job_type,sequence_number,status,completed_at) VALUES(?,?,?,?,'SHOPIFY_ORDERS',1,'COMPLETED',now())",job,tenant,connection,run);
+   var product=new ShopifyCatalogClient.Product("gid://shopify/Product/1","Product","Brand","ACTIVE",startup,null,null);
+   var page=new ShopifyCatalogClient.Page(List.of(new ShopifyCatalogClient.Variant("gid://shopify/ProductVariant/1","gid://shopify/InventoryItem/2","000001-EAx3","Default Title",BigDecimal.TEN,startup,"[]","[]",true,null,product)),null,false,1,1000,100);
+   new ShopifyCatalogRepository(jdbc).publish(tenant,connection,job,run,null,"{\"fixture\":true}",page,"USD");
+   variant=jdbc.queryForObject("SELECT id FROM shopify_variants WHERE tenant_id=? AND marketplace_connection_id=?",UUID.class,tenant,connection);
+   String hash=jdbc.queryForObject("SELECT observation_hash FROM shopify_variants WHERE tenant_id=? AND id=?",String.class,tenant,variant);
+   new ShopifySkuRepository(jdbc,true).save(tenant,connection,variant,hash,List.of(item.toString()),List.of("3"),()->{});
+   stock(main,12);stock(other,300);
+   jdbc.update("INSERT INTO shopify_inventory_bindings(id,tenant_id,marketplace_connection_id,shop_gid,location_gid,approved_by) VALUES(?,?,?,'gid://shopify/Shop/1','gid://shopify/Location/3','fixture')",binding,tenant,connection);
+   jdbc.update("INSERT INTO shopify_inventory_binding_sources VALUES(?,?,?,?)",tenant,connection,binding,main);
+   jdbc.update("UPDATE shopify_inventory_bindings SET enabled=true WHERE tenant_id=? AND id=?",tenant,binding);
+   jdbc.update("UPDATE inventory_publication_rate_slot SET ready_at=now()-interval '1 second' WHERE id=1");
+  });
+ }
+ void stock(UUID location,int units){UUID id=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,unit_cost,currency,source_type,source_id,idempotency_key,occurred_at) VALUES(?,?,?,?,'RECEIPT',?,current_date+80,2,'USD','MANUAL',?,?,now())",id,tenant,item,location,units,id,id.toString());}
+ @Test void manualAmazonMappingCopiesOnlyExactAsinUnmappedSamePackWithinStore(){tx.executeWithoutResult(s->{scope();
+   UUID amazon=UUID.randomUUID(),second=UUID.randomUUID();
+   for(UUID c:List.of(amazon,second))jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone,inventory_activated_at) VALUES(?,?,'AMAZON',?,'US','ACTIVE','Amazon fixture','fixture','UTC',now())",c,tenant,c.toString());
+   for(String sku:List.of("SOURCE-EAx3","PEER-EAx3","OTHER-EAx12","EXISTING-EAx3","BLOCKED-EAx3"))jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US',?,'B000TEST01','Fixture')",tenant,amazon,sku);
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','PEER-EAx3','B000TEST01','Fixture')",tenant,second);
+   var mappings=new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository(jdbc);
+   mappings.saveMapping(tenant,amazon,"EXISTING-EAx3",List.of(item.toString()),List.of("2"));
+   // Recreate the unmapped cases after the earlier manual save's propagation.
+   jdbc.update("DELETE FROM marketplace_sku_mappings WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_sku<>'EXISTING-EAx3'",tenant,amazon);
+   mappings.saveMapping(tenant,amazon,"BLOCKED-EAx3",List.of(item.toString()),List.of("3"));mappings.clearMapping(tenant,amazon,"BLOCKED-EAx3");
+   jdbc.update("DELETE FROM marketplace_sku_mappings WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_sku IN ('SOURCE-EAx3','PEER-EAx3')",tenant,amazon);
+   mappings.saveMapping(tenant,amazon,"SOURCE-EAx3",List.of(item.toString()),List.of("3"));
+   var saved=mappings.mappingComponents(tenant,amazon,List.of("SOURCE-EAx3","PEER-EAx3","OTHER-EAx12","EXISTING-EAx3","BLOCKED-EAx3"));
+   assertThat(saved.get("PEER-EAx3").getFirst().quantity()).isEqualByComparingTo("3");
+   assertThat(saved.get("EXISTING-EAx3").getFirst().quantity()).isEqualByComparingTo("2");assertThat(saved).doesNotContainKeys("OTHER-EAx12","BLOCKED-EAx3");
+   assertThat(mappings.mappingComponents(tenant,second,List.of("PEER-EAx3"))).isEmpty();
+   var ledgerRefs=new com.nextaicommerce.platform.catalog.CatalogRepository(jdbc).listMarketplaceSkus(tenant,List.of(item));
+   assertThat(ledgerRefs.stream().filter(r->r.sku().equals("SOURCE-EAx3")).findFirst().orElseThrow().warehouseAvailable()).isEqualByComparingTo("104");
+   var preview=mappings.asinMappingPreview(tenant,amazon,"SOURCE-EAx3");assertThat(preview.existingMappings()).isEqualTo(3);
+   mappings.saveMapping(tenant,amazon,"SOURCE-EAx3",List.of(item.toString()),List.of("3"),true,preview.revision());
+   assertThat(mappings.mappingComponents(tenant,amazon,List.of("EXISTING-EAx3")).get("EXISTING-EAx3").getFirst().quantity()).isEqualByComparingTo("3");
+   var stale=mappings.asinMappingPreview(tenant,amazon,"SOURCE-EAx3");jdbc.update("UPDATE marketplace_sku_mappings SET quantity_per_marketplace_unit=7 WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_sku='EXISTING-EAx3'",tenant,amazon);
+   assertThatThrownBy(()->mappings.saveMapping(tenant,amazon,"SOURCE-EAx3",List.of(item.toString()),List.of("9"),true,stale.revision())).isInstanceOf(IllegalArgumentException.class);
+   assertThat(mappings.mappingComponents(tenant,amazon,List.of("SOURCE-EAx3")).get("SOURCE-EAx3").getFirst().quantity()).isEqualByComparingTo("3");
+
+ });}
+ @Test void completedImportMapsOnlyUnmappedConsistentSameAsinPacks(){tx.executeWithoutResult(s->{scope();
+   UUID amazon=UUID.randomUUID(),second=UUID.randomUUID();for(UUID c:List.of(amazon,second))jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone,inventory_activated_at) VALUES(?,?,'AMAZON',?,'US','ACTIVE','Fixture','fixture','UTC',now())",c,tenant,c.toString());
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','SOURCE-EAx3','B000TEST01','Fixture')",tenant,amazon);
+   var manual=new com.nextaicommerce.platform.marketplace.MarketplaceSkuRepository(jdbc);manual.saveMapping(tenant,amazon,"SOURCE-EAx3",List.of(item.toString()),List.of("3"));
+   for(String sku:List.of("NEW-EAx3","DIFFERENT-EAx12","CLEARED-EAx3","REMOVED-EAx3","123-456-EAx3"))jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US',?,'B000TEST01','Fixture')",tenant,amazon,sku);
+   jdbc.update("INSERT INTO marketplace_sku_mappings(tenant_id,marketplace_connection_id,marketplace_sku,asin,status,auto_map_blocked,account_catalog_item_id) VALUES(?,?,'CLEARED-EAx3','B000TEST01','INACTIVE',true,?)",tenant,amazon,item);
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','FOREIGN-EAx3','B000TEST01','Fixture')",tenant,second);
+   jdbc.update("UPDATE amazon_listings SET platform_status='REMOVED',amazon_removed_at=now() WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku='REMOVED-EAx3'",tenant,amazon);
+   var mapper=new com.nextaicommerce.platform.marketplace.MarketplaceSkuAutoMapper(jdbc,tx);
+   assertThat(mapper.mapSameAsinAfterImport(tenant,amazon)).isEqualTo(1);assertThat(mapper.mapSameAsinAfterImport(tenant,amazon)).isZero();
+   assertThat(manual.mappingComponents(tenant,amazon,List.of("NEW-EAx3")).get("NEW-EAx3").getFirst().quantity()).isEqualByComparingTo("3");
+   assertThat(manual.mappingComponents(tenant,amazon,List.of("DIFFERENT-EAx12","CLEARED-EAx3","REMOVED-EAx3","123-456-EAx3"))).isEmpty();assertThat(manual.mappingComponents(tenant,second,List.of("FOREIGN-EAx3"))).isEmpty();
+   jdbc.update("UPDATE marketplace_sku_mapping_components SET quantity=2 WHERE tenant_id=? AND marketplace_sku_mapping_id=(SELECT id FROM marketplace_sku_mappings WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_sku='NEW-EAx3')",tenant,tenant,amazon);
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','CONFLICT-TARGET-EAx3','B000TEST01','Fixture')",tenant,amazon);
+   assertThat(mapper.mapSameAsinAfterImport(tenant,amazon)).isZero();assertThat(manual.mappingComponents(tenant,amazon,List.of("CONFLICT-TARGET-EAx3"))).isEmpty();
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','REMOVED-SOURCE-EAx1','B000TEST02','Fixture')",tenant,amazon);
+   manual.saveMapping(tenant,amazon,"REMOVED-SOURCE-EAx1",List.of(item.toString()),List.of("1"));
+   jdbc.update("UPDATE amazon_listings SET platform_status='REMOVED',amazon_removed_at=now() WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku='REMOVED-SOURCE-EAx1'",tenant,amazon);
+   jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,asin,item_name) VALUES(?,?,'US','LIVE-TARGET-EAx1','B000TEST02','Fixture')",tenant,amazon);
+   assertThat(mapper.mapSameAsinAfterImport(tenant,amazon)).isZero();assertThat(manual.mappingComponents(tenant,amazon,List.of("LIVE-TARGET-EAx1"))).isEmpty();
+ });}
+ @Test void skuDisplayUsesSelectedLocationsCurrentMappingAndPersistsEdits(){tx.executeWithoutResult(s->{scope();
+   var skus=new ShopifySkuRepository(jdbc,true);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("104"));
+   stock(other,12);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("108"));
+   stock(main,17);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("113"));
+   assertThat(skus.availabilityBatch(tenant,UUID.randomUUID(),List.of(variant))).isEmpty();
+   jdbc.update("UPDATE marketplace_sku_mappings SET shopify_mapping_hash='stale' WHERE tenant_id=? AND shopify_variant_id=?",tenant,variant);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).isEmpty();
+   var row=skus.find(tenant,connection,variant);skus.save(tenant,connection,variant,row.revision(),List.of(item.toString()),List.of("2"),()->{});
+   assertThat(skus.components(tenant,connection,variant).getFirst().quantity()).isEqualByComparingTo("2");
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("170"));
+   jdbc.update("UPDATE shopify_inventory_bindings SET enabled=false WHERE tenant_id=? AND id=?",tenant,binding);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("170"));
+   jdbc.update("DELETE FROM shopify_inventory_binding_sources WHERE tenant_id=?",tenant);
+   jdbc.update("DELETE FROM shopify_inventory_bindings WHERE tenant_id=?",tenant);
+   assertThat(skus.availabilityBatch(tenant,connection,List.of(variant))).containsEntry(variant,new BigDecimal("170"));
+   var related=new com.nextaicommerce.platform.catalog.CatalogRepository(jdbc).listMarketplaceSkus(tenant,List.of(item));
+   assertThat(related).hasSize(1);
+   assertThat(related.getFirst().warehouseAvailable()).isEqualByComparingTo("170");
+ });}
+ @Test void sourceSubsetDuplicatePreventionAndNoInventoryMutation(){
+  String before=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant);
+  assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
+  assertThat(repository.plan(tenant,connection,startup)).isZero();
+  var operation=repository.next(tenant,connection).orElseThrow();assertThat(operation.desired()).isEqualTo(4);
+  assertThat(repository.next(UUID.randomUUID(),connection)).isEmpty();assertThat(repository.next(tenant,UUID.randomUUID())).isEmpty();
+  var client=mock(ShopifyInventoryClient.class);when(client.available(eq(operation.target()),any())).thenReturn(7);
+  repository.prepare(operation,client,startup);
+  jdbc.update("UPDATE shopify_inventory_publications SET available_at=now() WHERE id=?",operation.id());
+  var ready=repository.next(tenant,connection).orElseThrow();assertThat(ready.expected()).isEqualTo(7);assertThat(ready.state()).isEqualTo("READY");
+  jdbc.update("UPDATE inventory_publication_rate_slot SET ready_at=now()-interval '1 second' WHERE id=1");
+  assertThat(repository.markSubmitting(ready,startup)).isTrue();
+  repository.submit(ready,client,startup);verify(client).setAvailable(eq(ready.target()),eq(7),eq(4),eq(ready.id()),any());
+  assertThat(jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant)).isEqualTo(before);
+ }
+ @Test void exactVariantCanaryRestrictsPlanClaimAndPreSubmitButAllowsReadback(){
+  repository.configureVariants(tenant+"/"+UUID.randomUUID()+"/"+variant);
+  assertThat(repository.plan(tenant,connection,startup)).isZero();
+  repository.configureVariants(UUID.randomUUID()+"/"+connection+"/"+variant);
+  assertThat(repository.plan(tenant,connection,startup)).isZero();
+  repository.configureVariants(tenant+"/"+connection+"/"+UUID.randomUUID());
+  assertThat(repository.plan(tenant,connection,startup)).isZero();
+  repository.configureVariants(tenant+"/"+connection+"/"+variant);
+  assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
+  var operation=repository.next(tenant,connection).orElseThrow();
+  var client=mock(ShopifyInventoryClient.class);when(client.available(eq(operation.target()),any())).thenReturn(4);
+  repository.prepare(operation,client,startup);
+  jdbc.update("UPDATE shopify_inventory_publications SET available_at=now() WHERE id=?",operation.id());
+  var ready=repository.next(tenant,connection).orElseThrow();
+  repository.configureVariants(tenant+"/"+connection+"/"+UUID.randomUUID());
+  assertThat(repository.next(tenant,connection)).isEmpty();
+  assertThat(repository.markSubmitting(ready,startup)).isFalse();
+  verify(client,never()).setAvailable(any(),anyInt(),anyInt(),any(),any());
+  jdbc.update("UPDATE shopify_inventory_publications SET state='VERIFYING',available_at=now() WHERE id=?",operation.id());
+  jdbc.update("UPDATE inventory_publication_rate_slot SET ready_at=now()-interval '1 second' WHERE id=1");
+  var verifying=repository.next(tenant,connection).orElseThrow();repository.verify(verifying,client);
+  assertThat(jdbc.queryForObject("SELECT state FROM shopify_inventory_publications WHERE id=?",String.class,operation.id())).isEqualTo("CONFIRMED");
+ }
+ // Fresh import completion alone must not turn historical open commitments into sellable stock.
+ private UUID historicalOpenOrder(boolean complete){
+  UUID order=UUID.randomUUID();
+  tx.executeWithoutResult(t->{scope();
+   UUID source=jdbc.queryForObject("SELECT id FROM shopify_source_documents WHERE tenant_id=? AND marketplace_connection_id=? LIMIT 1",UUID.class,tenant,connection);
+   jdbc.update("INSERT INTO shopify_orders(id,tenant_id,marketplace_connection_id,order_gid,order_name,source_created_at,source_updated_at,is_test,payment_status,fulfillment_status,currency,total,evidence_complete,observation_hash,source_document_id) VALUES(?,?,?,'gid://shopify/Order/1009','#1009',now()-interval '26 days',now(),false,'PAID','PARTIALLY_FULFILLED','USD',10,?,repeat('a',64),?)",order,tenant,connection,complete,source);
+   jdbc.update("INSERT INTO shopify_order_lines(id,tenant_id,marketplace_connection_id,order_id,line_gid,title,ordered_quantity,current_quantity,unfulfilled_quantity,requires_shipping,ownership,source_updated_at,observation_hash,stock_scope,inventory_state,reserve_units) VALUES(?,?,?,?, 'gid://shopify/LineItem/1009','Open physical item',1,1,1,true,'MERCHANT',now(),repeat('b',64),'REPORTING_ONLY','REPORTING_ONLY',0)",UUID.randomUUID(),tenant,connection,order);
+  });return order;
+ }
+ @Test void historicalOpenCommitmentBlocksPublicationWithoutReplayingShipments(){
+  UUID order=historicalOpenOrder(true);
+  String before=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant);
+  assertThat(repository.plan(tenant,connection,startup)).isZero();
+  assertThat(jdbc.queryForObject("SELECT reserve_units FROM shopify_order_lines WHERE tenant_id=? AND order_id=?",Integer.class,tenant,order)).isZero();
+  assertThat(jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant)).isEqualTo(before);
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_order_lines SET unfulfilled_quantity=0 WHERE tenant_id=? AND order_id=?",tenant,order);});
+  assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
+ }
+ private UUID neverManagedOpenVariant(){
+  UUID order=historicalOpenOrder(true);
+  return tx.execute(t->{scope();
+   var product=new ShopifyCatalogClient.Product("gid://shopify/Product/2","Unmapped old product","Brand","ACTIVE",startup,null,null);
+   var page=new ShopifyCatalogClient.Page(List.of(new ShopifyCatalogClient.Variant("gid://shopify/ProductVariant/2","gid://shopify/InventoryItem/22","OLD-UNMAPPED-EAx2","Default Title",BigDecimal.TEN,startup,"[]","[]",true,null,product)),null,false,1,1000,100);
+   new ShopifyCatalogRepository(jdbc).publish(tenant,connection,job,run,null,"{\"unmanaged-fixture\":true}",page,"USD");
+   UUID unmapped=jdbc.queryForObject("SELECT id FROM shopify_variants WHERE tenant_id=? AND marketplace_connection_id=? AND variant_gid='gid://shopify/ProductVariant/2'",UUID.class,tenant,connection);
+   jdbc.update("UPDATE shopify_order_lines SET variant_id=?,variant_gid='gid://shopify/ProductVariant/2',inventory_revision=source_updated_at,inventory_hash=observation_hash WHERE tenant_id=? AND order_id=?",unmapped,tenant,order);
+   return unmapped;
+  });
+ }
+ @Test void neverManagedUnmappedVariantDoesNotBlockKnownMappedStockOrReceivePublication(){
+  UUID unmapped=neverManagedOpenVariant();
+  assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_inventory_publications WHERE tenant_id=? AND variant_id=?",Integer.class,tenant,unmapped)).isZero();
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_order_cutovers WHERE tenant_id=?",Integer.class,tenant)).isZero();
+ }
+ @Test void previouslyMappedThenClearedVariantStillHoldsPublication(){
+  UUID unmapped=neverManagedOpenVariant();
+  tx.executeWithoutResult(t->{scope();
+   String hash=jdbc.queryForObject("SELECT observation_hash FROM shopify_variants WHERE tenant_id=? AND id=?",String.class,tenant,unmapped);
+   var mappings=new ShopifySkuRepository(jdbc,true);mappings.save(tenant,connection,unmapped,hash,List.of(item.toString()),List.of("2"),()->{});mappings.clear(tenant,connection,unmapped,()->{});
+  });
+  assertThat(repository.plan(tenant,connection,startup)).isZero();
+ }
+ @Test void sharedQuarantineAlsoHoldsAmazonComponentMappingAndDoesNotCrossTenants(){
+  UUID unmapped=neverManagedOpenVariant();
+  tx.executeWithoutResult(t->{scope();
+   String hash=jdbc.queryForObject("SELECT observation_hash FROM shopify_variants WHERE tenant_id=? AND id=?",String.class,tenant,unmapped);
+   var mappings=new ShopifySkuRepository(jdbc,true);mappings.save(tenant,connection,unmapped,hash,List.of(item.toString()),List.of("2"),()->{});mappings.clear(tenant,connection,unmapped,()->{});
+   UUID amazon=UUID.randomUUID();
+   jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,status,display_name,credential_secret_ref,reporting_timezone,inventory_activated_at) VALUES(?,?,'AMAZON','fixture-seller','ATVPDKIKX0DER','ACTIVE','Fixture','fixture://none','UTC',now())",amazon,tenant);
+   UUID mapping=jdbc.queryForObject("INSERT INTO marketplace_sku_mappings(tenant_id,marketplace_connection_id,marketplace_sku,account_catalog_item_id,quantity_per_marketplace_unit,status) VALUES(?,?,'AMAZON-PACK',?,8,'ACTIVE') RETURNING id",UUID.class,tenant,amazon,item);
+   jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity,sort_order) VALUES(?,?,?,8,0)",tenant,mapping,item);
+   assertThat(jdbc.queryForObject("SELECT "+ShopifyPublicationSafety.allowsPositive("?::uuid","?::uuid"),Boolean.class,tenant,mapping)).isFalse();
+   assertThat(jdbc.queryForObject("SELECT "+ShopifyPublicationSafety.allowsPositive("?::uuid","?::uuid"),Boolean.class,UUID.randomUUID(),mapping)).isTrue();
+   // Exercise the actual Amazon claim SQL, including scope/current helper integration.
+   assertThat(new com.nextaicommerce.platform.sync.InventoryPublicationRepository(jdbc).next(tenant,startup,Set.of(amazon))).isEmpty();
+  });
+ }
+ @Test void retainedUnmappedComponentHoldsOnlyOverlappingPositiveOffers(){
+  UUID unmapped=neverManagedOpenVariant();
+  tx.executeWithoutResult(t->{scope();
+   UUID otherProduct=UUID.randomUUID(),otherItem=UUID.randomUUID();
+   jdbc.update("INSERT INTO global_catalog_products(id,canonical_name,unit_of_measure) VALUES(?,'Unrelated held product','EA')",otherProduct);
+   jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES(?,?,?,'OLD-ITEM')",otherItem,tenant,otherProduct);
+   String hash=jdbc.queryForObject("SELECT observation_hash FROM shopify_variants WHERE tenant_id=? AND id=?",String.class,tenant,unmapped);
+   var mappings=new ShopifySkuRepository(jdbc,true);mappings.save(tenant,connection,unmapped,hash,List.of(otherItem.toString()),List.of("2"),()->{});mappings.clear(tenant,connection,unmapped,()->{});
+  });
+  assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
+  assertThat(repository.next(tenant,connection).orElseThrow().variant()).isEqualTo(variant);
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_inventory_publications WHERE tenant_id=? AND variant_id=?",Integer.class,tenant,unmapped)).isZero();
+ }
+ @Test void newlyObservedOpenCommitmentFencesPreparedPublication(){
+  repository.plan(tenant,connection,startup);var operation=repository.next(tenant,connection).orElseThrow();
+  var client=mock(ShopifyInventoryClient.class);when(client.available(eq(operation.target()),any())).thenReturn(4);
+  repository.prepare(operation,client,startup);
+  jdbc.update("UPDATE shopify_inventory_publications SET available_at=now() WHERE id=?",operation.id());
+  var ready=repository.next(tenant,connection).orElseThrow();
+  historicalOpenOrder(true);
+  assertThat(repository.markSubmitting(ready,startup)).isFalse();
+  verify(client,never()).setAvailable(any(),anyInt(),anyInt(),any(),any());
+ }
+ @Test void incompleteNonCancelledOrderEvidenceBlocksPublication(){
+  UUID order=historicalOpenOrder(false);
+  assertThat(repository.plan(tenant,connection,startup)).isZero();
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_orders SET cancelled_at=now() WHERE tenant_id=? AND id=?",tenant,order);});
+  assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
+ }
+ @Test void explicitCutoverReservesOnlyRemainingUnitsAndIsImmutableAndIdempotent(){
+  UUID order=historicalOpenOrder(true);var inventory=new ShopifyOrderInventory(jdbc,true,true);org.springframework.test.util.ReflectionTestUtils.setField(inventory,"inventoryScopes",tenant+"/"+connection);
+  UUID evidence=UUID.randomUUID();
+  tx.executeWithoutResult(t->{scope();
+   jdbc.update("INSERT INTO shopify_source_documents(id,tenant_id,marketplace_connection_id,sync_job_id,api_version,query_revision,sha256,response_body) VALUES(?,?,?,?,'2026-10',?,repeat('c',64),'{}')",evidence,tenant,connection,job,ShopifyOrderClient.REVISION);
+   jdbc.update("UPDATE shopify_orders SET source_document_id=? WHERE tenant_id=? AND id=?",evidence,tenant,order);
+   jdbc.update("INSERT INTO shopify_order_controls(tenant_id,marketplace_connection_id,inventory_enabled,activated_at,baseline_completed_at) VALUES(?,?,true,now(),now())",tenant,connection);
+   jdbc.update("UPDATE shopify_order_lines SET variant_id=?,variant_gid='gid://shopify/ProductVariant/1',ordered_quantity=3,current_quantity=3,inventory_revision=source_updated_at,inventory_hash=observation_hash,success_checkpoint='{\"prior-shipment\":2}'::jsonb WHERE tenant_id=? AND order_id=?",variant,tenant,order);
+   inventory.bootstrapRemaining(tenant,connection,job); // No configured scope means no cutover.
+  });
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_order_cutovers WHERE tenant_id=?",Integer.class,tenant)).isZero();
+  assertThat(new ShopifyOrderPacking(jdbc,inventory).eligibility(tenant,connection,order)).contains("verified warehouse cutover");
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_orders SET platform_waiting_for_pickup=true,local_handoff_id=gen_random_uuid(),local_handoff_at=now(),local_handoff_revision=source_updated_at WHERE tenant_id=? AND id=?",tenant,order);});
+  assertThat(new ShopifyOrderPacking(jdbc,inventory).eligibility(tenant,connection,order)).contains("verified warehouse handoff");
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_orders SET platform_waiting_for_pickup=false,local_handoff_id=NULL,local_handoff_at=NULL,local_handoff_revision=NULL WHERE tenant_id=? AND id=?",tenant,order);});
+  org.springframework.test.util.ReflectionTestUtils.setField(inventory,"bootstrapScopes",tenant+"/"+connection);
+  String before=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant);
+  tx.executeWithoutResult(t->{scope();inventory.bootstrapRemaining(tenant,connection,UUID.randomUUID());});
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_order_cutovers WHERE tenant_id=?",Integer.class,tenant)).isZero();
+  tx.executeWithoutResult(t->{scope();jdbc.update("DELETE FROM inventory_publication_dirty WHERE tenant_id=?",tenant);inventory.bootstrapRemaining(tenant,connection,job);inventory.bootstrapRemaining(tenant,connection,job);});
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_publication_dirty WHERE tenant_id=? AND item_id=?",Integer.class,tenant,item)).isEqualTo(1);
+  assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_order_cutovers WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+  assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM order_inventory_reservations WHERE tenant_id=? AND status='ACTIVE'",BigDecimal.class,tenant)).isEqualByComparingTo("3");
+  var packing=new ShopifyOrderPacking(jdbc,inventory);
+  assertThat(packing.eligibility(tenant,connection,order)).isNull();
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE order_inventory_reservations SET quantity=2 WHERE tenant_id=? AND status='ACTIVE'",tenant);});
+  assertThat(packing.eligibility(tenant,connection,order)).contains("Reserved stock changed");
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE order_inventory_reservations SET quantity=3 WHERE tenant_id=? AND status='ACTIVE'",tenant);});
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_order_lines SET unfulfilled_quantity=2 WHERE tenant_id=? AND order_id=?",tenant,order);});
+  assertThat(packing.eligibility(tenant,connection,order)).contains("verified warehouse cutover");
+  tx.executeWithoutResult(t->{scope();jdbc.update("UPDATE shopify_order_lines SET unfulfilled_quantity=1 WHERE tenant_id=? AND order_id=?",tenant,order);});
+  assertThat(jdbc.queryForObject("SELECT fulfillment_checkpoint->>'prior-shipment' FROM shopify_order_cutovers WHERE tenant_id=?",String.class,tenant)).isEqualTo("2");
+  assertThat(jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant)).isEqualTo(before);
+  String actor="packing-"+tenant+"@example.invalid";
+  jdbc.update("INSERT INTO app_users(email,display_name,status) VALUES (?,'Packing fixture','ACTIVE')",actor);
+  tx.executeWithoutResult(t->{scope();packing.mark(tenant,connection,order,true,actor);});
+  assertThat(packing.eligibility(tenant,connection,order)).isNull();
+  String afterHandoff=jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant);
+  tx.executeWithoutResult(t->{scope();packing.mark(tenant,connection,order,true,actor);});
+  assertThat(jdbc.queryForObject("SELECT md5(string_agg(to_jsonb(l)::text,',' ORDER BY id)) FROM inventory_ledger_entries l WHERE tenant_id=?",String.class,tenant)).isEqualTo(afterHandoff);
+  assertThatThrownBy(()->jdbc.update("UPDATE shopify_order_cutovers SET remaining_units=99 WHERE tenant_id=?",tenant)).isInstanceOf(org.springframework.dao.DataAccessException.class);
+  tx.executeWithoutResult(t->{jdbc.execute("SET LOCAL ROLE publication_reader");jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,UUID.randomUUID().toString());assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_order_cutovers",Integer.class)).isZero();});
+ }
+ @Test void bootstrapWindowRequiresExactScopeAndCurrentMappingAndNeverGuessesUnmappedHistory(){
+  UUID order=historicalOpenOrder(true);var inventory=new ShopifyOrderInventory(jdbc,true,true);
+  Instant normal=Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS).minusSeconds(300),old=normal.minusSeconds(7200);
+  org.springframework.test.util.ReflectionTestUtils.setField(inventory,"inventoryScopes",tenant+"/"+connection);
+  org.springframework.test.util.ReflectionTestUtils.setField(inventory,"bootstrapScopes",tenant+"/"+connection);
+  tx.executeWithoutResult(t->{scope();
+   jdbc.update("UPDATE shopify_orders SET source_updated_at=? WHERE tenant_id=? AND id=?",java.sql.Timestamp.from(old),tenant,order);
+   assertThat(inventory.bootstrapStart(tenant,connection,normal)).isEqualTo(normal);
+   jdbc.update("UPDATE shopify_order_lines SET variant_id=? WHERE tenant_id=? AND order_id=?",variant,tenant,order);
+   assertThat(inventory.bootstrapStart(tenant,connection,normal)).isEqualTo(old.truncatedTo(java.time.temporal.ChronoUnit.MICROS).minusSeconds(300));
+   assertThat(inventory.bootstrapStart(tenant,UUID.randomUUID(),normal)).isEqualTo(normal);
+   assertThat(inventory.bootstrapStart(UUID.randomUUID(),connection,normal)).isEqualTo(normal);
+   jdbc.update("UPDATE marketplace_sku_mappings SET shopify_mapping_hash=repeat('d',64) WHERE tenant_id=? AND shopify_variant_id=?",tenant,variant);
+   assertThat(inventory.bootstrapStart(tenant,connection,normal)).isEqualTo(normal);
+  });
+ }
+ @Test void newWarehouseLocationsAreNotAutomaticallyIncluded(){
+  tx.executeWithoutResult(s->{scope();UUID added=UUID.randomUUID();
+   jdbc.update("INSERT INTO warehouse_locations(id,tenant_id,code,name) VALUES(?,?,'NEW_BIN','New unselected bin')",added,tenant);
+   stock(added,600);
+  });
+  assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
+  assertThat(repository.next(tenant,connection).orElseThrow().desired()).isEqualTo(4);
+ }
+ @Test void remoteDecreaseRequiresLaterOrderReconciliationBeforeIncrease(){
+  repository.plan(tenant,connection,startup);var first=repository.next(tenant,connection).orElseThrow();
+  tx.executeWithoutResult(s->{scope();jdbc.update("UPDATE shopify_inventory_publications SET expected_quantity=4,state='CONFIRMED',confirmed_at=now()-interval '16 minutes' WHERE id=?",first.id());});
+  repository.plan(tenant,connection,startup);var next=repository.next(tenant,connection).orElseThrow();
+  var client=mock(ShopifyInventoryClient.class);when(client.available(eq(next.target()),any())).thenReturn(2);
+  repository.prepare(next,client,startup);
+  assertThat(jdbc.queryForObject("SELECT state FROM shopify_inventory_publications WHERE id=?",String.class,next.id())).isEqualTo("ATTENTION");
+  assertThat(repository.requestReconciliation(tenant,next.id(),"fixture")).isFalse();
+  tx.executeWithoutResult(s->{scope();jdbc.update("UPDATE marketplace_sync_jobs SET completed_at=clock_timestamp() WHERE id=?",job);});
+  assertThat(repository.requestReconciliation(tenant,next.id(),"fixture")).isFalse(); // completed job, but its order window predates the observation
+  tx.executeWithoutResult(s->{scope();jdbc.update("UPDATE marketplace_sync_runs SET window_end=clock_timestamp() WHERE id=?",run);});
+  assertThat(repository.requestReconciliation(tenant,next.id(),"fixture")).isTrue();
+  repository.plan(tenant,connection,startup);var reconciled=repository.next(tenant,connection).orElseThrow();
+  jdbc.update("UPDATE inventory_publication_rate_slot SET ready_at=now()-interval '1 second' WHERE id=1");
+  repository.prepare(reconciled,client,startup);
+  assertThat(jdbc.queryForObject("SELECT state FROM shopify_inventory_publications WHERE id=?",String.class,reconciled.id())).isEqualTo("READY");
+  verify(client,never()).setAvailable(any(),anyInt(),anyInt(),any(),any());
+ }
+ @Test void emptySelectionCannotPublishEvenIfBindingIsEnabled(){
+  tx.executeWithoutResult(s->{scope();
+   jdbc.update("DELETE FROM shopify_inventory_binding_sources WHERE tenant_id=? AND binding_id=?",tenant,binding);
+   jdbc.update("UPDATE shopify_inventory_bindings SET enabled=true WHERE tenant_id=? AND id=?",tenant,binding);
+  });
+  assertThat(repository.plan(tenant,connection,startup)).isZero();
+  assertThat(repository.next(tenant,connection)).isEmpty();
+ }
+ @Test void bindingChangesDisableAndFencePreparedWork(){
+  repository.plan(tenant,connection,startup);var operation=repository.next(tenant,connection).orElseThrow();
+  tx.executeWithoutResult(s->{scope();jdbc.update("UPDATE shopify_inventory_bindings SET location_gid='gid://shopify/Location/99' WHERE id=?",binding);});
+  assertThat(jdbc.queryForObject("SELECT enabled FROM shopify_inventory_bindings WHERE id=?",Boolean.class,binding)).isFalse();
+  var client=mock(ShopifyInventoryClient.class);repository.prepare(operation,client,startup);verifyNoInteractions(client);
+  assertThat(jdbc.queryForObject("SELECT state FROM shopify_inventory_publications WHERE id=?",String.class,operation.id())).isEqualTo("CANCELLED");
+ }
+ @Test void tenantRlsAndStoredZeroOverride(){
+  var profit=new ShopifyOrderProfitRepository(jdbc,new ProfitCostRepository(jdbc));
+  tx.executeWithoutResult(s->{jdbc.execute("SET LOCAL ROLE publication_reader");scope();
+   profit.saveOtherCosts(tenant,connection,List.of(new ShopifyOrderProfitRepository.OtherCostChange(variant,BigDecimal.ZERO)),"USD","fixture");
+   assertThat(jdbc.queryForObject("SELECT profit_other_cost FROM shopify_variants WHERE id=?",BigDecimal.class,variant)).isEqualByComparingTo("0");
+   jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,UUID.randomUUID().toString());
+   assertThat(jdbc.queryForObject("SELECT count(*) FROM shopify_inventory_bindings WHERE id=?",Integer.class,binding)).isZero();
+  });
+ }
+ @Test void listingCalculatorUsesVariantScopeAndKeepsUnknownShippingPending(){
+  var profit=new ShopifyOrderProfitRepository(jdbc,new ProfitCostRepository(jdbc));
+  tx.executeWithoutResult(s->{scope();
+   var view=profit.skus(tenant,connection,List.of(variant.toString())).get(variant.toString());
+   assertThat(view.kind()).isEqualTo("SHOPIFY_SKU");
+   assertThat(view.lines().getFirst().variantId()).isEqualTo(variant);
+   assertThat(view.totals().revenue()).isEqualByComparingTo("10");
+   assertThat(view.totals().productCost()).isNull();
+   assertThat(view.totals().shippingCost()).isNull();
+   assertThat(view.totals().profit()).isNull();
+   assertThat(profit.skus(tenant,UUID.randomUUID(),List.of(variant.toString()))).isEmpty();
+   jdbc.execute("SET LOCAL ROLE publication_reader");
+   assertThat(profit.skus(UUID.randomUUID(),connection,List.of(variant.toString()))).isEmpty();
+  });
+ }
+ @Test void inactiveItemsAndUnrecordedShopifyDeparturesPublishZero(){
+  tx.executeWithoutResult(s->{scope();jdbc.update("UPDATE account_catalog_items SET status='INACTIVE' WHERE id=?",item);});
+  repository.plan(tenant,connection,startup);assertThat(repository.next(tenant,connection).orElseThrow().desired()).isZero();
+  tx.executeWithoutResult(s->{scope();jdbc.update("UPDATE shopify_inventory_publications SET state='CANCELLED' WHERE tenant_id=?",tenant);jdbc.update("UPDATE account_catalog_items SET status='ACTIVE' WHERE id=?",item);
+   UUID id=UUID.randomUUID();jdbc.update("INSERT INTO inventory_ledger_entries(id,tenant_id,account_catalog_item_id,location_id,entry_type,quantity,source_type,source_id,idempotency_key,occurred_at) VALUES(?,?,?,?,'SHIPMENT_UNRECORDED',0,'SHOPIFY_ORDER',?,?,now())",id,tenant,item,main,id,id.toString());
+  });
+  repository.plan(tenant,connection,startup);assertThat(repository.next(tenant,connection).orElseThrow().desired()).isZero();
+ }
+ @Test void previouslyManagedUnmappedVariantGetsTombstoneZero(){
+  repository.plan(tenant,connection,startup);var first=repository.next(tenant,connection).orElseThrow();
+  tx.executeWithoutResult(s->{scope();jdbc.update("UPDATE shopify_inventory_publications SET expected_quantity=4,state='CONFIRMED',confirmed_at=now() WHERE id=?",first.id());jdbc.update("UPDATE marketplace_sku_mappings SET status='INACTIVE' WHERE tenant_id=? AND shopify_variant_id=?",tenant,variant);});
+  assertThat(repository.plan(tenant,connection,startup)).isEqualTo(1);
+  assertThat(repository.next(tenant,connection).orElseThrow().desired()).isZero();
+ }
+}

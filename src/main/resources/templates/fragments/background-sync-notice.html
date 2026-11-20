@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<div class="background-sync-notice" th:fragment="notice" th:if="${historicalSyncInProgress}" role="status">
+  <span class="background-sync-spinner" aria-hidden="true"></span>
+  <div><strong>Historical Amazon data is still being processed</strong><small>You can continue working. Remaining data will be added as Amazon prepares the reports.</small></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,36 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  thymeleaf:
+    cache: true
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: strict
+      timeout: 8h
+app:
+  amazon:
+    shelf-sale-enabled: ${AMAZON_SHELF_SALE_ENABLED:true}
+    shelf-sale-connections: ${AMAZON_SHELF_SALE_CONNECTIONS:6c4d4dae-d69c-4794-91bd-b3173fa56c52}
+  public-url: ${APP_PUBLIC_URL}
+  mail:
+    enabled: ${MAIL_ENABLED:true}
+    provider: ${MAIL_PROVIDER:graph}
+    from: ${MAIL_FROM}
+    from-name: ${MAIL_FROM_NAME:Next AI Commerce}
+    sender-mailbox: ${MAIL_SENDER_MAILBOX:${MAIL_FROM}}
+    reply-to: ${MAIL_REPLY_TO:${MAIL_FROM}}
+    graph:
+      tenant-id: ${MICROSOFT_TENANT_ID}
+      client-id: ${MICROSOFT_CLIENT_ID}
+      client-secret: ${MICROSOFT_CLIENT_SECRET}
+  credentials:
+    encryption-key: ${APP_CREDENTIAL_ENCRYPTION_KEY}
+  local-admin:
+    email: ${APP_ADMIN_EMAIL}
+    password: ${APP_ADMIN_PASSWORD}

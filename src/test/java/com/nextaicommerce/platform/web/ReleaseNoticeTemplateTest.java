@@ -1,0 +1,27 @@
+package com.nextaicommerce.platform.web;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+import org.thymeleaf.context.Context;
+import org.thymeleaf.spring6.SpringTemplateEngine;
+import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
+
+class ReleaseNoticeTemplateTest {
+    private String render(ReleaseNoticeAdvice.Notice notice) {
+        var resolver=new ClassLoaderTemplateResolver();
+        resolver.setPrefix("templates/");resolver.setSuffix(".html");
+        var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);
+        var servlet=new org.springframework.mock.web.MockServletContext();var app=org.thymeleaf.web.servlet.JakartaServletWebApplication.buildApplication(servlet);
+        var context=new org.thymeleaf.context.WebContext(app.buildExchange(new org.springframework.mock.web.MockHttpServletRequest(servlet),new org.springframework.mock.web.MockHttpServletResponse()));context.setVariable("releaseNotice",notice);
+        return engine.process("fragments/release-notice",context);
+    }
+    @Test void disabledNoticeDoesNotLoadAssetsOrControls() {
+        assertThat(render(null)).doesNotContain("data-release-notice","release-notice.js","Got it");
+    }
+    @Test void enabledNoticeRendersOnlyExplicitDisplayMetadata() {
+        assertThat(render(new ReleaseNoticeAdvice.Notice("release-1.7.0-r1","2026-10-23T23:00:00Z")))
+            .contains("data-notice-version=\"release-1.7.0-r1\"","data-valid-until=\"2026-10-23T23:00:00Z\"",
+                "To be confirmed.","Service interruption has not yet been confirmed.","Got it","We’re preparing updates to Shopify Orders and warehouse inventory synchronization.")
+            .doesNotContain("<form","fetch(","Maintenance in progress","30–60 minutes.");
+    }
+}

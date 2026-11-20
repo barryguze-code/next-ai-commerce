@@ -1,0 +1,76 @@
+.standard-marketplace-shortcuts{display:inline-flex;align-items:center;gap:6px;flex-shrink:0}
+.standard-marketplace-shortcuts a,.marketplace-links a{display:inline-grid;place-items:center;width:30px;height:30px;flex:0 0 30px;padding:3px;border:1px solid var(--line,#dce3ec);border-radius:8px;background:#fff;box-sizing:border-box}
+.standard-marketplace-shortcuts img{width:22px;height:22px;object-fit:contain}
+.standard-marketplace-shortcuts a:focus-visible,.location-picker-trigger:focus-visible,.location-picker-popup button:focus-visible{outline:2px solid var(--blue,#2b6ce6);outline-offset:3px}
+.related-sku-actions.standard-marketplace-shortcuts{justify-content:flex-start;grid-column:1/-1}
+.location-field-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:25px}
+.location-add-button{display:inline-grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:var(--blue,#2b6ce6);color:#fff;font-size:20px;line-height:1;cursor:pointer;box-shadow:0 3px 8px #2b6ce630}
+.location-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:34px;max-width:100%;padding:7px 10px;border:1px solid var(--line,#dce3ec);border-radius:9px;background:var(--white,#fff);color:var(--ink,#17253b);font:inherit;font-size:.6875rem;text-align:left;cursor:pointer}
+.location-choice-label{flex:1 1 auto;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.location-picker-trigger>.location-choice-chevron{display:block;width:16px;height:16px;flex:0 0 16px;margin-inline-start:auto;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.location-picker-trigger.is-compact{display:inline-flex;justify-content:center;width:48px;min-width:48px;height:34px;padding:6px;font-weight:800;background:#eef4ff;color:#2864b8}
+.location-picker-trigger.is-compact>.location-choice-label{flex:0 1 auto}
+.location-picker-trigger:disabled{opacity:.5;cursor:not-allowed}
+.location-picker-popup{position:fixed;z-index:1600;overflow-y:auto;padding:7px;border:1px solid var(--line,#dce3ec);border-radius:14px;background:#fff;color:var(--ink,#17253b);box-shadow:0 16px 45px #102d5030;box-sizing:border-box}
+.location-picker-popup[hidden]{display:none!important}
+select[data-standard-choice][hidden]{display:none!important}
+.standard-choice-trigger{min-height:42px;font-size:14px;line-height:1.4}
+.location-picker-popup.standard-choice-popup button{min-height:42px;font-size:14px;line-height:1.4}
+.location-picker-popup button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 8px;border:0;border-radius:9px;background:transparent;color:inherit;font:inherit;font-size:.6875rem;text-align:left;cursor:pointer}
+.location-picker-popup button:hover,.location-picker-popup button[aria-selected=true]{background:#edf4ff}
+.location-picker-popup button[aria-selected=true]:after{content:'✓';margin-left:auto;color:#2864b8;font-weight:800}
+.location-option-code{display:grid;place-items:center;flex:0 0 30px;height:30px;border-radius:8px;background:#eaf2ff;color:#2864b8;font-weight:800}
+.location-picker-popup button:disabled{opacity:.45;cursor:not-allowed}
+.history-load-more{display:block;margin:14px auto}.history-error .secondary-button{margin:8px}
+html[data-theme=dark] .location-picker-trigger,html[data-theme=dark] .location-picker-popup{background:#152335;color:#e5edf8;border-color:#34485f}
+html[data-theme=dark] .location-picker-trigger.is-compact,html[data-theme=dark] .location-option-code{background:#203a58;color:#aad0ff}
+html[data-theme=dark] .location-picker-popup button:hover,html[data-theme=dark] .location-picker-popup button[aria-selected=true]{background:#213752}
+html[data-theme=dark] .standard-marketplace-shortcuts a{background:#142436;border-color:#34485f}
+
+select[data-location-picker-ready][hidden]{display:none!important}
+
+.location-fields{align-items:end}
+.location-picker-trigger.is-compact{width:auto;min-width:60px;white-space:nowrap}
+.location-option-code{flex-basis:auto;min-width:38px;padding:0 5px;white-space:nowrap}
+.table-page-size .location-picker-trigger{display:inline-flex;width:auto;min-width:68px;min-height:36px;font-size:14px}
+.location-picker-popup button{min-height:40px;font-size:14px}
+.standard-search-icon,.context-filter>.standard-search-icon,.search-field>.standard-search-icon{display:inline-flex;width:20px;height:20px;flex:0 0 20px}
+.standard-search-icon svg,.table-standard-search>svg,.table-column-search>svg{width:20px!important;height:20px!important;min-width:20px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.table-standard-toolbar .table-export{width:40px;min-width:40px;height:40px;padding:9px}
+.table-standard-toolbar .table-export svg{width:22px!important;height:22px!important;min-width:22px;flex-shrink:0}
+.order-date-sort{border:0;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer;padding:6px 0;text-align:inherit}
+.order-date-sort:focus-visible{outline:2px solid var(--blue,#2b6ce6);outline-offset:3px}
+#inventory-history-dialog .location-fields{grid-template-columns:88px minmax(0,1fr);align-items:start}
+#inventory-history-dialog .location-fields label{grid-template-rows:25px 40px;align-content:start;font-size:13px}
+#inventory-history-dialog .location-fields input,#inventory-history-dialog .location-picker-trigger{height:40px;box-sizing:border-box;font-size:14px}
+#inventory-history-dialog .location-fields .location-picker-trigger{grid-row:2}
+#inventory-history-dialog .location-field-heading{min-height:25px}
+.inventory-row [data-ui-product]:hover,.inventory-row [data-ui-product]:focus-visible{color:var(--blue,#2b6ce6);background:var(--blue-soft,#edf4ff);text-decoration:underline;cursor:pointer}
+.history-item-picker[hidden]{display:none!important}
+.history-item-picker{display:grid;gap:6px;margin:10px 0;font-size:14px}
+#inventory-history-dialog .inventory-position-header{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:16px;align-items:center}
+#inventory-history-dialog .inventory-position-header>div{min-width:0}
+.inventory-ledger-link{color:inherit;text-decoration:none;cursor:pointer}
+.inventory-ledger-link:hover,.inventory-ledger-link:focus-visible{color:var(--blue,#2b6ce6);text-decoration:underline;background:var(--blue-soft,#edf4ff)}
+.bundle-ledger-choice{width:min(560px,calc(100vw - 32px));}
+.bundle-ledger-choice .dialog-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+.bundle-ledger-context{overflow-wrap:anywhere;font-size:14px;color:var(--muted,#617084);margin:6px 0 0;}
+.bundle-ledger-options{display:grid;gap:10px;margin-top:16px;}
+.bundle-ledger-option{display:grid;gap:6px;text-align:left;padding:14px 16px;min-height:64px;border:1px solid var(--border,#dce3ed);border-radius:12px;background:var(--surface,#fff);color:var(--text,#192b41);cursor:pointer;}
+.bundle-ledger-option strong{font-size:15px;line-height:1.4;}
+.bundle-ledger-option span{font-size:14px;color:var(--muted,#617084);}
+.bundle-ledger-option:hover,.bundle-ledger-option:focus-visible{background:#edf4ff;border-color:#326de6;outline:2px solid transparent;}
+
+/* Opt-in choice management: selection and editor actions remain separate targets. */
+.location-picker-popup .managed-choice-row{display:flex;align-items:center;gap:6px}
+.location-picker-popup .managed-choice-row>button:first-child{flex:1;min-width:0}
+.location-picker-popup.standard-choice-popup .managed-choice-edit,.location-picker-popup .managed-choice-edit{flex:0 0 auto;width:auto;min-width:44px;color:var(--ui-action-text,var(--blue,#2b6ce6));font:inherit;font-size:12px;font-weight:600}
+.location-picker-popup .managed-choice-footer{border-top:1px solid var(--line,#dce3ec);margin-top:6px;padding-top:6px}
+.location-picker-popup .managed-choice-footer button{color:var(--ui-action-text,var(--blue,#2b6ce6));font-weight:650}
+
+.location-picker-popup button[aria-pressed=true]{background:#edf4ff}.location-picker-popup button[aria-pressed=true]:after{content:"✓";margin-left:auto;color:#2864b8;font-weight:800}html[data-theme=dark] .location-picker-popup button[aria-pressed=true]{background:#213752}
+
+/* Allocation actions stay reachable while only their location options scroll. */
+.location-picker-popup.has-allocation-action{display:flex;flex-direction:column;overflow:hidden}
+.location-picker-popup.has-allocation-action .platform-choice-options{min-height:0;overflow-y:auto;flex:1 1 auto}
+.location-picker-popup.has-allocation-action>.managed-choice-footer{flex:0 0 auto}

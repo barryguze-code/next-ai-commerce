@@ -1,0 +1,5 @@
+.short-date-control{display:flex;position:relative;align-items:center;min-width:0;width:100%}
+.short-date-control .short-date-text{width:100%;padding-right:42px!important;min-width:0;font-variant-numeric:tabular-nums}
+.short-date-control .short-date-native{position:absolute!important;width:1px!important;min-width:0!important;height:1px!important;min-height:0!important;padding:0!important;border:0!important;opacity:0;pointer-events:none;bottom:0;left:0}
+.short-date-control .short-date-picker{position:absolute;right:8px;width:30px;height:30px;min-width:0;padding:5px;border:0;border-radius:6px;background:transparent;color:var(--ink);cursor:pointer}
+.short-date-picker svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8}.short-date-picker:focus-visible{outline:2px solid var(--blue)}

@@ -1,0 +1,10 @@
+<html xmlns:th="http://www.thymeleaf.org"><body>
+<div th:fragment="choices" id="collaboration-assignment-choices" class="assignment-choices" popover="auto" aria-label="Assign teammates" th:attr="data-current-email=${signedInEmail}">
+  <form method="post" th:action="@{/app/collaboration/reviews/placeholder/assignees}">
+    <header><strong>Assigned to</strong><button type="button" data-unassign-all>Clear all</button></header>
+    <input type="search" placeholder="Find teammate" aria-label="Find teammate to assign">
+    <div class="assignment-people"><label th:each="person:${members}"><input type="checkbox" name="people" th:value="${person.id}" th:attr="data-email=${person.email}"><span th:text="${person.name}"></span></label></div>
+    <p data-assignment-error role="status" hidden></p><footer><button type="button" data-close-assignment>Cancel</button><button type="submit" class="primary-button compact-button">Apply</button></footer>
+  </form>
+</div>
+</body></html>

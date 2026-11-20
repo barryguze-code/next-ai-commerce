@@ -1,0 +1,676 @@
+package com.nextaicommerce.platform.web;
+
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.text.Normalizer;
+import java.util.Locale;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+import com.nextaicommerce.platform.sync.AmazonSyncProgress;
+
+@Repository
+public class WorkspaceAccessRepository {
+    private static final String DIRECTORY_FROM="""
+            FROM app_users u
+            LEFT JOIN effective_account_memberships m ON u.id = m.user_id AND m.tenant_id=?
+            WHERE m.user_id IS NOT NULL OR (u.status='ACTIVE' AND EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active))
+            """;
+    public record AccountView(UUID id, String name, String initials, String slug, String status, int users, int connections, boolean hasLogo) {}
+    public record AccountOption(UUID id, String name, String initials, String logoUrl, List<ConnectionView> stores) {}
+    public record ConnectionView(UUID id, UUID tenantId, String tenantName, String name, String channel,
+        String sellerId, String marketplaceId, String marketplaceLabel, String countryFlag,
+        String status, Instant lastCheckedAt, boolean credentialsStored) {}
+    public record ConnectionIdentity(UUID id, String channel, String marketplaceId) {
+        public ConnectionIdentity(UUID id, String channel) { this(id, channel, "ATVPDKIKX0DER"); }
+    }
+    public record CredentialEnvelope(byte[] payload, byte[] nonce) {}
+    public record SyncStatusView(UUID connectionId, String storeName, String status, int progress,
+        String stage, String message, Instant startedAt, boolean feeOnly) {
+        public SyncStatusView(UUID connectionId,String storeName,String status,int progress,String stage,String message,Instant startedAt){this(connectionId,storeName,status,progress,stage,message,startedAt,false);}
+        public boolean shopify(){return "SHOPIFY_CATALOG_VARIANTS".equals(stage)||"SHOPIFY_ORDERS".equals(stage);}
+        public boolean terminal(){return feeTerminal()||(shopify()&&!Set.of("QUEUED","RUNNING").contains(status));}
+        public boolean feeTerminal(){return feeOnly&&Set.of("COMPLETED","COMPLETED_WITH_WARNINGS","FAILED","CANCELLED").contains(status);}
+        public String feeStateLabel(){return switch(status){case "COMPLETED"->"Completed";case "COMPLETED_WITH_WARNINGS"->"Completed with warnings";case "FAILED"->"Failed";case "CANCELLED"->"Cancelled";case "QUEUED"->"Queued";case "RUNNING"->"Checking fee quotes";default->"Fee check needs review";};}
+        public int displayProgress() {
+            if("SHOPIFY_ORDERS".equals(stage))return "COMPLETED".equals(status)?100:Math.max(0,Math.min(99,progress));
+            if(feeOnly)return Math.max(0,Math.min(100,progress));
+            return AmazonSyncProgress.displayPercent(progress, stage, status);
+        }
+        public String stagePosition() {
+            if("SHOPIFY_ORDERS".equals(stage))return "Shopify orders";
+            if(shopify())return "Products and variants";
+            if(feeOnly)return "Fee quote results";
+            return "Step " + AmazonSyncProgress.stageNumber(stage) + " of " + AmazonSyncProgress.stageCount();
+        }
+        public String estimatedTimeRemaining() {
+            if(shopify())return terminal()?"Review sync results":"Continues in the background";
+            if(feeOnly)return feeStateLabel();
+            if ("COMPLETED".equals(status)) return "Complete";
+            return AmazonSyncProgress.stageTiming(stage);
+        }
+        public boolean starting() {
+            return progress == 0 && !"COMPLETED".equals(status) && !terminal();
+        }
+    }
+    public record SyncJobView(UUID connectionId, int sequence, String jobType, String label,
+        String status, long recordsProcessed, String detail) {}
+    public record MemberView(UUID id, String displayName, String email, String role, String status, int stores,
+            List<UUID> storeIds, boolean protectedMember) {
+        public MemberView(UUID id, String displayName, String email, String role, String status, int stores) {
+            this(id, displayName, email, role, status, stores, List.of(), "OWNER".equals(role));
+        }
+    }
+    public record InvitationView(UUID id, String email, String role, String status, int stores,
+        Instant sentAt, Instant expiresAt, String invitedBy) {
+        private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a")
+            .withZone(ZoneId.systemDefault());
+        public boolean expired() { return !expiresAt.isAfter(Instant.now()); }
+        public String displayStatus() { return expired() ? "EXPIRED" : status; }
+        public String sentLabel() { return DATE_TIME.format(sentAt); }
+        public String expiresLabel() { return DATE_TIME.format(expiresAt); }
+    }
+
+    private final JdbcTemplate jdbc;
+
+    public WorkspaceAccessRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+
+    @Transactional(readOnly = true)
+    public List<AccountView> listAllAccounts() {
+        List<AccountView> result = new ArrayList<>();
+        for (var tenant : jdbc.query("SELECT id, display_name, slug, status, logo_bytes IS NOT NULL FROM tenants WHERE status = 'ACTIVE' ORDER BY display_name",
+                (rs, row) -> new Object[]{rs.getObject(1, UUID.class), rs.getString(2), rs.getString(3), rs.getString(4),rs.getBoolean(5)})) {
+            UUID tenantId = (UUID) tenant[0];
+            setTenant(tenantId);
+            Integer users = jdbc.queryForObject("SELECT count(*) "+DIRECTORY_FROM, Integer.class, tenantId);
+            Integer connections = jdbc.queryForObject("SELECT count(*) FROM marketplace_connections WHERE tenant_id = ?", Integer.class, tenantId);
+            String name = (String) tenant[1];
+            result.add(new AccountView(tenantId, name, accountInitials(name), (String) tenant[2], (String) tenant[3],
+                users == null ? 0 : users, connections == null ? 0 : connections,(Boolean)tenant[4]));
+        }
+        return result;
+    }
+
+    public record BusinessDetails(String displayName,String name,String address) {}
+
+    @Transactional(readOnly=true)
+    public List<MemberView> directoryMembers(UUID account) {
+        setTenant(account);
+        return jdbc.query("""
+            SELECT u.id,u.display_name FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
+            WHERE m.tenant_id=? AND u.status='ACTIVE' ORDER BY lower(u.display_name),u.id
+            """,(rs,n)->new MemberView(rs.getObject(1,UUID.class),rs.getString(2),"","","ACTIVE",0,List.of(),true),account);
+    }
+
+    @Transactional(readOnly=true)
+    public BusinessDetails businessDetails(UUID account,String actor) {
+        if (!isCurrentPlatformAdmin(actor)) throw new org.springframework.security.access.AccessDeniedException("Platform access required.");
+        return jdbc.queryForObject("SELECT display_name,legal_business_name,registered_business_address FROM tenants WHERE id=? AND status='ACTIVE'",
+            (rs,n)->new BusinessDetails(rs.getString(1),rs.getString(2),rs.getString(3)),account);
+    }
+
+    @Transactional
+    public void saveBusinessDetails(UUID account,String actor,String displayName,String name,String address,LogoData logo) {
+        if (!isCurrentPlatformAdmin(actor)) throw new org.springframework.security.access.AccessDeniedException("Platform access required.");
+        displayName=displayName.strip(); name=name.strip(); address=address.strip();
+        if(displayName.isEmpty()||displayName.length()>160)throw new IllegalArgumentException("Enter an account name of up to 160 characters.");
+        if(name.length()>240 || address.length()>1200) throw new IllegalArgumentException("Use up to 240 characters for the name and 1,200 for the address.");
+        setTenant(account);
+        BusinessDetails old=jdbc.queryForObject("SELECT display_name,legal_business_name,registered_business_address FROM tenants WHERE id=? AND status='ACTIVE' FOR UPDATE",
+            (rs,n)->new BusinessDetails(rs.getString(1),rs.getString(2),rs.getString(3)),account);
+        boolean nameChanged=!java.util.Objects.equals(old.name(),name.isEmpty()?null:name);
+        boolean addressChanged=!java.util.Objects.equals(old.address(),address.isEmpty()?null:address);
+        boolean displayChanged=!old.displayName().equals(displayName);
+        if (!displayChanged && logo==null && !nameChanged && !addressChanged) return;
+        jdbc.update("UPDATE tenants SET display_name=?,legal_business_name=nullif(?,''), registered_business_address=nullif(?,'') WHERE id=? AND status='ACTIVE'",displayName,name,address,account);
+        if(logo!=null)saveAccountLogo(account,logo.contentType(),logo.bytes());
+        jdbc.update("""
+            INSERT INTO audit_events(tenant_id,actor_user_id,actor_is_super_admin,action,target_type,target_id,reason,details)
+            SELECT ?,id,true,'BUSINESS_DETAILS_UPDATED','ACCOUNT',?,'Edited account business details',
+                jsonb_build_object('changedFields',array_remove(ARRAY[CASE WHEN ? THEN 'display_name' END, CASE WHEN ? THEN 'logo' END, CASE WHEN ? THEN 'legal_business_name' END, CASE WHEN ? THEN 'registered_business_address' END],NULL)) FROM app_users WHERE lower(email)=lower(?)
+            """,account,account.toString(),displayChanged,logo!=null,nameChanged,addressChanged,actor);
+    }
+
+    @Transactional(readOnly=true)
+    public List<String> memberInitials(UUID account){
+        setTenant(account);
+        return jdbc.query("SELECT u.display_name "+DIRECTORY_FROM+" ORDER BY lower(u.display_name),u.id LIMIT 3",(rs,n)->accountInitials(rs.getString(1)),account);
+    }
+
+    private static String accountInitials(String name) {
+        if (name == null || name.isBlank()) return "BA";
+        String[] words = name.trim().split("\\s+");
+        if (words.length == 1) return words[0].substring(0, Math.min(3, words[0].length())).toUpperCase(Locale.ROOT);
+        return (words[0].substring(0, 1) + words[1].substring(0, 1)).toUpperCase(Locale.ROOT);
+    }
+
+    @Transactional
+    public UUID createClient(String displayName, String email) {
+        if (!isCurrentPlatformAdmin(email)) throw new IllegalArgumentException("Platform administrator access is required.");
+        UUID account = addAccount(displayName);
+        UUID parent = UUID.randomUUID();
+        jdbc.queryForObject("SELECT set_config('app.parent_id', ?, true)", String.class, parent.toString());
+        jdbc.queryForObject("SELECT set_config('app.user_email', ?, true)", String.class, email);
+        UUID actor = jdbc.queryForObject("SELECT id FROM app_users WHERE lower(email)=lower(?) AND status='ACTIVE'", UUID.class, email);
+        jdbc.update("INSERT INTO parent_tenants(id,name,created_by) SELECT ?,display_name,? FROM tenants WHERE id=?", parent,actor,account);
+        jdbc.update("INSERT INTO parent_tenant_accounts(parent_id,account_id) VALUES (?,?)", parent,account);
+        jdbc.update("INSERT INTO parent_tenant_events(parent_id,actor_id,event_kind,details) VALUES (?,?,'CREATED',jsonb_build_object('account',?::uuid))", parent,actor,account);
+        return account;
+    }
+
+    private UUID addAccount(String displayName) {
+        if (displayName == null || displayName.isBlank())
+            throw new IllegalArgumentException("Enter an account name.");
+        String cleanName = displayName.trim().replaceAll("\\s+", " ");
+        if (cleanName.length() > 160)
+            throw new IllegalArgumentException("Account name must be 160 characters or fewer.");
+        String slug = Normalizer.normalize(cleanName, Normalizer.Form.NFD)
+            .replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+        if (slug.isBlank()) throw new IllegalArgumentException("Use letters or numbers in the account name.");
+        Integer existing = jdbc.queryForObject("SELECT count(*) FROM tenants WHERE slug=?", Integer.class, slug);
+        if (existing != null && existing > 0)
+            throw new IllegalArgumentException("An account with this name already exists.");
+        UUID tenantId=jdbc.queryForObject("INSERT INTO tenants (slug, display_name, status) VALUES (?, ?, 'ACTIVE') RETURNING id",
+            UUID.class,slug,cleanName);
+        setTenant(tenantId);
+        jdbc.update("INSERT INTO warehouse_locations(tenant_id,code,name) VALUES (?,'MAIN','Main storage')",tenantId);
+        return tenantId;
+    }
+
+    @Transactional(readOnly = true)
+    public List<AccountView> listAvailableAccounts(String email, boolean superAdmin) {
+        if (superAdmin) return listAllAccounts();
+        List<AccountView> result = new ArrayList<>();
+        for (AccountView account : listAllAccounts()) {
+            setTenant(account.id());
+            Integer count = jdbc.queryForObject("""
+                SELECT count(*) FROM effective_account_memberships m JOIN app_users u ON u.id = m.user_id
+                WHERE m.tenant_id = ? AND lower(u.email) = lower(?)
+                """, Integer.class, account.id(), email);
+            if (count != null && count > 0) result.add(account);
+        }
+        return result;
+    }
+
+    @Transactional(readOnly = true)
+    public List<AccountOption> listAccountOptions(String email, boolean superAdmin) {
+        return listAvailableAccounts(email, superAdmin).stream()
+            .map(account -> new AccountOption(account.id(), account.name(), account.initials(),account.hasLogo()?"/app/platform/accounts/"+account.id()+"/logo":null,
+                visibleConnections(account, email, superAdmin)))
+            .toList();
+    }
+
+    @Transactional
+    public void saveAccountLogo(UUID tenantId,String contentType,byte[] bytes){
+        jdbc.update("UPDATE tenants SET logo_bytes=?,logo_content_type=?,logo_updated_at=now() WHERE id=?",bytes,contentType,tenantId);
+    }
+    @Transactional(readOnly=true)
+    public LogoData accountLogo(UUID tenantId){
+        return jdbc.query("SELECT logo_bytes,logo_content_type FROM tenants WHERE id=?",rs->rs.next()&&rs.getBytes(1)!=null?new LogoData(rs.getBytes(1),rs.getString(2)):null,tenantId);
+    }
+    public record LogoData(byte[] bytes,String contentType) {}
+
+    /** Resolve authority in the selected account, never from unioned login roles. */
+    @Transactional(readOnly = true)
+    public boolean canOperateAccount(UUID tenantId,String email) {
+        setTenant(tenantId);
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM tenants t CROSS JOIN app_users u
+              WHERE t.id=? AND t.status='ACTIVE' AND lower(u.email)=lower(?) AND u.status='ACTIVE'
+                AND (EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active)
+                  OR EXISTS(SELECT 1 FROM effective_account_memberships m WHERE m.tenant_id=t.id AND m.user_id=u.id
+                    AND m.role IN ('OWNER','ADMIN','OPERATOR'))))
+            """,Boolean.class,tenantId,email));
+    }
+
+    private List<ConnectionView> visibleConnections(AccountView account, String email, boolean superAdmin) {
+        List<ConnectionView> all = listConnections(account.id(), account.name());
+        if (superAdmin) return all;
+        setTenant(account.id());
+        String role = jdbc.query("""
+            SELECT m.role FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
+            WHERE m.tenant_id=? AND lower(u.email)=lower(?)
+            """, rs -> rs.next() ? rs.getString(1) : "", account.id(), email);
+        boolean restricted = Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT coalesce(bool_or(m.stores_restricted),false) FROM effective_account_memberships m
+            JOIN app_users u ON u.id=m.user_id WHERE m.tenant_id=? AND lower(u.email)=lower(?)
+            """, Boolean.class, account.id(), email));
+        if ("OWNER".equals(role) || ("ADMIN".equals(role) && !restricted)) return all;
+        Set<UUID> allowed = Set.copyOf(jdbc.query("""
+            SELECT msa.marketplace_connection_id FROM membership_store_access msa
+            JOIN app_users u ON u.id=msa.user_id
+            WHERE msa.tenant_id=? AND lower(u.email)=lower(?)
+            """, (rs, row) -> rs.getObject(1, UUID.class), account.id(), email));
+        return all.stream().filter(connection -> allowed.contains(connection.id())).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canAccessAccount(UUID tenantId, String email, boolean superAdmin) {
+        if (superAdmin) return jdbc.queryForObject("SELECT count(*) FROM tenants WHERE id=? AND status='ACTIVE'", Integer.class, tenantId) == 1;
+        setTenant(tenantId);
+        Integer count = jdbc.queryForObject("""
+            SELECT count(*) FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
+            WHERE m.tenant_id=? AND lower(u.email)=lower(?)
+            """, Integer.class, tenantId, email);
+        return count != null && count == 1;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canAdministerAccount(UUID tenantId, String email, boolean superAdmin) {
+        if (superAdmin) return jdbc.queryForObject("SELECT count(*) FROM tenants WHERE id=? AND status='ACTIVE'", Integer.class, tenantId) == 1;
+        setTenant(tenantId);
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM effective_account_memberships m
+              JOIN app_users u ON u.id=m.user_id JOIN tenants t ON t.id=m.tenant_id
+              WHERE m.tenant_id=? AND lower(u.email)=lower(?)
+                AND u.status='ACTIVE' AND t.status='ACTIVE' AND m.role IN ('OWNER','ADMIN'))
+            """, Boolean.class, tenantId, email));
+    }
+
+    @Transactional(readOnly=true)
+    public boolean canInviteHome(UUID account,String email) {
+        if (owningTenant(account)==null) return false;
+        if (isCurrentPlatformAdmin(email)) return true;
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
+              WHERE m.tenant_id=? AND m.tenant_managed AND lower(u.email)=lower(?) AND u.status='ACTIVE')
+            """,Boolean.class,account,email));
+    }
+
+    private UUID owningTenant(UUID account) {
+        setTenant(account);
+        return jdbc.query("SELECT parent_id FROM parent_tenant_accounts WHERE account_id=?",
+                rs->rs.next()?rs.getObject(1,UUID.class):null,account);
+    }
+
+    @Transactional(readOnly=true)
+    public List<AccountOption> connectionDestinations(UUID current,String email) {
+        boolean staff=isCurrentPlatformAdmin(email);
+        UUID owner=owningTenant(current);
+        return listAccountOptions(email,staff).stream().filter(account->{
+            if(!account.id().equals(current) && (owner==null || !owner.equals(owningTenant(account.id()))))return false;
+            setTenant(account.id());
+            return staff || Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM effective_account_memberships m JOIN app_users u ON u.id=m.user_id
+                WHERE m.tenant_id=? AND lower(u.email)=lower(?) AND u.status='ACTIVE'
+                AND (m.role='OWNER' OR (m.role='ADMIN' AND NOT m.stores_restricted)))
+                """,Boolean.class,account.id(),email));
+        }).toList();
+    }
+
+    @Transactional(readOnly=true)
+    public UUID connectionDestination(UUID current,UUID requested,String email) {
+        UUID target=requested==null?current:requested;
+        if(current==null || connectionDestinations(current,email).stream().noneMatch(a->a.id().equals(target)))
+            throw new org.springframework.security.access.AccessDeniedException("Choose an account you administer in this tenant.");
+        return target;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean connectionBelongsToAccount(UUID tenantId, UUID connectionId) {
+        setTenant(tenantId);
+        Integer count = jdbc.queryForObject(
+            "SELECT count(*) FROM marketplace_connections WHERE tenant_id=? AND id=?",
+            Integer.class, tenantId, connectionId);
+        return count != null && count == 1;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ConnectionView> listConnections(UUID tenantId, String tenantName) {
+        setTenant(tenantId);
+        return jdbc.query("""
+                SELECT id, tenant_id,
+                       CASE seller_identifier
+                           WHEN 'A1NDXA1M2438J4' THEN 'Ibcore'
+                           WHEN 'A1PM59EP9QEK4B' THEN 'Karaca'
+                           ELSE display_name
+                       END AS display_name,
+                       channel, seller_identifier,
+                       marketplace_identifier, status, last_synced_at,
+                       EXISTS (SELECT 1 FROM marketplace_connection_credentials credentials
+                               WHERE credentials.tenant_id = marketplace_connections.tenant_id
+                                 AND credentials.marketplace_connection_id = marketplace_connections.id)
+                           AS credentials_stored
+                FROM marketplace_connections WHERE tenant_id = ? AND status <> 'DISABLED' ORDER BY display_name
+                """, (rs, row) -> new ConnectionView(rs.getObject("id", UUID.class),
+                    rs.getObject("tenant_id", UUID.class), tenantName, rs.getString("display_name"),
+                    rs.getString("channel"), rs.getString("seller_identifier"),
+                    rs.getString("marketplace_identifier"), marketplaceLabel(rs.getString("marketplace_identifier")),
+                    countryFlag(rs.getString("marketplace_identifier")), rs.getString("status"),
+                    rs.getTimestamp("last_synced_at") == null ? null : rs.getTimestamp("last_synced_at").toInstant(),
+                    rs.getBoolean("credentials_stored")),
+                tenantId);
+    }
+
+    @Transactional(readOnly = true)
+    public ConnectionIdentity findConnection(UUID tenantId, UUID connectionId) {
+        setTenant(tenantId);
+        return jdbc.query("SELECT id, channel, marketplace_identifier FROM marketplace_connections WHERE tenant_id=? AND id=?",
+            (rs, row) -> new ConnectionIdentity(rs.getObject("id", UUID.class), rs.getString("channel"), rs.getString("marketplace_identifier")),
+            tenantId, connectionId).stream().findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Marketplace connection was not found."));
+    }
+
+    @Transactional(readOnly = true)
+    public CredentialEnvelope loadCredentials(UUID tenantId, UUID connectionId) {
+        setTenant(tenantId);
+        return jdbc.query("""
+            SELECT encrypted_payload, encryption_nonce FROM marketplace_connection_credentials
+            WHERE tenant_id=? AND marketplace_connection_id=?
+            """, rs -> rs.next() ? new CredentialEnvelope(rs.getBytes(1), rs.getBytes(2)) : null,
+            tenantId, connectionId);
+    }
+
+    @Transactional
+    public void saveCredentials(UUID tenantId, UUID connectionId, byte[] payload, byte[] nonce,
+            boolean initialize) {
+        setTenant(tenantId);
+        jdbc.update("""
+            INSERT INTO marketplace_connection_credentials
+                (tenant_id, marketplace_connection_id, encrypted_payload, encryption_nonce)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (tenant_id, marketplace_connection_id) DO UPDATE
+                SET encrypted_payload=EXCLUDED.encrypted_payload,
+                    encryption_nonce=EXCLUDED.encryption_nonce, key_version=1
+            """, tenantId, connectionId, payload, nonce);
+        jdbc.update("""
+            UPDATE marketplace_connections
+            SET credential_secret_ref=?, status=?, last_synced_at=NULL
+            WHERE tenant_id=? AND id=?
+            """, "database-encrypted://marketplace-connection/" + connectionId,
+            initialize ? "INITIALIZING" : "ACTIVE", tenantId, connectionId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SyncStatusView> listCurrentSyncStatuses(UUID tenantId) {
+        setTenant(tenantId);
+        return jdbc.query("""
+            SELECT r.marketplace_connection_id, c.display_name,
+                   CASE WHEN c.channel='SHOPIFY' THEN CASE WHEN r.status='RUNNING' AND EXISTS(SELECT 1 FROM marketplace_sync_jobs stale_job WHERE stale_job.tenant_id=r.tenant_id AND stale_job.sync_run_id=r.id AND stale_job.status='RUNNING' AND stale_job.lease_expires_at<clock_timestamp()) THEN 'PAUSED' ELSE r.status END
+                        WHEN fee_scope.fee_only THEN r.status
+                        WHEN final_job.id IS NOT NULL THEN 'COMPLETED'
+                        WHEN NOT EXISTS (SELECT 1 FROM marketplace_sync_jobs required_job
+                            WHERE required_job.tenant_id=r.tenant_id AND required_job.sync_run_id=r.id
+                              AND required_job.required_for_ready=true
+                              AND required_job.status NOT IN ('COMPLETED','SKIPPED')) THEN 'ENRICHING'
+                        ELSE r.status END AS status,
+                   CASE WHEN final_job.id IS NOT NULL THEN 100 ELSE r.progress_percent END AS progress_percent,
+                   CASE WHEN final_job.id IS NOT NULL THEN 'FINAL_RECONCILIATION' ELSE r.current_stage END AS current_stage,
+                   CASE WHEN final_job.id IS NOT NULL THEN 'Amazon data is ready' ELSE r.user_message END AS user_message,
+                   r.started_at, fee_scope.fee_only
+            FROM marketplace_sync_runs r
+            JOIN marketplace_connections c ON c.tenant_id=r.tenant_id AND c.id=r.marketplace_connection_id
+            CROSS JOIN LATERAL (SELECT
+                EXISTS(SELECT 1 FROM marketplace_sync_jobs fee_job WHERE fee_job.tenant_id=r.tenant_id AND fee_job.sync_run_id=r.id AND fee_job.job_type='FEES_SNAPSHOT')
+                AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs other_job WHERE other_job.tenant_id=r.tenant_id AND other_job.sync_run_id=r.id AND other_job.job_type<>'FEES_SNAPSHOT') AS fee_only) fee_scope
+            LEFT JOIN marketplace_sync_jobs final_job ON final_job.sync_run_id=r.id
+                AND final_job.tenant_id=r.tenant_id
+                AND final_job.job_type='FINAL_RECONCILIATION'
+                AND final_job.status='COMPLETED'
+            WHERE r.tenant_id=? AND r.id=(
+                SELECT newest.id FROM marketplace_sync_runs newest
+                WHERE newest.tenant_id=r.tenant_id
+                  AND newest.marketplace_connection_id=r.marketplace_connection_id
+                ORDER BY newest.created_at DESC LIMIT 1)
+            ORDER BY c.display_name
+            """, (rs, row) -> new SyncStatusView(
+                rs.getObject("marketplace_connection_id", UUID.class), rs.getString("display_name"),
+                rs.getString("status"), rs.getInt("progress_percent"), rs.getString("current_stage"),
+                rs.getString("user_message"), rs.getTimestamp("started_at") == null ? null
+                    : rs.getTimestamp("started_at").toInstant(),rs.getBoolean("fee_only")), tenantId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SyncJobView> listCurrentSyncJobs(UUID tenantId) {
+        setTenant(tenantId);
+        return jdbc.query("""
+            SELECT j.marketplace_connection_id,j.sequence_number,j.job_type,j.status,
+                   j.records_processed,j.error_message
+            FROM marketplace_sync_jobs j JOIN marketplace_sync_runs r ON r.id=j.sync_run_id
+            WHERE j.tenant_id=? AND r.id=(SELECT newest.id FROM marketplace_sync_runs newest
+                WHERE newest.tenant_id=r.tenant_id AND newest.marketplace_connection_id=r.marketplace_connection_id
+                ORDER BY newest.created_at DESC LIMIT 1)
+            ORDER BY j.marketplace_connection_id,j.sequence_number
+            """, (rs,row)->new SyncJobView(rs.getObject(1,UUID.class),rs.getInt(2),rs.getString(3),
+                syncLabel(rs.getString(3)),rs.getString(4),rs.getLong(5),rs.getString(6)),tenantId);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean historicalSyncInProgress(UUID tenantId) {
+        setTenant(tenantId);
+        Integer count=jdbc.queryForObject("""
+            SELECT count(*) FROM marketplace_sync_runs r
+            WHERE r.tenant_id=? AND r.status IN ('QUEUED','RUNNING')
+              AND r.sync_profile='INITIAL_30_DAY'
+              AND NOT EXISTS (SELECT 1 FROM marketplace_sync_jobs required_job
+                  WHERE required_job.tenant_id=r.tenant_id AND required_job.sync_run_id=r.id
+                    AND required_job.required_for_ready=true
+                    AND required_job.status NOT IN ('COMPLETED','SKIPPED'))
+              AND EXISTS (SELECT 1 FROM marketplace_sync_jobs background_job
+                  WHERE background_job.tenant_id=r.tenant_id AND background_job.sync_run_id=r.id
+                    AND background_job.required_for_ready=false
+                    AND background_job.status NOT IN ('COMPLETED','SKIPPED'))
+            """,Integer.class,tenantId);
+        return count!=null&&count>0;
+    }
+
+    @Transactional
+    public void disconnectConnection(UUID tenantId, UUID connectionId) {
+        setTenant(tenantId);
+        Integer found=jdbc.queryForObject("SELECT count(*) FROM marketplace_connections WHERE tenant_id=? AND id=?",
+            Integer.class,tenantId,connectionId);
+        if(found==null||found!=1) throw new IllegalArgumentException("Marketplace store was not found.");
+        jdbc.update("""
+            UPDATE marketplace_sync_jobs SET status='SKIPPED',completed_at=now(),lease_owner=NULL,
+                lease_expires_at=NULL,error_code='CONNECTION_DISCONNECTED',
+                error_message='Store disconnected by an account administrator'
+            WHERE tenant_id=? AND marketplace_connection_id=? AND status IN ('QUEUED','RUNNING','WAITING')
+            """,tenantId,connectionId);
+        jdbc.update("""
+            UPDATE marketplace_sync_runs SET status='CANCELLED',completed_at=now(),
+                user_message='Store disconnected'
+            WHERE tenant_id=? AND marketplace_connection_id=? AND status IN ('QUEUED','RUNNING')
+            """,tenantId,connectionId);
+        jdbc.update("DELETE FROM marketplace_connection_credentials WHERE tenant_id=? AND marketplace_connection_id=?",
+            tenantId,connectionId);
+        jdbc.update("""
+            UPDATE marketplace_connections SET status='DISABLED',credential_secret_ref=?,last_synced_at=NULL
+            WHERE tenant_id=? AND id=?
+            ""","disconnected://marketplace-connection/"+connectionId,tenantId,connectionId);
+    }
+
+    @Transactional
+    public void renameConnection(UUID tenantId,UUID connectionId,String displayName){
+        if(displayName==null||displayName.isBlank()||displayName.length()>160)throw new IllegalArgumentException("Enter a store name up to 160 characters.");
+        setTenant(tenantId);
+        if(jdbc.update("UPDATE marketplace_connections SET display_name=? WHERE tenant_id=? AND id=?",displayName.trim(),tenantId,connectionId)!=1)
+            throw new IllegalArgumentException("Marketplace store was not found.");
+    }
+
+    @Transactional
+    public void addConnection(UUID tenantId, String channel, String displayName,
+            String sellerIdentifier, String marketplaceIdentifier) {
+        if (!List.of("AMAZON", "WALMART").contains(channel))
+            throw new IllegalArgumentException("Choose a supported marketplace.");
+        boolean marketplaceMatches = "AMAZON".equals(channel)
+            ? List.of("ATVPDKIKX0DER", "A1F83G8C2ARO7P", "A2EUQ1WTGCTBG2").contains(marketplaceIdentifier)
+            : "Walmart-US".equals(marketplaceIdentifier);
+        if (!marketplaceMatches) throw new IllegalArgumentException("Choose a marketplace that matches the channel.");
+        if (displayName == null || displayName.isBlank())
+            throw new IllegalArgumentException("Enter a store name.");
+        if ("AMAZON".equals(channel) && (sellerIdentifier == null || sellerIdentifier.isBlank()))
+            throw new IllegalArgumentException("Enter the Amazon Seller ID.");
+        String storedIdentifier = "AMAZON".equals(channel)
+            ? sellerIdentifier.trim()
+            : "WALMART-" + UUID.randomUUID();
+        setTenant(tenantId);
+        int reactivated = "AMAZON".equals(channel)
+            ? jdbc.update("""
+                UPDATE marketplace_connections SET display_name=?,status='PENDING',
+                    credential_secret_ref='pending://marketplace-connection',last_synced_at=NULL
+                WHERE tenant_id=? AND channel=? AND seller_identifier=?
+                  AND marketplace_identifier=? AND status='DISABLED'
+                """,displayName.trim(),tenantId,channel,storedIdentifier,marketplaceIdentifier)
+            : jdbc.update("""
+                UPDATE marketplace_connections SET display_name=?,status='PENDING',
+                    credential_secret_ref='pending://marketplace-connection',last_synced_at=NULL
+                WHERE id=(SELECT id FROM marketplace_connections
+                    WHERE tenant_id=? AND channel='WALMART' AND marketplace_identifier=?
+                      AND lower(display_name)=lower(?) AND status='DISABLED'
+                    ORDER BY updated_at DESC LIMIT 1)
+                """,displayName.trim(),tenantId,marketplaceIdentifier,displayName.trim());
+        if (reactivated == 1) return;
+        int inserted = jdbc.update("""
+            INSERT INTO marketplace_connections
+                (tenant_id, channel, seller_identifier, marketplace_identifier,
+                 credential_secret_ref, status, display_name, reporting_timezone, inventory_activated_at)
+            SELECT ?, ?, ?, ?, ?, 'PENDING', ?, definition.reporting_timezone, now()
+            FROM marketplace_definitions definition
+            WHERE definition.channel=? AND definition.marketplace_identifier=?
+            """, tenantId, channel, storedIdentifier, marketplaceIdentifier,
+            "pending://marketplace-connection", displayName.trim(), channel, marketplaceIdentifier);
+        if (inserted != 1) throw new IllegalArgumentException("Choose a supported marketplace.");
+    }
+
+    @Transactional(readOnly=true)
+    public boolean isCurrentPlatformAdmin(String email){
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM app_users u JOIN platform_administrators p ON p.user_id=u.id AND p.active WHERE lower(u.email)=lower(?) AND u.status='ACTIVE')",Boolean.class,email));
+    }
+    public record ShopifyConnection(String shop,String status,Instant updatedAt) {}
+    @Transactional(readOnly=true)
+    public ShopifyConnection shopifyConnection(UUID tenantId,UUID id){
+        setTenant(tenantId);
+        return jdbc.query("SELECT marketplace_identifier,status,updated_at FROM marketplace_connections WHERE tenant_id=? AND id=? AND channel='SHOPIFY'",
+            (r,n)->new ShopifyConnection(r.getString(1),r.getString(2),r.getTimestamp(3).toInstant()),tenantId,id).stream().findFirst()
+            .orElseThrow(()->new IllegalArgumentException("Shopify store was not found in this account."));
+    }
+    @Transactional
+    public void markShopifyVerificationRequired(UUID tenantId,UUID id,Instant expected){
+        setTenant(tenantId);
+        jdbc.update("UPDATE marketplace_connections SET status='ERROR' WHERE tenant_id=? AND id=? AND channel='SHOPIFY' AND status<>'DISABLED' AND updated_at=?",tenantId,id,java.sql.Timestamp.from(expected));
+    }
+    @Transactional
+    public void disconnectShopifyConnection(UUID tenantId,UUID id){
+        setTenant(tenantId);
+        if(jdbc.queryForList("SELECT id FROM marketplace_connections WHERE tenant_id=? AND id=? AND channel='SHOPIFY' FOR UPDATE",UUID.class,tenantId,id).isEmpty())throw new IllegalArgumentException("Shopify store was not found in this account.");
+        disconnectConnection(tenantId,id);
+    }
+    @Transactional
+    public void addShopifyConnection(UUID tenantId,String name,String domain){
+        setTenant(tenantId);String shop=ShopifyConnectionService.shopDomain(domain);
+        if(name==null||name.isBlank()||name.trim().length()>160)throw new IllegalArgumentException("Enter a store name up to160 characters.");
+        int restored=jdbc.update("UPDATE marketplace_connections SET status='PENDING',display_name=?,credential_secret_ref='pending://marketplace-connection',last_synced_at=NULL WHERE tenant_id=? AND channel='SHOPIFY' AND seller_identifier=? AND marketplace_identifier=? AND status='DISABLED'",name.trim(),tenantId,shop,shop);
+        if(restored==1)return;
+        int inserted=jdbc.update("INSERT INTO marketplace_connections(tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES(?,'SHOPIFY',?,?,'pending://marketplace-connection','PENDING',?,'UTC',now()) ON CONFLICT(tenant_id,channel,seller_identifier,marketplace_identifier) DO NOTHING",tenantId,shop,shop,name.trim());
+        if(inserted!=1)throw new IllegalArgumentException("This Shopify store is already connected to this account. Use its existing row.");
+    }
+    @Transactional
+    public void publishShopifyCredentials(UUID tenantId,UUID id,Instant expected,byte[] payload,byte[] nonce,String zone,Runnable authorize){
+        setTenant(tenantId);
+        var revisions=jdbc.query("SELECT updated_at FROM marketplace_connections WHERE tenant_id=? AND id=? AND channel='SHOPIFY' AND status<>'DISABLED' FOR UPDATE",(r,n)->r.getTimestamp(1).toInstant(),tenantId,id);
+        if(revisions.size()!=1||!revisions.getFirst().equals(expected))throw new IllegalArgumentException("This store changed during verification. No authorization was saved; refresh and try again.");
+        authorize.run(); // Recheck current authority in the same transaction as publication.
+        saveCredentials(tenantId,id,payload,nonce,false);
+        jdbc.update("UPDATE marketplace_connections SET reporting_timezone=? WHERE tenant_id=? AND id=? AND channel='SHOPIFY'",zone,tenantId,id);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MemberView> listMembers(UUID tenantId) {
+        setTenant(tenantId);
+        var grants = new java.util.HashMap<UUID, List<UUID>>();
+        jdbc.query("""
+            SELECT m.user_id,c.id FROM effective_account_memberships m
+            JOIN marketplace_connections c ON c.tenant_id=m.tenant_id AND c.status<>'DISABLED'
+            WHERE m.tenant_id=? AND (m.role='OWNER' OR (m.role='ADMIN' AND NOT m.stores_restricted)
+              OR EXISTS(SELECT 1 FROM membership_store_access a WHERE a.tenant_id=m.tenant_id
+                AND a.user_id=m.user_id AND a.marketplace_connection_id=c.id))
+            """, rs -> { grants.computeIfAbsent(rs.getObject(1,UUID.class), k -> new ArrayList<>()).add(rs.getObject(2,UUID.class)); }, tenantId);
+        var allStores=jdbc.queryForList("SELECT id FROM marketplace_connections WHERE tenant_id=? AND status<>'DISABLED'",UUID.class,tenantId);
+        return jdbc.query("""
+            SELECT u.id, u.display_name, u.email, CASE WHEN EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active) THEN 'SUPER ADMIN' ELSE m.role END AS role, u.status,
+                   EXISTS(SELECT 1 FROM platform_administrators p WHERE p.user_id=u.id AND p.active) AS platform_admin
+            """+DIRECTORY_FROM+"""
+            ORDER BY lower(u.display_name), lower(u.email)
+            """, (rs, row) -> new MemberView(
+                rs.getObject("id", UUID.class), rs.getString("display_name"), rs.getString("email"),
+                rs.getString("role"), rs.getString("status"), (rs.getBoolean("platform_admin")?allStores:grants.getOrDefault(rs.getObject("id",UUID.class),List.of())).size(),
+                List.copyOf(rs.getBoolean("platform_admin")?allStores:grants.getOrDefault(rs.getObject("id",UUID.class),List.of())),
+                "OWNER".equals(rs.getString("role")) || rs.getBoolean("platform_admin")), tenantId);
+    }
+
+    @Transactional(readOnly = true)
+    public int pendingInvitationCount(UUID tenantId) {
+        setTenant(tenantId);
+        Integer count = jdbc.queryForObject(
+            "SELECT count(*) FROM tenant_invitations WHERE tenant_id = ? AND status = 'PENDING'",
+            Integer.class, tenantId);
+        return count == null ? 0 : count;
+    }
+
+    @Transactional(readOnly = true)
+    public List<InvitationView> listInvitations(UUID tenantId) {
+        setTenant(tenantId);
+        return jdbc.query("""
+            SELECT invitation.id, invitation.email, invitation.role, invitation.status,
+                   invitation.created_at, invitation.expires_at, inviter.display_name AS invited_by,
+                   (SELECT count(*) FROM invitation_store_access access
+                    WHERE access.tenant_id=invitation.tenant_id
+                      AND access.invitation_id=invitation.id) AS stores
+            FROM tenant_invitations invitation
+            JOIN app_users inviter ON inviter.id=invitation.invited_by
+            WHERE invitation.tenant_id=? AND invitation.status IN ('PENDING','EXPIRED')
+            ORDER BY invitation.created_at DESC
+            """, (rs, row) -> new InvitationView(
+                rs.getObject("id", UUID.class), rs.getString("email"), rs.getString("role"),
+                rs.getString("status"), rs.getInt("stores"), rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("expires_at").toInstant(), rs.getString("invited_by")), tenantId);
+    }
+
+    private void setTenant(UUID tenantId) {
+        jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenantId.toString());
+    }
+
+    private static String marketplaceLabel(String id) {
+        if(id.endsWith(".myshopify.com"))return "Shopify";
+        return switch (id) {
+            case "ATVPDKIKX0DER" -> "Amazon US";
+            case "A1F83G8C2ARO7P" -> "Amazon UK";
+            case "A2EUQ1WTGCTBG2" -> "Amazon Canada";
+            case "Walmart-US" -> "Walmart US";
+            default -> id;
+        };
+    }
+
+    private static String countryFlag(String id) {
+        if(id.endsWith(".myshopify.com"))return "";
+        return switch (id) {
+            case "A1F83G8C2ARO7P" -> "🇬🇧";
+            case "A2EUQ1WTGCTBG2" -> "🇨🇦";
+            default -> "🇺🇸";
+        };
+    }
+
+    private static String syncLabel(String type) {
+        return switch(type) {
+            case "SHOPIFY_CATALOG_VARIANTS" -> "Products and variants";
+            case "VERIFY_SELLER" -> "Verify Amazon store";
+            case "LISTINGS_SNAPSHOT" -> "Products and SKUs";
+            case "ORDERS_30_DAY", "ORDER_ITEMS_30_DAY" -> type.startsWith("ORDER_ITEMS") ? "Order items" : "Last 30 days of orders";
+            case "INVENTORY_SNAPSHOT" -> "Current FBA inventory";
+            case "INVENTORY_LEDGER_30_DAY" -> "Inventory movement history";
+            case "FBA_CUSTOMER_SHIPMENTS_30_DAY" -> "FBA customer shipments";
+            case "RETURNS_30_DAY" -> "Customer returns";
+            case "FINANCES_30_DAY" -> "Financial transactions";
+            case "REIMBURSEMENTS_30_DAY" -> "Amazon reimbursements";
+            case "FEES_SNAPSHOT" -> "FBA fee estimates";
+            case "FINAL_RECONCILIATION" -> "Final data check";
+            default -> "Amazon data";
+        };
+    }
+}

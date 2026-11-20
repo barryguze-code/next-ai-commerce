@@ -1,0 +1,140 @@
+package com.nextaicommerce.platform.collaboration;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
+
+class HuddleServiceTest {
+    private final CollaborationRepository repository=mock(CollaborationRepository.class);
+    private final CollaborationNotificationWorker notifications=mock(CollaborationNotificationWorker.class);
+    private final HuddleService service=new HuddleService(repository,notifications,new ObjectMapper());
+    private final UUID tenant=UUID.randomUUID();
+    private final HuddleService.Participant barry=person("Barry","barry@example.com");
+    private final HuddleService.Participant alex=person("Alex","alex@example.com");
+
+    @Test void liveMessagesRemainInMemoryUntilSomeoneExplicitlySaves(){
+        var huddle=service.create(tenant,barry,"INVENTORY","467936|MAIN","Morning Round Cranberry","/app/inventory",
+            "{\"on_hand\":1,\"available\":0}",List.of(alex));
+        var updated=service.message(tenant,huddle.id(),barry.id(),"Can you check the freezer count?");
+
+        assertThat(updated.status()).isEqualTo("ACTIVE");
+        assertThat(updated.messages()).singleElement().satisfies(message->{
+            assertThat(message.senderName()).isEqualTo("Barry");assertThat(message.body()).isEqualTo("Can you check the freezer count?");
+        });
+        verify(repository,never()).saveHuddle(any(),any(),any(),any(),any(),any(),any(),any(),eq(false));
+    }
+
+    @Test void invitedTeammateCanReplyWithoutAnAnswerStep(){
+        var huddle=service.create(tenant,barry,"INVENTORY","467936|MAIN","Morning Round Cranberry","/app/inventory","{}",List.of(alex));
+        assertThat(huddle.joinedParticipantIds()).containsExactlyInAnyOrder(barry.id(),alex.id());
+        assertThat(service.message(tenant,huddle.id(),alex.id(),"Can Barry see this?").messages()).hasSize(1);
+        var joined=service.join(tenant,huddle.id(),alex.id());
+        assertThat(joined.joinedParticipantIds()).containsExactlyInAnyOrder(barry.id(),alex.id());
+        assertThat(service.message(tenant,huddle.id(),alex.id(),"Now we are in the same room.").messages()).hasSize(2);
+    }
+
+    @Test void saveForFollowUpCreatesOneRegularActiveConversationAndNotifiesOtherParticipants(){
+        UUID reviewId=UUID.randomUUID(),messageId=UUID.randomUUID();
+        when(repository.saveHuddle(any(),any(),any(),any(),any(),any(),any(),any(),eq(false)))
+            .thenReturn(new CollaborationRepository.PostedMessage(reviewId,messageId));
+        when(repository.queueNotifications(tenant,reviewId,messageId,Set.of(alex.id()),"MENTION")).thenReturn(1);
+        var huddle=service.create(tenant,barry,"ORDER","112-123","Amazon order 112-123","/app/orders","{}",List.of(alex));
+        service.message(tenant,huddle.id(),barry.id(),"No answer yet; keep this for tomorrow.");
+
+        var saved=service.save(tenant,huddle.id(),barry.id(),false);
+
+        assertThat(saved.reviewId()).isEqualTo(reviewId);assertThat(saved.huddle().status()).isEqualTo("SAVED");
+        verify(repository).queueNotifications(tenant,reviewId,messageId,Set.of(alex.id()),"MENTION");
+        verify(notifications).deliverAsync(tenant);
+    }
+
+    @Test void saveAndCompletePreservesHistoryWithoutCreatingAnActiveFollowUpNotification(){
+        UUID reviewId=UUID.randomUUID(),messageId=UUID.randomUUID();
+        when(repository.saveHuddle(any(),any(),any(),any(),any(),any(),any(),any(),eq(true)))
+            .thenReturn(new CollaborationRepository.PostedMessage(reviewId,messageId));
+        when(repository.queueNotifications(tenant,reviewId,messageId,Set.of(alex.id()),"COMPLETED")).thenReturn(1);
+        var huddle=service.create(tenant,barry,"CATALOG","B0123","Cold item","/app/catalog","{}",List.of(alex));
+        service.join(tenant,huddle.id(),alex.id());
+        service.message(tenant,huddle.id(),alex.id(),"Resolved—the mapping is correct.");
+
+        assertThatThrownBy(()->service.save(tenant,huddle.id(),alex.id(),true)).isInstanceOf(IllegalArgumentException.class);
+        service.save(tenant,huddle.id(),barry.id(),true);
+
+        verify(repository).queueNotifications(tenant,reviewId,messageId,Set.of(alex.id()),"COMPLETED");
+        verify(notifications).deliverAsync(tenant);
+    }
+
+    @Test void tenantAndParticipantIsolationAreEnforced(){
+        var huddle=service.create(tenant,barry,"LABEL","label-1","Shipping label","/app/shipping","{}",List.of(alex));
+        var outsider=person("Morgan","morgan@example.com");
+        assertThat(service.find(UUID.randomUUID(),huddle.id(),barry.id())).isNull();
+        assertThatThrownBy(()->service.message(tenant,huddle.id(),outsider.id(),"Hello"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not available");
+    }
+
+    @Test void huddlesRemainActiveUntilCreatorEndsThem(){
+        var huddle=service.create(tenant,barry,"PLATFORM","GENERAL","General team huddle","/app/collaboration","{}",List.of(alex));
+        var expired=service.expire(Instant.now().plus(HuddleService.IDLE_TTL).plusSeconds(1));
+        assertThat(expired).isEmpty();
+        assertThat(service.forParticipant(tenant,barry.id())).hasSize(1);
+        assertThatThrownBy(()->service.end(tenant,huddle.id(),alex.id())).isInstanceOf(IllegalArgumentException.class);
+        service.leave(tenant,huddle.id(),alex.id());
+        assertThat(service.forParticipant(tenant,alex.id())).isEmpty();
+        assertThat(service.forParticipant(tenant,barry.id())).hasSize(1);
+        assertThat(service.find(tenant,huddle.id(),barry.id()).joinedParticipantIds()).containsExactly(barry.id());
+        assertThat(service.find(tenant,huddle.id(),barry.id()).status()).isEqualTo("ACTIVE");
+        service.end(tenant,huddle.id(),barry.id());
+        assertThat(service.forParticipant(tenant,barry.id())).isEmpty();
+        verify(repository,never()).saveHuddle(any(),any(),any(),any(),any(),any(),any(),any(),any(Boolean.class));
+    }
+
+    @Test void directSelectionDoesNotReopenGroupAfterAnotherTeammateWasInvited(){
+        var morgan=person("Morgan","morgan@example.com");
+        String key="DIRECT:"+List.of(barry.id().toString(),alex.id().toString()).stream().sorted().collect(java.util.stream.Collectors.joining(":"));
+        var original=service.create(tenant,barry,"PLATFORM",key,"Team collaboration","/app/collaboration","{}",List.of(alex));
+        service.invite(tenant,original.id(),barry.id(),List.of(morgan));
+        var selected=service.create(tenant,barry,"PLATFORM",key,"Team collaboration","/app/collaboration","{}",List.of(alex));
+        assertThat(selected.id()).isNotEqualTo(original.id());
+        assertThat(selected.participants()).extracting(HuddleService.Participant::id).containsExactlyInAnyOrder(barry.id(),alex.id());
+        assertThat(service.find(tenant,original.id(),barry.id()).participants()).hasSize(3);
+        assertThat(service.create(tenant,barry,"PLATFORM",key,"Team collaboration","/app/collaboration","{}",List.of(alex)).id()).isEqualTo(selected.id());
+    }
+
+    @Test void startingTheSameRecordAgainAddsTheCurrentlySelectedTeammate(){
+        var morgan=person("Morgan","morgan@example.com");
+        var original=service.create(tenant,barry,"INVENTORY","467936|MAIN","Morning Round Cranberry","/app/inventory","{}",List.of(alex));
+
+        var refreshed=service.create(tenant,barry,"INVENTORY","467936|MAIN","Morning Round Cranberry","/app/inventory","{}",List.of(morgan));
+
+        assertThat(refreshed.id()).isEqualTo(original.id());
+        assertThat(refreshed.participants()).extracting(HuddleService.Participant::id).containsExactlyInAnyOrder(barry.id(),alex.id(),morgan.id());
+    }
+
+    @Test void fivePeopleAreAllowedButSixthIsRejectedWithoutChangingRoom(){
+        var third=person("Third","third@example.com");
+        var fourth=person("Fourth","fourth@example.com");
+        var fifth=person("Fifth","fifth@example.com");
+        var sixth=person("Sixth","sixth@example.com");
+        var room=service.create(tenant,barry,"PLATFORM","DIRECT:five","Team","/app/collaboration","{}",List.of(alex,third,fourth,fifth));
+        assertThat(room.participants()).hasSize(5);
+        assertThatThrownBy(()->service.invite(tenant,room.id(),barry.id(),List.of(sixth)))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("five people");
+        assertThat(service.find(tenant,room.id(),barry.id()).participants()).hasSize(5);
+        assertThatThrownBy(()->service.create(tenant,barry,"PLATFORM","DIRECT:six","Team","/app/collaboration","{}",List.of(alex,third,fourth,fifth,sixth)))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static HuddleService.Participant person(String name,String email){return new HuddleService.Participant(UUID.randomUUID(),name,email);}
+}

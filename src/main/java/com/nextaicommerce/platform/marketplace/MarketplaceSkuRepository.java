@@ -1,0 +1,717 @@
+package com.nextaicommerce.platform.marketplace;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
+@Repository
+public class MarketplaceSkuRepository {
+    private static final DateTimeFormatter SYNC_TIME=DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a");
+    /** Seller-fulfilled availability is derived locally: the least available mapped component limits a bundle. */
+    public static final String LOCAL_MAPPING_AVAILABILITY = localMappingAvailability(false);
+    /** Binding alias must be tenant/connection scoped by the caller; source bins are explicit. */
+    public static String localMappingAvailability(boolean selectedBins){
+        String sources="SELECT source.location_id FROM shopify_inventory_binding_sources source WHERE source.tenant_id=binding.tenant_id AND source.marketplace_connection_id=binding.marketplace_connection_id AND source.binding_id=binding.id";
+        return """
+              LEFT JOIN LATERAL (
+                SELECT floor(min(CASE WHEN NOT EXISTS(SELECT 1 FROM account_catalog_items active_item
+                    WHERE active_item.tenant_id=mapping.tenant_id AND active_item.id=component.account_catalog_item_id AND active_item.status='ACTIVE')
+                  OR EXISTS(SELECT 1 FROM inventory_ledger_entries review
+                    WHERE review.tenant_id=mapping.tenant_id AND review.account_catalog_item_id=component.account_catalog_item_id
+                      AND review.source_type='SHOPIFY_ORDER' AND review.entry_type='SHIPMENT_UNRECORDED'
+                      AND NOT (
+                        EXISTS(SELECT 1 FROM inventory_ledger_entries counted WHERE counted.tenant_id=review.tenant_id
+                          AND counted.account_catalog_item_id=review.account_catalog_item_id AND counted.source_type='PHYSICAL_COUNT'
+                          AND counted.occurred_at>=review.created_at)
+                        AND NOT EXISTS(SELECT 1 FROM inventory_ledger_entries stock
+                          WHERE stock.tenant_id=review.tenant_id AND stock.account_catalog_item_id=review.account_catalog_item_id
+                          GROUP BY stock.location_id,stock.expiration_date HAVING sum(stock.quantity)>0
+                            AND NOT EXISTS(SELECT 1 FROM inventory_ledger_entries counted WHERE counted.tenant_id=review.tenant_id
+                              AND counted.account_catalog_item_id=review.account_catalog_item_id AND counted.source_type='PHYSICAL_COUNT'
+                              AND counted.location_id=stock.location_id AND counted.expiration_date IS NOT DISTINCT FROM stock.expiration_date
+                              AND counted.occurred_at>=review.created_at))))
+                  OR EXISTS(SELECT 1 FROM order_unrecorded_shipments review
+                    WHERE review.tenant_id=mapping.tenant_id AND review.account_catalog_item_id=component.account_catalog_item_id
+                      AND review.reviewed_at IS NULL) THEN 0 ELSE greatest(coalesce(sellable.quantity,0)-coalesce(reserved.quantity,0),0) END
+                    / nullif(component.quantity,0))) available
+                FROM (
+                  SELECT part.account_catalog_item_id,part.quantity
+                  FROM marketplace_sku_mapping_components part
+                  WHERE part.tenant_id=mapping.tenant_id AND part.marketplace_sku_mapping_id=mapping.id
+                  UNION ALL
+                  SELECT mapping.account_catalog_item_id,greatest(mapping.quantity_per_marketplace_unit,1)
+                  WHERE mapping.account_catalog_item_id IS NOT NULL AND NOT EXISTS (
+                    SELECT 1 FROM marketplace_sku_mapping_components part
+                    WHERE part.tenant_id=mapping.tenant_id AND part.marketplace_sku_mapping_id=mapping.id)
+                ) component
+                LEFT JOIN LATERAL (
+                  SELECT sum(position.quantity) quantity
+                  FROM (
+                    SELECT ledger.location_id,ledger.expiration_date,sum(ledger.quantity) quantity
+                    FROM inventory_ledger_entries ledger
+                    JOIN warehouse_locations active_location ON active_location.tenant_id=ledger.tenant_id AND active_location.id=ledger.location_id AND active_location.status='ACTIVE'
+                    WHERE ledger.tenant_id=mapping.tenant_id
+                      AND ledger.account_catalog_item_id=component.account_catalog_item_id
+                      %s
+                    GROUP BY ledger.location_id,ledger.expiration_date
+                    HAVING sum(ledger.quantity)>0
+                  ) position
+                  LEFT JOIN inventory_shelf_life_policies policy
+                    ON policy.tenant_id=mapping.tenant_id
+                  WHERE (position.expiration_date IS NULL
+                    OR NOT coalesce(policy.auto_zero_marketplace_sellable,true)
+                    OR position.expiration_date>current_date+coalesce(policy.minimum_sellable_days,10))
+                    AND NOT EXISTS (
+                      SELECT 1 FROM inventory_expiration_actions action
+                      WHERE action.tenant_id=mapping.tenant_id
+                        AND action.account_catalog_item_id=component.account_catalog_item_id
+                        AND action.expiration_date=position.expiration_date
+                        AND action.status='PLANNED'
+                        AND action.action_type IN ('HOLD','REMOVE','DONATE')
+                    )
+                ) sellable ON true
+                LEFT JOIN LATERAL (
+                  SELECT sum(reservation.quantity) quantity FROM order_inventory_reservations reservation
+                  JOIN warehouse_locations active_location ON active_location.tenant_id=reservation.tenant_id AND active_location.id=reservation.location_id AND active_location.status='ACTIVE'
+                  LEFT JOIN amazon_orders open_order ON open_order.tenant_id=reservation.tenant_id
+                    AND open_order.marketplace_connection_id=reservation.marketplace_connection_id
+                    AND open_order.amazon_order_id=reservation.amazon_order_id
+                  WHERE reservation.tenant_id=mapping.tenant_id
+                    AND reservation.account_catalog_item_id=component.account_catalog_item_id
+                    %s
+                    AND reservation.status='ACTIVE'
+                    AND (reservation.shopify_order_line_id IS NOT NULL OR regexp_replace(upper(coalesce(open_order.order_status,'')),'[^A-Z]','','g') IN ('PENDING','UNSHIPPED','PARTIALLYSHIPPED'))
+                ) reserved ON true
+              ) local_inventory ON mapping.id IS NOT NULL
+            """.formatted(selectedBins?"AND ledger.location_id IN ("+sources+")":"",
+                selectedBins?"AND reservation.location_id IN ("+sources+")":"");
+    }
+
+    private final JdbcTemplate jdbc;
+    @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceAvailable;
+    private MarketplaceInventoryEligibility eligibility;
+    private MarketplaceSkuRelationships relationships;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    void configureRelationships(MarketplaceSkuRelationships value){this.relationships=value;}
+    public MarketplaceSkuRelationships.Batch relationshipPolicy(UUID tenant,UUID connection){return relationships==null?MarketplaceSkuRelationships.Batch.empty():relationships.load(tenant,connection);}
+    @Transactional(readOnly=true)
+    public Map<String,String> conditionOptions(UUID tenant,UUID connection){
+        setTenant(tenant);var result=new java.util.TreeMap<String,String>();result.put("NEW","New");
+        jdbc.queryForList("SELECT DISTINCT condition_type FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=?",String.class,tenant,connection).forEach(v->{String k=SkuCondition.key(v);result.put(k,SkuCondition.OPTIONS.get(k));});return result;
+    }
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    void configureEligibility(MarketplaceInventoryEligibility policy){this.eligibility=policy;}
+    public MarketplaceInventoryEligibility.Batch inventoryPolicy(UUID tenant,UUID connection){
+        return eligibility==null?MarketplaceInventoryEligibility.disabled():eligibility.load(tenant,connection);
+    }
+
+    public MarketplaceSkuRepository(JdbcTemplate jdbc){this.jdbc=jdbc;}
+
+    private static final String HAS_SALES="""
+        EXISTS(SELECT 1 FROM amazon_order_items history JOIN amazon_orders history_order
+          ON history_order.tenant_id=history.tenant_id
+          AND history_order.marketplace_connection_id=history.marketplace_connection_id
+          AND history_order.amazon_order_id=history.amazon_order_id
+          WHERE history.tenant_id=listing.tenant_id
+            AND history.marketplace_connection_id=listing.marketplace_connection_id
+            AND history.seller_sku=listing.seller_sku AND history.quantity_ordered>0
+            AND history_order.purchase_date<=now()
+            AND upper(coalesce(history_order.order_status,'')) IN ('SHIPPED','PARTIALLYSHIPPED','UNSHIPPED','INVOICEUNCONFIRMED'))
+        """;
+    // Price comparison only; this does not assert Featured Offer ownership.
+    static final String BUY_BOX_LOST_PREDICATE="(available>0 AND four_week_units>0 AND price>buy_box_price AND coalesce(nullif(btrim(buy_box_currency),''),comparison_currency)=comparison_currency)";
+    public record SkuSummary(long total,long active,long outOfStock,long inactive,long amazonProblems,
+            long deleted,long unmapped,long availableUnits,long neverSold,long unresolvedInventory,long excludedParents,long buyBoxLost){
+        public SkuSummary(long total,long active,long outOfStock,long inactive,long amazonProblems,long deleted,long unmapped,long availableUnits,long neverSold,long unresolvedInventory,long excludedParents){
+            this(total,active,outOfStock,inactive,amazonProblems,deleted,unmapped,availableUnits,neverSold,unresolvedInventory,excludedParents,0);
+        }
+        public SkuSummary(long total,long active,long outOfStock,long inactive,long amazonProblems,long deleted,long unmapped,long availableUnits,long neverSold){
+            this(total,active,outOfStock,inactive,amazonProblems,deleted,unmapped,availableUnits,neverSold,0,0);
+        }
+        public SkuSummary(long total,long active,long outOfStock,long inactive,long amazonProblems,long deleted,long unmapped,long availableUnits){
+            this(total,active,outOfStock,inactive,amazonProblems,deleted,unmapped,availableUnits,0);
+        }
+    }
+    public record SkuInsights(long active,long known,long matched,long above,long currentUnits,long previousUnits){
+        public String matchPercent(){return percent(matched,known);}
+        public String coveragePercent(){return percent(known,active);}
+        public String weeklyChange(){
+            if(previousUnits==0)return currentUnits==0?"—":"New sales";
+            return BigDecimal.valueOf(currentUnits-previousUnits).multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(previousUnits),1,RoundingMode.HALF_UP).toPlainString()+"%";
+        }
+        private static String percent(long value,long total){return total==0?"—":BigDecimal.valueOf(value)
+            .multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(total),1,RoundingMode.HALF_UP).toPlainString()+"%";}
+    }
+    @Transactional(readOnly=true)
+    public SkuInsights insights(UUID tenantId,UUID connectionId){
+        setTenant(tenantId);
+        return jdbc.queryForObject("""
+            WITH active AS (
+              SELECT price,CASE WHEN buy_box_currency=currency OR buy_box_currency IS NULL THEN buy_box_price END buy_box_price FROM amazon_listings
+              WHERE tenant_id=? AND marketplace_connection_id=? AND upper(listing_status)='ACTIVE'
+                AND coalesce(platform_status,'') NOT IN ('REMOVED','DELETED')
+            ), sales AS (
+              SELECT coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '7 days'),0) current_units,
+                     coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date<now()-interval '7 days'),0) previous_units
+              FROM amazon_order_items item JOIN amazon_orders orders
+                ON orders.tenant_id=item.tenant_id AND orders.marketplace_connection_id=item.marketplace_connection_id
+                AND orders.amazon_order_id=item.amazon_order_id
+              WHERE item.tenant_id=? AND item.marketplace_connection_id=?
+                AND orders.purchase_date>=now()-interval '14 days' AND orders.purchase_date<=now()
+                AND upper(coalesce(orders.order_status,'')) NOT IN ('CANCELLED','CANCELED')
+            )
+            SELECT count(*),count(*) FILTER (WHERE buy_box_price>0 AND price IS NOT NULL),
+                   count(*) FILTER (WHERE buy_box_price>0 AND round(price,2)=round(buy_box_price,2)),
+                   count(*) FILTER (WHERE buy_box_price>0 AND round(price,2)>round(buy_box_price,2)),
+                   (SELECT current_units FROM sales),(SELECT previous_units FROM sales) FROM active
+            """,(rs,n)->new SkuInsights(rs.getLong(1),rs.getLong(2),rs.getLong(3),rs.getLong(4),rs.getLong(5),rs.getLong(6)),
+            tenantId,connectionId,tenantId,connectionId);
+    }
+    public record MappingComponentView(UUID itemId,String productName,String vendorItemCode,
+            String accountSku,BigDecimal quantity,String brand){
+        public MappingComponentView(UUID itemId,String productName,String vendorItemCode,String accountSku,BigDecimal quantity){this(itemId,productName,vendorItemCode,accountSku,quantity,null);}
+        public String selectionLabel(){
+            String code=vendorItemCode==null||vendorItemCode.isBlank()?"No vendor code":vendorItemCode;
+            String sku=accountSku==null||accountSku.isBlank()?"":" · "+accountSku;
+            return code+" · "+productName+sku;
+        }
+    }
+    public record SkuView(String sellerSku,String asin,String title,String imageUrl,String listingStatus,
+            String conditionType,String fulfillmentChannel,BigDecimal price,String currency,Integer merchantQuantity,
+            String fnsku,Integer fbaAvailable,Integer inboundQuantity,Integer reservedQuantity,Integer unfulfillableQuantity,
+            long week4Sales,long week3Sales,long week2Sales,long currentWeekSales,
+            long fourWeekOrders,BigDecimal fourWeekShippingAverage,BigDecimal estimatedFees,String feeCurrency,
+            String mappedProduct,String mappingStatus,String mappedVendorItemCode,BigDecimal mappingQuantity,
+            String marketplaceId,Instant lastSeenAt,String shippingTemplate,BigDecimal fourWeekShipping,
+            BigDecimal calculatedAvailable,String localInventoryPlan,BigDecimal buyBoxPrice,
+            String buyBoxCurrency,Instant buyBoxUpdatedAt){
+        public SkuView(String sellerSku,String asin,String title,String imageUrl,String listingStatus,
+                String conditionType,String fulfillmentChannel,BigDecimal price,String currency,Integer merchantQuantity,
+                String fnsku,Integer fbaAvailable,Integer inboundQuantity,Integer reservedQuantity,Integer unfulfillableQuantity,
+                long week4Sales,long week3Sales,long week2Sales,long currentWeekSales,
+                long fourWeekOrders,BigDecimal fourWeekShippingAverage,BigDecimal estimatedFees,String feeCurrency,
+                String mappedProduct,String mappingStatus,String mappedVendorItemCode,BigDecimal mappingQuantity,
+                String marketplaceId,Instant lastSeenAt,String shippingTemplate,BigDecimal fourWeekShipping){
+            this(sellerSku,asin,title,imageUrl,listingStatus,conditionType,fulfillmentChannel,price,currency,merchantQuantity,
+                fnsku,fbaAvailable,inboundQuantity,reservedQuantity,unfulfillableQuantity,week4Sales,week3Sales,week2Sales,
+                currentWeekSales,fourWeekOrders,fourWeekShippingAverage,estimatedFees,feeCurrency,mappedProduct,mappingStatus,
+                mappedVendorItemCode,mappingQuantity,marketplaceId,lastSeenAt,shippingTemplate,fourWeekShipping,
+                null,null,null,null,null);
+        }
+        public String operationalStatus(){
+            String state=listingStatus==null?"":listingStatus.toUpperCase(java.util.Locale.ROOT);
+            if(state.equals("PARENT")||state.equals("UNVERIFIED"))return state;
+            if(state.equals("REMOVED"))return "REMOVED";
+            if(state.contains("DELETE"))return "DELETED";
+            if(state.contains("SUSPEND")||state.contains("SUPPRESS")||state.contains("BLOCK")||state.contains("PROBLEM"))return "AMAZON_PROBLEM";
+            if(state.equals("NEVER_SOLD"))return "NEVER_SOLD";
+            if(availableQuantity()<=0)return "OOS";
+            return "ACTIVE".equals(state)?"ACTIVE":"INACTIVE";
+        }
+        public String statusLabel(){return switch(operationalStatus()){
+            case "PARENT" -> "Parent SKU";case "UNVERIFIED" -> "Relationship unverified";case "ACTIVE" -> "Active";case "OOS" -> "Out of stock";
+            case "NEVER_SOLD" -> "Never sold";
+            case "AMAZON_PROBLEM" -> "Amazon suspended";case "REMOVED" -> "Removed by Amazon";case "DELETED" -> "Deleted";
+            default -> "Inactive · stock";
+        };}
+        public String displayTitle(){return title==null||title.isBlank()?sellerSku:title;}
+        public boolean fba(){return fulfillmentChannel!=null&&fulfillmentChannel.toUpperCase().contains("AMAZON");}
+        public int availableQuantity(){return calculatedAvailable==null?(fba()?zero(fbaAvailable):zero(merchantQuantity)):calculatedAvailable.intValue();}
+        public int safeInboundQuantity(){return zero(inboundQuantity);}
+        public int safeReservedQuantity(){return zero(reservedQuantity);}
+        public int safeUnfulfillableQuantity(){return zero(unfulfillableQuantity);}
+        public String fulfillmentLabel(){return fba()?"FBA":fulfillmentChannel!=null&&List.of("DEFAULT","MFN","MERCHANT","FBM").contains(fulfillmentChannel.toUpperCase(java.util.Locale.ROOT))?"FBM":"Unknown";}
+        public String conditionLabel(){return SkuCondition.label(conditionType);}
+        public BigDecimal averageCustomerShipping(){
+            return fba()||fourWeekShippingAverage==null?BigDecimal.ZERO:fourWeekShippingAverage;
+        }
+        public String mappingLabel(){return mappedProduct==null?"Unmapped":"Mapped";}
+        public String inventoryPlanLabel(){return localInventoryPlan==null?null:switch(localInventoryPlan){
+            case "HOLD" -> "Held locally";
+            case "DONATE" -> "Donation planned";
+            case "REMOVE" -> "Physical removal planned";
+            case "DISCOUNT" -> "Sale plan saved";
+            default -> "Inventory plan saved";
+        };}
+        public long fourWeekUnits(){return week4Sales+week3Sales+week2Sales+currentWeekSales;}
+        public String currencySymbol(String code){return switch(code==null?"USD":code){case "USD" -> "$";case "CAD" -> "CA$";case "GBP" -> "£";case "EUR" -> "€";default -> code+" ";};}
+        public String weeklySalesLabel(){return week4Sales+" | "+week3Sales+" | "+week2Sales+" | "+currentWeekSales;}
+        public String mappingDetail(){
+            if(mappedProduct==null)return null;
+            String code=mappedVendorItemCode==null||mappedVendorItemCode.isBlank()?"":mappedVendorItemCode;
+            String pack=mappingQuantity==null||mappingQuantity.compareTo(BigDecimal.ONE)==0?"":" · "+mappingQuantity.stripTrailingZeros().toPlainString()+" each";
+            return code+pack;
+        }
+        public String lastSyncedLabel(){return lastSeenAt==null?"Not synced":SYNC_TIME.format(lastSeenAt.atZone(ZoneId.systemDefault()));}
+        public String amazonUrl(){return asin==null||asin.isBlank()?null:"https://www."+amazonDomain(marketplaceId)+"/dp/"+encode(asin);}
+        public String sellerCentralUrl(){return "https://"+sellerCentralDomain(marketplaceId)+"/myinventory/inventory?searchTerm="+encode(sellerSku);}
+        private static int zero(Integer value){return value==null?0:value;}
+    }
+    public record SkuPage(List<SkuView> rows,long total,int page,int pageSize){
+        public int totalPages(){return Math.max(1,(int)Math.ceil((double)total/pageSize));}
+        public boolean hasPrevious(){return page>0;}
+        public boolean hasNext(){return page+1<totalPages();}
+        public int displayPage(){return page+1;}
+        public long firstItem(){return total==0?0:(long)page*pageSize+1;}
+        public long lastItem(){return Math.min(total,(long)(page+1)*pageSize);}
+    }
+
+    @Transactional(readOnly=true)
+    public Map<String,List<MappingComponentView>> mappingComponents(UUID tenantId,UUID connectionId){
+        return mappingComponents(tenantId,connectionId,null);
+    }
+
+    @Transactional(readOnly=true)
+    public Map<String,List<MappingComponentView>> mappingComponents(UUID tenantId,UUID connectionId,List<String> sellerSkus){
+        setTenant(tenantId);
+        if(sellerSkus!=null&&sellerSkus.isEmpty())return Map.of();
+        String skuFilter=sellerSkus==null?"": " AND mapping.marketplace_sku IN ("+
+            String.join(",",java.util.Collections.nCopies(sellerSkus.size(),"?"))+")";
+        List<Object> parameters=new ArrayList<>();parameters.add(tenantId);parameters.add(connectionId);
+        if(sellerSkus!=null)parameters.addAll(sellerSkus);
+        List<Object[]> rows=jdbc.query("""
+            SELECT mapping.marketplace_sku,component.account_catalog_item_id,
+                   coalesce(item.display_name,product.canonical_name) product_name,
+                   offer.vendor_item_code,item.account_sku,component.quantity,product.brand
+            FROM marketplace_sku_mappings mapping
+            JOIN marketplace_sku_mapping_components component
+              ON component.tenant_id=mapping.tenant_id
+             AND component.marketplace_sku_mapping_id=mapping.id
+            JOIN account_catalog_items item ON item.tenant_id=component.tenant_id
+             AND item.id=component.account_catalog_item_id
+            JOIN global_catalog_products product ON product.id=item.global_product_id
+            LEFT JOIN LATERAL (SELECT vendor_item_code FROM vendor_catalog_offers offer
+                WHERE offer.tenant_id=item.tenant_id AND offer.account_catalog_item_id=item.id
+                  AND offer.effective_to IS NULL
+                ORDER BY offer.is_default DESC,offer.updated_at DESC LIMIT 1) offer ON true
+            WHERE mapping.tenant_id=? AND mapping.marketplace_connection_id=? AND mapping.status='ACTIVE'
+            """+skuFilter+"""
+            ORDER BY mapping.marketplace_sku,component.sort_order,component.created_at
+            """,(rs,row)->new Object[]{rs.getString(1),new MappingComponentView(rs.getObject(2,UUID.class),
+                rs.getString(3),rs.getString(4),rs.getString(5),rs.getBigDecimal(6),rs.getString(7))},parameters.toArray());
+        Map<String,List<MappingComponentView>> result=new LinkedHashMap<>();
+        for(Object[] row:rows)result.computeIfAbsent((String)row[0],ignored->new ArrayList<>())
+            .add((MappingComponentView)row[1]);
+        return result;
+    }
+
+    @Transactional
+    public void saveMapping(UUID tenantId,UUID connectionId,String sellerSku,
+            List<String> productIds,List<String> quantities){saveMapping(tenantId,connectionId,sellerSku,productIds,quantities,false,"");}
+
+    @Transactional
+    public void saveMapping(UUID tenantId,UUID connectionId,String sellerSku,List<String> productIds,List<String> quantities,boolean replaceAsinMappings,String asinMappingRevision){
+        setTenant(tenantId);com.nextaicommerce.platform.catalog.CatalogIdentity.lock(jdbc);
+        var approvedPeers=new java.util.HashMap<String,UUID>();
+        if(replaceAsinMappings){
+            String familyAsin=resolveMappingAsin(tenantId,connectionId,sellerSku);
+            jdbc.query("SELECT seller_sku FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=? AND (asin=? OR seller_sku=?) ORDER BY seller_sku FOR UPDATE",rs->{},tenantId,connectionId,familyAsin,sellerSku);
+            jdbc.query("SELECT id FROM marketplace_sku_mappings WHERE tenant_id=? AND marketplace_connection_id=? AND (marketplace_sku=? OR marketplace_sku IN (SELECT seller_sku FROM amazon_listings WHERE tenant_id=? AND marketplace_connection_id=? AND asin=?)) ORDER BY id FOR UPDATE",rs->{},tenantId,connectionId,sellerSku,tenantId,connectionId,familyAsin);
+            var snapshot=asinMappingSnapshot(tenantId,connectionId,sellerSku);var preview=snapshot.preview();
+            if(preview.existingMappings()==0||!preview.revision().equals(asinMappingRevision))throw new IllegalArgumentException("Related mappings changed. Reopen the mapping and confirm replacement again.");
+            approvedPeers.putAll(snapshot.approved());
+        }
+
+        if(sellerSku==null||sellerSku.isBlank())throw new IllegalArgumentException("Marketplace SKU is required.");
+        if(relationshipPolicy(tenantId,connectionId).parents().contains(sellerSku))
+            throw new IllegalArgumentException("Verified Amazon variation parents do not require product mapping.");
+        String asin=resolveMappingAsin(tenantId,connectionId,sellerSku);
+        if(productIds==null||quantities==null||productIds.size()!=quantities.size()||productIds.isEmpty())
+            throw new IllegalArgumentException("Choose at least one catalogue product and quantity.");
+        if(productIds.size()>20)throw new IllegalArgumentException("A bundle can contain up to 20 catalogue products.");
+        Map<UUID,BigDecimal> components=new LinkedHashMap<>();
+        for(int index=0;index<productIds.size();index++){
+            UUID itemId;
+            try{itemId=UUID.fromString(productIds.get(index));}
+            catch(Exception ex){throw new IllegalArgumentException("Choose a product from the account catalogue.");}
+            BigDecimal quantity;
+            try{quantity=new BigDecimal(quantities.get(index));}
+            catch(Exception ex){throw new IllegalArgumentException("Enter a whole quantity for every product.");}
+            if(quantity.signum()<=0||quantity.stripTrailingZeros().scale()>0||quantity.compareTo(BigDecimal.valueOf(10000))>0)
+                throw new IllegalArgumentException("Product quantities must be whole numbers between 1 and 10,000.");
+            components.merge(itemId,quantity,BigDecimal::add);
+        }
+        String itemPlaceholders=String.join(",",java.util.Collections.nCopies(components.size(),"?"));
+        List<Object> itemParameters=new ArrayList<>();itemParameters.add(tenantId);itemParameters.addAll(components.keySet());
+        Integer activeItems=jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=? AND status='ACTIVE' AND id IN ("+
+            itemPlaceholders+")",Integer.class,itemParameters.toArray());
+        if(activeItems==null||activeItems!=components.size())throw new IllegalArgumentException("A selected catalogue product is no longer active.");
+        var first=components.entrySet().iterator().next();
+        UUID mappingId=jdbc.queryForObject("""
+            INSERT INTO marketplace_sku_mappings
+                (tenant_id,marketplace_connection_id,account_catalog_item_id,marketplace_sku,asin,
+                 quantity_per_marketplace_unit,status,mapping_source,auto_map_blocked)
+            VALUES (?,?,?,?,?,?,'ACTIVE','MANUAL',false)
+            ON CONFLICT (tenant_id,marketplace_connection_id,marketplace_sku) DO UPDATE SET
+                account_catalog_item_id=EXCLUDED.account_catalog_item_id,asin=EXCLUDED.asin,
+                quantity_per_marketplace_unit=EXCLUDED.quantity_per_marketplace_unit,status='ACTIVE',
+                mapping_source='MANUAL',auto_map_blocked=false,updated_at=now()
+            RETURNING id
+            """,UUID.class,tenantId,connectionId,first.getKey(),sellerSku,asin,first.getValue());
+        jdbc.update("DELETE FROM marketplace_sku_mapping_components WHERE tenant_id=? AND marketplace_sku_mapping_id=?",
+            tenantId,mappingId);
+        int order=0;List<Object[]> componentWrites=new ArrayList<>();
+        for(var component:components.entrySet())componentWrites.add(new Object[]{tenantId,mappingId,component.getKey(),component.getValue(),order++});
+        jdbc.batchUpdate("""
+            INSERT INTO marketplace_sku_mapping_components
+                (tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity,sort_order)
+            VALUES (?,?,?,?,?)
+            """,componentWrites);
+        copyMappingToUnmappedAsinPeers(tenantId,connectionId,sellerSku,asin,components,replaceAsinMappings,approvedPeers);
+    }
+
+    private String resolveMappingAsin(UUID tenantId,UUID connectionId,String sellerSku){
+        String asin=jdbc.query("""
+            SELECT asin FROM amazon_listings
+            WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?
+            """,rs->rs.next()?rs.getString(1):null,tenantId,connectionId,sellerSku);
+        if(asin==null){
+            Boolean listingExists=jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM amazon_listings
+                  WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?)
+                """,Boolean.class,tenantId,connectionId,sellerSku);
+            if(!Boolean.TRUE.equals(listingExists)){
+                // Orders retain legitimate seller SKUs after Amazon removes their live listing.
+                // Identity remains exact and store-scoped; an ASIN conflict requires review.
+                List<String> orderAsins=jdbc.query("""
+                    SELECT DISTINCT nullif(btrim(asin),'') FROM amazon_order_items
+                    WHERE tenant_id=? AND marketplace_connection_id=? AND seller_sku=?
+                    LIMIT 3
+                    """,(rs,row)->rs.getString(1),tenantId,connectionId,sellerSku);
+                if(orderAsins.isEmpty())throw new IllegalArgumentException("This marketplace SKU is not available in the selected store's listings or order history.");
+                var knownAsins=orderAsins.stream().filter(java.util.Objects::nonNull).toList();
+                if(knownAsins.size()>1)throw new IllegalArgumentException("This seller SKU has conflicting ASINs in order history. Review it before mapping.");
+                if(knownAsins.isEmpty()||orderAsins.contains(null))
+                    throw new IllegalArgumentException("Order history does not establish a complete ASIN for this seller SKU. Review it before mapping.");
+                asin=knownAsins.getFirst();
+            }
+        }
+        return asin;
+    }
+
+    public record AsinMappingPreview(int existingMappings,String revision){}
+    private record AsinMappingSnapshot(AsinMappingPreview preview,Map<String,UUID> approved){}
+    @Transactional(readOnly=true)
+    public AsinMappingPreview asinMappingPreview(UUID tenant,UUID connection,String sku){setTenant(tenant);return asinMappingSnapshot(tenant,connection,sku).preview();}
+    private AsinMappingSnapshot asinMappingSnapshot(UUID tenant,UUID connection,String sku){
+        var parents=relationshipPolicy(tenant,connection).parents();
+        String asin=resolveMappingAsin(tenant,connection,sku);
+        var entries=jdbc.query("""
+          SELECT peer.seller_sku,m.id::text,m.updated_at::text,peer.asin,to_jsonb(m)::text,coalesce((SELECT jsonb_agg(to_jsonb(part) ORDER BY part.id)::text FROM marketplace_sku_mapping_components part WHERE part.tenant_id=m.tenant_id AND part.marketplace_sku_mapping_id=m.id),'[]')
+          FROM amazon_listings peer
+          JOIN marketplace_sku_mappings m ON m.tenant_id=peer.tenant_id AND m.marketplace_connection_id=peer.marketplace_connection_id AND m.marketplace_sku=peer.seller_sku
+          WHERE peer.tenant_id=? AND peer.marketplace_connection_id=? AND peer.seller_sku<>? AND peer.asin=?
+          ORDER BY peer.seller_sku
+          """,(rs,row)->List.of(rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4),rs.getString(5),rs.getString(6)),tenant,connection,sku,asin);
+        var approved=new java.util.HashMap<String,UUID>();int count=0;var evidence=new StringBuilder(tenant+"/"+connection+"/"+sku);
+        for(var entry:entries){try{var a=MarketplaceSkuAutoMapper.parse(sku);var b=MarketplaceSkuAutoMapper.parse(entry.getFirst());if(parents.contains(entry.getFirst())||a.explicitBundle()||b.explicitBundle()||a.quantityPerMarketplaceUnit()!=b.quantityPerMarketplaceUnit())continue;}catch(IllegalArgumentException invalid){continue;}
+          count++;approved.put(entry.getFirst(),UUID.fromString(entry.get(1)));evidence.append(entry.toString());}
+        try{return new AsinMappingSnapshot(new AsinMappingPreview(count,java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(evidence.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)))),Map.copyOf(approved));}catch(java.security.NoSuchAlgorithmException impossible){throw new IllegalStateException(impossible);}
+    }
+
+    private void copyMappingToUnmappedAsinPeers(UUID tenant,UUID connection,String sourceSku,String asin,Map<UUID,BigDecimal> components,boolean replace,Map<String,UUID> approvedPeers){
+        if(asin==null||asin.isBlank())return;
+        var parents=relationshipPolicy(tenant,connection).parents();
+        MarketplaceSkuAutoMapper.ParsedSku source;
+        try{source=MarketplaceSkuAutoMapper.parse(sourceSku);}catch(IllegalArgumentException invalid){return;}
+        if(source.explicitBundle())return;
+        var peers=jdbc.query("""
+            SELECT listing.seller_sku FROM amazon_listings listing
+            WHERE listing.tenant_id=? AND listing.marketplace_connection_id=? AND listing.asin=? AND listing.seller_sku<>?
+              AND (? OR NOT EXISTS(SELECT 1 FROM marketplace_sku_mappings existing WHERE existing.tenant_id=listing.tenant_id AND existing.marketplace_connection_id=listing.marketplace_connection_id AND existing.marketplace_sku=listing.seller_sku))
+            ORDER BY listing.seller_sku
+            """,(rs,row)->rs.getString(1),tenant,connection,asin,sourceSku,replace);
+        var first=components.entrySet().iterator().next();
+        for(String peer:peers){
+            if(parents.contains(peer))continue;
+            MarketplaceSkuAutoMapper.ParsedSku parsed;
+            try{parsed=MarketplaceSkuAutoMapper.parse(peer);}catch(IllegalArgumentException invalid){continue;}
+            if(parsed.explicitBundle()||parsed.quantityPerMarketplaceUnit()!=source.quantityPerMarketplaceUnit())continue;
+            var ids=jdbc.query("""
+                INSERT INTO marketplace_sku_mappings(tenant_id,marketplace_connection_id,marketplace_sku,asin,account_catalog_item_id,quantity_per_marketplace_unit,status,mapping_source,auto_map_blocked)
+                VALUES(?,?,?,?,?,?,'ACTIVE','AUTO',false)
+                ON CONFLICT(tenant_id,marketplace_connection_id,marketplace_sku) DO UPDATE SET
+                  account_catalog_item_id=EXCLUDED.account_catalog_item_id,quantity_per_marketplace_unit=EXCLUDED.quantity_per_marketplace_unit,
+                  asin=EXCLUDED.asin,status='ACTIVE',mapping_source='MANUAL',auto_map_blocked=false,updated_at=now() WHERE ? AND marketplace_sku_mappings.id=? RETURNING id
+                """,(rs,row)->rs.getObject(1,UUID.class),tenant,connection,peer,asin,first.getKey(),first.getValue(),replace,approvedPeers.get(peer));
+            if(ids.isEmpty())continue;var mapping=ids.getFirst();jdbc.update("DELETE FROM marketplace_sku_mapping_components WHERE tenant_id=? AND marketplace_sku_mapping_id=?",tenant,mapping);var writes=new ArrayList<Object[]>();int index=0;
+            for(var part:components.entrySet())writes.add(new Object[]{tenant,mapping,part.getKey(),part.getValue(),index++});
+            jdbc.batchUpdate("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity,sort_order) VALUES(?,?,?,?,?)",writes);
+        }
+    }
+
+    @Transactional
+    public void clearMapping(UUID tenantId,UUID connectionId,String sellerSku){
+        setTenant(tenantId);com.nextaicommerce.platform.catalog.CatalogIdentity.lock(jdbc);
+        if(relationshipPolicy(tenantId,connectionId).parents().contains(sellerSku))
+            throw new IllegalArgumentException("Verified Amazon variation parents do not require product mapping.");
+        int updated=jdbc.update("""
+            UPDATE marketplace_sku_mappings SET status='INACTIVE',mapping_source='MANUAL',
+                auto_map_blocked=true,updated_at=now()
+            WHERE tenant_id=? AND marketplace_connection_id=? AND marketplace_sku=?
+            """,tenantId,connectionId,sellerSku);
+        if(updated==0)throw new IllegalArgumentException("This marketplace SKU does not have a saved mapping.");
+    }
+
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public SkuSummary summary(UUID tenantId,UUID connectionId){
+        setTenant(tenantId);var policy=inventoryPolicy(tenantId,connectionId);
+        var relationship=relationshipPolicy(tenantId,connectionId);
+        String summarySql="""
+            WITH """+policy.cte()+relationship.cte()+"""
+            recent_sales AS (
+              SELECT item.seller_sku,sum(item.quantity_ordered) four_week_units
+              FROM amazon_order_items item JOIN amazon_orders orders
+                ON orders.tenant_id=item.tenant_id AND orders.marketplace_connection_id=item.marketplace_connection_id
+               AND orders.amazon_order_id=item.amazon_order_id
+              WHERE item.tenant_id=? AND item.marketplace_connection_id=?
+                AND orders.purchase_date>=now()-interval '28 days' AND orders.purchase_date<=now()
+                AND upper(coalesce(orders.order_status,'')) NOT IN ('CANCELLED','CANCELED')
+              GROUP BY item.seller_sku
+            ), source_rows AS (
+              SELECT listing.listing_status,listing.platform_status,coalesce(eligibility.kind,'LEGACY') inventory_kind,
+                     listing.price,listing.currency,coalesce(nullif(btrim(listing.currency),''),(SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=listing.marketplace_id)) comparison_currency,listing.buy_box_price,listing.buy_box_currency,coalesce(recent_sales.four_week_units,0) four_week_units,
+                     CASE WHEN upper(coalesce(listing.fulfillment_channel,'')) LIKE '%AMAZON%'
+                          THEN (CASE WHEN coalesce(eligibility.applicable,true) THEN coalesce(inventory.fulfillable_quantity,0) END) ELSE (CASE WHEN coalesce(eligibility.applicable,true) THEN coalesce(local_inventory.available,listing.quantity,0) END) END available,
+                     mapping.id mapping_id,coalesce(family.is_parent,false) verified_parent,
+            """+HAS_SALES+"""
+                     has_sales
+              FROM amazon_listings listing
+              LEFT JOIN recent_sales ON recent_sales.seller_sku=listing.seller_sku
+              LEFT JOIN inventory_eligibility eligibility ON eligibility.sku=listing.seller_sku AND eligibility.marketplace=listing.marketplace_id
+              LEFT JOIN listing_relationships family ON family.sku=listing.seller_sku AND family.marketplace=listing.marketplace_id
+              LEFT JOIN LATERAL (SELECT fulfillable_quantity FROM amazon_inventory_snapshots snapshot
+                  WHERE snapshot.tenant_id=listing.tenant_id AND snapshot.marketplace_connection_id=listing.marketplace_connection_id
+                    AND snapshot.marketplace_id=listing.marketplace_id AND snapshot.seller_sku=listing.seller_sku
+                  ORDER BY snapshot.snapshot_at DESC LIMIT 1) inventory ON true
+              LEFT JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=listing.tenant_id
+                  AND mapping.marketplace_connection_id=listing.marketplace_connection_id
+                  AND mapping.marketplace_sku=listing.seller_sku AND mapping.status='ACTIVE'
+            """+LOCAL_MAPPING_AVAILABILITY+"""
+              WHERE listing.tenant_id=? AND listing.marketplace_connection_id=?
+            ), rows AS (
+              SELECT *,CASE
+                WHEN platform_status='REMOVED' THEN 'REMOVED'
+                WHEN platform_status='DELETED' OR upper(coalesce(listing_status,'')) LIKE '%DELET%' THEN 'DELETED'
+                WHEN upper(coalesce(listing_status,'')) ~ '(SUSPEND|SUPPRESS|BLOCK|PROBLEM)' THEN 'AMAZON_PROBLEM'
+                WHEN inventory_kind='PARENT' THEN 'PARENT'
+                WHEN inventory_kind IN ('UNRESOLVED','CONFLICT') THEN 'UNVERIFIED'
+                WHEN available<=0 AND NOT has_sales THEN 'NEVER_SOLD'
+                WHEN available<=0 THEN 'OOS'
+                WHEN upper(coalesce(listing_status,''))='ACTIVE' THEN 'ACTIVE'
+                ELSE 'INACTIVE' END operational_status
+              FROM source_rows WHERE NOT verified_parent
+            )
+            SELECT count(*),count(*) FILTER (WHERE operational_status='ACTIVE'),
+                   count(*) FILTER (WHERE operational_status='OOS'),
+                   count(*) FILTER (WHERE operational_status='INACTIVE'),
+                   count(*) FILTER (WHERE operational_status='AMAZON_PROBLEM'),
+                   count(*) FILTER (WHERE operational_status IN ('DELETED','REMOVED')),
+                   count(*) FILTER (WHERE mapping_id IS NULL AND inventory_kind<>'PARENT' AND NOT verified_parent),coalesce(sum(available),0),
+                   count(*) FILTER (WHERE operational_status='NEVER_SOLD'),
+                   count(*) FILTER (WHERE inventory_kind IN ('UNRESOLVED','CONFLICT')),count(*) FILTER (WHERE inventory_kind='PARENT'),
+                   count(*) FILTER (WHERE NOT verified_parent AND """+BUY_BOX_LOST_PREDICATE+"""
+                   )
+            FROM rows
+            """;
+        var summaryArgs=new ArrayList<Object>();if(policy.json()!=null)summaryArgs.add(policy.json());if(relationship.json()!=null)summaryArgs.add(relationship.json());summaryArgs.add(tenantId);summaryArgs.add(connectionId);summaryArgs.add(tenantId);summaryArgs.add(connectionId);
+        return jdbc.query(policy.guard(summarySql),rs->rs.next()?new SkuSummary(rs.getLong(1),rs.getLong(2),rs.getLong(3),rs.getLong(4),
+                rs.getLong(5),rs.getLong(6),rs.getLong(7),rs.getLong(8),rs.getLong(9),rs.getLong(10),rs.getLong(11),rs.getLong(12))
+                :new SkuSummary(0,0,0,0,0,0,0,0),summaryArgs.toArray());
+    }
+
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public SkuPage list(UUID tenantId,UUID connectionId,String search,String status,String sort,String direction,
+            int requestedPage,int pageSize){
+        return list(tenantId,connectionId,search,status,sort,direction,requestedPage,pageSize,Map.of());
+    }
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public SkuPage list(UUID tenantId,UUID connectionId,String search,String status,String sort,String direction,
+            int requestedPage,int pageSize,Map<String,String> filters){
+        return read(tenantId,connectionId,search,status,sort,direction,requestedPage,pageSize,filters,null,null);
+    }
+    public List<SkuView> exactListings(UUID tenant,UUID connection,List<String> keys,MarketplaceInventoryEligibility.Batch policy){
+        if(keys.size()>10000)throw new IllegalArgumentException("Family exceeds listing budget");
+        var result=new ArrayList<SkuView>();
+        for(int i=0;i<keys.size();i+=100)result.addAll(read(tenant,connection,"","ALL","sku","asc",0,100,Map.of(),policy,keys.subList(i,Math.min(i+100,keys.size()))).rows());
+        return result;
+    }
+    private SkuPage read(UUID tenantId,UUID connectionId,String search,String status,String sort,String direction,
+            int requestedPage,int pageSize,Map<String,String> filters,MarketplaceInventoryEligibility.Batch provided,List<String> exact){
+        if(!feeVarianceAvailable&&filters.containsKey("f_fee_variance"))throw new IllegalArgumentException("Fee variance is not enabled");
+        var smart=MarketplaceSkuFilters.parse(filters);
+        var relationship=relationshipPolicy(tenantId,connectionId);
+        setTenant(tenantId);var policy=provided==null?inventoryPolicy(tenantId,connectionId):provided;String query=search==null?"":search.trim();String filter=normalizeStatus(status);
+        int size=Math.max(25,Math.min(pageSize,200));int page=Math.max(requestedPage,0);int offset=page*size;
+        String sql="""
+            WITH """+policy.cte()+relationship.cte()+"""
+            sales_by_sku AS (
+              SELECT item.tenant_id,item.marketplace_connection_id,item.seller_sku,
+                     coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '28 days' AND orders.purchase_date<now()-interval '21 days'),0) week_4,
+                     coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '21 days' AND orders.purchase_date<now()-interval '14 days'),0) week_3,
+                     coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '14 days' AND orders.purchase_date<now()-interval '7 days'),0) week_2,
+                     coalesce(sum(item.quantity_ordered) FILTER (WHERE orders.purchase_date>=now()-interval '7 days'),0) current_week,
+                     count(DISTINCT orders.amazon_order_id) sold_orders,
+                     coalesce(round(sum(greatest(coalesce(item.shipping_price,0)-coalesce(item.shipping_discount,0),0))/nullif(sum(item.quantity_ordered),0),2),0) average_shipping,
+                     coalesce(sum(greatest(coalesce(item.shipping_price,0)-coalesce(item.shipping_discount,0),0)),0) customer_shipping
+              FROM amazon_order_items item JOIN amazon_orders orders
+                ON orders.tenant_id=item.tenant_id AND orders.marketplace_connection_id=item.marketplace_connection_id
+               AND orders.amazon_order_id=item.amazon_order_id
+              WHERE item.tenant_id=? AND item.marketplace_connection_id=?
+                AND orders.purchase_date>=now()-interval '28 days' AND orders.purchase_date<=now()
+                AND upper(coalesce(orders.order_status,'')) NOT IN ('CANCELLED','CANCELED')
+              GROUP BY item.tenant_id,item.marketplace_connection_id,item.seller_sku
+            ), sku_rows AS (
+              SELECT listing.seller_sku,listing.asin,listing.item_name,listing.image_url,listing.listing_status,
+                     listing.condition_type,listing.fulfillment_channel,listing.price,listing.currency,listing.quantity,
+                     inventory.fnsku,inventory.fulfillable_quantity,
+                     coalesce(inventory.inbound_working_quantity,0)+coalesce(inventory.inbound_shipped_quantity,0)+coalesce(inventory.inbound_receiving_quantity,0) inbound_quantity,
+                     inventory.reserved_quantity,inventory.unfulfillable_quantity,
+                     coalesce(sales.week_4,0) week_4,coalesce(sales.week_3,0) week_3,
+                     coalesce(sales.week_2,0) week_2,coalesce(sales.current_week,0) current_week,
+                     coalesce(sales.sold_orders,0) sold_orders,coalesce(sales.average_shipping,0) average_shipping,
+                     fees.estimated_fee_total,fees.currency fee_currency,
+                     coalesce(account_item.display_name,product.canonical_name) mapped_product,mapping.status mapping_status,
+                     mapped_offer.vendor_item_code,mapping.quantity_per_marketplace_unit,
+                     listing.marketplace_id,listing.last_seen_at,listing.merchant_shipping_group,
+                     coalesce(sales.customer_shipping,0) customer_shipping,
+                     CASE WHEN upper(coalesce(listing.fulfillment_channel,'')) LIKE '%AMAZON%'
+                          THEN (CASE WHEN coalesce(eligibility.applicable,true) THEN coalesce(inventory.fulfillable_quantity,0) END) ELSE (CASE WHEN coalesce(eligibility.applicable,true) THEN coalesce(local_inventory.available,listing.quantity,0) END) END available,
+                     CASE WHEN listing.platform_status='REMOVED' THEN 'REMOVED'
+                          WHEN listing.platform_status='DELETED' OR upper(coalesce(listing.listing_status,'')) LIKE '%DELET%' THEN 'DELETED'
+                          WHEN upper(coalesce(listing.listing_status,'')) ~ '(SUSPEND|SUPPRESS|BLOCK|PROBLEM)' THEN 'AMAZON_PROBLEM'
+                          WHEN eligibility.kind='PARENT' THEN 'PARENT'
+                          WHEN coalesce(eligibility.kind,'LEGACY') IN ('UNRESOLVED','CONFLICT') THEN 'UNVERIFIED'
+                          WHEN (CASE WHEN upper(coalesce(listing.fulfillment_channel,'')) LIKE '%AMAZON%'
+                                THEN (CASE WHEN coalesce(eligibility.applicable,true) THEN coalesce(inventory.fulfillable_quantity,0) END) ELSE (CASE WHEN coalesce(eligibility.applicable,true) THEN coalesce(local_inventory.available,listing.quantity,0) END) END)<=0
+                          THEN CASE WHEN
+            """+HAS_SALES+"""
+                          THEN 'OOS' ELSE 'NEVER_SOLD' END
+                          WHEN upper(coalesce(listing.listing_status,''))='ACTIVE' THEN 'ACTIVE'
+                          ELSE 'INACTIVE' END operational_status,
+                     inventory_plan.action_type local_inventory_plan,listing.buy_box_price,
+                     listing.buy_box_currency,listing.buy_box_updated_at,
+                     coalesce(mapped_offer.vendor_item_code,'')||' '||coalesce(account_item.account_sku,'')||' '||coalesce((SELECT string_agg(coalesce(ci.account_sku,'')||' '||coalesce(vo.vendor_item_code,''),' ') FROM marketplace_sku_mapping_components mc JOIN account_catalog_items ci ON ci.tenant_id=mc.tenant_id AND ci.id=mc.account_catalog_item_id LEFT JOIN vendor_catalog_offers vo ON vo.tenant_id=ci.tenant_id AND vo.account_catalog_item_id=ci.id AND vo.effective_to IS NULL WHERE mc.tenant_id=mapping.tenant_id AND mc.marketplace_sku_mapping_id=mapping.id),'') mapping_codes,
+                     EXISTS(SELECT 1 FROM order_sku_pictures pic WHERE pic.tenant_id=listing.tenant_id AND pic.marketplace_connection_id=listing.marketplace_connection_id AND pic.seller_sku=listing.seller_sku) custom_picture,coalesce(eligibility.kind,'LEGACY') inventory_kind,family.parent_sku,family.parent_asin,coalesce(family.is_parent,false) family_is_parent,coalesce(sales.week_4,0)+coalesce(sales.week_3,0)+coalesce(sales.week_2,0)+coalesce(sales.current_week,0) four_week_units,coalesce(nullif(btrim(listing.currency),''),(SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=listing.marketplace_id)) comparison_currency
+              FROM amazon_listings listing
+              LEFT JOIN listing_relationships family ON family.sku=listing.seller_sku AND family.marketplace=listing.marketplace_id
+              LEFT JOIN inventory_eligibility eligibility ON eligibility.sku=listing.seller_sku AND eligibility.marketplace=listing.marketplace_id
+              LEFT JOIN LATERAL (SELECT fnsku,fulfillable_quantity,inbound_working_quantity,inbound_shipped_quantity,
+                      inbound_receiving_quantity,reserved_quantity,unfulfillable_quantity
+                  FROM amazon_inventory_snapshots snapshot
+                  WHERE snapshot.tenant_id=listing.tenant_id AND snapshot.marketplace_connection_id=listing.marketplace_connection_id
+                    AND snapshot.marketplace_id=listing.marketplace_id AND snapshot.seller_sku=listing.seller_sku
+                  ORDER BY snapshot.snapshot_at DESC LIMIT 1) inventory ON true
+              LEFT JOIN sales_by_sku sales ON sales.tenant_id=listing.tenant_id
+                  AND sales.marketplace_connection_id=listing.marketplace_connection_id
+                  AND sales.seller_sku=listing.seller_sku
+              LEFT JOIN LATERAL (SELECT estimated_fee_total,currency FROM amazon_fee_estimates fee
+                  WHERE fee.tenant_id=listing.tenant_id AND fee.marketplace_connection_id=listing.marketplace_connection_id
+                    AND fee.marketplace_id=listing.marketplace_id AND fee.seller_sku=listing.seller_sku
+                    AND fee.currency=coalesce(nullif(trim(listing.currency),''),(SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=listing.marketplace_id))
+                    AND (NOT(jsonb_exists(fee.raw_payload,'currency')) OR fee.raw_payload->>'currency'=fee.currency)
+              AND fee.currency=(SELECT currency_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=fee.marketplace_id)
+              AND (NOT jsonb_exists(fee.raw_payload,'amazon-store') OR fee.raw_payload->>'amazon-store'=(SELECT country_code FROM marketplace_definitions WHERE channel='AMAZON' AND marketplace_identifier=fee.marketplace_id))
+              AND fee.marketplace_id=(SELECT marketplace_identifier FROM marketplace_connections WHERE tenant_id=listing.tenant_id AND id=listing.marketplace_connection_id)
+                  ORDER BY fee.effective_at DESC LIMIT 1) fees ON true
+              LEFT JOIN marketplace_sku_mappings mapping ON mapping.tenant_id=listing.tenant_id
+                  AND mapping.marketplace_connection_id=listing.marketplace_connection_id
+                  AND mapping.marketplace_sku=listing.seller_sku AND mapping.status='ACTIVE'
+            """+LOCAL_MAPPING_AVAILABILITY+"""
+              LEFT JOIN account_catalog_items account_item ON account_item.tenant_id=mapping.tenant_id
+                  AND account_item.id=mapping.account_catalog_item_id
+              LEFT JOIN global_catalog_products product ON product.id=account_item.global_product_id
+              LEFT JOIN LATERAL (SELECT offer.vendor_item_code FROM vendor_catalog_offers offer
+                  WHERE offer.tenant_id=account_item.tenant_id AND offer.account_catalog_item_id=account_item.id
+                    AND offer.effective_to IS NULL
+                  ORDER BY offer.is_default DESC,offer.updated_at DESC LIMIT 1) mapped_offer ON true
+              LEFT JOIN LATERAL (
+                  SELECT action.action_type
+                  FROM (
+                    SELECT component.account_catalog_item_id
+                    FROM marketplace_sku_mapping_components component
+                    WHERE component.tenant_id=mapping.tenant_id
+                      AND component.marketplace_sku_mapping_id=mapping.id
+                    UNION
+                    SELECT mapping.account_catalog_item_id
+                    WHERE mapping.account_catalog_item_id IS NOT NULL
+                  ) mapped_item
+                  JOIN inventory_expiration_actions action
+                    ON action.tenant_id=listing.tenant_id
+                   AND action.account_catalog_item_id=mapped_item.account_catalog_item_id
+                   AND action.status='PLANNED'
+                  ORDER BY CASE action.action_type WHEN 'HOLD' THEN 1 WHEN 'REMOVE' THEN 2
+                           WHEN 'DONATE' THEN 3 WHEN 'DISCOUNT' THEN 4 ELSE 5 END,
+                           action.updated_at DESC
+                  LIMIT 1
+              ) inventory_plan ON true
+              WHERE listing.tenant_id=? AND listing.marketplace_connection_id=?
+            """+("1".equals(filters.get("f_fee_variance"))?" AND EXISTS(SELECT 1 FROM amazon_fee_comparisons fv WHERE fv.tenant_id=listing.tenant_id AND fv.marketplace_connection_id=listing.marketplace_connection_id AND fv.marketplace_id=listing.marketplace_id AND fv.seller_sku=listing.seller_sku AND fv.state IN ('HIGHER','LOWER'))":"")+"""
+            )
+            SELECT *,count(*) over() filtered_total FROM sku_rows
+            WHERE (?='' OR seller_sku ILIKE '%'||?||'%' OR coalesce(asin,'') ILIKE '%'||?||'%'
+                      OR coalesce(item_name,'') ILIKE '%'||?||'%' OR mapping_codes ILIKE '%'||?||'%'
+                      OR coalesce(parent_sku,'') ILIKE '%'||?||'%' OR coalesce(parent_asin,'') ILIKE '%'||?||'%')
+              AND NOT family_is_parent
+              AND (?='ALL' OR operational_status=? OR (?='DELETED' AND operational_status='REMOVED') OR (?='UNMAPPED' AND mapped_product IS NULL AND inventory_kind<>'PARENT') OR (?='BUY_BOX_LOST' AND """+BUY_BOX_LOST_PREDICATE+"""
+                   ))
+            """+" AND "+smart.sql()+(exact==null?"":" AND seller_sku IN ("+String.join(",",java.util.Collections.nCopies(exact.size(),"?"))+")")+" ORDER BY CASE WHEN operational_status='DELETED' THEN 1 ELSE 0 END, "+orderClause(sort,direction)+" LIMIT ? OFFSET ?";
+        List<Object> parameters=new ArrayList<>(List.of(tenantId,connectionId,tenantId,connectionId,query,query,query,query,query,query,query,filter,filter,filter,filter,filter));
+        if(relationship.json()!=null)parameters.addFirst(relationship.json());
+        if(policy.json()!=null)parameters.addFirst(policy.json());
+        parameters.addAll(smart.args());if(exact!=null)parameters.addAll(exact);parameters.add(size);parameters.add(offset);
+        List<Object[]> raw=jdbc.query(policy.guard(sql),(rs,row)->new Object[]{new SkuView(rs.getString(1),rs.getString(2),rs.getString(3),rs.getBoolean("custom_picture")?"/app/marketplace-skus/mapping-picture?sku="+java.net.URLEncoder.encode(rs.getString(1),java.nio.charset.StandardCharsets.UTF_8):rs.getString(4),
+                rs.getString(33),rs.getString(6),rs.getString(7),rs.getBigDecimal(8),rs.getString(9),
+                (Integer)rs.getObject(10),rs.getString(11),(Integer)rs.getObject(12),(Integer)rs.getObject(13),
+                (Integer)rs.getObject(14),(Integer)rs.getObject(15),rs.getLong(16),rs.getLong(17),rs.getLong(18),rs.getLong(19),
+                rs.getLong(20),rs.getBigDecimal(21),rs.getBigDecimal(22),rs.getString(23),rs.getString(24),
+                rs.getString(25),rs.getString(26),rs.getBigDecimal(27),rs.getString(28),
+                rs.getTimestamp(29)==null?null:rs.getTimestamp(29).toInstant(),rs.getString(30),rs.getBigDecimal(31),rs.getBigDecimal(32),
+                rs.getString(34),rs.getBigDecimal(35),rs.getString(36),
+                rs.getTimestamp(37)==null?null:rs.getTimestamp(37).toInstant()),rs.getLong("filtered_total")},parameters.toArray());
+        long total=raw.isEmpty()?0:(long)raw.getFirst()[1];
+        List<SkuView> rows=raw.stream().map(row->(SkuView)row[0]).toList();
+        if(total>0&&offset>=total){page=Math.max(0,(int)((total-1)/size));return read(tenantId,connectionId,query,filter,sort,direction,page,size,filters,policy,exact);}
+        return new SkuPage(rows,total,page,size);
+    }
+
+    private void setTenant(UUID tenantId){
+        jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenantId.toString());
+        jdbc.execute("SET LOCAL jit='off'");
+    }
+    private static String normalizeStatus(String value){return List.of("ALL","ACTIVE","OOS","NEVER_SOLD","INACTIVE","AMAZON_PROBLEM","DELETED","UNMAPPED","BUY_BOX_LOST").contains(value)?value:"ALL";}
+    private static String orderClause(String sort,String direction){
+        String dir="DESC".equalsIgnoreCase(direction)?"DESC":"ASC";
+        String column=switch(sort==null?"":sort){
+            case "listing" -> "lower(coalesce(item_name,seller_sku))";
+            case "sku" -> "lower(seller_sku)";
+            case "status" -> "operational_status";
+            case "price" -> "price";
+            case "buyBox" -> "buy_box_price";
+            case "fulfillment" -> "fulfillment_channel";
+            case "available" -> "available";
+            case "fourWeek" -> "(week_4+week_3+week_2+current_week)";
+            case "fees" -> "estimated_fee_total";
+            case "profit" -> "lower(seller_sku)";
+            case "catalog" -> "mapped_product";
+            default -> "CASE operational_status WHEN 'AMAZON_PROBLEM' THEN 1 WHEN 'OOS' THEN 2 WHEN 'INACTIVE' THEN 3 WHEN 'ACTIVE' THEN 4 ELSE 5 END";
+        };
+        return column+" "+dir+" NULLS LAST, lower(coalesce(item_name,seller_sku)),seller_sku";
+    }
+    private static String encode(String value){return URLEncoder.encode(value,StandardCharsets.UTF_8);}
+    private static String amazonDomain(String marketplace){return MarketplaceLinks.amazonDomain(marketplace);}
+    private static String sellerCentralDomain(String marketplace){return "sellercentral."+amazonDomain(marketplace);}
+}

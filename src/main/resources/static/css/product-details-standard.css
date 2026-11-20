@@ -1,0 +1,101 @@
+/* Accepted Orders product-detail treatment, shared by operational tables. */
+body.app-page .ui-copy-title,
+body.app-page .orders-workspace .order-identifier-copy,
+body.app-page .sku-workspace .sku-identifier-copy,
+body.app-page .product-cell .product-detail-copy,
+body.app-page .available-inventory-table .product-detail-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 24px;
+  margin: 0;
+  padding: 3px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  vertical-align: middle;
+  cursor: copy;
+}
+body.app-page .ui-copy-title svg,
+body.app-page .orders-workspace .order-identifier-copy svg,
+body.app-page .sku-workspace .sku-identifier-copy svg,
+body.app-page .product-cell .product-detail-copy svg,
+body.app-page .available-inventory-table .product-detail-copy svg {
+  display: block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+body.app-page .orders-workspace .order-identifier-copy:hover,
+body.app-page .sku-workspace .sku-identifier-copy:hover,
+body.app-page .product-cell .product-detail-copy:hover,
+body.app-page .available-inventory-table .product-detail-copy:hover {
+  color: var(--blue);
+}
+body.app-page .orders-workspace .order-identifier-copy:focus-visible,
+body.app-page .sku-workspace .sku-identifier-copy:focus-visible,
+body.app-page .product-cell .product-detail-copy:focus-visible,
+body.app-page .available-inventory-table .product-detail-copy:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+body.app-page .sku-workspace #marketplace-listings-table .sku-approved-title {
+  font-size: .84rem !important;
+  font-weight: 700 !important;
+  line-height: 1.5 !important;
+  color: var(--ink);
+}
+body.app-page .orders-workspace .order-identifier-line .order-sku-copy,
+body.app-page .sku-workspace .sku-copy-value.sku-code {
+  font-weight: 700;
+  color: var(--ink);
+}
+body.app-page .sku-workspace .sku-identifier-copy {
+  align-self: center;
+}
+/* A helper under the date must not vertically center its neighbour's control. */
+#stock-editor [data-stock-fields] > label,
+#stock-editor .stock-context > label {
+  align-content: start;
+}
+#inventory-adjustment-dialog .adjustment-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+#inventory-adjustment-dialog .adjustment-context > * { min-width: 0; }
+@media (max-width: 600px) {
+  #inventory-adjustment-dialog .adjustment-context { grid-template-columns: 1fr; }
+}
+
+#stock-editor .stock-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+  grid-column: 1 / -1;
+}
+body.app-page .inventory-product-detail-link {
+  color: var(--ink);
+  font: inherit;
+  font-size: .84rem;
+  font-weight: 700;
+  line-height: 1.5;
+  text-decoration: none;
+}
+body.app-page .inventory-product-detail-link:hover { text-decoration: underline; }
+@media (max-width: 600px) {
+  #stock-editor .stock-context { grid-template-columns: 1fr; }
+}
+
+/* Reuse the existing inline workspace-heading standard at this consumer. */
+body.app-page .sku-workspace .workspace-header > div:first-child{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px 16px}
+body.app-page .sku-workspace .workspace-header .page-intro{margin:0;max-width:none}
