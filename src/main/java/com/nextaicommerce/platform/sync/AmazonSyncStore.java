@@ -300,6 +300,19 @@ public class AmazonSyncStore {
         return result==null?0:result;
     }
 
+    /** Complete sanitized GET evidence only. Never rewrite an existing evidence document. */
+    public UUID saveFbaParentEvidence(Job job,String body,String requestId){
+        if(!"FBA_INBOUND".equals(job.type()))throw new IllegalArgumentException("Wrong parent import dataset");
+        setTenant(job.tenantId());guardOrderLease(job);
+        return jdbc.queryForObject("""
+            INSERT INTO amazon_source_documents(tenant_id,marketplace_connection_id,sync_job_id,source_type,
+                amazon_request_id,source_key,content_type,sha256,payload,record_count,normalized_at)
+            VALUES(?,?,?,'FBA_PARENT_RELATIONSHIPS',?,?,'application/json',?,CAST(? AS jsonb),1,now())
+            ON CONFLICT(tenant_id,marketplace_connection_id,source_type,sha256) DO UPDATE SET id=amazon_source_documents.id
+            RETURNING id
+            """,UUID.class,job.tenantId(),job.connectionId(),job.id(),requestId,"parent-plan-read",sha256(body),body);
+    }
+
     /** Relationship-only archive, called inside a fenced publication transaction.
      * Keep exact response text even when JSON is malformed; never rewrite body/received_at on dedup. */
     public UUID saveVariationEvidence(Job job,String sku,String body,String parsed,String requestId){

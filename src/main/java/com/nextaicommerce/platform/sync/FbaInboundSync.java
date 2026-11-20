@@ -25,6 +25,12 @@ public class FbaInboundSync {
         ObjectNode cursor=tx.execute(s->{scope(job);return (ObjectNode)json.readTree(jdbc.queryForObject(
             "SELECT cursor::text FROM marketplace_sync_jobs WHERE tenant_id=? AND id=?",String.class,job.tenantId(),job.id()));});
         int pages=cursor.path("pages").asInt();
+        boolean parentsOnly=cursor.path("parentsOnly").asBoolean();
+        if(parentsOnly&&!"FBA_MANUAL".equals(job.profile()))throw new IllegalStateException("Parent-only reads require an explicit manual job.");
+        if(parentsOnly&&cursor.path("parentsComplete").asBoolean()){tx.executeWithoutResult(s->{scope(job);store.complete(job,cursor.path("records").asLong());});return;}
+        if("FBA_MANUAL".equals(job.profile())&&(parentsOnly||cursor.path("shipmentsComplete").asBoolean()&&!cursor.path("itemsRefreshOnly").asBoolean())&&!cursor.path("parentsComplete").asBoolean()){
+            importParents(job,cursor);return;
+        }
         if(pages>=1200)throw new IllegalStateException("FBA import exceeded its page budget; review the checkpoint before retrying.");
         if(cursor.path("shipmentsComplete").asBoolean()&&!cursor.path("feesComplete").asBoolean()){importShipmentFees(job,cursor,pages);afterCompletedRead(job);return;}
         var pending=new ArrayList<String>();cursor.path("pending").forEach(n->pending.add(n.asText()));
@@ -88,6 +94,33 @@ public class FbaInboundSync {
             if(done)store.complete(job,total);
         });
         if(done&&!cursor.path("itemsRefreshOnly").asBoolean())afterCompletedRead(job);
+    }
+    private void importParents(AmazonSyncStore.Job job,ObjectNode cursor){
+        var state=cursor.withObject("parentImport");
+        AmazonSpApiClient.ApiResponse response;
+        try{response=amazon.getAt(job.tenantId(),job.connectionId(),AmazonSpApiClient.endpoint(job.marketplaceId()),FbaParentPlanImport.path(state));}
+        catch(AmazonSpApiClient.AmazonApiException ex){
+            if(ex.status()!=400&&ex.status()!=403&&ex.status()!=404)throw ex;
+            // Permission/history/token unavailability does not erase previously verified relationships.
+            state.put("coverage",state.path("completedPlans").asInt()==0?"UNAVAILABLE":"PARTIAL").put("httpStatus",ex.status());
+            state.put("coverageReason",ex.status()==403?"AUTHORIZATION_DENIED":ex.status()==404?"PLAN_OR_HISTORY_NOT_AVAILABLE":"REQUEST_OR_PAGINATION_REJECTED");cursor.put("parentsComplete",true);
+            tx.executeWithoutResult(s->{scope(job);saveParentCursor(job,cursor,3);completeParentOnly(job,cursor);});return;
+        }
+        var document=FbaParentPlanImport.accept(job,state,response.json(),response.requestId());
+        cursor.put("consecutiveFailures",0);
+        if(FbaParentPlanImport.complete(state)){cursor.put("parentsComplete",true);state.put("coverage",state.path("scopeAmbiguousPlans").asInt()>0?"PARTIAL":"API_DISCOVERY_COMPLETE");}
+        else state.put("coverage","IN_PROGRESS");
+        tx.executeWithoutResult(s->{scope(job);
+            if(document!=null)store.saveFbaParentEvidence(job,document.toString(),response.requestId());
+            saveParentCursor(job,cursor,requestDelay(response));
+            completeParentOnly(job,cursor);
+        });
+    }
+    private void completeParentOnly(AmazonSyncStore.Job job,ObjectNode cursor){
+        if(cursor.path("parentsOnly").asBoolean()&&cursor.path("parentsComplete").asBoolean())store.complete(job,cursor.path("records").asLong());
+    }
+    private void saveParentCursor(AmazonSyncStore.Job job,ObjectNode cursor,long delay){
+        jdbc.update("UPDATE marketplace_sync_jobs SET cursor=CAST(? AS jsonb),status='WAITING',available_at=now()+?*interval '1 second',lease_owner=NULL,lease_expires_at=NULL WHERE tenant_id=? AND id=?",cursor.toString(),delay,job.tenantId(),job.id());
     }
     long saveShipments(AmazonSyncStore.Job job,JsonNode rows){
         long count=0;for(JsonNode row:rows){

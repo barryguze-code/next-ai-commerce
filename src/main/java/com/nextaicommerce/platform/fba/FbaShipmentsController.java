@@ -71,10 +71,15 @@ public class FbaShipmentsController {
     org.springframework.http.ResponseEntity<?> invalid(IllegalArgumentException e){return org.springframework.http.ResponseEntity.badRequest().body(java.util.Map.of("error",e.getMessage()));}
     @PostMapping("/app/inventory/fba-shipments/sync") @ResponseBody
     org.springframework.http.ResponseEntity<?> sync(HttpSession session){
+        return sync(session,false);
+    }
+    @PostMapping("/app/inventory/fba-shipments/sync-parents") @ResponseBody
+    org.springframework.http.ResponseEntity<?> syncParents(HttpSession session){return sync(session,true);}
+    private org.springframework.http.ResponseEntity<?> sync(HttpSession session,boolean parentsOnly){
         UUID tenant=(UUID)session.getAttribute(AccountSelectionController.TENANT_ID),connection=(UUID)session.getAttribute(AccountSelectionController.STORE_ID);
         if(tenant==null||connection==null)return org.springframework.http.ResponseEntity.badRequest().body(java.util.Map.of("error","Choose an Amazon store."));
         workspace.findConnection(tenant,connection);
-        try{if(sync==null)throw new IllegalStateException("FBA sync is unavailable.");return org.springframework.http.ResponseEntity.accepted().body(java.util.Map.of("job",sync.request(tenant,connection)));}
+        try{if(sync==null)throw new IllegalStateException("FBA sync is unavailable.");return org.springframework.http.ResponseEntity.accepted().body(java.util.Map.of("job",parentsOnly?sync.requestParents(tenant,connection):sync.request(tenant,connection)));}
         catch(IllegalArgumentException|IllegalStateException e){return org.springframework.http.ResponseEntity.badRequest().body(java.util.Map.of("error",e.getMessage()));}
     }
     @GetMapping("/app/inventory/fba-shipments/sync") @ResponseBody

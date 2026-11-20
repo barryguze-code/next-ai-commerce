@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.14.29",
+    "title": "Verified Amazon shipment parent links",
+    "sections": [
+      {
+        "title": "FBA shipments",
+        "items": [
+          "Import verified Amazon inbound-plan relationships through read-only requests. Shipment groups appear only after every declared child is verified; unavailable or incomplete history remains explicit.",
+          "Existing shipment quantities, warehouse deductions and Amazon shipment-write settings remain unchanged."
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.26",
     "title": "Reliable calculator opening",
     "sections": [
