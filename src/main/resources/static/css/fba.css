@@ -255,3 +255,11 @@ html body.fba-shipments-page .fba-shipment-table>tbody>tr[data-fba-parent].is-se
 .fba-shipment-table .fba-operation-menu>summary img{width:28px;height:28px;object-fit:contain}
 
 .fba-shipment-table td .status-badge{display:table;margin-top:4px}
+
+.fba-shipments-page .fba-origin-frame .fba-origin-city{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;-webkit-line-clamp:unset}
+.fba-record-operations .table-action-entry{width:100%;min-width:0}
+
+.fba-shipment-table .fba-direct-actions{display:flex;justify-content:center;align-items:center;gap:4px}
+.fba-shipment-table .fba-direct-actions>[hidden]{display:none!important}
+html body .fba-shipment-table .fba-direct-actions .fba-row-icon{width:36px;min-width:36px;height:36px;margin:0;padding:4px}
+html body .fba-shipment-table .fba-direct-actions .fba-row-icon img{width:28px;height:28px;object-fit:contain}
