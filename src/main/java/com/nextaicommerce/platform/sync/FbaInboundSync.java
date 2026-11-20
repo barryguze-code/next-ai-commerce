@@ -13,6 +13,7 @@ import tools.jackson.databind.node.ObjectNode;
 /** One rate-limited request per queue claim. Page data and checkpoint commit together. */
 @Component
 public class FbaInboundSync {
+    static boolean parentWorkflow(String profile){return java.util.Set.of("FBA_MANUAL","FBA_INBOUND","INITIAL_30_DAY").contains(profile==null?"":profile);}
     private final AmazonSpApiClient amazon;private final AmazonSyncStore store;
     private final JdbcTemplate jdbc;private final TransactionTemplate tx;private final ObjectMapper json;
     private final AmazonReportNormalizer normalizer;private final FbaSyncHistory history;
@@ -31,7 +32,7 @@ public class FbaInboundSync {
         boolean parentsOnly=cursor.path("parentsOnly").asBoolean();
         if(parentsOnly&&!"FBA_MANUAL".equals(job.profile()))throw new IllegalStateException("Parent-only reads require an explicit manual job.");
         if(parentsOnly&&cursor.path("parentsComplete").asBoolean()){tx.executeWithoutResult(s->{scope(job);store.complete(job,cursor.path("records").asLong());});return;}
-        if(("FBA_MANUAL".equals(job.profile())||"FBA_INBOUND".equals(job.profile()))&&(parentsOnly||cursor.path("shipmentsComplete").asBoolean()&&!cursor.path("itemsRefreshOnly").asBoolean())&&!cursor.path("parentsComplete").asBoolean()){
+        if(parentWorkflow(job.profile())&&(parentsOnly||cursor.path("shipmentsComplete").asBoolean()&&!cursor.path("itemsRefreshOnly").asBoolean())&&!cursor.path("parentsComplete").asBoolean()){
             importParents(job,cursor);return;
         }
         if(!admitRead(job,cursor))return;

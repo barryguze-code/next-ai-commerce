@@ -18,3 +18,25 @@
  window.addEventListener('resize',scheduleColumns);
  const observer=new MutationObserver(records=>{if(records.some(r=>r.attributeName==='class'||r.attributeName==='hidden'||r.attributeName==='aria-expanded'||r.type==='childList'))sync();});observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','hidden','aria-expanded']});sync();
 })();
+
+// Operational actions stay in their own column; the Record rail keeps collaboration and suggestions.
+(()=>{'use strict';
+ const prepare=()=>document.querySelectorAll('[data-fba-operations]:not([data-operations-ready])').forEach(menu=>{
+  menu.dataset.operationsReady='true';const row=menu.closest('tr'),details=document.createElement('details');details.className='table-row-warning fba-operation-menu';
+  const trigger=document.createElement('summary');trigger.className='table-action-trigger';trigger.title='Actions';trigger.setAttribute('aria-label',menu.dataset.title||'Shipment actions for '+(row.dataset.title||'shipping plan'));
+  const art=document.createElement('img');art.src='/images/platform/optimized32/actions-owner-20261111.png?v=1.14.4';art.alt='';art.className='platform-icon';trigger.append(art);
+  const panel=document.createElement('div');panel.className='table-warning-panel';panel.setAttribute('popover','manual');
+  const header=document.createElement('header');header.className='table-action-heading';const title=document.createElement('strong');title.textContent='Actions';const close=document.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label','Close actions');close.onclick=()=>{details.open=false;trigger.focus()};header.append(title,close);panel.append(header);
+  for(const control of menu.querySelectorAll(':scope > button')){
+   const name=control.textContent.trim()||control.getAttribute('aria-label')||'Open';
+   const key=control.dataset.actionKey||(control.hasAttribute('data-fba-review-deduction')?'productEdit':control.hasAttribute('data-fba-deplete')?'decrease':control.dataset.removed==='false'?'show':'hide');
+   control.className='table-action-entry';const icon=document.createElement('span');icon.className='table-action-icon';icon.setAttribute('aria-hidden','true');if(window.NextAiIcons)icon.append(window.NextAiIcons.create('action:'+key));
+   const label=document.createElement('span');label.className='table-action-label';const strong=document.createElement('strong');strong.textContent=name;const hint=document.createElement('small');hint.textContent=control.dataset.actionDescription||(key==='productEdit'?'Review this shipment’s stock deduction':key==='decrease'?'Review quantities and warehouse locations':'Change visibility in your view');label.append(strong,hint);control.replaceChildren(icon,label);panel.append(control);
+  }
+  panel.addEventListener('click',event=>{if(event.target.closest('.table-action-entry'))details.open=false;});
+  details.append(trigger,panel);menu.replaceWith(details);
+  details.addEventListener('toggle',()=>{if(!details.open){if(panel.matches(':popover-open'))panel.hidePopover();return;}document.querySelectorAll('.fba-operation-menu[open]').forEach(other=>{if(other!==details)other.open=false;});panel.style.margin='0';panel.style.inset='auto';panel.showPopover();const box=trigger.getBoundingClientRect();panel.style.left=Math.max(12,Math.min(box.left,innerWidth-panel.offsetWidth-12))+'px';panel.style.top=Math.max(12,Math.min(box.bottom+6,innerHeight-panel.offsetHeight-12))+'px';});
+  details.addEventListener('keydown',event=>{if(event.key==='Escape'){details.open=false;trigger.focus();}});(row.closest('.table-wrap')||row.closest('table')).addEventListener('scroll',()=>details.open=false,{passive:true});
+ });
+ window.addEventListener('resize',()=>document.querySelectorAll('.fba-operation-menu[open]').forEach(details=>details.open=false));document.addEventListener('DOMContentLoaded',prepare);new MutationObserver(prepare).observe(document.body,{childList:true,subtree:true});prepare();
+})();

@@ -43,10 +43,10 @@ class FbaTemplateTest {
     @Test void shipmentPageRendersEmptyAndPopulatedStates()throws Exception{
         var context=context();context.setVariable("query","");context.setVariable("amazonStore",true);
         context.setVariable("shipments",new FbaReadRepository.ShipmentPage(List.of(),0,0,25));
-        assertThat(engine().process("fba-shipments",context)).contains("No FBA shipments imported yet","table-pagination","Ship from","<h2>FBA shipments</h2>").doesNotContain("Replenishment shipments");
+        assertThat(engine().process("fba-shipments",context)).contains("No FBA shipments imported yet","table-pagination","<h2>FBA shipments</h2>").doesNotContain("Replenishment shipments","<th>Ship from</th>");
         context.setVariable("shipments",new FbaReadRepository.ShipmentPage(List.of(new FbaReadRepository.Shipment("FBA123","<script>bad</script>","SHIPPED","SCK8",null,null,2,30,6)),1,0,25));
         context.setVariable("depletionStates",Map.of("FBA123",new com.nextaicommerce.platform.fba.FbaWorkspaceRepository.DepletionState(false,false,false,null)));
-        assertThat(engine().process("fba-shipments",context)).contains("FBA123","SCK8","Not supplied","&lt;script&gt;").doesNotContain("<script>bad</script>");
+        assertThat(engine().process("fba-shipments",context)).contains("FBA123","SCK8","&lt;script&gt;").doesNotContain("<script>bad</script>");
         if(Boolean.getBoolean("fbaPreview")){
             java.nio.file.Files.createDirectories(java.nio.file.Path.of(".local/fba-preview"));
             java.nio.file.Files.writeString(java.nio.file.Path.of(".local/fba-preview/shipments.html"),engine().process("fba-shipments",context));

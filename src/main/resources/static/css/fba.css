@@ -243,3 +243,15 @@ html body.fba-shipments-page .fba-shipment-table>tbody>tr[data-fba-parent].is-se
 #fba-shipment-dialog .fba-item-copy>.ui-identifier-copy{display:block;max-width:100%;line-height:1.5;margin-top:3px}
 
 #fba-depletion-dialog .fba-add-location{justify-self:start;width:auto;max-width:100%}
+
+/* Every origin uses the same approved location tile and operation trigger. */
+.fba-shipments-page .fba-origin-frame{background:#fff;border-radius:16px;padding:6px}
+.fba-shipments-page .fba-origin-frame .fba-parent-origin-art{width:28px;height:28px;object-fit:contain}
+.fba-shipments-page .fba-origin-postal{font-size:14px;font-weight:700}
+.fba-shipments-page .fba-origin-city{font-size:11px;color:#64748b}
+.fba-shipment-table .fba-operation-menu{display:inline-block;text-align:left}
+.fba-shipment-table .fba-operation-menu>summary{list-style:none}
+.fba-shipment-table .fba-operation-menu>summary::-webkit-details-marker{display:none}
+.fba-shipment-table .fba-operation-menu>summary img{width:28px;height:28px;object-fit:contain}
+
+.fba-shipment-table td .status-badge{display:table;margin-top:4px}

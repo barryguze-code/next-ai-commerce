@@ -111,9 +111,27 @@ public class FbaReadRepository {
             }catch(IllegalArgumentException invalidCurrency){return "—";}
         }
 
-        public BigDecimal getTotal(){return transportation==null||placement==null||currency==null?null:transportation.add(placement);}
+        public BigDecimal getTotal(){return transportation==null||placement==null||!validCurrency(currency)?null:transportation.add(placement);}
         public BigDecimal getPerUnit(){return getTotal()==null||shippedUnits<=0?null:
             getTotal().divide(BigDecimal.valueOf(shippedUnits),4,java.math.RoundingMode.HALF_UP);}
+        private static boolean validCurrency(String currency){
+            if(currency==null||currency.isBlank())return false;
+            try{java.util.Currency.getInstance(currency);return true;}
+            catch(IllegalArgumentException invalid){return false;}
+        }
+        /** Sum complete child evidence once; absent charges are unknown, never an inferred zero. */
+        static ShipmentCosts aggregate(Collection<ShipmentCosts> children,int expectedChildren){
+            long units=children.stream().mapToLong(ShipmentCosts::shippedUnits).sum();
+            if(expectedChildren<=0||children.size()!=expectedChildren||children.stream().anyMatch(c->!validCurrency(c.currency())))
+                return new ShipmentCosts(null,null,null,units);
+            String currency=children.iterator().next().currency();
+            if(children.stream().anyMatch(c->!currency.equals(c.currency())))return new ShipmentCosts(null,null,null,units);
+            BigDecimal transportation=children.stream().anyMatch(c->c.transportation()==null)?null:
+                children.stream().map(ShipmentCosts::transportation).reduce(BigDecimal.ZERO,BigDecimal::add);
+            BigDecimal placement=children.stream().anyMatch(c->c.placement()==null)?null:
+                children.stream().map(ShipmentCosts::placement).reduce(BigDecimal.ZERO,BigDecimal::add);
+            return new ShipmentCosts(transportation,placement,currency,units);
+        }
     }
     public record ShipmentItems(List<ShipmentItem> rows,long total,int page,int size,ShipmentCosts costs){}
     /** Posted transaction totals are counted once, never again through nested breakdown rollups.

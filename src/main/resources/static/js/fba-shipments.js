@@ -48,9 +48,9 @@ document.addEventListener('DOMContentLoaded',()=>{const prefs=window.NextAiTable
    const response=await fetch(form.action,{headers:{Accept:'application/json'}});if(!response.ok)throw Error();
    const state=await response.json();pending=false;enabled=state.enabled;
    feedback.hidden=state.running||state.status==='COMPLETED'||!state.message;feedback.textContent=state.running?'':state.message||'';
-   const pill=document.querySelector('[data-fba-compact-status]');pill.textContent=state.running?'Syncing…':state.status==='COMPLETED'?'Synced':state.status==='NOT_STARTED'?'Not synced':'Needs attention';pill.classList.toggle('syncing',state.running);pill.classList.toggle('not-synced',!state.running&&state.status!=='COMPLETED');
+   const pill=document.querySelector('[data-fba-compact-status]');pill.textContent=state.running?'Syncing Amazon FBA shipments…':state.status==='COMPLETED'?'Synced':state.status==='NOT_STARTED'?'Not synced':'Needs attention';pill.classList.toggle('syncing',state.running);pill.classList.toggle('not-synced',!state.running&&state.status!=='COMPLETED');
    showState(state.running,enabled);
-   document.querySelector('[data-fba-check]').textContent=state.checkedAt?'Last Amazon shipment check · '+new Date(state.checkedAt).toLocaleString():'Amazon shipment check · Not completed';
+   document.querySelector('[data-fba-check]').hidden=state.running;document.querySelector('[data-fba-check]').textContent=state.checkedAt?'Last Amazon shipment check · '+new Date(state.checkedAt).toLocaleString():'Amazon shipment check · Not completed';
    const completed=wasRunning&&!state.running;wasRunning=state.running;
    if(state.running)retryStatus();else if(completed)await refreshRows();
   }catch(_){feedback.hidden=false;feedback.textContent='Status unavailable. Refresh to check the saved sync progress.';showState(wasRunning||pending,enabled);if(wasRunning||pending)retryStatus();}

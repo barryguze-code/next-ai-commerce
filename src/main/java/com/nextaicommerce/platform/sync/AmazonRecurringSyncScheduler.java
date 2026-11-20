@@ -39,6 +39,14 @@ public class AmazonRecurringSyncScheduler {
         }
     }
 
+    boolean lockFbaSlot(UUID tenantId,UUID connectionId){
+        // Same connection lock as manual requests; fresh query after lock prevents a racing duplicate.
+        var locked=jdbc.queryForList("SELECT id FROM marketplace_connections WHERE tenant_id=? AND id=? AND channel='AMAZON' AND status='ACTIVE' FOR UPDATE",UUID.class,tenantId,connectionId);
+        if(locked.isEmpty())return false;
+        var active=jdbc.queryForObject("SELECT count(*) FROM marketplace_sync_jobs WHERE tenant_id=? AND marketplace_connection_id=? AND job_type='FBA_INBOUND' AND status IN ('QUEUED','WAITING','RUNNING')",Long.class,tenantId,connectionId);
+        return active!=null&&active==0;
+    }
+
     private void enqueueOne(UUID tenantId) {
         setTenant(tenantId);
         seedSchedules(tenantId);
@@ -62,13 +70,17 @@ public class AmazonRecurringSyncScheduler {
                       WHERE unfinished.tenant_id=active_run.tenant_id AND unfinished.sync_run_id=active_run.id
                         AND unfinished.status NOT IN ('COMPLETED','SKIPPED'))
                     AND (schedule.schedule_key<>'ORDER_CHANGES'
-                      OR active_run.sync_profile='ORDER_CHANGES'))
+                      OR active_run.sync_profile='ORDER_CHANGES')
+                    AND (schedule.schedule_key<>'FBA_INBOUND' OR EXISTS (SELECT 1 FROM marketplace_sync_jobs fba
+                      WHERE fba.tenant_id=active_run.tenant_id AND fba.sync_run_id=active_run.id
+                        AND fba.job_type='FBA_INBOUND' AND fba.status NOT IN ('COMPLETED','SKIPPED'))))
             ORDER BY schedule.priority,schedule.next_run_at
             FOR UPDATE OF schedule SKIP LOCKED LIMIT 1
             """,(rs,row)->new DueSchedule(rs.getObject(1,UUID.class),rs.getString(2),rs.getString(3),
                 rs.getLong(4),rs.getLong(5),rs.getString(6)),tenantId,batchFees,recurringFees&&collectFees&&zeroShippingApproved);
         if(due.isEmpty())return;
         DueSchedule schedule=due.getFirst();
+        if("FBA_INBOUND".equals(schedule.key())&&!lockFbaSlot(tenantId,schedule.connectionId()))return;
         AmazonRecurringPlan.Schedule plan=AmazonRecurringPlan.schedules().stream()
             .filter(candidate->candidate.key().equals(schedule.key())).findFirst()
             .orElseThrow(()->new IllegalStateException("Unknown Amazon schedule "+schedule.key()));
