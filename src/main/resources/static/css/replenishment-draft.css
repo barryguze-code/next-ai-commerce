@@ -210,3 +210,7 @@ html body.app-page .rp-toggle-row .rp-sku-toggle,html[data-theme=dark] body.app-
 .rp-po-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rp-heading-copy{flex:1;min-width:180px}.rp-po-header-actions .secondary-button{font-size:13px;white-space:nowrap}
 
 .rp-heading .rp-plan-identity{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.rp-heading .rp-plan-identity>small{margin:0;white-space:nowrap}
+
+/* Retain the zero-stock semantic color against the shared dark table ink rule. */
+html[data-theme=dark] .app-page .rp-sku-table .rp-sku-price.rp-oos-quantity{color:#c73542;background:#ffebed}
+html[data-theme=dark] .app-page .rp-sku-table .rp-sku-price+.cell-note{color:var(--muted,#9ba8b8);opacity:1}

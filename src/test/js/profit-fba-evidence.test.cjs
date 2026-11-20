@@ -3,7 +3,8 @@ test('FBA calculator separates charges once, keeps zero distinct from missing an
  const browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})});
  try{for(const theme of ['light','dark'])for(const width of [390,1440])for(const placement of [3,0,null]){
   const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  const profit=placement==null?null:57-placement;
+  // Owner Request #9: the $1 Other cost applies only to FBM, never FBA.
+  const profit=placement==null?null:58-placement;
   const view={key:'SKU',kind:'SKU',title:'Synthetic FBA product',currency:'USD',date:'2026-10-22',fba:true,fbaFee:5,fbaReferralFee:15,inboundShippingCost:2,placementFee:placement,
    inboundSource:'Estimate · FBA-FIXTURE · charges posted 2026-10-09',feeSourceSummary:'Amazon fee report · imported 2026-10-14 UTC',feeSource:'Amazon fee report · imported 2026-10-14 12:00:00 UTC · 8 days since import; freshness not assessed',
    lines:[{sku:'SKU',quantity:1,unitPrice:100,productCost:20,otherCost:1,customerShipping:0}],packages:[],totals:{profit,productCost:20,referralFee:15,otherCost:1}};

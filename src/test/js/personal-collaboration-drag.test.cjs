@@ -39,7 +39,7 @@ test('foundation retains one table across tabs with five initial rows and disjoi
                 .replace('<main ','<main style="margin:0;width:100%" ');
             return route.fulfill({contentType:path.startsWith('/js/')?'application/javascript':path.startsWith('/css/')?'text/css':'text/html',body});
         });
-        await page.goto('https://personal.test/app/collaboration');
+        await page.addInitScript(()=>{localStorage.setItem('nextai-theme','light');document.cookie='nextai_theme=light; Path=/';});await page.goto('https://personal.test/app/collaboration');
         await page.locator('tr[data-card-id]').first().waitFor();
         assert.equal(await page.locator('tr[data-card-id]').count(),5);
         assert.deepEqual(await page.locator('.personal-group-toggle').allTextContents(),['Last month · 8']);
@@ -102,12 +102,6 @@ test('foundation retains one table across tabs with five initial rows and disjoi
         }
         const ids=await page.locator('tr[data-card-id]').evaluateAll(rows=>rows.map(r=>r.id));
         assert.equal(ids.length,new Set(ids).size);
-        await page.locator('tr[data-card-id] .table-row-warning summary').first().click();
-        await page.locator('tr[data-card-id]').first().locator('.table-action-label strong').filter({hasText:/^Close$/}).click();
-        await page.locator('#platform-confirm-dialog').waitFor({state:'visible'});
-        await page.locator('[data-confirm-cancel]').click();
-        assert.equal(writes,0);
-        assert.equal(nativeDialogs,0);
         await page.locator('#personal-search').fill('rank gaps');
         await page.waitForFunction(()=>document.querySelectorAll('tr[data-card-id]').length===2);
         const gapGrip=await page.locator('#TASKitem0 [data-column=priority] .personal-priority-handle').boundingBox();
@@ -118,6 +112,12 @@ test('foundation retains one table across tabs with five initial rows and disjoi
         await page.locator('#TASKitem2.personal-drop-before:not(.personal-drop-unchanged)').waitFor({timeout:5000});await page.mouse.up();
         await page.waitForFunction(()=>document.querySelector('#TASKitem0 [data-priority-number]').textContent==='2');
         assert.equal(moves,5);assert.equal(all.find(r=>r.card.key.id==='item1').position,1);
+        // Owner Request #4: Close completes directly, without another confirmation.
+        await page.locator('tr[data-card-id] .table-row-warning summary').first().click();
+        const closed=page.waitForResponse(r=>new URL(r.url()).pathname==='/app/collaboration/personal/state');
+        await page.locator('tr[data-card-id]').first().locator('.table-action-label strong').filter({hasText:/^Close$/}).click();await closed;
+        assert.equal(writes,1);assert.equal(await page.locator('#platform-confirm-dialog:visible').count(),0);assert.equal(nativeDialogs,0);
+
 
     } finally {await browser.close();}
 });
@@ -135,10 +135,10 @@ test('task creation mirrors selected account and uses the shared dialog',async()
    html=html.replace('</main>','<details open><summary>Choose fixture account</summary><button data-collaboration-account="one" data-name="Account one" data-logo="/images/one.png">Account one</button></details></main>').replace('</body>','<button data-new-task>Create task</button><script src="/js/general-task.js"></script></body>');
    return route.fulfill({contentType:'text/html',body:html});
   });
-  await page.goto('https://scope.test/');await page.locator('[data-new-task]').first().click();const dialog=page.locator('#contextual-thread-dialog');
+  await page.addInitScript(()=>{localStorage.setItem('nextai-theme','light');document.cookie='nextai_theme=light; Path=/';});await page.goto('https://scope.test/');await page.locator('[data-new-task]').last().click();const dialog=page.locator('#contextual-thread-dialog');
   assert.equal(await page.locator('#general-task-dialog').count(),0);assert.equal(await dialog.locator('#thread-record-type').textContent(),'All accounts');
   await dialog.getByLabel('Task account').selectOption('one');assert.equal(await dialog.locator('#thread-record-type').textContent(),'Account one');assert.match(await dialog.locator('#thread-account-logo').getAttribute('src'),/one.png/);
-  await dialog.locator('[data-thread-dialog-close]').first().click();await page.locator('[data-collaboration-account=one]').click();await page.waitForFunction(()=>document.querySelector('#personal-queue').dataset.filterAccount==='one');await page.locator('[data-new-task]').first().click();
+  await dialog.locator('[data-thread-dialog-close]').first().click();await page.locator('[data-collaboration-account=one]').click();await page.waitForFunction(()=>document.querySelector('#personal-queue').dataset.filterAccount==='one');await page.locator('[data-new-task]').last().click();
   assert.equal(await dialog.getByLabel('Task account').isVisible(),false);assert.equal(await dialog.locator('#thread-record-type').textContent(),'Account one');
  }finally{await browser.close();}
 });
@@ -167,7 +167,7 @@ test('task artwork and the shared detail popup work in every tab without navigat
             html=html.replace('</main>','<details open><summary>Fixture account</summary><button type="button" data-collaboration-account="account1" data-name="Account" data-logo="/images/account.png">Account</button><button type="button" data-collaboration-account="account1" data-collaboration-store="other-store" data-name="Other store" data-logo="/images/account.png">Other store</button></details></main>');
             return route.fulfill({contentType:'text/html',body:html});
         });
-        await page.goto('https://details.test/');
+        await page.addInitScript(()=>{localStorage.setItem('nextai-theme','light');document.cookie='nextai_theme=light; Path=/';});await page.goto('https://details.test/');
         await page.locator('tr[data-card-id]').first().waitFor();
         for(const scope of ['ASSIGNED','ACTIVE','CLOSED']){
             if(await page.locator('#personal-queue').getAttribute('data-loaded-scope')!==scope){

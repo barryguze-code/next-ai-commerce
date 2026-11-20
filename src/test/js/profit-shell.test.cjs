@@ -28,7 +28,7 @@ test('Save & Close persists every package and keeps the modal open on failure',a
  for(const fail of [false,true]){
   let save,closed=false,payload;const button={addEventListener:(event,fn)=>save=fn},feedback={};
   const packages=[10,12,3].map(amount=>({querySelector:s=>s==='select'?{value:'FEDEX_SMALL'}:amount}));
-  const context={trigger:{dataset:{}},current:{kind:'SKU',key:'SKU',packageType:'FEDEX_SMALL'},labels:{FEDEX_SMALL:'Small'},
+  const context={trigger:{dataset:{}},current:{kind:'SKU',key:'SKU',packageType:'FEDEX_SMALL'},labels:{FEDEX_SMALL:'Small'},packageChoices:[],
    field:s=>s==='[data-profit-save]'?button:s==='[data-profit-feedback]'?feedback:s==='[data-profit-packages]'?{children:packages}:s==='[data-profit-packages] select'?{value:'FEDEX_SMALL'}:s==='.profit-other'?1:{children:[]},
    numeric:n=>n,post:async(path,data)=>{payload=data;if(fail)throw Error('Save failed');},refreshVisible:async()=>{},dialog:{close(){closed=true}}};
   vm.runInNewContext(source.slice(source.indexOf(" field('[data-profit-save]')?.addEventListener"),source.indexOf(" const form=field('[data-profit-rate-form]')")),context);

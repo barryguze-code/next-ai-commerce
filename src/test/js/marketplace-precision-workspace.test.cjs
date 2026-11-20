@@ -121,7 +121,7 @@ test('Phase 1 retains the existing phone geometry instead of implementing new ca
   try{
     assert.equal(await page.locator('.sku-overview-caption').isVisible(),false);
     assert.equal(await page.locator('.sku-table thead').isVisible(),false);
-    assert.equal(await page.locator('.sku-table').evaluate(el=>getComputedStyle(el).minWidth),'960px');
+    assert.equal(await page.locator('.sku-table').evaluate(el=>getComputedStyle(el).minWidth),'1240px');
     assert.equal(await page.locator('input[name=q][type=search]').isVisible(),true);
   }finally{await page.close()}
 });

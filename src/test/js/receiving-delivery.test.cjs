@@ -96,8 +96,9 @@ test('receiving tabs, expiration batches, fee navigation and overage confirmatio
   assert.equal(await page.locator('#rw-feedback').isVisible(),false);assert.deepEqual(errors,[]);
   await page.evaluate(()=>{window.receivingWork.lines[0].received=6;window.receivingWork.lines[0].remaining=6;});
   await page.getByRole('button',{name:'Receive',exact:true}).click();
-  assert.equal(await page.locator('[name=quantity]').inputValue(),'0');
-  assert.equal(await page.locator('[name=cases]').inputValue(),'0');assert.equal(await page.locator('[name=pack]').inputValue(),'6');
+  // Owner-approved receiving default: prefill the six each still outstanding.
+  assert.equal(await page.locator('[name=quantity]').inputValue(),'6');
+  assert.equal(await page.locator('[name=cases]').inputValue(),'1');assert.equal(await page.locator('[name=pack]').inputValue(),'6');
   await page.waitForFunction(()=>document.activeElement?.name==='expiration');
   await page.locator('[name=cases]').fill('1');
   await page.waitForFunction(()=>document.querySelector('[name=quantity]').value==='6');

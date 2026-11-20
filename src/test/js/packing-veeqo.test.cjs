@@ -10,9 +10,9 @@ function workspace(packageName,{clipboardBlocked=false,withLocations=false}={}){
   const node=()=>({listeners:{},addEventListener(type,handler){this.listeners[type]=handler;}});
   const link={...node(),hidden:/\shidden(?:\s|>|=)/.test(anchor),style:{}};
   const names=['XSmall','Pak','UPS OMBox','Medium','Large','XLarge','__custom'];
-  const select={...node(),options:names.map(value=>({value,textContent:value})),value:''};
+  const select={...node(),dataset:{},options:names.map(value=>({value,textContent:value})),value:''};
   const custom={...node(),value:''},customWrap={hidden:true},status={textContent:''};
-  const printed={textContent:packageName},copied=[],prints=[];custom.focus=()=>{};
+  const printed={textContent:packageName},copied=[],prints=[],feedback=[];custom.focus=()=>{};
   const nodes={'.packing-workspace':{dataset:{orderId:'order-fixture-42'}},'#packing-package':select,
     '#custom-package-field':customWrap,'#custom-package':custom,'#packing-status':status,
     '#veeqo-shortcut':link,'#print-slip':node(),'#save-package':node()};
@@ -22,11 +22,11 @@ function workspace(packageName,{clipboardBlocked=false,withLocations=false}={}){
   const forms=withLocations?[{...node(),dataset:{accountItemId:'item-1'},elements:{locationId:locationChoice}}]:[];
   const document={documentElement:{dataset:{}},querySelector:s=>nodes[s]||null,
     querySelectorAll:s=>s==='[data-printed-package]'?[printed]:s==='.packing-slip article'?locationRows:s==='.packing-product-form'?forms:s==='.packing-product-form select[name=locationId]'&&withLocations?[locationChoice]:[]};
-  vm.runInNewContext(script,{document,window:{print:()=>prints.push(printed.textContent),addEventListener(){}},location:{search:''},URLSearchParams,
+  vm.runInNewContext(script,{document,window:{print:()=>prints.push(printed.textContent),addEventListener(){},NextAiCopyFeedback:{capture(){},success:target=>feedback.push(target)}},location:{search:''},URLSearchParams,
     localStorage:{getItem:()=>null},navigator:{clipboard:{writeText:async value=>{
       if(clipboardBlocked)throw Error('blocked');copied.push(value);
     }}}});
-  return {link,select,custom,customWrap,status,printed,copied,prints,nodes,locationChoice,locationRows};
+  return {link,select,custom,customWrap,status,printed,copied,prints,feedback,nodes,locationChoice,locationRows};
 }
 
 test('Veeqo is a visible native external link before JavaScript, even without its icon',()=>{
@@ -56,14 +56,14 @@ for(const name of ['XSmall','Pak','UPS OMBox','Medium','Large','XLarge','Cold bo
 
 test('Veeqo click still copies this order ID without cancelling native navigation',async()=>{
   const w=workspace('Pak');
-  await w.link.listeners.click({preventDefault(){assert.fail('native navigation must remain intact');}});
+  await w.link.listeners.click({currentTarget:w.link,preventDefault(){assert.fail('native navigation must remain intact');}});
   assert.deepEqual(w.copied,['order-fixture-42']);
-  assert.equal(w.status.textContent,'Order ID copied — ready to paste into Veeqo.');
+  assert.deepEqual(w.feedback,[w.link]);
 });
 
 test('blocked clipboard access keeps Veeqo reachable and shows the order ID',async()=>{
   const w=workspace('Pak',{clipboardBlocked:true});
-  await w.link.listeners.click();
+  await w.link.listeners.click({currentTarget:w.link});
   assert.equal(w.link.hidden,false);
   assert.equal(w.status.textContent,'Clipboard access was blocked. Order ID: order-fixture-42');
 });

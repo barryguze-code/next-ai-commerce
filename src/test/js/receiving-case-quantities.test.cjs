@@ -5,7 +5,7 @@ const vm=require('node:vm');
 const source=fs.readFileSync(process.env.RECEIVING_WORK_SCRIPT||'src/main/resources/static/js/receiving-work.js','utf8');
 const formatSource=source.slice(source.indexOf('const number='),source.indexOf('const doc='));
 function context(extra={}){
- const ctx=vm.createContext(extra);
+ const ctx=vm.createContext({state:{details:[]},...extra});
  vm.runInContext(formatSource+'\nglobalThis.formatQuantity=quantity;',ctx);
  return ctx;
 }

@@ -27,11 +27,11 @@ test('content mutations scan only added connected subtrees, not the document',()
 });
 test('unchanged image URLs are not rewritten',()=>{
   const f=fixture();let writes=0;
-  const image={dataset:{platformIcon:'mapping'},matches:()=>true,querySelectorAll:()=>[],
+  const image={closest:()=>null,dataset:{platformIcon:'mapping'},matches:()=>true,querySelectorAll:()=>[],
     getAttribute:()=>f.api.source('mapping'),setAttribute:()=>writes++};
   f.api.refresh(image);assert.equal(writes,0);
 });
 
-test('optimized semantic states remain distinct and unsupported art stays legacy',()=>{const f=fixture();for(const name of ['collaboration-default','collaboration-unread-blue','collaboration-assigned-red','collaboration-complete','sku-mapped','sku-not-mapped','add-to-basket','update-basket-quantity','remove-from-basket','mark-as-shipped','undo-mark-as-shipped'])assert.equal(f.api.source(name),'/images/platform/optimized32/'+name+'.png?v=20261109-icons32-1');assert.equal(f.api.source('printClicked'),f.api.source('print'));assert.ok(f.api.source('shipped').includes('/table/shipped.png'));});
+test('optimized semantic states remain distinct and unsupported art stays legacy',()=>{const f=fixture();for(const name of ['collaboration-default','collaboration-unread-blue','collaboration-assigned-red','collaboration-complete','add-to-basket','update-basket-quantity','remove-from-basket','mark-as-shipped','undo-mark-as-shipped'])assert.equal(f.api.source(name),'/images/platform/optimized32/'+name+'.png?v=20261109-icons32-1');for(const [name,meaning] of [['sku-mapped','mapping'],['sku-not-mapped','unmapping']])assert.equal(f.api.source(name),'/images/platform/actions/'+meaning+'.svg?v=20261112-professional');assert.equal(f.api.source('printClicked'),f.api.source('print'));assert.ok(f.api.source('shipped').includes('/table/shipped.png'));});
 
 test('opening a packing slip preserves the approved printer artwork',()=>{const f=fixture();assert.equal(f.api.source('printClicked'),f.api.source('print'));});

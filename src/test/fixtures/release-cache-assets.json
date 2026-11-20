@@ -21,13 +21,15 @@
     "/js/table-widget.js",
     "/js/mapping-widget.js"
   ],
-  "reference_count": 41,
+  "reference_count": 56,
   "templates": [
+    "account-catalog.html",
     "carrier-connections.html",
     "collaboration.html",
     "fragments/profit.html",
     "fragments/sidebar-nav.html",
     "fragments/sidebar-user.html",
+    "fragments/table-first-paint.html",
     "global-catalog.html",
     "inventory.html",
     "marketplace-skus.html",
@@ -37,7 +39,10 @@
     "physical-count-history.html",
     "receiving-work.html",
     "receiving-workspace.html",
-    "replenishment-draft.html"
+    "receiving.html",
+    "release-notes.html",
+    "replenishment-draft.html",
+    "vendors.html"
   ],
   "versions": {
     "/css/background-jobs.css": "1.7.1",

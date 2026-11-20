@@ -10,10 +10,10 @@ test('collaboration follows concrete workspace while broader scopes remain view-
  if(u.pathname.endsWith('/data'))return r.fulfill({json:{rows:[['one','a','s1'],['two','a','s2'],['three','b','s3']].map(([id,account,store],i)=>({position:i+1,card:{key:{type:'TASK',id},title:id,state:'OPEN',account,store}})),revision:1,reviews:{}}});
  if(/^\/(js|css)\//.test(u.pathname))return r.fulfill({path:'src/main/resources/static'+u.pathname});
  return r.fulfill({contentType:'text/html',body:html});});
- await page.goto('http://workspace.test/app/collaboration');await page.locator('tr[data-card-id]').first().waitFor();
+ await page.context().addCookies([{name:'nextai_theme',value:'light',url:'http://workspace.test'}]);await page.goto('http://workspace.test/app/collaboration');await page.locator('tr[data-card-id]').first().waitFor();
  assert.equal(await page.locator('tr[data-card-id]').count(),1);assert.equal(await page.locator('tr[data-card-id]').first().getAttribute('id'),'TASKone');
- await page.locator('details.context-menu').evaluate(n=>n.open=true);await page.getByRole('button',{name:'Account A',exact:true}).click();assert.equal(await page.locator('tr[data-card-id]').count(),2);
- await page.locator('details.context-menu').evaluate(n=>n.open=true);await page.locator('[data-collaboration-account=""]').click();assert.equal(await page.locator('tr[data-card-id]').count(),3);assert.equal(writes,0);
+ await page.locator('details.context-menu').evaluate(n=>n.open=true);await page.getByRole('button',{name:'Account A',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-card-id]').length===2);assert.equal(await page.locator('tr[data-card-id]').count(),2);
+ await page.locator('details.context-menu').evaluate(n=>n.open=true);await page.locator('[data-collaboration-account=""]').click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-card-id]').length===3);assert.equal(await page.locator('tr[data-card-id]').count(),3);assert.equal(writes,0);
  await page.reload();await page.locator('tr[data-card-id]').first().waitFor();assert.equal(await page.locator('tr[data-card-id]').count(),3);
  html=html.replace('data-workspace-store="s1"','data-workspace-store="s2"').replace('<section class="context-popover">','<section class="context-popover"><button data-collaboration-account="a" data-collaboration-store="s2" data-name="Store 2">Store 2</button>');
  await page.reload();await page.locator('tr[data-card-id]').first().waitFor();assert.equal(await page.locator('tr[data-card-id]').count(),1);assert.equal(await page.locator('tr[data-card-id]').first().getAttribute('id'),'TASKtwo');

@@ -74,7 +74,7 @@ async function fixture(){
   await page.route('http://table.test/**',route=>route.fulfill({contentType:'text/html',body:'<html><body></body></html>'}));
   await page.goto('http://table.test/app/inventory');
   await page.setContent('<section class="data-card"><div class="table-wrap"><table data-table-widget="test"><thead><tr><th data-column-required="true">Product</th><th>Location</th><th>Action</th></tr></thead><tbody>'+Array.from({length:61},(_,i)=>'<tr><td><button>Product '+i+'</button></td><td>'+(i%2?'West':'East')+'</td><td><button>Edit</button></td></tr>').join('')+'</tbody></table></div></section>');
-  for(const file of ['table-preferences.js','table-widget.js','table-data-tools.js'])await page.addScriptTag({path:path.resolve('src/main/resources/static/js',file)});
+  for(const file of ['table-preferences.js','table-widget.js','table-filter-drafts.js','table-data-tools.js'])await page.addScriptTag({path:path.resolve('src/main/resources/static/js',file)});
   return page;
 }
 test('pagination, search, column filters and refresh share one state',async()=>{
@@ -88,11 +88,17 @@ test('pagination, search, column filters and refresh share one state',async()=>{
   assert.equal(await page.locator('tbody tr:not(.table-data-hidden)').count(),1);
   await page.getByRole('searchbox',{name:'Search table',exact:true}).fill('');
   await page.locator('.table-filter-control summary').click();
-  await page.getByRole('searchbox',{name:'Filter Location',exact:true}).fill('West');
+  await page.getByRole('searchbox',{name:'Filter Location',exact:true}).fill('West');await page.getByRole('button',{name:'Apply filters',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.table-standard-pagination').textContent.includes('Total: 30 results'));
   assert.match(await page.locator('.table-standard-pagination').innerText(),/Total: 30 results/);
   await page.evaluate(()=>window.NextAiTableWidget.refresh());
   assert.equal(await page.locator('.table-standard-toolbar').count(),1);
   await page.close();
+});
+test('keyboard filter cancellation restores applied criteria when reopened',async()=>{
+ const page=await fixture();try{const summary=page.locator('.table-filter-control summary'),input=page.getByRole('searchbox',{name:'Filter Location',exact:true});await summary.focus();await summary.press('Enter');await input.fill('West');await input.press('Escape');await summary.press('Enter');assert.equal(await input.inputValue(),'');assert.match(await page.locator('.table-standard-pagination').innerText(),/Total: 61 results/);await input.fill('East');await page.getByRole('button',{name:'Apply filters',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.table-standard-pagination').textContent.includes('Total: 31 results'));await summary.press('Enter');assert.equal(await input.inputValue(),'East');}finally{await page.close();}
+});
+test('programmatic filter open and repeated toggles cannot erase fast typed criteria',async()=>{
+ const page=await fixture();try{await page.evaluate(()=>document.querySelector('.table-filter-control').open=true);const input=page.getByRole('searchbox',{name:'Filter Location',exact:true});await input.fill('West');await page.evaluate(()=>{const details=document.querySelector('.table-filter-control');details.dispatchEvent(new Event('toggle'));details.dispatchEvent(new Event('toggle'));});assert.equal(await input.inputValue(),'West');await page.getByRole('button',{name:'Apply filters',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.table-standard-pagination').textContent.includes('Total: 30 results'));}finally{await page.close();}
 });
 test('CSV preserves button-backed data, quotes and guards formulas',async()=>{
   const page=await fixture();
@@ -124,7 +130,7 @@ test('context column is pinned without consuming textual Conversation data',asyn
   await page.route('http://table.test/**',route=>route.fulfill({contentType:'text/html',body:'<html><body></body></html>'}));
   await page.goto('http://table.test/context');
   await page.setContent('<section class="data-card"><div class="table-wrap"><table data-table-widget="context-test"><thead><tr><th>Product</th><th data-column="conversation">Conversation</th><th>Action</th></tr></thead><tbody><tr><td>Product A</td><td>Keep this text in exports</td><td><button class="collaboration-row-button" aria-label="Open chat">Chat</button></td></tr></tbody></table></div></section>');
-  for(const file of ['table-preferences.js','table-widget.js','table-data-tools.js'])await page.addScriptTag({path:path.resolve('src/main/resources/static/js',file)});
+  for(const file of ['table-preferences.js','table-widget.js','table-filter-drafts.js','table-data-tools.js'])await page.addScriptTag({path:path.resolve('src/main/resources/static/js',file)});
   assert.equal(await page.locator('thead th').first().getAttribute('data-column'),'record-context');
   const overview=page.locator('tbody td').first();
   assert.equal(await overview.getByRole('button',{name:'Open chat',exact:true}).count(),1);

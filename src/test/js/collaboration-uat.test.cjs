@@ -10,9 +10,9 @@ test('only actual assignees are red; visible initial count persists across a new
   if(path.endsWith('/personal/data'))return route.fulfill({json:{rows:Array.from({length:12},(_,i)=>({position:i+1,card:{key:{type:'REVIEW',id:'r'+i},title:'Task '+i,context:'Account',account:'account',state:'OPEN'}})),reviews:Object.fromEntries(Array.from({length:12},(_,i)=>['r'+i,{id:'r'+i,status:'ACTIVE',title:'Task '+i,subjectLabel:'Product '+i,assigneeEmail:i===0?'jack@example.test':'me@example.test',messageCount:2}])),windows:[],revision:1}});
   if(path.startsWith('/images/'))return route.abort();
   if(path.startsWith('/js/')||path.startsWith('/css/'))return route.fulfill({path:'src/main/resources/static'+path,contentType:path.startsWith('/js/')?'application/javascript':'text/css'});
-  let html=fs.readFileSync('src/main/resources/templates/personal-collaboration.html','utf8').replace(/<aside[\s\S]*?<\/aside>/,'').replace('th:attr="data-user=${personalUser}"','data-user="me@example.test"');return route.fulfill({contentType:'text/html',body:html});
+  let html=fs.readFileSync('src/main/resources/templates/personal-collaboration.html','utf8').replace(/<aside[\s\S]*?<\/aside>/,'').replace(/th:attr="data-user=\$\{personalUser\}[^"]*"/,'data-user="me@example.test"');return route.fulfill({contentType:'text/html',body:html});
  });
- await page.goto('https://uat.test/');await page.locator('tr[data-card-id]').first().waitFor();
+ await page.addInitScript(()=>{localStorage.setItem('nextai-theme','light');document.cookie='nextai_theme=light; Path=/';});await page.goto('https://uat.test/');await page.locator('tr[data-card-id]').first().waitFor();
  assert.equal(await page.locator('#REVIEWr0 .collaboration-row-button').getAttribute('data-assigned-to-me'),'false');
  assert.match(await page.locator('#REVIEWr0 .collaboration-row-button img').getAttribute('src'),/optimized32\/collaboration-default/);
  assert.equal(await page.locator('#REVIEWr1 .collaboration-row-button').getAttribute('data-assigned-to-me'),'true');
@@ -46,7 +46,7 @@ test('one shared dialog handles initial subjects, assignment, mentions and saved
   html=html.replace('</body>','<button id="new-general" data-new-task>Create task</button><button id="initial" data-entity-type="CATALOG" data-entity-id="product1" data-title="Original product" onclick="openRecordCollaboration(this)">New record conversation</button><button id="existing" data-review-id="review1" data-subject-type="CATALOG" data-subject-key="product1" data-subject-label="Original product" onclick="openCollaborationReview(this)">Existing record conversation</button><script src="/js/general-task.js"></script><script src="/js/chat-composer.js"></script></body>');
   return route.fulfill({contentType:'text/html',body:html});
  });
- await page.goto('https://dialog.test/');await page.locator('#initial').click();
+ await page.addInitScript(()=>{localStorage.setItem('nextai-theme','light');document.cookie='nextai_theme=light; Path=/';});await page.goto('https://dialog.test/');await page.locator('#initial').click();
  const dialog=page.locator('#contextual-thread-dialog');const title=dialog.getByRole('textbox',{name:'Subject',exact:true});
  await title.waitFor({state:'visible'});assert.equal(await title.inputValue(),'Original product');assert.ok((await title.boundingBox()).width>400,'Subject must use the dialog width');await page.screenshot({path:'.local/collaboration-subject-final.png'});assert.equal(await title.evaluate(n=>document.activeElement===n),true);
  await dialog.locator('[data-draft-audience]').waitFor();assert.match(await dialog.locator('[data-draft-audience]').textContent(),/Assigned to you.*Nobody else/);
@@ -85,7 +85,7 @@ test('late members from a previous account never enter the new task draft',async
   html=html.replace('</main>','<button data-collaboration-account="a" data-name="Account A">A</button><button data-collaboration-account="b" data-name="Account B">B</button></main>').replace('</body>','<button data-new-task>Create task</button><script src="/js/general-task.js"></script></body>');
   return route.fulfill({contentType:'text/html',body:html});
  });
- await page.goto('https://race.test/');await page.locator('[data-new-task]').first().click();
+ await page.addInitScript(()=>{localStorage.setItem('nextai-theme','light');document.cookie='nextai_theme=light; Path=/';});await page.goto('https://race.test/');await page.locator('[data-new-task]').last().click();
  const picker=page.getByLabel('Task account');await picker.selectOption('a');await picker.selectOption('b');
  await page.locator('[data-thread-assignment-options]').getByText('Member b',{exact:true}).waitFor({state:'attached'});const settledA=page.waitForResponse(r=>r.url().includes('account=a'));releaseA();
  await settledA;await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
@@ -102,13 +102,13 @@ test('only Older pages25 and zero date groups hide',async()=>{
   if(path.endsWith('/personal/data'))return route.fulfill({json:{rows:Array.from({length:70},(_,i)=>({position:i+1,card:{key:{type:'REVIEW',id:'r'+i},title:'Task '+i,context:'Account',account:'account',state:'OPEN'}})),reviews:Object.fromEntries(Array.from({length:70},(_,i)=>['r'+i,{id:'r'+i,status:'ACTIVE',title:'Task '+i,subjectLabel:'Product '+i,assigneeEmail:i===0?'jack@example.test':'me@example.test',messageCount:2}])),dates:Object.fromEntries(Array.from({length:70},(_,i)=>['REVIEWr'+i,i<12?'2026-11-03T00:00:00Z':'2026-09-01T00:00:00Z'])),windows:[{key:'THIS_WEEK',from:'2026-11-02T00:00:00Z',until:'2026-11-09T00:00:00Z'},{key:'LAST_WEEK',from:'2026-10-26T00:00:00Z',until:'2026-11-02T00:00:00Z'},{key:'OLDER',from:null,until:'2026-10-01T00:00:00Z'}],revision:1}});
   if(path.startsWith('/images/'))return route.abort();
   if(path.startsWith('/js/')||path.startsWith('/css/'))return route.fulfill({path:'src/main/resources/static'+path,contentType:path.startsWith('/js/')?'application/javascript':'text/css'});
-  let html=fs.readFileSync('src/main/resources/templates/personal-collaboration.html','utf8').replace(/<aside[\s\S]*?<\/aside>/,'').replace('th:attr="data-user=${personalUser}"','data-user="me@example.test"');return route.fulfill({contentType:'text/html',body:html});
+  let html=fs.readFileSync('src/main/resources/templates/personal-collaboration.html','utf8').replace(/<aside[\s\S]*?<\/aside>/,'').replace(/th:attr="data-user=\$\{personalUser\}[^"]*"/,'data-user="me@example.test"');return route.fulfill({contentType:'text/html',body:html});
  });
- await page.goto('https://uat.test/');await page.locator('tr[data-card-id]').first().waitFor();await page.evaluate(()=>sessionStorage.setItem('collaboration.personal.me@example.test',JSON.stringify({extent:{'ASSIGNED|||||Older':5}})));await page.reload();await page.locator('tr[data-card-id]').first().waitFor();
+ await page.addInitScript(()=>{localStorage.setItem('nextai-theme','light');document.cookie='nextai_theme=light; Path=/';});await page.goto('https://uat.test/');await page.locator('tr[data-card-id]').first().waitFor();await page.evaluate(()=>sessionStorage.setItem('collaboration.personal.me@example.test',JSON.stringify({extent:{'ASSIGNED|||||Older':5}})));await page.reload();await page.locator('tr[data-card-id]').first().waitFor();
  assert.equal(await page.getByRole('button',{name:/Last week/}).count(),0);
  await page.getByRole('button',{name:/This week/}).click();assert.equal(await page.locator('tr[data-card-id]').count(),12);assert.equal(await page.getByRole('button',{name:'Load more',exact:true}).count(),0);
  await page.getByRole('button',{name:/Older/}).click();assert.equal(await page.locator('tr[data-card-id]').count(),37);
- await page.getByRole('button',{name:'Load more',exact:true}).click();assert.equal(await page.locator('tr[data-card-id]').count(),62);
- await page.getByRole('button',{name:'Load more',exact:true}).click();assert.equal(await page.locator('tr[data-card-id]').count(),70);assert.equal(await page.getByRole('button',{name:'Load more',exact:true}).count(),0);
+ await page.getByRole('button',{name:'Load more',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-card-id]').length===62);assert.equal(await page.locator('tr[data-card-id]').count(),62);
+ await page.getByRole('button',{name:'Load more',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-card-id]').length===70);assert.equal(await page.locator('tr[data-card-id]').count(),70);assert.equal(await page.getByRole('button',{name:'Load more',exact:true}).count(),0);
  }finally{await browser.close();}
 });

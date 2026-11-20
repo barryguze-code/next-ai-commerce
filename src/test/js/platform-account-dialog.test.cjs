@@ -39,8 +39,8 @@ test('store-name action uses the shared menu and submits only the display-name i
   });
   await page.context().addCookies([{name:'nextai_theme',value:'light',url:'https://connection.test'}]);
   await page.goto('https://connection.test/app/connections');
-  await page.locator('.table-row-warning summary').first().click();
-  await page.getByRole('button',{name:/Edit store name/}).click();
+  await page.locator('tbody .table-row-warning summary').first().click();
+  await page.locator('[data-edit-connection-name]').click();
   await page.locator('#connection-name-dialog[open]').waitFor();
   assert.equal(await page.locator('#connection-name-dialog [name=displayName]').inputValue(),'Store one');
   const id=await page.locator('#connection-name-dialog [name=id]').inputValue();

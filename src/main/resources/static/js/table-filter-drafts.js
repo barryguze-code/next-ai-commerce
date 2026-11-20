@@ -8,7 +8,7 @@
   const render=()=>renderDraft?.(clone(draft));
   const busy=value=>footer?.querySelectorAll('button').forEach(button=>button.disabled=value);
   const feedback=message=>{const status=footer?.querySelector('[data-filter-feedback]');if(status)status.textContent=message;};
-  function open(){if(pending)return false;draft=clone(readApplied());opened=true;feedback('');render();return true;}
+  function open(){if(pending)return false;if(opened)return true;draft=clone(readApplied());opened=true;feedback('');render();return true;}
   function update(nextOrUpdater){
    if(pending)return false;if(!opened)open();
    if(typeof nextOrUpdater==='function'){const copy=clone(draft),next=nextOrUpdater(copy);draft=clone(next===undefined?copy:next);}
