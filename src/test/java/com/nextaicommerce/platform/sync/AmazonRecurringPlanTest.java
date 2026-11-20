@@ -38,6 +38,8 @@ class AmazonRecurringPlanTest {
             .allMatch(candidate->candidate.priority()<shipmentPriority)).isTrue();
     }
 
+    @Test void inboundShipmentsRefreshDailyWithoutChangingFinanceWindow(){assertThat(schedule("FBA_INBOUND").cadence()).isEqualTo(Duration.ofDays(1));assertThat(schedule("FBA_INBOUND").lookback()).isEqualTo(Duration.ZERO);}
+
     private static AmazonRecurringPlan.Schedule schedule(String key) {
         return AmazonRecurringPlan.schedules().stream()
             .filter(candidate->key.equals(candidate.key())).findFirst().orElseThrow();

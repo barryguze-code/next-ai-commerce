@@ -30,11 +30,14 @@ class FbaParentSyncTest {
  @Test void throttleLeavesExactCheckpointForResumption(){reply(listing(),"list");String before=cursor();reset(amazon);when(amazon.getAt(any(),any(),any(),any())).thenThrow(new AmazonSpApiClient.AmazonApiException(429,Duration.ofSeconds(60),"rate"));assertThatThrownBy(()->sync.processPage(job)).isInstanceOf(AmazonSpApiClient.AmazonApiException.class);assertThat(cursor()).isEqualTo(before);assertThat(documents()).isZero();}
  @Test void unavailableParentReadIsDistinctFromCompleteCoverageAndPreservesLegacyFlow(){when(amazon.getAt(any(),any(),any(),any())).thenThrow(new AmazonSpApiClient.AmazonApiException(403,null,"denied"));sync.processPage(job);assertThat(cursor()).contains("UNAVAILABLE","AUTHORIZATION_DENIED","403","parentsComplete");assertThat(documents()).isZero();assertThat(json.readTree(cursor()).path("feesComplete").asBoolean()).isFalse();}
  @Test void childMismatchCannotPublishOrAdvanceCheckpoint(){reply(listing(),"list");reply(detail(),"plan");String before=cursor();when(amazon.getAt(any(),any(),any(),any())).thenReturn(response("{\"shipmentId\":\"sh2234abcd-1234-abcd-5678-1234abcd5678\"}","wrong"));assertThatThrownBy(()->sync.processPage(job)).isInstanceOf(IllegalStateException.class);assertThat(cursor()).isEqualTo(before);assertThat(documents()).isZero();}
- @Test void automaticAndInitializationProfilesNeverStartParentReads(){
+ @Test void dailyFbaRefreshesParentsWhileInitializationDoesNot(){
   for(String profile:List.of("FBA_INBOUND","INITIALIZATION")){
    var automatic=new AmazonSyncStore.Job(id,tenant,run,connection,"FBA_INBOUND",profile,job.marketplaceId(),job.windowStart(),job.windowEnd(),null,0,0,false,null);
    when(amazon.get(any(),any(),any())).thenReturn(response("{\"payload\":{\"transactions\":[]}}","fees"));
-   sync.processPage(automatic);verify(amazon,never()).getAt(any(),any(),any(),any());
+   when(amazon.getAt(any(),any(),any(),any())).thenReturn(response("{\"inboundPlans\":[]}","parents"));
+   sync.processPage(automatic);
+   if("FBA_INBOUND".equals(profile))verify(amazon).getAt(any(),any(),any(),any());else verify(amazon,never()).getAt(any(),any(),any(),any());
+   reset(amazon);
    jdbc.update("UPDATE marketplace_sync_jobs SET cursor='{\"shipmentsComplete\":true,\"feesComplete\":false}'::jsonb WHERE tenant_id=? AND id=?",tenant,id);
   }
  }

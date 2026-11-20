@@ -25,7 +25,7 @@ public class FbaManualWorker {
             Instant deadline=Instant.now().plus(Duration.ofMinutes(30));
             while(Instant.now().isBefore(deadline)&&!Thread.currentThread().isInterrupted()){
                 var job=claim(tenant,connection,id);
-                if(job==null){if(!Boolean.TRUE.equals(tx.execute(s->{scope(tenant);return jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM marketplace_sync_jobs j JOIN marketplace_sync_runs r ON r.tenant_id=j.tenant_id AND r.id=j.sync_run_id WHERE j.tenant_id=? AND j.id=? AND r.sync_profile='FBA_MANUAL' AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs sibling WHERE sibling.tenant_id=j.tenant_id AND sibling.sync_run_id=j.sync_run_id AND sibling.id<>j.id))",Boolean.class,tenant,id);})))break;String state=tx.execute(s->{scope(tenant);return jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE tenant_id=? AND id=?",String.class,tenant,id);});if(!List.of("QUEUED","WAITING","RUNNING").contains(state))break;}
+                if(job==null){if(Boolean.TRUE.equals(tx.execute(s->{scope(tenant);return jdbc.queryForObject("SELECT coalesce(cursor->>'paused','false')='true' FROM marketplace_sync_jobs WHERE tenant_id=? AND id=?",Boolean.class,tenant,id);})))break;if(!Boolean.TRUE.equals(tx.execute(s->{scope(tenant);return jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM marketplace_sync_jobs j JOIN marketplace_sync_runs r ON r.tenant_id=j.tenant_id AND r.id=j.sync_run_id WHERE j.tenant_id=? AND j.id=? AND r.sync_profile='FBA_MANUAL' AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs sibling WHERE sibling.tenant_id=j.tenant_id AND sibling.sync_run_id=j.sync_run_id AND sibling.id<>j.id))",Boolean.class,tenant,id);})))break;String state=tx.execute(s->{scope(tenant);return jdbc.queryForObject("SELECT status FROM marketplace_sync_jobs WHERE tenant_id=? AND id=?",String.class,tenant,id);});if(!List.of("QUEUED","WAITING","RUNNING").contains(state))break;}
                 else try{inbound.processPage(job);}catch(AmazonSyncStore.LostOrderLease e){break;}
                 catch(RuntimeException e){
                     tx.executeWithoutResult(s->{scope(tenant);var owned=jdbc.queryForList("SELECT id FROM marketplace_sync_jobs WHERE tenant_id=? AND id=? AND lease_owner=? AND lease_expires_at>clock_timestamp() FOR UPDATE",UUID.class,tenant,id,job.leaseOwner());if(owned.isEmpty())return;
@@ -43,9 +43,12 @@ public class FbaManualWorker {
                         }
                     });
                 }
-                try{Thread.sleep(2200);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
+                try{long delay=tx.execute(s->{scope(tenant);var next=jdbc.queryForObject("SELECT available_at FROM marketplace_sync_jobs WHERE tenant_id=? AND id=?",java.sql.Timestamp.class,tenant,id);return next==null?2200L:Math.max(2200L,Math.min(30000L,Duration.between(Instant.now(),next.toInstant()).toMillis()));});Thread.sleep(delay);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
             }
-        }finally{active.remove(id);}
+        }finally{
+            // A finite activation ending is an explicit pause, not a permanently running job.
+            try{tx.executeWithoutResult(s->{scope(tenant);jdbc.update("UPDATE marketplace_sync_jobs SET cursor=cursor || '{\"paused\":true,\"pauseReason\":\"ACTIVATION_ENDED\"}'::jsonb WHERE tenant_id=? AND id=? AND status IN ('QUEUED','WAITING') AND lease_owner IS NULL AND cursor->>'paused' IS DISTINCT FROM 'true'",tenant,id);});}finally{active.remove(id);}
+        }
     }
     AmazonSyncStore.Job claim(UUID tenant,UUID connection,UUID id){return tx.execute(s->{scope(tenant);
         var jobs=jdbc.query("""
@@ -54,7 +57,7 @@ public class FbaManualWorker {
             JOIN marketplace_connections c ON c.tenant_id=j.tenant_id AND c.id=j.marketplace_connection_id
             WHERE j.tenant_id=? AND j.marketplace_connection_id=? AND j.id=? AND j.job_type='FBA_INBOUND'
               AND r.sync_profile='FBA_MANUAL' AND NOT EXISTS(SELECT 1 FROM marketplace_sync_jobs sibling WHERE sibling.tenant_id=j.tenant_id AND sibling.sync_run_id=j.sync_run_id AND sibling.id<>j.id) AND c.channel='AMAZON' AND c.status='ACTIVE' AND r.status IN ('QUEUED','RUNNING')
-              AND j.available_at<=now() AND ((j.status IN ('QUEUED','WAITING') AND (j.lease_expires_at IS NULL OR j.lease_expires_at<now())) OR (j.status='RUNNING' AND j.lease_expires_at<now()))
+              AND j.cursor->>'paused' IS DISTINCT FROM 'true' AND j.available_at<=now() AND ((j.status IN ('QUEUED','WAITING') AND (j.lease_expires_at IS NULL OR j.lease_expires_at<now())) OR (j.status='RUNNING' AND j.lease_expires_at<now()))
             FOR UPDATE OF j SKIP LOCKED
             """,(r,n)->new AmazonSyncStore.Job(id,tenant,r.getObject("sync_run_id",UUID.class),connection,"FBA_INBOUND",r.getString("sync_profile"),r.getString("marketplace_identifier"),r.getTimestamp("window_start").toInstant(),r.getTimestamp("window_end").toInstant(),null,r.getInt("attempt_count"),r.getInt("failure_count"),false,null,"fba-manual-"+UUID.randomUUID()),tenant,connection,id);
         if(jobs.isEmpty())return null;var job=jobs.getFirst();

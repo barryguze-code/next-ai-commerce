@@ -15,23 +15,30 @@ import tools.jackson.databind.node.ObjectNode;
 public class FbaInboundSync {
     private final AmazonSpApiClient amazon;private final AmazonSyncStore store;
     private final JdbcTemplate jdbc;private final TransactionTemplate tx;private final ObjectMapper json;
-    private final AmazonReportNormalizer normalizer;
+    private final AmazonReportNormalizer normalizer;private final FbaSyncHistory history;
     public FbaInboundSync(AmazonSpApiClient amazon,AmazonSyncStore store,JdbcTemplate jdbc,TransactionTemplate tx,ObjectMapper json,AmazonReportNormalizer normalizer){
-        this.amazon=amazon;this.store=store;this.jdbc=jdbc;this.tx=tx;this.json=json;this.normalizer=normalizer;
+        this.amazon=amazon;this.store=store;this.jdbc=jdbc;this.tx=tx;this.json=json;this.normalizer=normalizer;this.history=new FbaSyncHistory(jdbc,json);
     }
     @org.springframework.beans.factory.annotation.Autowired(required=false) private com.nextaicommerce.platform.fba.FbaDepletionWorker depletionWorker;
     private void afterCompletedRead(AmazonSyncStore.Job job){if(depletionWorker!=null)depletionWorker.afterCompletedImport(job.tenantId(),job.connectionId(),job.id());}
     public void processPage(AmazonSyncStore.Job job){
         ObjectNode cursor=tx.execute(s->{scope(job);return (ObjectNode)json.readTree(jdbc.queryForObject(
             "SELECT cursor::text FROM marketplace_sync_jobs WHERE tenant_id=? AND id=?",String.class,job.tenantId(),job.id()));});
+        tx.executeWithoutResult(s->{scope(job);String before=cursor.toString();history.initialize(job,cursor);
+            if(!before.equals(cursor.toString()))jdbc.update("UPDATE marketplace_sync_jobs SET cursor=CAST(? AS jsonb) WHERE tenant_id=? AND id=?",cursor.toString(),job.tenantId(),job.id());
+        });
         int pages=cursor.path("pages").asInt();
         boolean parentsOnly=cursor.path("parentsOnly").asBoolean();
         if(parentsOnly&&!"FBA_MANUAL".equals(job.profile()))throw new IllegalStateException("Parent-only reads require an explicit manual job.");
         if(parentsOnly&&cursor.path("parentsComplete").asBoolean()){tx.executeWithoutResult(s->{scope(job);store.complete(job,cursor.path("records").asLong());});return;}
-        if("FBA_MANUAL".equals(job.profile())&&(parentsOnly||cursor.path("shipmentsComplete").asBoolean()&&!cursor.path("itemsRefreshOnly").asBoolean())&&!cursor.path("parentsComplete").asBoolean()){
+        if(("FBA_MANUAL".equals(job.profile())||"FBA_INBOUND".equals(job.profile()))&&(parentsOnly||cursor.path("shipmentsComplete").asBoolean()&&!cursor.path("itemsRefreshOnly").asBoolean())&&!cursor.path("parentsComplete").asBoolean()){
             importParents(job,cursor);return;
         }
-        if(pages>=1200)throw new IllegalStateException("FBA import exceeded its page budget; review the checkpoint before retrying.");
+        if(!admitRead(job,cursor))return;
+        if(cursor.has("shipmentRead")&&!cursor.path("shipmentsComplete").asBoolean()&&cursor.path("pending").isEmpty()&&cursor.path("next").asText("").isBlank()&&"OPEN".equals(cursor.path("shipmentRead").path("stage").asText())){
+            boolean available=tx.execute(s->{scope(job);return history.nextOpenBatch(job,cursor);});
+            if(!available){cursor.put("shipmentsComplete",true);tx.executeWithoutResult(s->{scope(job);saveParentCursor(job,cursor,3);});return;}
+        }
         if(cursor.path("shipmentsComplete").asBoolean()&&!cursor.path("feesComplete").asBoolean()){importShipmentFees(job,cursor,pages);afterCompletedRead(job);return;}
         var pending=new ArrayList<String>();cursor.path("pending").forEach(n->pending.add(n.asText()));
         String shipment=pending.isEmpty()?null:pending.getFirst();
@@ -41,8 +48,7 @@ public class FbaInboundSync {
         if(shipment!=null && token.isBlank())cursor.putArray("itemEvidence");
         String path;
         if(shipment==null){
-            path="/fba/inbound/v0/shipments?MarketplaceId="+encode(job.marketplaceId())+
-                (token.isBlank()?"&QueryType=SHIPMENT&ShipmentStatusList=WORKING,READY_TO_SHIP,SHIPPED,IN_TRANSIT,DELIVERED,CHECKED_IN,RECEIVING,CLOSED,CANCELLED,DELETED,ERROR":"&QueryType=NEXT_TOKEN&NextToken="+encode(token));
+            path=FbaShipmentReadPlan.path(job.marketplaceId(),cursor);
         }else path=token.isBlank()?"/fba/inbound/v0/shipments/"+encode(shipment)+"/items":
             "/fba/inbound/v0/shipmentItems?MarketplaceId="+encode(job.marketplaceId())+"&QueryType=NEXT_TOKEN&NextToken="+encode(token);
         var response=amazon.get(job.tenantId(),job.connectionId(),path);
@@ -73,12 +79,28 @@ public class FbaInboundSync {
             }
         }
         if(shipment==null){
-            pending.clear();for(JsonNode row:records){String id=row.path("ShipmentId").asText("");if(id.isBlank())throw new IllegalStateException("Amazon shipment ID missing.");pending.add(id);}
+            var previous=FbaShipmentReadPlan.isIncremental(cursor)?tx.execute(s->{scope(job);return history.metadata(job,records);}):Map.<String,JsonNode>of();
+            pending.clear();for(JsonNode row:records){String id=row.path("ShipmentId").asText("");if(id.isBlank())throw new IllegalStateException("Amazon shipment ID missing.");
+                boolean required=FbaShipmentReadPlan.needsItems(row,previous.get(id),FbaShipmentReadPlan.isIncremental(cursor));if(required)pending.add(id);
+                if("OPEN".equals(cursor.path("shipmentRead").path("stage").asText()))cursor.withObject("shipmentRead").withArray("openSeen").add(id);
+            }
+            if(!next.isBlank()){
+                for(var oldToken:cursor.withArray("shipmentSeenTokens"))if(next.equals(oldToken.asText()))throw new IllegalStateException("Repeated FBA shipment pagination token; incomplete coverage retained");
+                cursor.withArray("shipmentSeenTokens").add(next);
+            }else cursor.remove("shipmentSeenTokens");
             cursor.put("next",next);
         }else {cursor.put("itemNext",next);if(next.isBlank())pending.removeFirst();}
         var remaining=cursor.putArray("pending");pending.forEach(remaining::add);
         cursor.put("pages",pages+1);
         boolean shipmentsDone=pending.isEmpty()&&cursor.path("next").asText("").isBlank();
+        if(shipmentsDone&&cursor.has("shipmentRead")){
+            var plan=cursor.withObject("shipmentRead");
+            if("OPEN".equals(plan.path("stage").asText())){
+                var returned=new HashSet<String>();plan.path("openSeen").forEach(value->returned.add(value.asText()));
+                for(var expected:plan.path("openBatch"))if(!returned.contains(expected.asText()))plan.put("unresolvedOpen",true);
+            }
+            shipmentsDone=FbaShipmentReadPlan.complete(cursor);
+        }
         if(shipmentsDone)cursor.put("shipmentsComplete",true);
         boolean done=shipmentsDone&&cursor.path("feesComplete").asBoolean();
         tx.executeWithoutResult(s->{
@@ -86,7 +108,11 @@ public class FbaInboundSync {
             long count=store.saveJsonPage(job,"fba-inbound-page-"+pages,sanitized.toString(),response.requestId(),source->
                 shipment==null?saveShipments(job,records):saveItems(job,shipment,records));
             if(shipment!=null){
-                if(next.isBlank())jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=raw_payload || jsonb_build_object('itemsCheckedAt',now()::text,'itemEvidence',?::jsonb,'itemEvidenceVersion',1,'itemEvidenceJob',?::text) WHERE tenant_id=? AND marketplace_connection_id=? AND shipment_id=?",cursor.path("itemEvidence").toString(),job.id().toString(),job.tenantId(),job.connectionId(),shipment);
+                if(next.isBlank()){
+                    var metadata=jdbc.query("SELECT raw_payload::text FROM amazon_fba_shipments WHERE tenant_id=? AND marketplace_connection_id=? AND shipment_id=?",(r,n)->json.readTree(r.getString(1)),job.tenantId(),job.connectionId(),shipment);
+                    String revision=metadata.isEmpty()?"":FbaShipmentReadPlan.revision(metadata.getFirst());
+                    jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=raw_payload || jsonb_build_object('itemsCheckedAt',now()::text,'itemEvidence',?::jsonb,'itemEvidenceVersion',1,'itemEvidenceJob',?::text,'itemsMetadataRevision',?::text) WHERE tenant_id=? AND marketplace_connection_id=? AND shipment_id=?",cursor.path("itemEvidence").toString(),job.id().toString(),revision,job.tenantId(),job.connectionId(),shipment);
+                }
                 else jdbc.update("UPDATE amazon_fba_shipments SET raw_payload=raw_payload - 'itemEvidence' - 'itemEvidenceVersion' WHERE tenant_id=? AND marketplace_connection_id=? AND shipment_id=?",job.tenantId(),job.connectionId(),shipment);
             }
             long total=cursor.path("records").asLong()+count;cursor.put("records",total);
@@ -95,8 +121,27 @@ public class FbaInboundSync {
         });
         if(done&&!cursor.path("itemsRefreshOnly").asBoolean())afterCompletedRead(job);
     }
+    private boolean admitRead(AmazonSyncStore.Job job,ObjectNode cursor){
+        var now=java.time.Instant.now();var budget=cursor.withObject("readBudget");
+        java.time.Instant start;try{start=java.time.Instant.parse(budget.path("start").asText());}catch(java.time.DateTimeException missing){start=now;}
+        if(!budget.has("start")||!now.isBefore(start.plusSeconds(3600))){budget.put("start",now.toString()).put("requests",0);start=now;}
+        if(budget.path("requests").asInt()>=600){
+            cursor.put("paused","FBA_MANUAL".equals(job.profile())).put("pauseReason","READ_BUDGET");var resume=start.plusSeconds(3600);
+            tx.executeWithoutResult(s->{scope(job);jdbc.update("UPDATE marketplace_sync_jobs SET cursor=?::jsonb,status='WAITING',available_at=?,lease_owner=NULL,lease_expires_at=NULL WHERE tenant_id=? AND id=?",cursor.toString(),java.sql.Timestamp.from(resume),job.tenantId(),job.id());});return false;
+        }
+        budget.put("requests",budget.path("requests").asInt()+1);cursor.remove("paused");cursor.remove("pauseReason");return true;
+    }
     private void importParents(AmazonSyncStore.Job job,ObjectNode cursor){
+        if(!admitRead(job,cursor))return;
         var state=cursor.withObject("parentImport");
+        if(!state.has("reuseInitialized"))tx.executeWithoutResult(s->{scope(job);boolean legacy=!state.isEmpty();
+            var versions=state.putObject("knownVersions");history.parentVersions(job).forEach(versions::set);
+            var baseline=history.parentBaseline(job);state.put("incremental",baseline!=null&&!legacy).put("reuseInitialized",true);
+            java.time.Instant watermark=null;
+            if(baseline!=null)try{watermark=java.time.Instant.parse(baseline.path("coveredThrough").asText(baseline.path("legacyWindowEnd").asText()));}catch(java.time.DateTimeException missing){}
+            state.put("cutoff",FbaShipmentReadPlan.windowStart(job.windowEnd(),watermark).toString());
+            state.put("unresolvedOpenParents",history.unresolvedOpenParents(job));
+        });
         AmazonSpApiClient.ApiResponse response;
         try{response=amazon.getAt(job.tenantId(),job.connectionId(),AmazonSpApiClient.endpoint(job.marketplaceId()),FbaParentPlanImport.path(state));}
         catch(AmazonSpApiClient.AmazonApiException ex){
@@ -108,8 +153,9 @@ public class FbaInboundSync {
         }
         var document=FbaParentPlanImport.accept(job,state,response.json(),response.requestId());
         cursor.put("consecutiveFailures",0);
-        if(FbaParentPlanImport.complete(state)){cursor.put("parentsComplete",true);state.put("coverage",state.path("scopeAmbiguousPlans").asInt()>0?"PARTIAL":"API_DISCOVERY_COMPLETE");}
+        if(FbaParentPlanImport.complete(state)){cursor.put("parentsComplete",true);state.put("coverage",state.path("scopeAmbiguousPlans").asInt()>0||state.path("uncertainOrder").asBoolean()?"PARTIAL":"API_DISCOVERY_COMPLETE");}
         else state.put("coverage","IN_PROGRESS");
+        if("API_DISCOVERY_COMPLETE".equals(state.path("coverage").asText()))state.put("coveredThrough",job.windowEnd().toString());
         tx.executeWithoutResult(s->{scope(job);
             if(document!=null)store.saveFbaParentEvidence(job,document.toString(),response.requestId());
             saveParentCursor(job,cursor,requestDelay(response));
@@ -135,7 +181,7 @@ public class FbaInboundSync {
                     created_date=coalesce(EXCLUDED.created_date,amazon_fba_shipments.created_date),updated_date=EXCLUDED.updated_date,
                     raw_payload=EXCLUDED.raw_payload || coalesce((
                         SELECT jsonb_object_agg(key,value) FROM jsonb_each(amazon_fba_shipments.raw_payload)
-                        WHERE key IN ('feesCheckedAt','itemsCheckedAt','itemEvidence','itemEvidenceVersion','itemEvidenceJob')
+                        WHERE key IN ('feesCheckedAt','itemsCheckedAt','itemEvidence','itemEvidenceVersion','itemEvidenceJob','itemsMetadataRevision')
                     ),'{}'::jsonb),updated_at=now()
                 """,job.tenantId(),job.connectionId(),row.path("ShipmentId").asText(),row.path("ShipmentName").asText(null),
                 row.path("ShipmentStatus").asText(null),row.path("DestinationFulfillmentCenterId").asText(null),row.path("LabelPrepType").asText(null),creationDate(row),timestamp(row,"LastUpdatedDate"),row.toString());count++;
