@@ -59,19 +59,22 @@ test('dragging across a filtered gap submits the saved tenant position and revis
  const browser=await chromium.launch({headless:true});
  try{
   const page=await browser.newPage();
-  let submitted;
   await page.route('http://board.test/**',async route=>{
    const req=route.request(),url=new URL(req.url());
    if(url.pathname==='/app/collaboration/board')return route.fulfill({contentType:'text/html',body:html});
    if(url.pathname.endsWith('/data'))return route.fulfill({json:{cards:url.searchParams.get('state')==='OPEN'?
     [{id:'source',title:'First',position:2,state:'OPEN'},{id:'target',title:'Last',position:8,state:'OPEN'}]:[],revision:13,more:false,asOf:'2026-11-01T12:00:00Z'}});
-   if(url.pathname.endsWith('/tasks/source/position')){submitted=req.postData();return route.fulfill({json:{}});}
+   if(url.pathname.endsWith('/tasks/source/position'))return route.fulfill({json:{}});
    if(['/js/table-preferences.js','/js/collaboration-board-state.js','/js/collaboration-board.js'].includes(url.pathname))
     return route.fulfill({contentType:'text/javascript',path:path.resolve('src/main/resources/static'+url.pathname)});
    return route.fulfill({status:204});
   });
   await page.goto('http://board.test/app/collaboration/board');
-  await page.locator('[data-card-id="source"] .queue-grip').dragTo(page.locator('[data-card-id="target"]'),{timeout:5000});
+  const [reorder]=await Promise.all([
+   page.waitForRequest(req=>new URL(req.url()).pathname==='/app/collaboration/board/tasks/source/position'&&req.method()==='POST',{timeout:5000}),
+   page.locator('[data-card-id="source"] .queue-grip').dragTo(page.locator('[data-card-id="target"]'),{timeout:5000})
+  ]);
+  const submitted=reorder.postData();
   assert.match(submitted,/name="position"\r\n\r\n8\r\n/);
   assert.match(submitted,/name="revision"\r\n\r\n13\r\n/);
  }finally{await browser.close();}
