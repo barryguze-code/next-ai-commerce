@@ -11,7 +11,7 @@ class FbaShipmentReadPlanTest {
   var c=json.createObjectNode();FbaShipmentReadPlan.initialize(c,false,null,end);
   assertThat(FbaShipmentReadPlan.path("US",c)).contains("QueryType=SHIPMENT","ShipmentStatusList=").doesNotContain("DATE_RANGE");
   FbaShipmentReadPlan.initialize(c,true,end.minus(Duration.ofDays(1)),end);
-  assertThat(FbaShipmentReadPlan.path("US",c)).contains("QueryType=DATE_RANGE","LastUpdatedAfter=2026-11-13","LastUpdatedBefore=2026-11-20").doesNotContain("ShipmentStatusList","CreationDate");
+  assertThat(FbaShipmentReadPlan.path("US",c)).contains("QueryType=DATE_RANGE","LastUpdatedAfter=2026-11-13","LastUpdatedBefore=2026-11-20").doesNotContain("CreationDate");
  }
  @Test void outageWindowReachesPreviousWatermarkInsteadOfDroppingOlderUpdates(){
   assertThat(FbaShipmentReadPlan.windowStart(end,end.minus(Duration.ofDays(20)))).isEqualTo(end.minus(Duration.ofDays(21)));
@@ -33,4 +33,5 @@ class FbaShipmentReadPlanTest {
   assertThat(FbaShipmentReadPlan.trustedHistory(json.readTree("{\"shipmentsComplete\":true,\"pages\":3}"))).isTrue();
  }
  @Test void recentClosedHeaderWithoutProviderRevisionMustRefetchReceivedQuantities(){var row=json.readTree("{\"ShipmentId\":\"FBA-A\",\"ShipmentStatus\":\"CLOSED\"}");var previous=json.createObjectNode().put("itemEvidenceVersion",1).put("itemsMetadataRevision",FbaShipmentReadPlan.revision(row));previous.putArray("itemEvidence");assertThat(FbaShipmentReadPlan.needsItems(row,previous,true)).isTrue();}
+ @Test void amazonDateRangeRequiresAnExplicitAllStatusSelector(){var c=json.createObjectNode();FbaShipmentReadPlan.initialize(c,true,end,end);String path=FbaShipmentReadPlan.path("US",c);assertThat(path).contains("QueryType=DATE_RANGE","LastUpdatedAfter=","LastUpdatedBefore=","ShipmentStatusList="+FbaShipmentReadPlan.ALL_STATUSES);assertThat(path).doesNotContain("ShipmentIdList");}
 }

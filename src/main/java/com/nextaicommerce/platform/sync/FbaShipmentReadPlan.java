@@ -36,7 +36,7 @@ final class FbaShipmentReadPlan {
         String token=cursor.path("next").asText("");String base="/fba/inbound/v0/shipments?MarketplaceId="+encode(marketplace);
         if(!token.isBlank())return base+"&QueryType=NEXT_TOKEN&NextToken="+encode(token);
         var plan=cursor.path("shipmentRead");
-        if("RECENT".equals(plan.path("stage").asText()))return base+"&QueryType=DATE_RANGE&LastUpdatedAfter="+encode(plan.path("windowStart").asText())+"&LastUpdatedBefore="+encode(plan.path("windowEnd").asText());
+        if("RECENT".equals(plan.path("stage").asText()))return base+"&QueryType=DATE_RANGE&LastUpdatedAfter="+encode(plan.path("windowStart").asText())+"&LastUpdatedBefore="+encode(plan.path("windowEnd").asText())+"&ShipmentStatusList="+ALL_STATUSES;
         if("OPEN".equals(plan.path("stage").asText())){
             var ids=new ArrayList<String>();plan.path("openBatch").forEach(id->ids.add(encode(id.asText())));
             if(ids.isEmpty()||ids.size()>50)throw new IllegalStateException("Invalid FBA open-shipment batch");
