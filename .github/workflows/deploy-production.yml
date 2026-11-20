@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: c1da9617c6ea40382fe3a5f59464fff16c733246
+          ref: d67deef255a5679ddb9d495300426bbaeffb7cf3
           persist-credentials: false
       - name: Verify and publish the exact successful CI artifact (no rebuild or retest)
         env:
