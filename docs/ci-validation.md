@@ -15,6 +15,12 @@ Only `src/test/js/` is excluded from Java/fixture fingerprints. Browser results 
 the complete tree. Runner image/architecture, exact Temurin version, Maven version,
 locked Playwright OCI image digest, and branded Chrome version/content identity are
 bound to their respective results. Changed relevant inputs invalidate that result.
+Each job fingerprints its own actual hosted runtime; GitHub may assign different
+Ubuntu image builds to parallel jobs in the same run. Contracts are joined only
+after verifying their source/key identities, rather than assuming one shared VM.
+The browser result also binds the exact verified fixture manifest and payload
+digests it consumes. A different host or fixture invalidates the affected reuse
+lookup, while other independently successful job results remain eligible.
 
 An artifact name/cache hit is never a passing check. Reuse verifies GitHub's actual
 artifact producer repository/run/head revision, its upload timestamp within the

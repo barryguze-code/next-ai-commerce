@@ -127,26 +127,42 @@ def chrome_identity(root=Path('/opt/google/chrome')):
             'treeSha256': sha(canonical(files))}
 
 
-def environments(image, playwright):
+def job_environment(kind, plan):
     required = ['ImageOS', 'ImageVersion', 'RUNNER_ARCH']
     if any(not os.environ.get(k) for k in required):
         raise ValueError('Runner image identity is required for result reuse')
     host = {k: os.environ[k] for k in required}
     if host['RUNNER_ARCH'] != 'X64':
         raise ValueError('Only the reviewed x64 runner contract is supported')
-    java = {'runner': RUNNER, **host, 'jdk': 'temurin-' + JAVA,
+    if kind == 'browser':
+        return {'runner': RUNNER, **host, **plan['browser'], 'chrome': chrome_identity()}
+    java = subprocess.check_output(['java', '-version'], text=True, stderr=subprocess.STDOUT)
+    if JAVA not in java:
+        raise ValueError('Verification job is not using the pinned Temurin runtime')
+    return {'runner': RUNNER, **host, 'jdk': 'temurin-' + JAVA, 'jdkRuntime': java,
             'maven': subprocess.check_output(['mvn', '--version'], text=True).splitlines()[0]}
-    return {'java': java, 'fixtures': java,
-            'browser': {'runner': RUNNER, **host, 'image': image, 'playwright': playwright,
-                        'chrome': chrome_identity()}}
 
 
-def assert_host(plan):
+def assert_host(plan, kind):
     for key in ('ImageOS', 'ImageVersion', 'RUNNER_ARCH'):
-        if os.environ.get(key) != plan['environments']['java'][key]:
+        if os.environ.get(key) != plan['environments'][kind][key]:
             raise ValueError('Runner changed after planning; invalidate reuse and retry')
-    if chrome_identity() != plan['environments']['browser']['chrome']:
+    if kind == 'browser' and chrome_identity() != plan['environments'][kind]['chrome']:
         raise ValueError('Prepared branded Chrome runtime changed after planning')
+
+
+def merge_contracts(plan, contracts):
+    for contract in contracts:
+        if contract['schema'] != SCHEMA or contract['revision'] != plan['revision']:
+            raise ValueError('Verification contracts target different source inputs')
+        for kind, key in contract['keys'].items():
+            if kind not in JOBS or fingerprint(plan['revision'], kind, contract['environments'][kind]) != key:
+                raise ValueError('Verification contract key differs from actual inputs')
+            if kind in plan['keys'] and (plan['keys'][kind] != key or plan['environments'][kind] != contract['environments'][kind]):
+                raise ValueError('Conflicting verification environments for the same job')
+            plan['keys'][kind] = key
+            plan['environments'][kind] = contract['environments'][kind]
+    return plan
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -351,30 +367,20 @@ def output(values):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['plan', 'host', 'load', 'record', 'fixtures', 'restore', 'compose'])
+    parser.add_argument('command', choices=['plan', 'job-plan', 'merge', 'host', 'load', 'record', 'fixtures', 'restore', 'compose'])
     parser.add_argument('--plan', default='.ci-plan.json')
     parser.add_argument('--kind', choices=list(JOBS))
     parser.add_argument('--artifact')
+    parser.add_argument('--contract', action='append', default=[])
     parser.add_argument('--output', default='.ci-result')
     args = parser.parse_args()
     if args.command == 'plan':
         version, image = browser_image()
-        env = environments(image, version)
         revision = checked_revision(os.environ['GITHUB_SHA'])
-        plan = {'schema': SCHEMA, 'revision': revision, 'environments': env,
-                'keys': {kind: fingerprint(revision, kind, env[kind]) for kind in JOBS}}
-        reuse_ids = {}
-        # PRs still run all verification; their artifacts never authorize promotion.
-        for kind in JOBS:
-            try:
-                reuse_ids[kind] = reuse(kind, plan, GitHub()) if os.environ['GITHUB_EVENT_NAME'] != 'pull_request' else ''
-            except (OSError, ValueError, KeyError):
-                print(f'Prior {kind} proof unavailable; running fresh verification')
-                reuse_ids[kind] = ''
+        plan = {'schema': SCHEMA, 'revision': revision, 'environments': {}, 'keys': {},
+                'browser': {'image': image, 'playwright': version}}
         Path(args.plan).write_bytes(canonical(plan))
-        output({'plan': canonical(plan).decode(), 'image': image,
-                **{kind + '_key': plan['keys'][kind] for kind in JOBS},
-                **{kind + '_reuse': reuse_ids[kind] for kind in JOBS}})
+        output({'plan': canonical(plan).decode(), 'image': image})
         return
     if args.command == 'fixtures':
         fixture_bundle(Path(args.output))
@@ -383,8 +389,31 @@ def main():
         restore_fixtures(Path(args.output))
         return
     plan = json.loads(Path(args.plan).read_text())
-    if args.command == 'host':
-        assert_host(plan)
+    if args.command in ('merge', 'job-plan'):
+        plan = merge_contracts(plan, [json.loads(value) for value in args.contract])
+        if args.command == 'job-plan':
+            fixture_identity = None
+            if args.kind == 'browser':
+                directory = Path('.ci-result/fixtures')
+                result = load_result(args.artifact, 'fixtures', plan, directory, GitHub())
+                fixture_identity = {'fixtureManifestSha256': sha((directory / 'result.json').read_bytes()),
+                                    'fixturePayloadSha256': result['payloads']['fixtures.tar.gz']}
+            environment = job_environment(args.kind, plan)
+            if fixture_identity is not None:
+                environment.update(fixture_identity)
+            plan['environments'][args.kind] = environment
+            plan['keys'][args.kind] = fingerprint(plan['revision'], args.kind, environment)
+            # Runtime identity belongs to this job, not the separate planning VM.
+            # GitHub can roll multiple image builds through a single workflow.
+            try:
+                reused = reuse(args.kind, plan, GitHub()) if os.environ['GITHUB_EVENT_NAME'] != 'pull_request' else ''
+            except (OSError, ValueError, KeyError):
+                print(f'Prior {args.kind} proof unavailable; running fresh verification')
+                reused = ''
+            output({'plan': canonical(plan).decode(), 'key': plan['keys'][args.kind], 'reuse': reused})
+        Path(args.plan).write_bytes(canonical(plan))
+    elif args.command == 'host':
+        assert_host(plan, args.kind)
     elif args.command == 'record':
         record(args.kind, plan, Path(args.output))
     elif args.command == 'load':

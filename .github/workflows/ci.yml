@@ -36,12 +36,6 @@ jobs:
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
       image: ${{ steps.plan.outputs.image }}
-      java_key: ${{ steps.plan.outputs.java_key }}
-      fixtures_key: ${{ steps.plan.outputs.fixtures_key }}
-      browser_key: ${{ steps.plan.outputs.browser_key }}
-      java_reuse: ${{ steps.plan.outputs.java_reuse }}
-      fixtures_reuse: ${{ steps.plan.outputs.fixtures_reuse }}
-      browser_reuse: ${{ steps.plan.outputs.browser_reuse }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,6 +54,7 @@ jobs:
     timeout-minutes: 20
     outputs:
       artifact: ${{ steps.identity.outputs.artifact }}
+      contract: ${{ steps.contract.outputs.plan }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,21 +63,25 @@ jobs:
         env:
           PLAN: ${{ needs.plan.outputs.plan }}
         run: printf '%s' "$PLAN" > .ci-plan.json
-      - run: python3 scripts/ci/validation.py host
-      - name: Reuse independently passed Java result
-        if: needs.plan.outputs.java_reuse != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT: ${{ needs.plan.outputs.java_reuse }}
-        run: python3 scripts/ci/validation.py load --kind java --artifact "$ARTIFACT" --output .ci-result/java
       - uses: actions/setup-java@v4
-        if: needs.plan.outputs.java_reuse == ''
         with:
           distribution: temurin
           java-version: '21.0.13+9'
           cache: maven
+      - id: contract
+        name: Bind this job to its actual runner inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/validation.py job-plan --kind java
+      - run: python3 scripts/ci/validation.py host --kind java
+      - name: Reuse independently passed Java result
+        if: steps.contract.outputs.reuse != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ steps.contract.outputs.reuse }}
+        run: python3 scripts/ci/validation.py load --kind java --artifact "$ARTIFACT" --output .ci-result/java
       - name: Verify Java and build once
-        if: needs.plan.outputs.java_reuse == ''
+        if: steps.contract.outputs.reuse == ''
         run: |
           mvn --batch-mode verify
           python3 -m py_compile scripts/release-feature-1.14.28.py
@@ -100,19 +99,20 @@ jobs:
           python3 scripts/ci/validation.py record --kind java --output .ci-result/java
       - uses: actions/upload-artifact@v4
         id: saved
-        if: needs.plan.outputs.java_reuse == ''
+        if: steps.contract.outputs.reuse == ''
         with:
-          name: validation-java-${{ needs.plan.outputs.java_key }}
+          name: validation-java-${{ steps.contract.outputs.key }}
           path: .ci-result/java/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
       - id: identity
         env:
-          REUSED: ${{ needs.plan.outputs.java_reuse }}
+          REUSED: ${{ steps.contract.outputs.reuse }}
           CREATED: ${{ steps.saved.outputs.artifact-id }}
         run: echo "artifact=${REUSED:-$CREATED}" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
-        if: always() && needs.plan.outputs.java_reuse == ''
+        if: always() && steps.contract.outputs.reuse == ''
         with:
           name: java-reports-${{ github.run_id }}-${{ github.run_attempt }}
           path: target/surefire-reports/
@@ -125,6 +125,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       artifact: ${{ steps.identity.outputs.artifact }}
+      contract: ${{ steps.contract.outputs.plan }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -132,21 +133,25 @@ jobs:
       - env:
           PLAN: ${{ needs.plan.outputs.plan }}
         run: printf '%s' "$PLAN" > .ci-plan.json
-      - run: python3 scripts/ci/validation.py host
-      - name: Reuse verified fixture bundle
-        if: needs.plan.outputs.fixtures_reuse != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT: ${{ needs.plan.outputs.fixtures_reuse }}
-        run: python3 scripts/ci/validation.py load --kind fixtures --artifact "$ARTIFACT" --output .ci-result/fixtures
       - uses: actions/setup-java@v4
-        if: needs.plan.outputs.fixtures_reuse == ''
         with:
           distribution: temurin
           java-version: '21.0.13+9'
           cache: maven
+      - id: contract
+        name: Bind this job to its actual runner inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/validation.py job-plan --kind fixtures
+      - run: python3 scripts/ci/validation.py host --kind fixtures
+      - name: Reuse verified fixture bundle
+        if: steps.contract.outputs.reuse != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ steps.contract.outputs.reuse }}
+        run: python3 scripts/ci/validation.py load --kind fixtures --artifact "$ARTIFACT" --output .ci-result/fixtures
       - name: Generate explicit portable browser prerequisites
-        if: needs.plan.outputs.fixtures_reuse == ''
+        if: steps.contract.outputs.reuse == ''
         run: |
           mvn --batch-mode -DfbaPreview=true -Dtest=TemplateRenderingTest,CollaborationBoardTemplateTest,MarketplaceOrganizationTemplateTest,MarketplaceSafetyTemplateTest,FbaTemplateTest test
           mkdir -p .ci-result/fixtures
@@ -154,15 +159,16 @@ jobs:
           python3 scripts/ci/validation.py record --kind fixtures --output .ci-result/fixtures
       - uses: actions/upload-artifact@v4
         id: saved
-        if: needs.plan.outputs.fixtures_reuse == ''
+        if: steps.contract.outputs.reuse == ''
         with:
-          name: validation-fixtures-${{ needs.plan.outputs.fixtures_key }}
+          name: validation-fixtures-${{ steps.contract.outputs.key }}
           path: .ci-result/fixtures/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
       - id: identity
         env:
-          REUSED: ${{ needs.plan.outputs.fixtures_reuse }}
+          REUSED: ${{ steps.contract.outputs.reuse }}
           CREATED: ${{ steps.saved.outputs.artifact-id }}
         run: echo "artifact=${REUSED:-$CREATED}" >> "$GITHUB_OUTPUT"
 
@@ -173,6 +179,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       artifact: ${{ steps.identity.outputs.artifact }}
+      contract: ${{ steps.contract.outputs.plan }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -180,28 +187,30 @@ jobs:
       - env:
           PLAN: ${{ needs.plan.outputs.plan }}
         run: printf '%s' "$PLAN" > .ci-plan.json
-      - run: python3 scripts/ci/validation.py host
-      - name: Reuse independently passed browser result
-        if: needs.plan.outputs.browser_reuse != ''
+      - id: contract
+        name: Bind this job to its actual runner inputs
         env:
           GH_TOKEN: ${{ github.token }}
-          ARTIFACT: ${{ needs.plan.outputs.browser_reuse }}
+          FIXTURE_CONTRACT: ${{ needs.fixtures.outputs.contract }}
+          FIXTURE_ARTIFACT: ${{ needs.fixtures.outputs.artifact }}
+        run: python3 scripts/ci/validation.py job-plan --kind browser --contract "$FIXTURE_CONTRACT" --artifact "$FIXTURE_ARTIFACT"
+      - run: python3 scripts/ci/validation.py host --kind browser
+      - name: Reuse independently passed browser result
+        if: steps.contract.outputs.reuse != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ steps.contract.outputs.reuse }}
         run: python3 scripts/ci/validation.py load --kind browser --artifact "$ARTIFACT" --output .ci-result/browser
       - uses: actions/setup-node@v4
-        if: needs.plan.outputs.browser_reuse == ''
+        if: steps.contract.outputs.reuse == ''
         with:
           node-version: '22'
           cache: npm
       - name: Restore explicit fixtures
-        if: needs.plan.outputs.browser_reuse == ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT: ${{ needs.fixtures.outputs.artifact }}
-        run: |
-          python3 scripts/ci/validation.py load --kind fixtures --artifact "$ARTIFACT" --output .ci-result/fixtures
-          python3 scripts/ci/validation.py restore --output .ci-result/fixtures/fixtures.tar.gz
+        if: steps.contract.outputs.reuse == ''
+        run: python3 scripts/ci/validation.py restore --output .ci-result/fixtures/fixtures.tar.gz
       - name: All browser tests in the prepared, digest-pinned image
-        if: needs.plan.outputs.browser_reuse == ''
+        if: steps.contract.outputs.reuse == ''
         env:
           BROWSER_IMAGE: ${{ needs.plan.outputs.image }}
         run: |
@@ -219,15 +228,16 @@ jobs:
           python3 scripts/ci/validation.py record --kind browser --output .ci-result/browser
       - uses: actions/upload-artifact@v4
         id: saved
-        if: needs.plan.outputs.browser_reuse == ''
+        if: steps.contract.outputs.reuse == ''
         with:
-          name: validation-browser-${{ needs.plan.outputs.browser_key }}
+          name: validation-browser-${{ steps.contract.outputs.key }}
           path: .ci-result/browser/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
       - id: identity
         env:
-          REUSED: ${{ needs.plan.outputs.browser_reuse }}
+          REUSED: ${{ steps.contract.outputs.reuse }}
           CREATED: ${{ steps.saved.outputs.artifact-id }}
         run: echo "artifact=${REUSED:-$CREATED}" >> "$GITHUB_OUTPUT"
 
@@ -249,7 +259,12 @@ jobs:
           persist-credentials: false
       - env:
           PLAN: ${{ needs.plan.outputs.plan }}
-        run: printf '%s' "$PLAN" > .ci-plan.json
+          JAVA_CONTRACT: ${{ needs.java.outputs.contract }}
+          FIXTURE_CONTRACT: ${{ needs.fixtures.outputs.contract }}
+          BROWSER_CONTRACT: ${{ needs.browser.outputs.contract }}
+        run: |
+          printf '%s' "$PLAN" > .ci-plan.json
+          python3 scripts/ci/validation.py merge --contract "$JAVA_CONTRACT" --contract "$FIXTURE_CONTRACT" --contract "$BROWSER_CONTRACT"
       - name: Verify successful job identities and compose exact package
         id: package
         env:
@@ -272,6 +287,7 @@ jobs:
           name: verified-release-${{ github.sha }}
           path: .ci-result/verified/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
       - name: Preserve tested notice hotfix artifact
         if: github.ref == 'refs/heads/codex/notice-only-hotfix'

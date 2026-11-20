@@ -32,7 +32,8 @@ class SourceProofTests(unittest.TestCase):
                      '.github/workflows/deploy-production.yml', 'scripts/ci/validation.py']:
             self.write(name, 'original')
         self.original = self.commit()
-        self.env = {'runner': 'ubuntu-24.04', 'ImageVersion': 'exact-image', 'jdk': 'exact-java'}
+        self.env = {'runner': 'ubuntu-24.04', 'ImageOS': 'ubuntu24', 'ImageVersion': 'exact-image',
+                    'RUNNER_ARCH': 'X64', 'jdk': 'exact-java'}
 
     def tearDown(self):
         os.chdir(self.previous)
@@ -51,7 +52,7 @@ class SourceProofTests(unittest.TestCase):
 
     def plan(self, revision=None):
         revision = revision or self.original
-        return {'revision': revision, 'keys': {k: v.fingerprint(revision, k, self.env) for k in v.JOBS},
+        return {'schema': 1, 'revision': revision, 'keys': {k: v.fingerprint(revision, k, self.env) for k in v.JOBS},
                 'environments': {k: self.env for k in v.JOBS}}
 
     def result(self, kind='java'):
@@ -98,8 +99,39 @@ class SourceProofTests(unittest.TestCase):
 
     def test_runner_and_prepared_image_changes_invalidate_results(self):
         key = v.fingerprint(self.original, 'browser', self.env)
-        for field in ['ImageVersion', 'jdk', 'image', 'playwright', 'node']:
+        for field in ['ImageVersion', 'jdk', 'image', 'playwright', 'node', 'fixtureManifestSha256', 'fixturePayloadSha256']:
             self.assertNotEqual(key, v.fingerprint(self.original, 'browser', {**self.env, field: 'changed'}))
+
+    def test_rolling_host_versions_join_as_separate_verified_job_contracts(self):
+        base = {'schema': 1, 'revision': self.original, 'keys': {}, 'environments': {}}
+        contracts = []
+        for kind, version in [('java', '20261116'), ('fixtures', '20261111'), ('browser', '20261118')]:
+            env = {**self.env, 'ImageVersion': version}
+            contracts.append({'schema': 1, 'revision': self.original,
+                              'keys': {kind: v.fingerprint(self.original, kind, env)},
+                              'environments': {kind: env}})
+        merged = v.merge_contracts(base, contracts)
+        self.assertEqual(set(merged['keys']), set(v.JOBS))
+        self.assertEqual(merged['environments']['java']['ImageVersion'], '20261116')
+        self.assertEqual(merged['environments']['browser']['ImageVersion'], '20261118')
+        with patch.dict(os.environ, {'ImageOS': 'ubuntu24', 'ImageVersion': '20261116', 'RUNNER_ARCH': 'X64'}):
+            merged['environments']['java'].update(ImageOS='ubuntu24', RUNNER_ARCH='X64')
+            v.assert_host(merged, 'java')
+            with self.assertRaisesRegex(ValueError, 'Runner changed'):
+                v.assert_host(merged, 'fixtures')
+
+    def test_contract_join_rejects_conflicting_runtime_or_another_revision(self):
+        base = self.plan()
+        other = copy.deepcopy(base)
+        other['revision'] = 'a' * 40
+        with self.assertRaisesRegex(ValueError, 'different source'):
+            v.merge_contracts(copy.deepcopy(base), [other])
+        changed = {**self.env, 'ImageVersion': 'different'}
+        other = {'schema': 1, 'revision': self.original,
+                 'keys': {'java': v.fingerprint(self.original, 'java', changed)},
+                 'environments': {'java': changed}}
+        with self.assertRaisesRegex(ValueError, 'Conflicting'):
+            v.merge_contracts(base, [other])
 
     def test_failed_original_job_never_becomes_reuse(self):
         for conclusion in ['failure', 'cancelled', 'skipped', None]:
@@ -415,6 +447,9 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('npm test', (root / 'scripts/ci/browser.sh').read_text())
         self.assertIn("channel:'chrome'", (root / 'scripts/ci/browser-runtime.cjs').read_text())
         self.assertIn('-v /opt/google/chrome:/opt/google/chrome:ro', ci)
+        self.assertIn('job-plan --kind browser', ci)
+        self.assertIn('--artifact "$FIXTURE_ARTIFACT"', ci)
+        self.assertIn('include-hidden-files: true', ci)
         for directory in ['/tmp/marketplace-organization-review', '/tmp/sku008-010-review', '/tmp/variation-trial-operator-review']:
             self.assertIn('-v ' + directory + ':' + directory + ':ro', ci)
 
