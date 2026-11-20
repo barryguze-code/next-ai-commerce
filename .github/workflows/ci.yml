@@ -219,9 +219,14 @@ jobs:
             -e HOME=/tmp/ci-home -e CI=true -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
             -v "$(dirname "$GITHUB_WORKSPACE"):$(dirname "$GITHUB_WORKSPACE")" \
             -v /opt/google/chrome:/opt/google/chrome:ro \
-            -v /tmp/marketplace-organization-review:/tmp/marketplace-organization-review:ro \
-            -v /tmp/sku008-010-review:/tmp/sku008-010-review:ro \
-            -v /tmp/variation-trial-operator-review:/tmp/variation-trial-operator-review:ro \
+            -v /tmp/marketplace-organization-review:/tmp/marketplace-organization-review \
+            -v /tmp/marketplace-organization-review/marketplace.html:/tmp/marketplace-organization-review/marketplace.html:ro \
+            -v /tmp/marketplace-organization-review/empty-parent.html:/tmp/marketplace-organization-review/empty-parent.html:ro \
+            -v /tmp/marketplace-organization-review/expired.html:/tmp/marketplace-organization-review/expired.html:ro \
+            -v /tmp/sku008-010-review:/tmp/sku008-010-review \
+            -v /tmp/sku008-010-review/marketplace.html:/tmp/sku008-010-review/marketplace.html:ro \
+            -v /tmp/variation-trial-operator-review:/tmp/variation-trial-operator-review \
+            -v /tmp/variation-trial-operator-review/operator.html:/tmp/variation-trial-operator-review/operator.html:ro \
             -v "$HOME/.npm:/tmp/ci-npm-cache" -w "$GITHUB_WORKSPACE" \
             "$BROWSER_IMAGE" bash scripts/ci/browser.sh
           mkdir -p .ci-result/browser

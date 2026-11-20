@@ -42,11 +42,16 @@ test('missing or changed identity, package, recovery, migrations, permissions an
  ];
  for(const change of changes){const f=fixture();change(f);assert.notEqual(check(f).status,0);}
 });
-test('protected workflow transports both exact scripts and requires reviewed manifest checksum',()=>{
+test('protected workflow binds the reviewed application-only operation and retains legacy fee guards',()=>{
  const workflow=fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
  assert.match(workflow,/vars.PRODUCTION_MANIFEST_SHA256/);
- assert.match(workflow,/tar -czf - scripts\/production-release.sh scripts\/fee-release-manifest.py/);
- assert.match(workflow,/FEE_RELEASE_GUARD=/);
+ assert.match(workflow,/python3 scripts\/ci\/promote.py/);
+ assert.match(workflow,/environment: production/);
+ assert.doesNotMatch(workflow,/production-release\.sh|FEE_RELEASE_GUARD=|mvn --batch-mode verify|npm test/);
+ const promoter=fs.readFileSync('scripts/ci/promote.py','utf8');
+ assert.ok(promoter.includes("sha(canonical(plan)) != os.environ['REVIEWED_PLAN_SHA256']"));
+ assert.ok(promoter.includes("sha(operation) != plan['operationSha256']"));
+ assert.ok(promoter.includes("base64.b64encode(operation)"));
  const guard=fs.readFileSync('scripts/fee-release-manifest.py','utf8');
  assert.match(guard,/info.st_uid == 0/);assert.match(guard,/not info.st_mode & 0o077/);assert.match(guard,/digest\(manifest_path\) == manifest_sha/);
  assert.match(guard,/pg_restore', '--list'/);assert.doesNotMatch(guard,/systemctl', 'restart|CREATE TABLE|ALTER TABLE|INSERT INTO|DROP DATABASE/);

@@ -49,8 +49,9 @@ job. Missing or changed runtimes fail explicitly.
 Five named renderer test classes generate the required HTML. A bounded portable
 bundle carries explicit workspace and `/tmp` fixtures between jobs; missing files,
 unsafe paths, links and incomplete bundles fail before browser checks. The image,
-Chrome installation and fixture directories are read-only runtime inputs; generated
-screenshots and the npm download cache remain writable. Maven/npm download caches
+Chrome installation and generated fixture HTML files are read-only runtime inputs;
+their containing directories remain writable for existing screenshot paths, as does
+the npm download cache. Maven/npm download caches
 are dependency caches only and never count as verification evidence.
 
 ## Protected application-only promotion

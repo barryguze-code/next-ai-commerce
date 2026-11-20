@@ -451,7 +451,13 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('--artifact "$FIXTURE_ARTIFACT"', ci)
         self.assertIn('include-hidden-files: true', ci)
         for directory in ['/tmp/marketplace-organization-review', '/tmp/sku008-010-review', '/tmp/variation-trial-operator-review']:
-            self.assertIn('-v ' + directory + ':' + directory + ':ro', ci)
+            self.assertIn('-v ' + directory + ':' + directory + ' \\', ci)
+            self.assertNotIn('-v ' + directory + ':' + directory + ':ro', ci,
+                             'Existing screenshot outputs need writable directories')
+        for html in ['marketplace-organization-review/marketplace.html', 'marketplace-organization-review/empty-parent.html',
+                     'marketplace-organization-review/expired.html', 'sku008-010-review/marketplace.html',
+                     'variation-trial-operator-review/operator.html']:
+            self.assertIn('-v /tmp/' + html + ':/tmp/' + html + ':ro', ci)
 
     def test_promotion_is_manual_protected_no_build_retest_or_legacy_flag_reset(self):
         root = Path(__file__).resolve().parents[2]
