@@ -157,6 +157,25 @@ def main():
         install(plan)
 
 
+def replace_build_label(original, version):
+    """Change one static shell assignment, retaining all other launcher bytes."""
+    error = 'Expected exactly one existing build label; no configuration rewrite allowed'
+    if original.count(b'APP_BUILD_VERSION=') != 1 or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+        raise ValueError(error)
+    # Accept only a simple assignment command; never interpret shell syntax or
+    # match a quoted string, comment, variable expansion or another variable.
+    value = rb'[^ \t\r\n\x22\x27`$;|&<>\\]*'
+    assignment = rb'[A-Za-z_][A-Za-z0-9_]*=' + value
+    command = rb'(?:export[ \t]+)?' + assignment + rb'(?:[ \t]+' + assignment + rb')*[ \t]*'
+    token = rb'(?<!\S)APP_BUILD_VERSION=([0-9]+\.[0-9]+\.[0-9]+)(?=[ \t\r\n]|$)'
+    for line in original.splitlines(keepends=True):
+        match = re.search(token, line)
+        if match and re.fullmatch(command, line.rstrip(b'\r\n')):
+            offset = original.index(line) + match.start(1)
+            return original[:offset] + version.encode() + original[offset + len(match[1]):]
+    raise ValueError(error)
+
+
 def install(plan):
     live, start = APP / 'next-ai-commerce.jar', APP / 'bin/start'
     pid = read(['systemctl', 'show', 'next-ai-commerce', '-p', 'MainPID', '--value'])
@@ -170,10 +189,7 @@ def install(plan):
     if rollback.is_symlink() or sha(rollback) != plan['rollbackSha256']:
         raise ValueError('Reviewed compatible recovery artifact is unavailable')
     original_start = start.read_bytes()
-    prepared, count = re.subn(rb'(?m)^(export[ \t]+)?APP_BUILD_VERSION=[0-9]+\.[0-9]+\.[0-9]+(?=[ \t]*$)',
-                              lambda match: (match[1] or b'') + b'APP_BUILD_VERSION=' + plan['version'].encode(), original_start)
-    if count != 1:
-        raise ValueError('Expected exactly one existing build label; no configuration rewrite allowed')
+    prepared = replace_build_label(original_start, plan['version'])
     largest = max(plan['packageBytes'], live.stat().st_size, rollback.stat().st_size)
     # All remaining writes are budgeted BEFORE creating a staging directory or
     # opening the download: staged input, installed candidate, retained recovery,
