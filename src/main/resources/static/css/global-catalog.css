@@ -1,0 +1,5 @@
+/* Same header structure and density as Orders, loaded after the shared cascade. */
+.global-catalog-workspace .workspace-header>div:first-child{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.global-catalog-workspace .workspace-header .page-intro{margin:0;font-size:12px}
+.global-catalog-workspace .workspace-header{padding-bottom:12px;min-height:40px}
+.global-catalog-workspace .card-toolbar:empty{display:none}

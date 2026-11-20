@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<details class="context-menu" th:fragment="switcher" th:attr="open=${chooseStore == true ? 'open' : null}">
+  <summary class="context-switcher" aria-label="Choose business account or marketplace store">
+    <th:block>
+    <span th:if="${canManageUsers == true}" class="context-brand-edit context-icon context-account-initials" role="button" tabindex="0" th:unless="${selectedAccountLogoUrl != null}" th:text="${selectedAccountInitials}" title="Edit company logo" onclick="event.preventDefault();event.stopPropagation();openAccountBrandDialog()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAccountBrandDialog()}">BA</span>
+    <span th:if="${canManageUsers == true and selectedAccountLogoUrl != null}" class="context-brand-edit" role="button" tabindex="0" title="Edit company logo" onclick="event.preventDefault();event.stopPropagation();openAccountBrandDialog()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAccountBrandDialog()}"><img class="context-brand-logo" th:src="${selectedAccountLogoUrl}" alt="Company logo"></span>
+    <span th:if="${canManageUsers != true}" class="context-icon context-account-initials" th:unless="${selectedAccountLogoUrl != null}" th:text="${selectedAccountInitials}">BA</span>
+    <img th:if="${canManageUsers != true and selectedAccountLogoUrl != null}" class="context-brand-logo" th:src="${selectedAccountLogoUrl}" alt="Company logo">
+    </th:block>
+    <span class="context-copy"><strong th:text="${selectedStore == null ? selectedAccountName : selectedStore.name}">Selected store</strong><small th:if="${selectedStore == null}">All stores · Account overview</small><small th:if="${selectedStore != null}" th:text="${selectedStore.countryFlag + ' ' + selectedStore.marketplaceLabel}">🇺🇸 Amazon US</small></span>
+    <span class="context-selected-channel" th:if="${selectedStore != null}" th:classappend="${selectedStore.channel == 'WALMART' ? ' walmart-channel' : (selectedStore.channel == 'SHOPIFY' ? ' shopify-channel' : ' amazon-channel')}"><img th:src="${selectedStore.channel == 'AMAZON' ? '/images/channels/amazon-seller.png' : (selectedStore.channel == 'SHOPIFY' ? '/images/channels/shopify-bag.png' : '/images/channels/walmart-official.png')}" th:alt="${selectedStore.channel}"></span>
+    <span class="chevron">⌄</span>
+  </summary>
+  <section class="context-popover">
+    <header><strong >Choose workspace</strong><small >Accounts and connected stores</small><button type="button" class="context-close" aria-label="Close workspace picker" onclick="closeWorkspacePicker(this)">×</button></header>
+    <label class="context-filter"><span>⌕</span><input type="search" placeholder="Search accounts or stores" aria-label="Search accounts or stores" oninput="filterWorkspaceChoices(this)"></label>
+    <div class="context-account" th:each="option : ${accountOptions}" th:attr="data-account-search=${#strings.toLowerCase(option.name)}">
+      <div class="context-account-button" th:if="${!#lists.isEmpty(option.stores)}"><span class="avatar" th:if="${option.logoUrl == null}" th:text="${option.initials}">BA</span><img class="account-brand-logo" th:if="${option.logoUrl != null}" th:src="${option.logoUrl}" alt=""><span><strong th:text="${option.name}">Business account</strong><small>Choose a store</small></span></div>
+      <form method="post" th:if="${#lists.isEmpty(option.stores)}" th:action="@{/app/select-account}">
+        <input type="hidden" name="tenantId" th:value="${option.id}"><input type="hidden" name="tenantName" th:value="${option.name}"><input type="hidden" name="returnTo" th:value="${warehouseWorkspace == true ? warehouseReturnTo : currentWorkspacePath}">
+        <button class="context-account-button" type="submit" th:classappend="${option.id == selectedAccountId and (selectedStore == null) ? ' selected' : ''}"><span class="avatar" th:if="${option.logoUrl == null}" th:text="${option.initials}">BA</span><img class="account-brand-logo" th:if="${option.logoUrl != null}" th:src="${option.logoUrl}" alt=""><span><strong th:text="${option.name}">Business account</strong><small >Warehouse account</small></span><b>›</b></button>
+      </form>
+      <div class="context-stores" th:if="${!#lists.isEmpty(option.stores)}">
+        <form method="post" th:action="@{/app/select-store}" th:each="store : ${option.stores}" th:attr="data-store-search=${#strings.toLowerCase(store.name + ' ' + store.channel + ' ' + store.marketplaceLabel)}">
+          <input type="hidden" name="tenantId" th:value="${option.id}"><input type="hidden" name="tenantName" th:value="${option.name}"><input type="hidden" name="storeId" th:value="${store.id}"><input type="hidden" name="storeName" th:value="${store.name}"><input type="hidden" name="returnTo" th:value="${warehouseWorkspace == true ? warehouseReturnTo : currentWorkspacePath}">
+          <button type="submit" th:classappend="${store.id == selectedStoreId ? ' selected' : ''}"><span class="mini-channel" th:classappend="${store.channel == 'WALMART' ? ' walmart-channel' : (store.channel == 'SHOPIFY' ? ' shopify-channel' : ' amazon-channel')}"><img th:src="${store.channel == 'AMAZON' ? '/images/channels/amazon-seller.png' : (store.channel == 'SHOPIFY' ? '/images/channels/shopify-bag.png' : '/images/channels/walmart-official.png')}" alt=""></span><span><strong th:text="${store.name}">Store</strong><small th:text="${store.countryFlag + ' ' + store.marketplaceLabel}">Marketplace</small></span></button>
+        </form>
+      </div>
+      <p class="context-no-stores" th:if="${#lists.isEmpty(option.stores)}">No connected stores</p>
+    </div>
+    <footer class="context-footer"><button type="button" class="secondary-button" onclick="closeWorkspacePicker(this)">Done</button></footer>
+  </section>
+  <dialog id="account-brand-dialog" class="invite-dialog"><form method="post" enctype="multipart/form-data" th:action="@{/app/platform/accounts/{id}/logo(id=${selectedAccountId})}" class="dialog-shell"><div class="dialog-header"><div><span class="eyebrow dark">Company identity</span><h2>Update company logo</h2><p>This logo appears in the workspace picker and selected-store control.</p></div><button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button></div><div class="dialog-body operation-form"><label>Company logo<input name="logo" type="file" accept="image/png,image/jpeg,image/webp" required><small>PNG, JPEG, or WebP up to 2 MB.</small></label></div><div class="dialog-actions"><button class="secondary-button" type="button" onclick="this.closest('dialog').close()">Cancel</button><button class="primary-button compact-button" type="submit">Save logo</button></div></form></dialog>
+<script defer src="/js/workspace-picker.js?v=1.11.7" th:src="@{/js/workspace-picker.js(v=${buildVersion})}"></script>
+</details>
+<details class="context-menu" data-collaboration-scope th:fragment="collaborationFilter">
+  <summary class="context-switcher" aria-label="Filter collaboration by account or store">
+    <span class="context-icon context-account-initials" data-collaboration-scope-initials hidden></span>
+    <img class="context-brand-logo" src="/images/next-ai-mark-transparent.png" alt="">
+    <span class="context-copy"><strong id="collaboration-scope-label">All accounts</strong><small id="collaboration-scope-caption">All accessible accounts</small></span>
+    <span class="context-selected-channel" data-collaboration-channel hidden><img alt=""></span><span class="chevron">⌄</span>
+  </summary>
+  <section class="context-popover">
+    <header><strong>Choose workspace</strong><small>Accounts and connected stores</small><button type="button" class="context-close" aria-label="Close workspace picker" onclick="closeWorkspacePicker(this)">×</button></header><label class="context-filter"><span>⌕</span><input type="search" placeholder="Search accounts or stores" aria-label="Search accounts or stores" oninput="filterWorkspaceChoices(this)"></label>
+    <div class="context-account" data-account-search="all accessible accounts next ai">
+      <button type="button" class="context-account-button selected" data-collaboration-account="" data-name="All accounts"><img class="account-brand-logo" src="/images/next-ai-mark-transparent.png" alt=""><span><strong>All accessible accounts</strong></span></button>
+    </div>
+    <div class="context-account" th:each="option:${collaborationAccounts}" th:attr="data-account-search=${#strings.toLowerCase(option.name)}">
+      <button type="button" class="context-account-button" th:attr="data-collaboration-account=${option.id},data-name=${option.name},data-logo=${option.logoUrl},data-initials=${option.initials}">
+        <span class="avatar" th:if="${option.logoUrl == null}" th:text="${option.initials}"></span><img class="account-brand-logo" th:if="${option.logoUrl != null}" th:src="${option.logoUrl}" alt=""><span><strong th:text="${option.name}"></strong><small>All stores</small></span>
+      </button>
+      <div class="context-stores">
+        <form method="post" th:action="@{/app/select-store}" th:each="store:${option.stores}" th:attr="data-store-search=${#strings.toLowerCase(store.name + ' ' + store.channel + ' ' + store.marketplaceLabel)}"><input type="hidden" name="tenantId" th:value="${option.id}"><input type="hidden" name="tenantName" th:value="${option.name}"><input type="hidden" name="storeId" th:value="${store.id}"><input type="hidden" name="storeName" th:value="${store.name}"><input type="hidden" name="returnTo" value="/app/collaboration"><button type="submit" th:attr="data-collaboration-account=${option.id},data-collaboration-store=${store.id},data-name=${store.name},data-logo=${option.logoUrl},data-initials=${option.initials},data-channel=${store.channel},data-marketplace-label=${store.marketplaceLabel},data-country-flag=${store.countryFlag}">
+          <span class="mini-channel" th:classappend="${store.channel == 'WALMART' ? ' walmart-channel' : (store.channel == 'SHOPIFY' ? ' shopify-channel' : ' amazon-channel')}"><img th:src="${store.channel == 'AMAZON' ? '/images/channels/amazon-seller.png' : (store.channel == 'SHOPIFY' ? '/images/channels/shopify-bag.png' : '/images/channels/walmart-official.png')}" th:alt="${store.channel}"></span>
+          <span><strong th:text="${store.name}"></strong><small th:text="${store.countryFlag + ' ' + store.marketplaceLabel}"></small></span>
+        </button></form>
+      </div>
+    </div>
+    <footer class="context-footer"><button type="button" class="secondary-button" onclick="closeWorkspacePicker(this)">Done</button></footer>
+  </section>
+<script defer src="/js/workspace-picker.js?v=1.11.7" th:src="@{/js/workspace-picker.js(v=${buildVersion})}"></script>
+</details>
+</body></html>

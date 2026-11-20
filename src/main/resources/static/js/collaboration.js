@@ -1,0 +1,452 @@
+(()=>{
+  if(window.NextAiCollaborationReady)return;
+  window.NextAiCollaborationReady=true;
+  let draftMemberGeneration=0;
+  let state=null,huddleSocket=null,huddleReconnect=null,lastPong=Date.now(),summariesRefreshing=false;
+  const $=(selector,scope=document)=>scope.querySelector(selector);
+  const $$=(selector,scope=document)=>[...scope.querySelectorAll(selector)];
+  const escape=value=>{const node=document.createElement('span');node.textContent=value??'';return node.innerHTML};
+  const formattedBody=value=>escape(value??'').replace(/(^|\s)(@[A-Za-z0-9._-]+)/g,'$1<strong class="message-mention">$2</strong>').replaceAll('\n','<br>');
+  const formatDate=value=>value?new Intl.DateTimeFormat('en-US',{month:'2-digit',day:'2-digit',year:'2-digit',hour:'numeric',minute:'2-digit'}).format(new Date(value)):'';
+  const formatBytes=value=>Number(value)<1024?value+' B':Number(value)<1048576?Math.ceil(Number(value)/1024)+' KB':(Number(value)/1048576).toFixed(1)+' MB';
+  const dialog=()=>$('#contextual-thread-dialog');
+  const view=()=>({dialog:dialog(),list:$('#thread-conversation-list'),start:$('#thread-conversation-start'),reply:$('#thread-conversation-reply')});
+  const memberRequests=new Map();
+  const globalScope=()=>state?.type==='GLOBAL_PRODUCT';
+  const api=(suffix,type=state?.type)=>(type==='GLOBAL_PRODUCT'?'/app/platform/catalog/discussions':state?.personalContext&&!suffix.startsWith('/summaries')?'/app/collaboration/personal/context/'+encodeURIComponent(state.personalContext):'/app/collaboration')+suffix;
+  const historyUrl=(type,key)=>type==='GLOBAL_PRODUCT'?'/app/platform/catalog':'/app/collaboration?view=ALL&entityType='+encodeURIComponent(type)+'&subjectKey='+encodeURIComponent(key);
+  const socketOpen=()=>huddleSocket?.readyState===WebSocket.OPEN;
+  const sendHuddle=payload=>{if(!socketOpen())return false;huddleSocket.send(JSON.stringify(payload));return true;};
+  async function members(){if(state?.huddleFinalize)return state.huddleFinalize.people;const url=state?.general?state.generalMembersUrl:api('/members');if(!url)return [];if(!memberRequests.has(url))memberRequests.set(url,fetch(url,{headers:{Accept:'application/json'}}).then(response=>response.ok?response.json():[]).catch(()=>[]));return memberRequests.get(url);}
+  function mentionState(field){const before=field.value.slice(0,field.selectionStart??field.value.length),match=before.match(/(^|\s)@([A-Za-z0-9._-]*)$/);return match?{query:match[2].toLowerCase(),start:before.length-match[2].length-1,end:before.length}:null;}
+  const composerFor=field=>field.closest('.collaboration-composer,.huddle-composer');
+  function closeMentionMenu(field){const menu=composerFor(field)?.querySelector('.mention-menu');if(menu)menu.hidden=true;}
+  function positionMentionMenu(field,menu){
+    const computed=getComputedStyle(field),mirror=document.createElement('div'),marker=document.createElement('span');
+    Object.assign(mirror.style,{position:'fixed',left:'0',top:'0',visibility:'hidden',pointerEvents:'none',boxSizing:'border-box',whiteSpace:'pre-wrap',overflowWrap:'break-word',width:field.offsetWidth+'px',font:computed.font,lineHeight:computed.lineHeight,padding:computed.padding,border:computed.border,letterSpacing:computed.letterSpacing});
+    mirror.textContent=field.value.slice(0,field.selectionStart??field.value.length);marker.textContent='\u200b';mirror.append(marker);document.body.append(mirror);
+    const composer=composerFor(field),fieldRect=field.getBoundingClientRect(),composerRect=composer.getBoundingClientRect(),lineHeight=parseFloat(computed.lineHeight)||18;
+    const caretLeft=fieldRect.left-composerRect.left+marker.offsetLeft-field.scrollLeft,caretTop=fieldRect.top-composerRect.top+marker.offsetTop-field.scrollTop;mirror.remove();
+    menu.style.width=Math.min(300,Math.max(230,field.offsetWidth*.58))+'px';const left=Math.max(8,Math.min(caretLeft,composer.clientWidth-menu.offsetWidth-8));menu.style.left=left+'px';menu.style.right='auto';menu.style.bottom='auto';
+    const roomBelow=composer.clientHeight-caretTop-lineHeight,top=roomBelow>menu.offsetHeight+8?caretTop+lineHeight+5:Math.max(5,caretTop-menu.offsetHeight-7);menu.style.top=top+'px';
+  }
+  async function showMentions(field){
+    if(state?.messageType==='PRIVATE_NOTE')return closeMentionMenu(field);
+    const current=mentionState(field),menu=composerFor(field)?.querySelector('.mention-menu');if(!current||!menu)return closeMentionMenu(field);
+    const requestedState=state,requestedUrl=state?.general?state.generalMembersUrl:api('/members'),requestedValue=field.value;
+    const available=await members();if(state!==requestedState||field.value!==requestedValue||(state?.general?state.generalMembersUrl:api('/members'))!==requestedUrl)return;
+    const choices=available.filter(member=>[member.handle,member.name,member.email].some(value=>(value||'').toLowerCase().includes(current.query))).slice(0,6);
+    if(!choices.length){menu.hidden=true;return;}
+    menu.innerHTML=choices.map(member=>'<button type="button" role="option" data-handle="'+escape(member.handle)+'"><span>'+escape((member.name||'?').trim().charAt(0).toUpperCase())+'</span><div><strong>'+escape(member.name)+'</strong><small><b>@'+escape(member.handle)+'</b> · '+escape(member.email)+'</small></div></button>').join('');menu.hidden=false;positionMentionMenu(field,menu);
+    $$('button',menu).forEach(button=>button.addEventListener('mousedown',event=>{event.preventDefault();const match=mentionState(field);if(!match)return;field.setRangeText('@'+button.dataset.handle+' ',match.start,match.end,'end');menu.hidden=true;field.focus();if(field.form===view().start)updateDraftAudience();}));
+  }
+  function wireComposer(field){if(field.dataset.mentionReady)return;field.dataset.mentionReady='true';field.addEventListener('input',()=>{showMentions(field);if(field.form===view().start)updateDraftAudience();});field.addEventListener('click',()=>showMentions(field));field.addEventListener('scroll',()=>showMentions(field));field.addEventListener('keydown',event=>{const menu=composerFor(field)?.querySelector('.mention-menu'),buttons=menu&&!menu.hidden?$$('button',menu):[];if(event.key==='Escape'&&menu&&!menu.hidden){event.preventDefault();event.stopPropagation();closeMentionMenu(field);}if(!buttons.length||!['ArrowDown','ArrowUp','Enter'].includes(event.key))return;event.preventDefault();let index=buttons.findIndex(button=>button.classList.contains('is-highlighted'));if(event.key==='Enter'&&index>=0){buttons[index].dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));return;}index=event.key==='ArrowUp'?(index<=0?buttons.length-1:index-1):(index+1)%buttons.length;buttons.forEach((button,i)=>button.classList.toggle('is-highlighted',i===index));});field.addEventListener('blur',()=>setTimeout(()=>{if(document.activeElement!==field)closeMentionMenu(field);},120));}
+  function wireEnterToSend(field,form){if(field.dataset.enterSendReady)return;field.dataset.enterSendReady='true';field.addEventListener('keydown',event=>{if(event.defaultPrevented||event.isComposing||event.key!=='Enter'||event.shiftKey)return;event.preventDefault();const submit=$('.primary-button[type="submit"]',form)||$('button[type="submit"]',form);form.requestSubmit(submit);});}
+  function wireAttachments(root=document){$$('.thread-attachment-button input',root).forEach(input=>{if(input.dataset.fileReady)return;input.dataset.fileReady='true';input.addEventListener('change',()=>{const label=input.closest('.thread-compose-tools').querySelector('[data-attachment-name]');label.textContent=input.files.length?input.files.length===1?input.files[0].name:input.files.length+' files selected':'No files selected';});});}
+  function snapshotFrom(button){
+    if(button.dataset.contextSnapshot){try{return JSON.parse(button.dataset.contextSnapshot)}catch(_){}}
+    const pairs={identifier:button.dataset.identifier,location:button.dataset.locationLabel,expiration_date:button.dataset.expiration,
+      status:button.dataset.status,stock_level:button.dataset.onHand,available:button.dataset.available,price:button.dataset.price,
+      marketplace:button.dataset.marketplace,tracking:button.dataset.tracking,package:button.dataset.package,image:button.dataset.image};
+    return Object.fromEntries(Object.entries(pairs).filter(([,value])=>value!=null&&value!==''));
+  }
+  function renderAttachments(attachments){if(!attachments?.length)return '';return '<div class="thread-attachments">'+attachments.map(file=>'<a href="'+api('/attachments/')+encodeURIComponent(file.id)+'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 12 5.5-5.5a3 3 0 014.2 4.2l-7.4 7.4a5 5 0 01-7.1-7.1l7.1-7.1"/></svg><span><strong>'+escape(file.fileName)+'</strong><small>'+escape(formatBytes(file.sizeBytes))+'</small></span></a>').join('')+'</div>';}
+  function renderMessages(conversation,showBack){
+    const review=conversation.review,messages=conversation.messages||[],privateMode=conversation.messageType==='PRIVATE_NOTE';
+    const empty='<div class="thread-feed-empty"><strong>'+(privateMode?'No private notes yet':'No team messages yet')+'</strong><span>'+(privateMode?'Only you will be able to read notes added here.':'Send the first team reply in this thread.')+'</span></div>';
+    return (showBack?'<button class="conversation-back" type="button" data-conversation-back>‹ All conversations for this record</button>':'')+
+      (privateMode?'<div class="private-note-safety"><svg viewBox="0 0 24 24"><rect x="6" y="10" width="12" height="10" rx="2"/><path d="M9 10V7a3 3 0 016 0v3"/></svg><span><strong>Private to you</strong><small>Only you can see these notes.</small></span></div>':'')+
+      (messages.length?'<section class="conversation-thread"><div class="conversation-thread-meta"><span>Started '+escape(formatDate(review.createdAt))+' by '+escape(review.requester)+'</span><span>'+escape(review.participants||review.requester)+'</span></div><div class="conversation-messages">'+messages.map(message=>'<article><div class="conversation-avatar">'+escape((message.senderName||message.authorEmail||'?').charAt(0).toUpperCase())+'</div><div><header><strong>'+escape(message.senderName||message.authorEmail)+'</strong><time>'+escape(formatDate(message.createdAt))+'</time></header><p>'+formattedBody(message.body)+'</p>'+renderAttachments(message.attachments)+'</div></article>').join('')+'</div></section>':empty);
+  }
+  function configureForms(){
+    if(dialog()){dialog().dataset.visibility=state.messageType;dialog().dataset.scope=state.type;dialog().dataset.personal=String(Boolean(state.personalContext));
+      const modes=$('.thread-mode-switch',dialog());if(modes)modes.hidden=Boolean(state.personalContext);}
+    $$('.chat-add-person',dialog()).forEach(button=>button.hidden=state.messageType==='PRIVATE_NOTE');
+    const management=$('#thread-management');if(management)management.hidden=!state.canCollaborate||(state.currentReview&&state.currentReview.status!=='ACTIVE')||state.messageType==='PRIVATE_NOTE';
+    const elements=view(),snapshot=JSON.stringify(state.snapshot||{});if(elements.start)elements.start.action=state.general?state.generalAction:api('/reviews');
+    $$('[data-thread-tab=PRIVATE_NOTE]',dialog()).forEach(button=>button.hidden=globalScope());
+    const audience=$('[data-thread-tab=TEAM_CHAT] small',dialog());if(audience)audience.textContent=globalScope()?'Shared with platform administrators across accounts.':'Visible to permitted teammates';if(elements.start){const form=elements.start;form.elements.subjectType.value=state.type;form.elements.subjectKey.value=state.key;form.elements.subjectLabel.value=state.label;form.elements.title.value=state.draftTitle??state.label;form.elements.messageType.value=state.messageType;form.elements.contextSnapshot.value=snapshot;form.elements.parentUrl.value=state.parentUrl||location.pathname+location.search;if(form.elements.returnTo)form.elements.returnTo.value=location.pathname+location.search;}
+    if(elements.reply)elements.reply.elements.messageType.value=state.messageType;
+    const modes=$('.thread-mode-switch',dialog());if(modes&&state.general)modes.hidden=true;
+    $$('.collaboration-composer textarea',elements.dialog).forEach(field=>{field.placeholder=state.messageType==='PRIVATE_NOTE'?'Write a private note…':'Write a message… Type @ to mention a teammate';});
+    $$('[data-thread-composer-hint]',elements.dialog).forEach(hint=>hint.textContent=globalScope()?'Shared with platform administrators across accounts. Email notifications are off.':state.messageType==='PRIVATE_NOTE'?'Visible only to your signed-in account.':'Type @ to notify a teammate by email.');
+  }
+  async function sendGlobal(form,submitter){
+    const completing=submitter?.name==='status'&&submitter.value==='CLOSED';
+    if(completing&&hasUnsentDraft()){const error=$('[data-thread-management-error]');error.textContent='Send your message or discard unsent changes before closing the conversation.';error.hidden=false;error.scrollIntoView({block:'nearest'});return;}
+    const current=state,reviewId=state.currentReviewId,mode=state.messageType;if(form.dataset.saving)return;form.dataset.saving='true';const field=$('textarea',form),fileInput=$('input[type=file]',form),sentText=field.value,sentFiles=[...(fileInput?.files||[])];
+    let feedback=form.querySelector('[data-global-feedback]')||form.querySelector('[data-thread-composer-hint]');if(!feedback){feedback=document.createElement('p');feedback.dataset.globalFeedback='';feedback.setAttribute('role','status');form.append(feedback);}feedback.textContent='Saving…';const send=$('button[type=submit]',form);if(send)send.disabled=true;
+    if(completing)submitter.disabled=true;
+    const data=new FormData(form);if(submitter?.name==='status')data.set('status',submitter.value);
+    const url=submitter?.name==='reopen'?api('/reviews/'+encodeURIComponent(submitter.value)+'/reopen'):form.action;
+    try{const response=await fetch(url,{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||'The shared discussion could not be saved.');if(state!==current||state.currentReviewId!==reviewId||state.messageType!==mode)return;if(field.value===sentText)field.value='';if(fileInput&&[...fileInput.files].every((f,i)=>f===sentFiles[i])&&fileInput.files.length===sentFiles.length)fileInput.value='';feedback.textContent='';if(completing){dialog().close();window.dispatchEvent(new Event('personal-collaboration-updated'));return;}const refreshed=await loadConversation(result.reviewId,state.showBack,true);if(refreshed===false&&state===current&&state.currentReviewId===reviewId&&state.messageType===mode)feedback.textContent='Reply saved. Refresh to see it in the conversation.';if(globalScope())await markRecordConversationActive('GLOBAL_PRODUCT',state.key);else window.dispatchEvent(new Event('personal-collaboration-updated'));}
+    catch(error){if(state===current&&state.currentReviewId===reviewId&&state.messageType===mode)feedback.textContent=error.message;}finally{delete form.dataset.saving;if(send)send.disabled=false;if(completing)submitter.disabled=false;}
+  }
+  function subjectText(review){return review.title==='Conversation about '+review.subjectLabel?review.subjectLabel:review.title||review.subjectLabel;}
+  function renderSubject(review,initial){
+    const title=$('#thread-record-title'),editor=$('.thread-subject-editor'),input=$('#thread-title-input'),edit=$('[data-thread-edit-title]');
+    title.textContent=initial?(state.draftTitle||'New task'):subjectText(review);title.hidden=initial;editor.hidden=!initial;
+    input.style.font=getComputedStyle(title).font;input.value=initial?state.draftTitle:subjectText(review);input.oninput=()=>{if(!state.currentReview){state.draftTitle=input.value;view().start.elements.title.value=input.value;}};
+    $$('[data-thread-save-title],[data-thread-cancel-title]').forEach(button=>button.hidden=initial);
+    edit.hidden=initial||!state.canCollaborate||globalScope()||state.messageType==='PRIVATE_NOTE';
+    $('[data-thread-title-error]').hidden=true;
+    edit.onclick=()=>{title.hidden=true;edit.hidden=true;editor.hidden=false;input.value=subjectText(state.currentReview);input.focus();};
+    const cancel=()=>renderSubject(state.currentReview,false);
+    $('[data-thread-cancel-title]').onclick=cancel;
+    input.onkeydown=event=>{if(event.key==='Escape'&&state.currentReview){event.preventDefault();event.stopPropagation();cancel();edit.focus();}else if(event.key==='Enter'){event.preventDefault();if(state.currentReview)$('[data-thread-save-title]').click();else view().start.querySelector('textarea').focus();}};
+    $('[data-thread-save-title]').onclick=async event=>{
+      const current=state,reviewId=state.currentReviewId,mode=state.messageType,button=event.currentTarget,error=$('[data-thread-title-error]');if(button.disabled)return;
+      if(!input.value.trim()){error.textContent='Enter a subject.';error.hidden=false;input.focus();return;}
+      button.disabled=true;
+      const data=new FormData();$$('input[type=hidden]',view().reply).filter(input=>input.name.includes('csrf')).forEach(input=>data.set(input.name,input.value));data.set('title',input.value.trim());
+      try{const response=await fetch(api('/reviews/'+reviewId+'/title'),{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||'The subject could not be saved.');if(state!==current||state.currentReviewId!==reviewId||state.messageType!==mode)return;state.currentReview=result;renderSubject(result,false);edit.focus();window.dispatchEvent(new Event('personal-collaboration-updated'));}
+      catch(ex){if(state===current&&state.currentReviewId===reviewId&&state.messageType===mode){error.textContent=ex.message;error.hidden=false;}}finally{button.disabled=false;}
+    };
+  }
+  function prepareAssignmentOverlay(root){
+    const details=$('.thread-assignment',root),panel=$('.thread-assignment-popover',root),summary=$('summary',details);
+    if(details.dataset.overlayReady)return;details.dataset.overlayReady='true';panel.setAttribute('popover','auto');
+    const position=()=>{if(!panel.matches(':popover-open'))return;const anchor=summary.getBoundingClientRect(),gap=8,margin=12,below=innerHeight-anchor.bottom-gap-margin,above=anchor.top-gap-margin;
+      panel.style.maxHeight=Math.min(Math.max(0,innerHeight-2*margin),Math.max(80,Math.max(below,above)))+'px';panel.style.maxWidth=Math.max(0,innerWidth-2*margin)+'px';
+      const box=panel.getBoundingClientRect();panel.style.left=Math.max(margin,Math.min(anchor.left,innerWidth-box.width-margin))+'px';const top=below>=box.height||below>=above?anchor.bottom+gap:anchor.top-gap-box.height;panel.style.top=Math.max(margin,Math.min(top,innerHeight-box.height-margin))+'px';};
+    details.addEventListener('toggle',()=>{if(details.open&&dialog().open){if(!panel.matches(':popover-open'))panel.showPopover();position();}else if(panel.matches(':popover-open'))panel.hidePopover();});
+    panel.addEventListener('toggle',()=>{if(!panel.matches(':popover-open'))details.open=false;});
+    panel.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();details.open=false;panel.hidePopover();summary.focus();}});
+    window.addEventListener('resize',position);dialog().addEventListener('scroll',position,true);dialog().addEventListener('close',()=>{details.open=false;if(panel.matches(':popover-open'))panel.hidePopover();});
+  }
+  async function renderDraftManagement(){
+    const current=state,memberUrl=state.generalMembersUrl||api('/members'),generation=++draftMemberGeneration,root=$('#thread-management');if(!root)return;
+    prepareAssignmentOverlay(root);$('.conversation-close-button',root).hidden=true;
+    const options=$('[data-thread-assignment-options]',root),label=$('[data-thread-assignees]',root),error=$('[data-thread-management-error]',root);
+    const refresh=()=>{const names=$$('input:checked',options).map(input=>input.nextElementSibling.textContent);current.draftPeople=$$('input:checked',options).map(input=>input.value);current.draftExplicit=current.draftPeople.length>0;updateDraftAudience();label.textContent=names.join(', ')||'You';};
+    options.replaceChildren();label.textContent='Unassigned';error.textContent='';
+    $('[data-thread-save-assignment]',root).onclick=()=>{refresh();$('details',root).open=false;};
+    $('[data-thread-assign-self]',root).onclick=()=>{const me=(root.dataset.currentEmail||'').toLowerCase();const person=$$('input',options).find(input=>input.dataset.email===me);if(person){person.checked=true;refresh();}else error.textContent='Choose an account with your membership before assigning.';};
+    const due=$('[data-thread-due]',root),date=$('[data-thread-draft-date]',root);delete due.dataset.reviewId;delete due.dataset.dueUrl;date.hidden=true;date.querySelector('input').value=current.draftDue||'';
+    due.querySelector('span').textContent=current.draftDue?'Due '+current.draftDue:'Add due date';due.onclick=()=>{date.hidden=!date.hidden;date.querySelector('input').focus();};date.querySelector('input').onchange=event=>{current.draftDue=event.target.value;due.querySelector('span').textContent=current.draftDue?'Due '+current.draftDue:'Add due date';if(current.huddleFinalize){date.hidden=true;due.setAttribute('aria-expanded','false');}};
+    const team=await members();if(state!==current||state.currentReview||generation!==draftMemberGeneration||memberUrl!==(state.generalMembersUrl||api('/members')))return;
+    for(const person of team){const row=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');input.type='checkbox';input.value=person.id;input.dataset.email=(person.email||'').toLowerCase();name.textContent=person.name||person.email;row.append(input,name);options.append(row);input.onchange=refresh;if(current.huddleFinalize)input.checked=(current.draftPeople||[]).includes(person.id);}if(current.huddleFinalize)refresh();updateDraftAudience();
+  }
+  async function updateDraftAudience(){
+    const current=state;if(!current||current.huddleFinalize||current.currentReview||current.messageType==='PRIVATE_NOTE'||globalScope()){$('[data-draft-audience]')?.setAttribute('hidden','');return;}
+    const requestedUrl=current.general?current.generalMembersUrl:api('/members'),team=await members();if(state!==current||current.currentReview||requestedUrl!==(state.general?state.generalMembersUrl:api('/members')))return;
+    const root=$('#thread-management'),field=$('textarea',view().start),actor=(root.dataset.currentEmail||'').toLowerCase();
+    const handles=[...field.value.matchAll(/(?:^|\s)@([A-Za-z0-9._-]+)/g)].map(m=>m[1].toLowerCase());
+    const mentioned=team.filter(p=>p.email?.toLowerCase()!==actor&&handles.includes(p.handle?.toLowerCase()));
+    const chosen=current.draftExplicit?team.filter(p=>(current.draftPeople||[]).includes(p.id)):mentioned;
+    if(!current.draftExplicit)$('[data-thread-assignees]',root).textContent=chosen.map(p=>p.name||p.email).join(', ')||'You';
+    let notice=$('[data-draft-audience]',root);if(!notice){notice=document.createElement('p');notice.dataset.draftAudience='';notice.className='thread-draft-audience';notice.setAttribute('role','status');root.append(notice);}
+    const others=[...chosen,...mentioned].filter(p=>p.email?.toLowerCase()!==actor);
+    notice.textContent=others.length?'Selected or mentioned teammates will be notified.':'Assigned to you. Nobody else will be notified. ';
+    if(!others.length){const add=document.createElement('button');add.type='button';add.className='text-button';add.textContent='Add @people to inform teammates';add.onclick=()=>{field.focus();field.setRangeText((field.value&&!/\s$/.test(field.value)?' ':'')+'@',field.value.length,field.value.length,'end');showMentions(field);};notice.append(add);}
+    notice.hidden=Boolean(current.generalPersonal&&!current.generalAccount);
+  }
+  function draftData(form){
+    const data=new FormData(form);data.set('title',state.draftTitle??state.label);data.set('dueDate',state.draftDue||'');
+    for(const person of state.draftPeople||[])data.append('people',person);
+    return data;
+  }
+  async function sendGeneral(form){
+    if(form.dataset.saving)return;const current=state,error=$('[data-thread-title-error]');
+    if(!current.draftTitle?.trim()){error.textContent='Enter a subject.';error.hidden=false;$('#thread-title-input').focus();return;}
+    if(current.generalPersonal&&!current.generalAccount){error.textContent='Choose an account.';error.hidden=false;$('#thread-new-account select').focus();return;}
+    form.dataset.saving='true';const submit=$('[type=submit]',form),accountPicker=$('#thread-new-account select');submit.disabled=true;accountPicker.disabled=true;
+    const data=draftData(form);data.set('description',data.get('message')||'');if(current.generalPersonal){data.set('account',current.generalAccount);if(current.generalStore)data.set('store',current.generalStore);}
+    try{const response=await fetch(current.generalAction,{method:'POST',body:data,headers:{Accept:'application/json'}});const result=await response.json().catch(()=>({}));if(state!==current)return;if(!response.ok)throw Error(result.error||'The task could not be saved. Your draft is still here.');if(typeof result.url!=='string'||!/^\/app\/collaboration(?:\?|$)/.test(result.url))throw Error('Task saved. Open Collaborate to find it.');location.assign(result.url);}
+    catch(ex){if(state===current){error.textContent=ex.message;error.hidden=false;}}finally{delete form.dataset.saving;submit.disabled=false;accountPicker.disabled=false;}
+  }
+  window.openGeneralTask=button=>{
+    clearDrafts();
+    const personal=$('#personal-queue'),context=$('#general-task-context');
+    const account=personal?personal.dataset.filterAccount||'':context?.dataset.account||'',store=personal?personal.dataset.filterStore||'':context?.dataset.store||'';
+    state={general:true,generalPersonal:Boolean(personal),generalAccount:account,generalStore:store,generalAction:personal?'/app/collaboration/personal/create':'/app/collaboration/general-tasks',
+      generalMembersUrl:personal?(account?'/app/collaboration/personal/members?'+new URLSearchParams({account}):null):'/app/collaboration/members',
+      trigger:button,type:'PLATFORM',key:'',label:'',snapshot:{},canCollaborate:true,messageType:'TEAM_CHAT',currentReviewId:null};
+    const picker=$('#thread-new-account'),select=$('select',picker);select.replaceChildren(new Option('Choose an account',''));
+    const updateAccount=()=>{const option=personal?$$('[data-collaboration-account]:not([data-collaboration-store])',personal).find(b=>b.dataset.collaborationAccount===state.generalAccount):null;
+      $('#thread-account-logo').hidden=false;$('#thread-account-logo').src=(personal?option?.dataset.logo:context?.dataset.logo)||'/images/next-ai-mark-transparent.png';
+      $('#thread-record-type').textContent=personal?(option?.dataset.name||'All accounts'):(context?.dataset.accountName||'Selected account');$('#thread-record-context').textContent='';$('#thread-record-badges').replaceChildren();$('#thread-parent-link').hidden=true;
+      if(personal){state.generalMembersUrl=state.generalAccount?'/app/collaboration/personal/members?'+new URLSearchParams({account:state.generalAccount}):null;renderDraftManagement();}};
+    picker.hidden=!personal||Boolean(account);if(personal)$$('[data-collaboration-account]:not([data-collaboration-store])',personal).filter(b=>b.dataset.collaborationAccount).forEach(b=>select.append(new Option(b.dataset.name,b.dataset.collaborationAccount)));
+    select.value=account;select.onchange=()=>{clearDrafts();state.draftDue='';state.generalAccount=select.value;state.generalStore='';state.draftPeople=[];state.draftExplicit=false;updateAccount();};
+    dialog().dataset.general='true';updateAccount();view().start.reset();showNewConversation();$('button[type=submit]',view().start).setAttribute('aria-label','Create task');dialog().showModal();$('#thread-title-input').focus();
+  };
+  window.openHuddleTask=config=>{
+    window.openGeneralTask(config.trigger);
+    const current=state;current.huddleFinalize=config;current.generalPersonal=false;current.generalMembersUrl='huddle:'+config.id;
+    current.draftTitle=config.draft.title;current.draftPeople=config.draft.people;current.draftDue=config.draft.due||'';current.draftExplicit=true;
+    const root=dialog();root.dataset.huddleFinalize='true';$('#thread-new-account').hidden=true;$('#thread-record-type').textContent='Collaboration';$('#thread-account-logo').src='/images/platform/table/collaboration-online.png';$('#thread-record-context').textContent='Save this collaboration as a task';
+    const input=$('#thread-title-input'),heading=$('#thread-record-title'),editor=$('.thread-subject-editor'),pen=$('[data-thread-edit-title]');
+    input.value=current.draftTitle||'';input.placeholder='Enter a collaboration title';input.oninput=()=>current.draftTitle=input.value;
+    const display=()=>{current.draftTitle=input.value;heading.textContent=input.value||'Enter a collaboration title';heading.hidden=false;editor.hidden=true;pen.hidden=false;};
+    pen.onclick=()=>{heading.hidden=true;editor.hidden=false;pen.hidden=true;input.focus();input.select();};input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();display();pen.focus();}};input.onblur=display;
+    renderDraftManagement();
+    const history=config.history||[];view().list.innerHTML=renderMessages({review:{createdAt:history[0]?.createdAt,requester:config.people.find(p=>p.id===history[0]?.senderId)?.name||'',participants:config.people.map(p=>p.name||p.email).join(', ')},messages:history},false);
+    const footer=$('.dialog-actions',root),cancel=$('[data-thread-dialog-close]',footer);cancel.textContent='Cancel';
+    const save=document.createElement('button');save.type='button';save.className='primary-button';save.textContent='Save as a task';save.disabled=!config.canSave;save.dataset.huddleSave='';$('.thread-dialog-header',root).insertBefore(save,$('.dialog-close',root));
+    const leave=document.createElement('button');leave.type='button';leave.className='secondary-button';leave.textContent='Leave without saving';leave.dataset.huddleLeave='';
+    const leaveGroup=document.createElement('div');leaveGroup.className='huddle-leave-actions';const explanation=document.createElement('small');explanation.textContent='Leave without creating a task. Others can continue.';leaveGroup.append(leave,explanation);footer.prepend(leaveGroup);
+    leave.onclick=async()=>{if(leave.disabled)return;const error=$('[data-thread-title-error]');leave.disabled=true;save.disabled=true;current.huddleBusy=true;view().start.dataset.saving='true';error.hidden=true;
+      try{await config.leave();root.close();}catch(ex){error.textContent=ex.message;error.hidden=false;}finally{leave.disabled=false;save.disabled=!config.canSave;current.huddleBusy=false;delete view().start.dataset.saving;}};
+    save.onclick=async()=>{
+      if(save.disabled)return;const error=$('[data-thread-title-error]');current.draftTitle=input.value.trim();
+      if(!current.draftTitle){error.textContent='Enter a collaboration title.';error.hidden=false;pen.click();return;}
+      save.disabled=true;leave.disabled=true;view().start.dataset.saving='true';error.hidden=true;
+      try{await config.save({title:current.draftTitle,people:current.draftPeople,due:current.draftDue||''});root.close();}
+      catch(ex){error.textContent=ex.message;error.hidden=false;}
+      finally{save.disabled=false;leave.disabled=false;delete view().start.dataset.saving;}
+    };
+    root.addEventListener('close',()=>{config.remember({title:input.value,people:current.draftPeople,due:current.draftDue});delete root.dataset.huddleFinalize;save.remove();leaveGroup.remove();cancel.textContent='Close';input.onblur=null;current.huddleFinalize=null;config.returnToRoom();},{once:true});
+    input.focus();input.select();
+  };
+  function handleHuddleEvent(event){lastPong=Date.now();window.LiveHuddleUI?.event(event,sendHuddle);}
+  function updateAssignment(review){
+    const current=($('#thread-management')?.dataset.currentEmail||'').toLowerCase();
+    const emails=(review.assigneeEmail||'').toLowerCase().split(',').map(x=>x.trim());
+    $$('tr[data-review-id]').filter(row=>row.dataset.reviewId===String(review.id)).forEach(row=>{
+      const trigger=$('[data-assign-review]',row),icon=$('[data-conversation-count]',row);
+      if(trigger&&!$('#personal-queue')){trigger.dataset.assignedEmails=review.assigneeEmail||'';$('span',trigger).textContent=review.assigneeName||'Unassigned';}
+      if(icon){icon.dataset.assignedToMe=String(emails.includes(current)&&review.status==='ACTIVE');icon.dataset.conversationCount=review.messageCount;icon.dataset.unreadMessageCount=review.unreadMessageCount||0;decorateRecordConversationButton(icon);}
+      const count=$('[data-message-total]',row);if(count)count.textContent=review.messageCount+' messages';
+    });
+  }
+  async function saveAssignment(id,people){
+    const body=new FormData();$$('input[type=hidden]',view().reply).filter(input=>input.name.includes('csrf')).forEach(input=>body.set(input.name,input.value));
+    people.forEach(person=>body.append('people',person));
+    const response=await fetch(api('/reviews/')+encodeURIComponent(id)+'/assignees',{method:'POST',body,headers:{Accept:'application/json'}});
+    if(!response.ok)throw new Error('Assignment could not be saved. Please try again.');
+    const review=await response.json();updateAssignment(review);if(state?.type&&state?.key)await markRecordConversationActive(state.type,state.key);return review;
+  }
+  window.assignConversationToMe=async(id,email,button)=>{
+    button.disabled=true;
+    try{
+      const response=await fetch(api('/reviews/')+encodeURIComponent(id),{headers:{Accept:'application/json'}});
+      if(!response.ok)throw new Error('Conversation could not be loaded.');
+      const conversation=await response.json(),team=await members(),emails=new Set((conversation.review.assigneeEmail||'').toLowerCase().split(',').map(x=>x.trim()));
+      emails.add((email||'').toLowerCase());
+      if(!team.some(person=>person.email.toLowerCase()===(email||'').toLowerCase()))throw new Error('Your account is not available for assignment.');
+      await saveAssignment(id,team.filter(person=>emails.has(person.email.toLowerCase())).map(person=>person.id));
+      if(state?.currentReviewId===id)await loadConversation(id);
+      button.closest('details')?.removeAttribute('open');
+    }catch(error){alert(error.message);}finally{button.disabled=false;}
+  };
+  async function renderManagement(review){
+    const root=$('#thread-management');if(!root)return;prepareAssignmentOverlay(root);updateAssignment(review);
+    $('[data-thread-draft-date]',root).hidden=true;
+    const close=$('.conversation-close-button',root);if(close)close.hidden=false;
+    if(globalScope()){root.hidden=!state.canCollaborate||review.status!=='ACTIVE';return;}
+    const assigned=(review.assigneeEmail||'').toLowerCase().split(',').map(value=>value.trim()).includes((root.dataset.currentEmail||'').toLowerCase());
+    const statusIcon=$('#thread-status-icon');if(statusIcon){statusIcon.src=window.NextAiIcons.source(review.status==='ACTIVE'&&assigned?'collaboration-assigned-red':review.messageCount>0?'collaboration-blue':'collaboration-no-message-gray');statusIcon.alt=assigned?'Assigned to you':review.messageCount>0?'Active conversation':'No messages';}
+    const dueButton=$('[data-thread-due]');if(dueButton){dueButton.onclick=null;dueButton.removeAttribute('aria-expanded');}
+    window.CollaborationTaskDates?.prepare(review);
+    if(state.personalContext){const due=$('[data-thread-due]');if(due)due.dataset.dueUrl=api('/reviews/'+review.id+'/due-date');}
+    root.hidden=!state.canCollaborate||review.status!=='ACTIVE'||state.messageType==='PRIVATE_NOTE';if(root.hidden)return;
+    const label=$('[data-thread-assignees]',root);label.textContent=review.assigneeName||'Unassigned';label.classList.toggle('unassigned',!review.assigneeEmail);
+    $('[data-thread-assign-self]',root).onclick=event=>window.assignConversationToMe(review.id,root.dataset.currentEmail,event.currentTarget);
+    const options=$('[data-thread-assignment-options]',root);options.replaceChildren();
+    const emails=new Set((review.assigneeEmail||'').toLowerCase().split(',').map(x=>x.trim()));
+    for(const person of await members()){if(state?.currentReviewId!==review.id)return;const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.value=person.id;input.checked=emails.has(person.email.toLowerCase());label.append(input,document.createTextNode(person.name));options.append(label);}
+    $('[data-thread-save-assignment]',root).onclick=async event=>{
+      const button=event.currentTarget,error=$('[data-thread-management-error]',root);button.disabled=true;error.textContent='';
+      try{await saveAssignment(review.id,$$('input:checked',options).map(input=>input.value));$('details',root).open=false;await loadConversation(review.id);}
+      catch(ex){error.textContent=ex.message;}finally{button.disabled=false;}
+    };
+  }
+  function decorateRecordConversationButton(button){
+    if(!button)return;
+    const formatCount=count=>count>999?'999+':String(count);
+    button.dataset.readState=button.dataset.unreadMessageCount===undefined?'unknown':Number(button.dataset.unreadMessageCount)>0?'unread':'read';
+    if(button.hasAttribute('data-conversation-count')){
+      const count=Number(button.dataset.conversationCount||0),mine=button.dataset.assignedToMe==='true';
+      const file=mine?'collaboration-assigned-red':count?'collaboration-blue':'collaboration-no-message-gray';
+      const image=button.querySelector('img');if(image){image.dataset.collaborationIcon='';image.className='platform-icon';const src=window.NextAiIcons?window.NextAiIcons.source(file):'/images/platform/table/'+file+'.png?v=20260922-26';if(image.getAttribute('src')!==src)image.setAttribute('src',src);}
+      let badge=button.querySelector('b');if(count>0){if(!badge){badge=document.createElement('b');button.append(badge);}badge.className='collaboration-message-count';badge.textContent=formatCount(count);}else badge?.remove();
+      button.classList.toggle('has-conversation',count>0);button.title=(mine?'Assigned to you · ':'')+count+' message'+(count===1?'':'s');button.setAttribute('aria-label',button.title);return;
+    }
+    const active=Number(button.dataset.activeCount||0),origin=Number(button.dataset.originCount??active),related=Number(button.dataset.relatedCount||0),mine=Number(button.dataset.mineCount||0);
+    const directMessages=Number(button.dataset.directMessageCount??origin),relatedMessages=Number(button.dataset.relatedMessageCount??related);
+    const attention=mine>0;
+    const tone=attention?'mine':origin>0?'origin':related>0?'related':'empty';
+    const file=attention?'collaboration-assigned-red':origin>0?'collaboration-blue':'collaboration-no-message-gray';
+    button.dataset.contextTone=tone;button.classList.toggle('has-conversation',active>0);button.classList.remove('closed-history');
+    let image=button.querySelector('img[data-collaboration-icon]');
+    if(!image){button.querySelector('svg')?.remove();image=document.createElement('img');image.dataset.collaborationIcon='';image.className='platform-icon';image.alt='';image.style.cssText='width:28px;height:28px;object-fit:contain';button.prepend(image);}
+    const src=window.NextAiIcons?window.NextAiIcons.source(file):'/images/platform/table/'+file+'.png';if(image.getAttribute('src')!==src)image.setAttribute('src',src);
+    let badge=button.querySelector('b');if(directMessages>0){if(!badge){badge=document.createElement('b');button.append(badge)}badge.className='collaboration-direct-count';badge.textContent=formatCount(directMessages);}else badge?.remove();
+    let indirect=button.querySelector('.collaboration-indirect-count');
+    if(relatedMessages>0){if(!indirect){indirect=document.createElement('span');indirect.className='collaboration-indirect-count';button.append(indirect);}indirect.textContent=formatCount(relatedMessages);indirect.setAttribute('aria-hidden','true');}else indirect?.remove();
+    button.title=active?directMessages+' direct messages · '+relatedMessages+' related messages in '+active+' active conversation'+(active===1?'':'s')+(mine>0?' · Requires your attention':''):'Start collaboration';
+    const unread=Math.max(0,Number(button.dataset.urgentUnreadMentionCount)||0);
+    let unreadDot=button.querySelector('.collaboration-unread-dot');
+    if(unread>0){if(!unreadDot){unreadDot=document.createElement('i');unreadDot.className='collaboration-unread-dot';unreadDot.setAttribute('aria-hidden','true');button.append(unreadDot);}button.title+=' · '+unread+' unread message'+(unread===1?'':'s');}else unreadDot?.remove();
+    button.setAttribute('aria-label',button.title+' for '+(button.dataset.title||button.dataset.identifier||'this record'));
+  }
+  async function refreshRecordSummaries(){
+    if(summariesRefreshing||navigator.onLine===false)return;summariesRefreshing=true;
+    try{
+    const groups=new Map();$$('.collaboration-row-button[data-entity-type][data-entity-id]').forEach(button=>{const type=button.dataset.entityType;if(!groups.has(type))groups.set(type,[]);groups.get(type).push(button);});
+    for(const [type,buttons] of groups){
+      const keys=[...new Set(buttons.map(button=>button.dataset.entityId))];
+      for(let start=0;start<keys.length;start+=250){try{
+        const params=new URLSearchParams({entityType:type});keys.slice(start,start+250).forEach(key=>params.append('entityId',key));
+        const response=await fetch(api('/summaries?',type)+params,{headers:{Accept:'application/json'},cache:'no-store',signal:AbortSignal.timeout(10000)});if(!response.ok)continue;const summaries=await response.json();
+        buttons.filter(button=>keys.slice(start,start+250).includes(button.dataset.entityId)).forEach(button=>{
+          const summary=summaries[button.dataset.entityId]||{};['activeCount','totalCount','closedCount','originCount','relatedCount','mineCount','urgentUnreadMentionCount','unreadMessageCount','directMessageCount','relatedMessageCount'].forEach(field=>{if(summary[field]===undefined)delete button.dataset[field];else button.dataset[field]=String(summary[field]);});decorateRecordConversationButton(button);
+        });
+      }catch(_){}}
+    }
+    }finally{summariesRefreshing=false;}
+  }
+
+  async function markRecordConversationActive(type,key){
+    const nodes=$$('[data-entity-type="'+CSS.escape(type)+'"][data-entity-id="'+CSS.escape(key)+'"]');
+    try{
+      const params=new URLSearchParams({entityType:type,entityId:key});
+      const response=await fetch(api('/summaries?',type)+params,{headers:{Accept:'application/json'},cache:'no-store'});
+      if(!response.ok)throw new Error('Summary unavailable');
+      const summary=(await response.json())[key]||{};
+      nodes.forEach(node=>{const button=node.matches('.collaboration-row-button')?node:$('.collaboration-row-button',node);if(!button)return;
+        ['activeCount','totalCount','closedCount','originCount','relatedCount','mineCount','urgentUnreadMentionCount','unreadMessageCount','directMessageCount','relatedMessageCount'].forEach(field=>{if(summary[field]===undefined)delete button.dataset[field];else button.dataset[field]=String(summary[field]);});
+        if(summary.unreadCount!==undefined)button.dataset.unreadCount=String(summary.unreadCount);
+        decorateRecordConversationButton(button);
+      });
+    }catch(_){nodes.forEach(node=>{const button=node.matches('.collaboration-row-button')?node:$('.collaboration-row-button',node);if(button)button.title='Saved. Refresh this table to update conversation counts.'})}
+  }
+  function connectHuddles(){
+    if(!('WebSocket'in window)||huddleSocket?.readyState===WebSocket.OPEN||huddleSocket?.readyState===WebSocket.CONNECTING)return;clearTimeout(huddleReconnect);const protocol=location.protocol==='https:'?'wss:':'ws:';huddleSocket=new WebSocket(protocol+'//'+location.host+'/ws/huddles');
+    huddleSocket.addEventListener('open',()=>{lastPong=Date.now();});huddleSocket.addEventListener('message',message=>{try{handleHuddleEvent(JSON.parse(message.data))}catch(error){console.warn('A live huddle update could not be displayed.',error);}});huddleSocket.addEventListener('close',event=>{window.LiveHuddleUI?.event({type:'OFFLINE'},sendHuddle);if(event.code!==1003&&event.code!==1008)huddleReconnect=setTimeout(connectHuddles,2000);});huddleSocket.addEventListener('error',()=>huddleSocket.close());
+  }
+  let closingDraft=false;
+  function hasUnsentDraft(){
+    if(!state)return false;
+    if([view().start,view().reply].some(form=>form&&($('textarea',form)?.value.trim()||$('input[type=file]',form)?.files.length)))return true;
+    const editor=$('#thread-title-input');
+    if(editor&&!editor.closest('[hidden]')&&editor.value!==(state.currentReview?subjectText(state.currentReview):(state.general?'':state.label.slice(0,240))))return true;
+    return !state.currentReview&&!!(state.draftDue||state.draftExplicit);
+  }
+  async function requestThreadClose(){
+    if(closingDraft||[view().start,view().reply].some(form=>form?.dataset.saving))return;
+    if(state?.huddleFinalize){state.huddleFinalize.remember({title:$('#thread-title-input').value,people:state.draftPeople,due:state.draftDue});dialog().close();return;}
+    if(!hasUnsentDraft()){dialog().close();return;}
+    closingDraft=true;const focus=document.activeElement;
+    try{const discard=await window.NextAiConfirm({title:'Discard unsent changes?',message:'Your message and changes haven’t been saved.',accept:'Discard draft',cancel:'Keep editing'});if(discard)dialog().close();else focus?.focus({preventScroll:true});}finally{closingDraft=false;}
+  }
+  function clearDrafts(){
+    draftMemberGeneration++;
+    for(const form of [view().start,view().reply]){if(!form)continue;form.reset();$$('[data-draft-field]',form).forEach(input=>input.remove());
+      const field=$('textarea',form);if(field){field.value='';closeMentionMenu(field);}
+      const label=$('[data-attachment-name]',form);if(label){label.textContent='No files selected';label.hidden=true;}
+    }
+  }
+  function selectTab(type,reload=true){
+    if(!state)return;if(state.messageType!==type)clearDrafts();state.mode='PERSISTENT';state.messageType=!globalScope()&&type==='PRIVATE_NOTE'?'PRIVATE_NOTE':'TEAM_CHAT';
+    $$('[data-thread-tab]',dialog()).forEach(button=>button.setAttribute('aria-selected',String(button.dataset.threadTab===state.messageType)));
+    configureForms();if(!reload)return;if(state.currentReviewId)loadConversation(state.currentReviewId,state.showBack);else if(state.active?.length)loadConversation(state.active[0].id,false);else showNewConversation();
+  }
+  function showNewConversation(){
+    state.currentReview=null;state.currentReviewId=null;state.draftTitle=state.general?'':state.label.slice(0,240);state.draftPeople=[];state.draftExplicit=false;state.draftDue='';
+    const elements=view();elements.reply.hidden=true;elements.start.hidden=!state.canCollaborate;elements.list.innerHTML='<div class="conversation-empty"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg><strong>'+(state.messageType==='PRIVATE_NOTE'?'Add a private note':'Start a team conversation')+'</strong><span>'+(state.messageType==='PRIVATE_NOTE'?'Only your signed-in user can read it.':'Keep the discussion attached to this exact record.')+'</span>'+(state.closedCount?'<a class="conversation-history-link" href="'+escape(state.historyUrl)+'">View '+state.closedCount+' closed conversation'+(state.closedCount===1?'':'s')+'</a>':'')+'</div>';configureForms();renderDraftManagement();renderSubject(null,true);if(!elements.start.hidden)$('#thread-title-input').focus();
+  }
+  function showPicker(){
+    clearDrafts();state.currentReview=null;$('[data-thread-edit-title]').hidden=true;
+    const elements=view(),all=[...(state.threads||[])].sort((left,right)=>Date.parse(right.createdAt)-Date.parse(left.createdAt));elements.start.hidden=true;elements.reply.hidden=true;state.currentReviewId=null;
+    elements.list.innerHTML='<section class="conversation-picker"><header><strong>'+all.length+' conversation'+(all.length===1?'':'s')+' for this record</strong><span>Choose by date, status, and participants.</span></header><div>'+all.map(review=>'<button type="button" data-conversation-id="'+review.id+'"><span class="conversation-picker-icon '+(review.status==='CLOSED'?'closed':'active')+'"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg></span><span><strong>'+escape(formatDate(review.createdAt))+'</strong><small class="conversation-picker-meta"><span class="conversation-picker-status">'+escape(review.status==='CLOSED'?'Closed':'Active')+'</span><span>'+escape(review.participants||review.requester)+'</span><span class="conversation-picker-count">'+review.messageCount+' message'+(review.messageCount===1?'':'s')+'</span></small></span><b aria-hidden="true">›</b></button>').join('')+'</div><footer>'+(state.canCollaborate?'<button type="button" class="conversation-new-button" data-new-conversation>＋ New conversation</button>':'')+'<a class="conversation-history-link" href="'+escape(state.historyUrl)+'">Open filtered history</a></footer></section>';
+    $$('[data-conversation-id]',elements.list).forEach(button=>button.addEventListener('click',()=>loadConversation(button.dataset.conversationId,true)));$('[data-new-conversation]',elements.list)?.addEventListener('click',showNewConversation);
+  }
+  async function loadConversation(reviewId,showBack=false,preserve=false){
+    if(state.currentReviewId!==reviewId)clearDrafts();
+    const elements=view();state.currentReviewId=reviewId;state.showBack=showBack;if(!preserve){elements.start.hidden=true;elements.reply.hidden=true;elements.list.innerHTML='<div class="conversation-loading">Loading conversation…</div>';}
+    const requestedType=state.messageType,requestedState=state;
+    if(!preserve)document.dispatchEvent(new Event('collaboration-thread-loading'));
+    try{
+      const response=await fetch(api('/reviews/')+encodeURIComponent(reviewId)+'?messageType='+requestedType,{headers:{Accept:'application/json'},cache:'no-store'});
+      if(!response.ok)throw new Error();const conversation=await response.json();
+      if(state!==requestedState||state.currentReviewId!==reviewId||state.messageType!==requestedType)return;
+      state.currentReview=conversation.review;renderSubject(conversation.review,false);
+      setParentLink(conversation.review.parentUrl,conversation.review.subjectType,conversation.review.subjectKey,conversation.review.subjectLabel);
+      elements.list.innerHTML=renderMessages(conversation,showBack);
+      if((globalScope()||state.personalContext)&&conversation.review.status==='CLOSED'){const reopen=document.createElement('button');reopen.type='button';reopen.className='secondary-button';reopen.textContent='Reopen conversation';reopen.onclick=()=>sendGlobal(view().reply,{name:'reopen',value:conversation.review.id});elements.list.append(reopen);}
+      elements.reply.action=api('/reviews/')+conversation.review.id+'/reply';
+      elements.reply.hidden=!state.canCollaborate||conversation.review.status==='CLOSED';configureForms();renderManagement(conversation.review);$('[data-draft-audience]')?.setAttribute('hidden','');
+      $('[data-conversation-back]',elements.list)?.addEventListener('click',showPicker);
+      if(!elements.reply.hidden)$('textarea',elements.reply).focus();elements.list.scrollTop=elements.list.scrollHeight;
+      document.dispatchEvent(new CustomEvent('collaboration-thread-rendered',{detail:{reviewId,messageType:requestedType,messageIds:conversation.messages.map(message=>message.id),scope:state.type,apiBase:state.personalContext?api(''):null,unreadMentionMessageIds:conversation.unreadMentionMessageIds||[]}}));return true;
+    }catch(_){if(state!==requestedState||state.currentReviewId!==reviewId||state.messageType!==requestedType)return;if(!preserve)elements.list.innerHTML='<div class="history-error">This conversation could not be loaded. Please try again.</div>';return false;}
+  }
+  async function loadSubject(forcePicker){
+    const elements=view(),requestedState=state;elements.list.innerHTML='<div class="conversation-loading">Loading conversations…</div>';elements.start.hidden=true;elements.reply.hidden=true;
+    try{const response=await fetch(api('/subject?subjectType=')+encodeURIComponent(state.type)+'&subjectKey='+encodeURIComponent(state.key),{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();const conversations=await response.json();if(state!==requestedState)return;const threads=conversations.map(item=>item.review).filter(review=>globalScope()||review.status==='ACTIVE'),active=threads.filter(review=>review.status==='ACTIVE');Object.assign(state,{threads,active,closedCount:threads.length-active.length,historyUrl:historyUrl(state.type,state.key)});if((globalScope()||forcePicker||threads.length>1)&&threads.length)showPicker();else if(active.length)loadConversation(active[0].id,false);else if(threads.length===1)loadConversation(threads[0].id,false);else showNewConversation();}catch(_){if(state!==requestedState)return;elements.list.innerHTML='<div class="history-error">These conversations could not be loaded. Please try again.</div>';}
+  }
+  function setHeader(button){
+    dialog().dataset.general='false';$('#thread-account-logo').hidden=true;$('#thread-new-account').hidden=true;view().start.querySelector('button[type=submit]').setAttribute('aria-label','Start conversation');
+    $('#thread-record-type').textContent=(button.dataset.entityType||button.dataset.type||'Record').replaceAll('_',' ')+' collaboration';$('#thread-record-title').textContent=button.dataset.title||button.dataset.product||'Record conversation';
+    const identifier=button.dataset.identifier||'',opaque=/^[0-9a-f]{8}-[0-9a-f-]{27,}(?:\||$)/i.test(identifier),context=[opaque?'':identifier,button.dataset.locationLabel].filter(Boolean).join(' · ');$('#thread-record-context').textContent=context;$('#thread-record-context').hidden=!context;
+    const badges=$('#thread-record-badges');badges.innerHTML='';[['expiration',button.dataset.expiration?'Expires '+button.dataset.expiration:null],['status',button.dataset.status],['marketplace',button.dataset.marketplace]].forEach(([kind,text])=>{if(!text)return;const badge=document.createElement('span');badge.className=kind;if(kind==='status')badge.dataset.status=text.toUpperCase();badge.textContent=text;badges.append(badge);});
+    setParentLink(button.dataset.parentUrl,(button.dataset.entityType||button.dataset.type||'record'));
+  }
+  function sourceTableUrl(url,type,key,label){
+    const fallback={ORDER:'/app/orders',INVENTORY:'/app/inventory',MARKETPLACE_SKU:'/app/marketplace-skus',CATALOG:'/app/catalog',ACCOUNT_PRODUCT:'/app/account-catalog',USER:'/app/users',SHIPMENT:'/app/shipping',FBA_SHIPMENT:'/app/inventory/fba-shipments'};
+    const path=url||fallback[type];if(typeof path!=='string'||!/^\/app(?:\/|\?|$)/.test(path)||path.includes('\\'))return '';
+    const source=new URL(path,location.origin);
+    if(!source.searchParams.get('q')&&type!=='PLATFORM'){
+      const readableKey=key&&!/^[0-9a-f]{8}-[0-9a-f-]{27}/i.test(key);
+      const query=type==='FBA_SHIPMENT'?String(key||'').split('|')[1]:(readableKey?key:String(label||'').split(' · expires')[0]);
+      if(query)source.searchParams.set('q',query);
+    }
+    source.searchParams.delete('page');if(source.pathname!=='/app/inventory/replenishment')source.searchParams.delete('status');
+    return source.pathname+source.search;
+  }
+  function setParentLink(url,type,key=state?.key,label=state?.label){const link=$('#thread-parent-link');if(!link)return;const source=sourceTableUrl(url,type,key,label);link.hidden=!source;if(source){link.href=source;link.dataset.tooltip=(source.startsWith('/app/inventory/replenishment')?'Open in Replenishment':'Open original '+(type||'record').replaceAll('_',' ').toLowerCase())+': '+(label||key||'');link.setAttribute('aria-label',link.dataset.tooltip);
+      link.onclick=state?.personalContext?event=>{event.preventDefault();const form=document.createElement('form');form.method='POST';form.action='/app/collaboration/personal/open-source';form.hidden=true;
+        for(const input of document.querySelectorAll('#personal-form input[type=hidden]'))form.append(input.cloneNode(true));
+        for(const [name,value] of Object.entries({id:state.personalContext,returnTo:source})){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;form.append(input);}
+        document.body.append(form);form.requestSubmit();}:null;
+    }}
+
+  window.openRecordCollaboration=(button,forcePicker=false)=>{
+    clearDrafts();
+    const type=(button.dataset.entityType||button.dataset.type||'RECORD').toUpperCase(),key=button.dataset.entityId||button.dataset.key;
+    const chooseConversation=forcePicker||Number(button.dataset.totalCount||0)>1;
+    state={type,key,label:button.dataset.title||button.dataset.product||button.dataset.identifier||'Record',parentUrl:sourceTableUrl(button.dataset.parentUrl||location.pathname+location.search,type,key,button.dataset.identifier||button.dataset.title),snapshot:snapshotFrom(button),canCollaborate:button.dataset.canCollaborate!=='false',messageType:'TEAM_CHAT',mode:'PERSISTENT',currentReviewId:null,currentHuddleId:null};setHeader(button);selectTab('TEAM_CHAT',false);dialog().showModal();loadSubject(chooseConversation);
+  };
+  let recordRefreshTimer;
+  window.prepareRecordCollaboration=button=>{decorateRecordConversationButton(button);clearTimeout(recordRefreshTimer);recordRefreshTimer=setTimeout(refreshRecordSummaries,100);};
+  window.openInventoryConversation=button=>window.openRecordCollaboration(button,false);
+  window.openCollaborationReview=button=>{clearDrafts();state={trigger:button,type:button.dataset.subjectType,key:button.dataset.subjectKey,label:button.dataset.subjectLabel,parentUrl:button.dataset.parentUrl||'',snapshot:snapshotFrom(button),personalContext:button.dataset.personalContext||null,canCollaborate:button.dataset.canCollaborate!=='false',messageType:'TEAM_CHAT',mode:'PERSISTENT',currentReviewId:button.dataset.reviewId,currentHuddleId:null};setHeader(button);selectTab(button.dataset.messageType||'TEAM_CHAT',false);dialog().showModal();loadConversation(button.dataset.reviewId,false);};
+  window.openGeneralHuddle=()=>window.LiveHuddleUI?.showPeople();
+  window.filterCollaborationRows=value=>{const query=(value||'').trim().toLowerCase(),rows=$$('.collaboration-open-row'),visible=rows.reduce((count,row)=>{const show=!query||(row.dataset.search||'').includes(query);row.hidden=!show;return count+(show?1:0);},0),empty=$('.collaboration-search-empty');if(empty)empty.hidden=!query||visible>0;const total=$('.collaboration-card .table-footer span');if(total)total.textContent=query?'Showing '+visible+' matching conversation'+(visible===1?'':'s'):'Showing '+rows.length+' conversation'+(rows.length===1?'':'s');};
+  function boot(){
+    document.addEventListener('collaboration-messages-read',()=>{clearTimeout(recordRefreshTimer);recordRefreshTimer=setTimeout(refreshRecordSummaries,100);
+      const id=state?.currentReviewId;
+      if(id&&$$('tr[data-review-id]').some(row=>row.dataset.reviewId===String(id)))fetch(api('/reviews/')+encodeURIComponent(id),{cache:'no-store',headers:{Accept:'application/json'}}).then(r=>r.ok?r.json():null).then(c=>{if(c)updateAssignment(c.review);}).catch(()=>{});
+    });
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshRecordSummaries();});
+    setInterval(()=>{refreshRecordSummaries();},120000);
+    setInterval(()=>{if(!document.hidden)refreshRecordSummaries();},15000);
+    window.addEventListener('focus',refreshRecordSummaries);
+    window.addEventListener('online',refreshRecordSummaries);
+    $$('.collaboration-row-button').forEach(decorateRecordConversationButton);refreshRecordSummaries();
+    new MutationObserver(records=>{
+      const added=new Set();
+      records.forEach(record=>record.addedNodes.forEach(node=>{
+        if(node.nodeType!==1)return;
+        if(node.matches('.collaboration-row-button'))added.add(node);
+        node.querySelectorAll('.collaboration-row-button').forEach(button=>added.add(button));
+      }));
+      added.forEach(button=>window.prepareRecordCollaboration(button));
+    }).observe(document.body,{childList:true,subtree:true});
+    $$('[data-collaboration-composer]').forEach(field=>{wireComposer(field);wireEnterToSend(field,field.closest('form'));});wireAttachments();$$('[data-thread-tab]').forEach(button=>button.addEventListener('click',()=>selectTab(button.dataset.threadTab)));
+    $$('.collaboration-composer').forEach(form=>form.addEventListener('submit',event=>{const field=$('textarea',form),files=$('input[type=file]',form)?.files;if(form===view().start){if(state?.general){event.preventDefault();sendGeneral(form);return;}if(!state.draftTitle?.trim()){event.preventDefault();const error=$('[data-thread-title-error]');error.textContent='Enter a subject.';error.hidden=false;$('#thread-title-input').focus();return;}form.elements.title.value=state.draftTitle;$$('[data-draft-field]',form).forEach(n=>n.remove());for(const [name,value] of [['dueDate',state.draftDue||''],...(state.draftPeople||[]).map(id=>['people',id])]){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;input.dataset.draftField='';form.append(input);}}if(!event.submitter?.name&&!field.value.trim()&&!files?.length){event.preventDefault();field.focus();return;}if(globalScope()||state?.personalContext||form===view().reply){event.preventDefault();sendGlobal(form,event.submitter);}}));
+    $$('[data-thread-dialog-close]').forEach(button=>button.addEventListener('click',requestThreadClose));
+    dialog()?.addEventListener('cancel',event=>{event.preventDefault();requestThreadClose();});
+    dialog()?.addEventListener('close',()=>{clearDrafts();if(state?.personalContext||state?.general){const trigger=state.trigger;trigger?.focus({preventScroll:true});window.dispatchEvent(new Event('personal-collaboration-updated'));}});
+    dialog()?.addEventListener('click',event=>{if(event.target===event.currentTarget)requestThreadClose();});
+    const auto=$('[data-thread-autopen="true"]');if(auto)setTimeout(()=>window.openCollaborationReview(auto),80);
+    connectHuddles();
+    setInterval(()=>{if(socketOpen()&&Date.now()-lastPong>75000)huddleSocket.close();else sendHuddle({type:'PING'});},25000);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden){connectHuddles();sendHuddle({type:'PING'});}});
+    window.addEventListener('online',connectHuddles);
+
+  }
+  document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
+})();

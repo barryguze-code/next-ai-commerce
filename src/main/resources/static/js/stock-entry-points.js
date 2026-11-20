@@ -1,0 +1,75 @@
+(() => {
+  if(!document.getElementById('stock-editor'))return;
+  const action=(context)=>{
+    const button=document.createElement('button');button.type='button';button.textContent='Adjust Inventory';
+    button.dataset.actionImage='/images/platform/table/adjust-inventory-owner.png';button.dataset.actionDescription='Change stock, location or expiry';
+    Object.assign(button.dataset,context);button.onclick=event=>{event.stopPropagation();window.openSharedInventoryAdjustment(button)};return button;
+  };
+  const mapping=context=>{const b=document.createElement('button');b.type='button';b.textContent='Map product';b.dataset.actionImage='/images/platform/table/map-product-owner.png';b.dataset.actionDescription='Map this product';b.dataset.mappingItem=context.item;b.onclick=e=>{e.stopPropagation();window.openProductMappingReview(b)};return b;};
+  const menuFor=context=>{
+    const trigger=document.createElement('button');trigger.type='button';trigger.className='plan-action-button inventory-stage-menu';trigger.dataset.contextAction='';trigger.textContent='⋯';trigger.setAttribute('aria-label','Inventory actions');
+    const panel=document.createElement('div');panel.className='stock-action-popover';panel.setAttribute('popover','auto');const button=action(context);button.className='secondary-button compact-button';panel.append(mapping(context),button);document.body.append(panel);
+    trigger.popoverTargetElement=panel;panel.addEventListener('click',e=>{if(e.target.closest('button'))panel.hidePopover()});
+    panel.addEventListener('toggle',()=>{if(!panel.matches(':popover-open'))return;const box=trigger.getBoundingClientRect();panel.style.left=Math.max(12,Math.min(box.left,innerWidth-panel.offsetWidth-12))+'px';panel.style.top=Math.max(12,Math.min(box.bottom+6,innerHeight-panel.offsetHeight-12))+'px'});
+    return trigger;
+  };
+  // Install before the deferred table widget moves context actions into its standard … menu.
+  document.querySelectorAll('.catalog-row').forEach(row=>{
+    const source=row.querySelector('[data-item-id]');if(!source)return;
+    const menu=row.querySelector('[data-context-menu]');if(!menu)return;
+    menu.append(mapping({item:source.dataset.itemId}),action({item:source.dataset.itemId}));
+  });
+  document.querySelectorAll('.sku-table tbody tr').forEach(row=>{
+    const source=row.querySelector('[name="sellerSku"]');if(!source||row.querySelector('.sku-open-actions'))return;
+    const cell=row.querySelector('td:last-child'),menu=document.createElement('div');menu.dataset.contextMenu='';menu.dataset.title='Marketplace SKU';
+    menu.append(action({sellerSku:source.value}));cell.append(menu);
+  });
+  // Picture-first inventory rows already own a shared Record action menu.
+  // Do not append raw commands to the final cell: that path is not enhanced.
+  const inventoryMenu=document.querySelector('#inventory-action-menu form');
+  if(inventoryMenu){
+    const map=mapping({});
+    const icon=document.createElement('span'),image=document.createElement('img');
+    image.src=map.dataset.actionImage;image.alt='';image.width=24;image.height=24;icon.append(image);
+    const label=document.createElement('div'),name=document.createElement('strong');name.textContent='Map product';label.append(name);map.replaceChildren(icon,label);
+    map.onclick=event=>{event.stopPropagation();map.dataset.mappingItem=document.getElementById('quick-action-item').value;window.closeInventoryActionMenu();window.openProductMappingReview(map)};
+    inventoryMenu.querySelector('header').after(map);
+  }
+  const legacy=document.querySelector('#inventory-action-menu [onclick^="openInventoryAdjustment"]');
+  if(legacy)legacy.onclick=()=>{const item=document.getElementById('quick-action-item').value,location=document.getElementById('quick-action-location').value,expiration=document.getElementById('quick-action-expiration').value;window.openSharedInventoryAdjustment({dataset:{item,location,expiration}})};
+  const toolbar=document.querySelector('[data-table-shortcuts="receiving-documents"]>.card-toolbar')||[...document.querySelectorAll('.card-toolbar')].find(t=>t.querySelector('h2')?.textContent==='Invoices & packing lists');
+  if(toolbar){const button=document.createElement('button');button.type='button';button.className='secondary-button compact-button';button.dataset.tableCommand='';button.dataset.commandId='receive-item';button.dataset.actionImage='/images/platform/table/receive-item-owner.png';button.dataset.actionDescription='Choose a product and quantity';button.textContent='Receive item';button.onclick=()=>window.openSharedInventoryReceipt();(toolbar.closest('[data-table-composition]')?.querySelector('.table-command-group')||toolbar).append(button)}
+  const input=document.getElementById('inventory-search'),table=document.querySelector('.available-inventory-table');
+  if(!input||!table)return;
+  let timer,controller;
+  input.addEventListener('input',()=>{
+    clearTimeout(timer);controller?.abort();table.querySelectorAll('[data-stock-zero]').forEach(row=>row.remove());const query=input.value.trim();if(query.length<2)return;
+    timer=setTimeout(async()=>{
+      controller=new AbortController();
+      try{
+        const response=await fetch('/app/catalog/product-search?q='+encodeURIComponent(query),{signal:controller.signal,headers:{Accept:'application/json'}});if(!response.ok)return;
+        const products=await response.json();if(input.value.trim()!==query)return;
+        const existing=new Set([...table.querySelectorAll('.inventory-row')].map(row=>row.dataset.item));
+        products.filter(p=>!existing.has(p.id)).forEach(product=>{
+          const row=document.createElement('tr');row.className='inventory-row inventory-stockout';row.dataset.stockZero='';row.dataset.item=product.id;row.dataset.product=product.name;row.dataset.image=product.imageUrl||'';row.dataset.sku=product.accountSku||product.vendorItemCode||'';row.dataset.location='';row.dataset.locationCode='No current location';row.dataset.expiration='';row.dataset.onHand='0';row.dataset.reserved='0';row.dataset.available='0';row.dataset.received='0';row.dataset.firstReceived='Not recorded';row.dataset.lastMovement='See movement history';row.dataset.status='UNDATED';row.dataset.search=[product.name,product.brand,product.vendorItemCode,product.accountSku,product.identifier,query].filter(Boolean).join(' ').toLowerCase();
+          const cell=document.createElement('td'),stage=document.createElement('div');stage.className='stock-zero-result';cell.append(stage);row.append(cell);
+          if(product.imageUrl){const image=document.createElement('img');image.src=product.imageUrl;image.alt='';image.onerror=()=>image.hidden=true;stage.append(image)}
+          const copy=document.createElement('div'),name=document.createElement('strong'),detail=document.createElement('small');name.textContent=product.name;name.className='inventory-product-detail-link';name.tabIndex=0;name.setAttribute('role','button');name.setAttribute('aria-label','Open inventory details for '+product.name);const openHistory=event=>{event.preventDefault();event.stopPropagation();window.openInventoryHistory(row)};name.addEventListener('click',openHistory);name.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){openHistory(event)}});detail.textContent=[product.vendorItemCode||product.accountSku,'No inventory recorded'].filter(Boolean).join(' · ');copy.append(name,detail);stage.append(copy);
+          // The shared table has already inserted Overview. Keep product copy in Product,
+          // not in that narrow image/action column, and retain the original data-column order.
+          const overview=document.createElement('td'),layout=document.createElement('div'),picture=document.createElement('span'),rail=document.createElement('div');
+          overview.dataset.column='record-context';overview.className='table-context-cell table-overview-cell';layout.className='table-overview-layout';picture.className='table-overview-picture product-thumbnail-slot platform-product-photo';rail.className='table-overview-rail';
+          const image=stage.querySelector('img');if(image)picture.append(image);rail.append(menuFor({item:product.id}));layout.append(picture,rail);overview.append(layout);
+          const cells=new Map([['record-context',overview],['product',cell]]);
+          [['location','—'],['on-hand','0 each'],['reserved','0 each'],['physical-available','0 each'],['expiration','—'],['shelf-life','No stock'],['unit-cost','Not valued']].forEach(([key,value])=>{const td=document.createElement('td');td.textContent=value;cells.set(key,td)});
+          // Match IDs, not offsets: users can reorder or hide columns before searching.
+          [...table.querySelectorAll('thead th')].forEach(heading=>{
+            const key=heading.dataset.column,td=cells.get(key);if(!td)return;
+            td.dataset.column=key;td.hidden=heading.hidden;td.style.display=heading.style.display;td.style.order=heading.style.order;row.append(td);
+          });
+          table.tBodies[0].append(row);
+        });window.applyInventoryFilters?.();table.dispatchEvent(new Event('table:filter'));
+      }catch(error){if(error.name!=='AbortError')console.warn('Zero-stock catalogue lookup unavailable');}
+    },180);
+  });
+})();

@@ -1,0 +1,1393 @@
+package com.nextaicommerce.platform.receiving;
+
+import static org.assertj.core.api.Assertions.*;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.*;
+import javax.sql.DataSource;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.*;
+import org.springframework.context.annotation.*;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.*;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.support.TransactionTemplate;
+import com.nextaicommerce.platform.catalog.CatalogRepository;
+
+/** Real PostgreSQL in an isolated disposable local cluster; never reads deployment credentials. */
+class ReceivingWorkflowDatabaseTest {
+    static io.zonky.test.db.postgres.embedded.EmbeddedPostgres postgres;
+    static String schema;
+    static DataSource source;
+    static AnnotationConfigApplicationContext context;
+    static JdbcTemplate jdbc;
+    static TransactionTemplate tx;
+    static ReceivingWorkflowRepository work;
+    static ReceivingRepository receiving;
+    static InventoryRepository inventory;
+    UUID tenant,user,vendor;
+    String actor;
+    LocalDate expiry=LocalDate.now().plusDays(60);
+    record Fixture(UUID session,UUID document,UUID line,UUID product,UUID location){}
+    @Configuration @EnableTransactionManagement
+    @Import(com.nextaicommerce.platform.config.ReadCacheConfiguration.class)
+    static class Config{
+        @Bean DataSource dataSource(){return source;}
+        @Bean com.nextaicommerce.platform.config.PlatformReadCache readCache(){return new com.nextaicommerce.platform.config.PlatformReadCache(true,java.time.Duration.ofSeconds(10),256);}
+        @Bean com.nextaicommerce.platform.catalog.CatalogReadService catalogReads(CatalogRepository c,com.nextaicommerce.platform.config.PlatformReadCache cache){return new com.nextaicommerce.platform.catalog.CatalogReadService(c,cache);}
+        @Bean JdbcTemplate jdbc(){return new JdbcTemplate(source);}
+        @Bean DataSourceTransactionManager transactionManager(){return new DataSourceTransactionManager(source);}
+        @Bean CatalogRepository catalog(JdbcTemplate j){return new CatalogRepository(j);}
+        @Bean com.nextaicommerce.platform.web.WorkspaceAccessRepository access(JdbcTemplate j){return new com.nextaicommerce.platform.web.WorkspaceAccessRepository(j);}
+        @Bean InventoryRepository inventory(JdbcTemplate j){return new InventoryRepository(j);}
+        @Bean ReceivingRepository receiving(JdbcTemplate j,CatalogRepository c){return new ReceivingRepository(j,c);}
+        @Bean ReceivingWorkflowRepository work(JdbcTemplate j,ReceivingRepository r,InventoryRepository i){return new ReceivingWorkflowRepository(j,r,i);}
+    }
+    @BeforeAll static void setup() throws Exception{
+        schema="receiving_test_"+UUID.randomUUID().toString().replace("-","");
+        String url,password=null;
+        if(Boolean.getBoolean("localTestDatabase")){
+            // Fixed loopback destination, separate database. Never accepts DB_URL or a production credential.
+            url="jdbc:postgresql://127.0.0.1:55432/next_ai_commerce_test";
+            password=java.nio.file.Files.readString(java.nio.file.Path.of(".local/database-password")).trim();
+        }else{
+            schema="public"; // This branch owns a disposable cluster; match production function lookup.
+            postgres=io.zonky.test.db.postgres.embedded.EmbeddedPostgres.builder().setServerConfig("listen_addresses","127.0.0.1").start();
+            url=postgres.getJdbcUrl("postgres","postgres");
+        }
+        var pool=new com.zaxxer.hikari.HikariConfig();
+        pool.setJdbcUrl(url+(url.contains("?")?"&":"?")+"currentSchema="+schema);
+        pool.setUsername("postgres");pool.setPassword(password);
+        pool.setMaximumPoolSize(4);pool.setMinimumIdle(1);source=new com.zaxxer.hikari.HikariDataSource(pool);
+        Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations(com.nextaicommerce.platform.testing.FixtureMigrations.location(schema)).load().migrate();
+        jdbc=new JdbcTemplate(source);
+        // Production triggers explicitly select public; bind their isolated test copies to this test schema.
+        for(String fn:List.of("ensure_item_default_location","fill_inventory_ledger_location","fill_receiving_receipt_location","fill_order_reservation_location"))
+            jdbc.execute("ALTER FUNCTION "+schema+"."+fn+"() SET search_path TO "+schema);
+        context=new AnnotationConfigApplicationContext(Config.class);
+        tx=new TransactionTemplate(context.getBean(DataSourceTransactionManager.class));
+        work=context.getBean(ReceivingWorkflowRepository.class);receiving=context.getBean(ReceivingRepository.class);inventory=context.getBean(InventoryRepository.class);
+    }
+    @AfterAll static void cleanup(){
+        if(schema!=null&&schema.matches("receiving_test_[a-f0-9]{32}")&&source!=null)
+            new JdbcTemplate(source).execute("DROP SCHEMA IF EXISTS "+schema+" CASCADE");
+        if(context!=null)context.close();
+        else if(source instanceof com.zaxxer.hikari.HikariDataSource pool)pool.close();
+        if(postgres!=null)try{postgres.close();}catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}
+    }
+    @BeforeEach void account(){
+        tenant=UUID.randomUUID();user=UUID.randomUUID();vendor=UUID.randomUUID();actor="qa-"+user+"@example.test";
+        tx.executeWithoutResult(s->{
+            jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,?)",tenant,"qa-"+tenant,"Receiving QA");
+            jdbc.update("INSERT INTO app_users(id,email,display_name) VALUES (?,?,?)",user,actor,"Receiving tester");
+            setTenant();jdbc.update("INSERT INTO vendors(id,tenant_id,name) VALUES (?,?,?)",vendor,tenant,"Synthetic supplier");
+        });
+    }
+    void setTenant(){jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());}
+    @Test void inventorySearchIncludesActiveExactSkusAndBundleComponentsWithinAccount(){
+        var first=twelve();var second=twelve();UUID connection=UUID.randomUUID(),mapping=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'QA','test-only','Search test','America/Los_Angeles',now())",connection,tenant,connection.toString());
+            jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,account_catalog_item_id,marketplace_sku,status) VALUES (?,?,?,?,'000-SKU-EAx12','ACTIVE')",mapping,tenant,connection,first.product());
+            jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,12),(?,?,?,1)",tenant,mapping,first.product(),tenant,mapping,second.product());
+        });
+        assertThat(inventory.inventorySkuSearchTerms(tenant,List.of(connection))).containsEntry(first.product(),"000-SKU-EAx12").containsEntry(second.product(),"000-SKU-EAx12");
+        assertThat(inventory.inventorySkuSearchTerms(UUID.randomUUID(),List.of(connection))).isEmpty();
+        assertThat(inventory.inventorySkuSearchTerms(tenant,List.of(UUID.randomUUID()))).isEmpty();
+        assertThat(inventory.inventorySkuSearchTerms(tenant,List.of())).isEmpty();
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE marketplace_sku_mappings SET status='INACTIVE' WHERE id=?",mapping);});
+        assertThat(inventory.inventorySkuSearchTerms(tenant,List.of(connection))).doesNotContainKeys(first.product(),second.product());
+    }
+
+    @Test void inlineLocationCorrectionMovesWholeBatchAndCombinesWithoutChangingTotalOrHistory(){
+        var f=twelve();var c=context.getBean(CatalogRepository.class);UUID bin=c.addLocation(tenant,"FIX-A","Corrected shelf",c.listWarehouses(tenant).getFirst().id());
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),new BigDecimal("6"),expiry,f.location(),"Source");
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),new BigDecimal("2"),expiry,bin,"Destination");
+        String before=tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT json_agg(row_to_json(x) ORDER BY id)::text FROM inventory_ledger_entries x WHERE tenant_id=?",String.class,tenant);});
+        inventory.correctInventoryLocation(tenant,actor,f.product(),f.location(),bin,expiry,new BigDecimal("6"));
+        tx.executeWithoutResult(t->{setTenant();assertThat(jdbc.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=?",BigDecimal.class,tenant,f.product(),f.location())).isZero();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=?",BigDecimal.class,tenant,f.product(),bin)).isEqualByComparingTo("8");assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND entry_type='TRANSFER'",Integer.class,tenant)).isEqualTo(2);assertThat(jdbc.queryForObject("SELECT json_agg(row_to_json(x) ORDER BY id)::text FROM inventory_ledger_entries x WHERE tenant_id=? AND entry_type<>'TRANSFER'",String.class,tenant)).isEqualTo(before);});
+        assertThatThrownBy(()->inventory.correctInventoryLocation(tenant,actor,f.product(),f.location(),bin,expiry,new BigDecimal("6"))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("quantity changed");
+    }
+    @Test void inlineLocationCorrectionRejectsReservationsStaleQuantityAndOtherWarehouse(){
+        var f=twelve();var c=context.getBean(CatalogRepository.class);UUID bin=c.addLocation(tenant,"FIX-B","Shelf",c.listWarehouses(tenant).getFirst().id());inventory.receiveUninvoicedItem(tenant,actor,f.product(),new BigDecimal("6"),expiry,f.location(),"Source");
+        assertThatThrownBy(()->inventory.correctInventoryLocation(tenant,actor,f.product(),f.location(),bin,expiry,BigDecimal.ONE)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("quantity changed");
+        UUID foreign=c.addLocation(tenant,"FIX-X","Other warehouse",c.addWarehouse(tenant,"Other"));assertThatThrownBy(()->inventory.correctInventoryLocation(tenant,actor,f.product(),f.location(),foreign,expiry,new BigDecimal("6"))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("same warehouse");
+        reserve(f,2);assertThatThrownBy(()->inventory.correctInventoryLocation(tenant,actor,f.product(),f.location(),bin,expiry,new BigDecimal("6"))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("reserved stock");assertThat(stock(f)).isEqualByComparingTo("6");
+        assertThatThrownBy(()->inventory.correctInventoryLocation(UUID.randomUUID(),actor,f.product(),f.location(),bin,expiry,new BigDecimal("6"))).isInstanceOf(IllegalArgumentException.class);assertThat(stock(f)).isEqualByComparingTo("6");
+    }
+
+    @Test void warehousesInitializeAndLocationsPreserveInventoryAndAccountScope(){
+        var catalog=context.getBean(CatalogRepository.class);var f=twelve();
+        var defaults=catalog.listWarehouses(tenant);assertThat(defaults).hasSize(1);
+        assertThat(defaults.getFirst().name()).isEqualTo("Default Warehouse");assertThat(defaults.getFirst().isDefault()).isTrue();
+        assertThat(catalog.listLocations(tenant)).allMatch(location->defaults.getFirst().id().equals(location.warehouseId()));
+        UUID other=catalog.addWarehouse(tenant,"Second Warehouse");UUID bin=catalog.addLocation(tenant,"W2-A","Shelf A",other);
+        assertThat(catalog.listLocations(tenant)).anyMatch(location->location.id().equals(bin)&&location.warehouseId().equals(other));
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),BigDecimal.TEN,expiry,f.location(),"Warehouse fixture");
+        BigDecimal before=stock(f);
+        assertThatThrownBy(()->inventory.moveInventoryPosition(tenant,actor,f.product(),f.location(),bin,expiry,BigDecimal.ONE,false)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("same warehouse");
+        assertThat(stock(f)).isEqualByComparingTo(before);
+        assertThat(catalog.listWarehouses(UUID.randomUUID())).isEmpty();
+        assertThatThrownBy(()->catalog.addLocation(tenant,"BAD","Foreign warehouse",UUID.randomUUID())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->catalog.addWarehouse(tenant,"second warehouse")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void warehouseDetailsSaveContactsAtomicallyAndStayAccountScoped(){
+        var catalog=context.getBean(CatalogRepository.class);var id=catalog.listWarehouses(tenant).getFirst().id();
+        var saved=catalog.saveWarehouse(tenant,id,"Tomball","123 Test Road","Suite 2","Tomball","TX","77375","us",List.of("Receiving Lead","Backup Contact"),List.of("+1 (555) 010-1111","555-010-2222"));
+        assertThat(saved.name()).isEqualTo("Tomball");assertThat(saved.countryCode()).isEqualTo("US");assertThat(saved.isDefault()).isTrue();assertThat(saved.contacts()).hasSize(2);
+        assertThat(catalog.warehouseDetails(tenant,id)).isEqualTo(saved);
+        assertThatThrownBy(()->catalog.saveWarehouse(tenant,id,"Missing ZIP","","","","","","US",List.of(),List.of())).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("postal code");
+        assertThatThrownBy(()->catalog.saveWarehouse(tenant,id,"Missing country","","","","","77377","",List.of(),List.of())).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("country code");
+
+        assertThat(catalog.warehouseDetails(UUID.randomUUID(),id)).isNull();
+        assertThatThrownBy(()->catalog.saveWarehouse(tenant,id,"Wrong","","","","","","",List.of("Missing phone"),List.of(""))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(catalog.warehouseDetails(tenant,id)).isEqualTo(saved);
+        assertThatThrownBy(()->catalog.saveWarehouse(UUID.randomUUID(),id,"Foreign","","","","","","",List.of(),List.of())).isInstanceOf(IllegalArgumentException.class);
+        assertThat(catalog.warehouseDetails(tenant,id)).isEqualTo(saved);
+    }
+
+    @Test void warehouseRemovalDeletesOnlyUnusedAndPreservesDependentHistory(){
+        var catalog=context.getBean(CatalogRepository.class);var f=twelve();
+        UUID empty=catalog.addWarehouse(tenant,"Empty");UUID unused=catalog.addLocation(tenant,"EMPTY","Unused",empty);
+        catalog.saveWarehouse(tenant,empty,"Empty","","","","","77377","US",List.of("Test Contact"),List.of("555-0100"));
+        assertThat(catalog.warehouseRemovalPreview(tenant,empty).outcome()).isEqualTo("DELETED");
+        assertThatThrownBy(()->catalog.removeWarehouse(UUID.randomUUID(),empty,"DELETED")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(catalog.removeWarehouse(tenant,empty,"DELETED").locationIds()).containsExactly(unused);
+        assertThat(catalog.warehouseDetails(tenant,empty)).isNull();
+        UUID used=catalog.addWarehouse(tenant,"Used");UUID bin=catalog.addLocation(tenant,"USED","Used shelf",used);
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),BigDecimal.TEN,expiry,bin,"Fixture");
+        // Zero current stock still has protected historical movement rows.
+        inventory.adjustInventory(tenant,actor,f.product(),expiry,bin,BigDecimal.TEN.negate(),"COUNT_CORRECTION","Fixture");
+        String before=tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT md5(string_agg(row_to_json(e)::text,',' ORDER BY id)) FROM inventory_ledger_entries e WHERE tenant_id=?",String.class,tenant);});
+        assertThat(catalog.warehouseRemovalPreview(tenant,used).outcome()).isEqualTo("INACTIVE");
+        assertThatThrownBy(()->catalog.removeWarehouse(tenant,used,"DELETED")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("usage changed");
+        assertThat(catalog.warehouseDetails(tenant,used).status()).isEqualTo("ACTIVE");
+        assertThat(catalog.removeWarehouse(tenant,used,"INACTIVE").outcome()).isEqualTo("INACTIVE");
+        assertThat(catalog.warehouseDetails(tenant,used).status()).isEqualTo("INACTIVE");
+        assertThat(catalog.listLocations(tenant)).anyMatch(l->l.id().equals(bin)&&l.status().equals("INACTIVE"));
+        assertThat((String)tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT md5(string_agg(row_to_json(e)::text,',' ORDER BY id)) FROM inventory_ledger_entries e WHERE tenant_id=?",String.class,tenant);})).isEqualTo(before);
+        assertThatThrownBy(()->catalog.addLocation(tenant,"NOPE","Inactive warehouse",used)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->inventory.receiveUninvoicedItem(tenant,actor,f.product(),BigDecimal.ONE,expiry,bin,"Rejected")).isInstanceOf(IllegalArgumentException.class);
+        UUID main=catalog.listWarehouses(tenant).stream().filter(CatalogRepository.WarehouseView::isDefault).findFirst().orElseThrow().id();
+        assertThatThrownBy(()->catalog.removeWarehouse(tenant,main,"INACTIVE")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Default");
+    }
+
+    @Test void warehouseRemovalProtectsAssignmentsAndConcurrentUsage(){
+        var catalog=context.getBean(CatalogRepository.class);var f=twelve();
+        UUID warehouse=catalog.addWarehouse(tenant,"Assigned");UUID bin=catalog.addLocation(tenant,"ASSIGNED","Assigned",warehouse);
+        assertThat(catalog.warehouseRemovalPreview(tenant,warehouse).outcome()).isEqualTo("DELETED");
+        tx.executeWithoutResult(t->{setTenant();jdbc.update("INSERT INTO account_catalog_item_locations(tenant_id,account_catalog_item_id,location_id) VALUES (?,?,?)",tenant,f.product(),bin);});
+        assertThatThrownBy(()->catalog.removeWarehouse(tenant,warehouse,"DELETED")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("usage changed");
+        assertThat(catalog.removeWarehouse(tenant,warehouse,"INACTIVE").outcome()).isEqualTo("INACTIVE");
+        assertThat((Long)tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT count(*) FROM account_catalog_item_locations WHERE tenant_id=? AND location_id=?",Long.class,tenant,bin);})).isEqualTo(1L);
+    }
+
+    @Test void warehouseRemovalPreservesReservationsAndStock() {
+        var catalog=context.getBean(CatalogRepository.class);var f=twelve();
+        UUID warehouse=catalog.addWarehouse(tenant,"Reserved");UUID bin=catalog.addLocation(tenant,"RESERVED","Reserved",warehouse);
+        var position=new Fixture(f.session(),f.document(),f.line(),f.product(),bin);
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),BigDecimal.TEN,expiry,bin,"Fixture");
+        UUID reservation=reserve(position,3);
+        String before=tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT row_to_json(r)::text FROM order_inventory_reservations r WHERE id=?",String.class,reservation);});
+        catalog.removeWarehouse(tenant,warehouse,"INACTIVE");
+        assertThat((String)tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT row_to_json(r)::text FROM order_inventory_reservations r WHERE id=?",String.class,reservation);})).isEqualTo(before);
+        assertThat((BigDecimal)tx.execute(t->{setTenant();return jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND location_id=?",BigDecimal.class,tenant,bin);})).isEqualByComparingTo("10");
+    }
+
+    Fixture twelve(){
+        var f=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET ordered_quantity=12 WHERE tenant_id=? AND id=?",tenant,f.line());});
+        return f;
+    }
+    void outcomes(Fixture f,int good,int damage,int missing,int mispick){
+        work.receiveOutcomes(tenant,actor,f.line(),BigDecimal.valueOf(good),BigDecimal.valueOf(damage),BigDecimal.valueOf(missing),BigDecimal.valueOf(mispick),expiry,f.location(),true);
+    }
+    @Test void packingListWaitsForBriefTenantInventoryUpdateWithoutReceivingStock() throws Exception {
+        var parser=new com.nextaicommerce.platform.catalog.CatalogImportService(jdbc,new tools.jackson.databind.ObjectMapper(),context.getBean(CatalogRepository.class));
+        String path=System.getProperty("packingListFixture","");
+        byte[] bytes=path.isBlank()?"SKU,Description,Item Code,UPC / EAN,unit cost,Quantity,Default location i,Receiving,Status\nET-SAMPLE,Sample towel,B09SAMPLE01,B09SAMPLE01,5,150,,,\n".getBytes(java.nio.charset.StandardCharsets.UTF_8):java.nio.file.Files.readAllBytes(java.nio.file.Path.of(path));
+        var rows=parser.readFile("packing-list.csv",bytes).rows();
+        // Exact account SKUs resolve against this supplier buying default; file has no costs or GTINs.
+        tx.executeWithoutResult(t->{setTenant();for(var row:rows){
+            String code=row.entrySet().stream().filter(e->e.getKey().replaceAll("[^A-Za-z]","").equalsIgnoreCase("SKU")).findFirst().orElseThrow().getValue();
+            UUID global=UUID.randomUUID(),item=UUID.randomUUID();
+            jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Existing packing product')",global);
+            jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES (?,?,?,?)",item,tenant,global,code);
+            jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,list_cost) VALUES (?,?,?,0.01)",tenant,vendor,item);
+        }});
+        var doc=new ReceivingIntakeService.IntakeDocument("packing-list.csv","fixture-content-hash",rows);
+        var intake=new ReceivingIntakeService(receiving);
+        var pool=java.util.concurrent.Executors.newSingleThreadExecutor();
+        try(var blocker=source.getConnection()){
+            blocker.setAutoCommit(false);
+            try(var stmt=blocker.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))")){stmt.setObject(1,tenant);stmt.execute();}
+            var started=new java.util.concurrent.CountDownLatch(1);
+            var upload=pool.submit(()->{started.countDown();return tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Packing test",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)));});
+            assertThat(started.await(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Thread.sleep(200);
+            assertThat(upload.isDone()).as("brief contention should wait rather than reject the whole upload").isFalse();
+            blocker.commit();
+            UUID session=upload.get(15,java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_documents WHERE tenant_id=? AND receiving_session_id=?",Integer.class,tenant,session)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_document_lines WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(rows.size());
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
+            assertThat(jdbc.queryForObject("SELECT sum(ordered_quantity) FROM receiving_document_lines WHERE tenant_id=?",BigDecimal.class,tenant)).isEqualByComparingTo(path.isBlank()?"150":"487");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(rows.size());
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_catalog_offers WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(rows.size());
+            assertThat(jdbc.queryForList("SELECT account_catalog_item_id FROM receiving_document_lines WHERE tenant_id=?",UUID.class,tenant)).hasSize(rows.size());
+            assertThatThrownBy(()->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Duplicate",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).hasMessageContaining("already uploaded");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_sessions WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+        }finally{pool.shutdownNow();}
+    }
+
+    @Test void packingListLockTimeoutRollsBackAndDoesNotBlockAnotherAccount() throws Exception {
+        var intake=new ReceivingIntakeService(receiving);
+        var rows=List.of(Map.of("SKU","LOCK-TEST","Description","Lock test product","Quantity","1","unit cost","5","UPC","012345678901"));
+        var doc=new ReceivingIntakeService.IntakeDocument("lock-test.csv","lock-test-hash",rows);
+        UUID other=UUID.randomUUID(),otherVendor=UUID.randomUUID();
+        tx.executeWithoutResult(t->{
+            jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,?)",other,"qa-"+other,"Other account");
+            jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,other.toString());
+            jdbc.update("INSERT INTO vendors(id,tenant_id,name) VALUES (?,?,'Other vendor')",otherVendor,other);
+        });
+        try(var blocker=source.getConnection()){
+            blocker.setAutoCommit(false);
+            try(var stmt=blocker.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))")){stmt.setObject(1,tenant);stmt.execute();}
+            assertThat((UUID)tx.execute(t->intake.start(other,actor,otherVendor,"PACKING_LIST","USD","Other",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).isNotNull();
+            long started=System.nanoTime();
+            assertThatThrownBy(()->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Timeout",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).isInstanceOf(IllegalArgumentException.class).hasMessage("lock-test.csv: Inventory is being updated. Nothing changed; please try again in a moment.");
+            assertThat(java.time.Duration.ofNanos(System.nanoTime()-started)).isBetween(java.time.Duration.ofSeconds(4),java.time.Duration.ofSeconds(9));
+            for(String table:List.of("receiving_sessions","receiving_documents","receiving_document_lines","account_catalog_items","inventory_ledger_entries"))
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM "+table+" WHERE tenant_id=?",Integer.class,tenant)).as(table+" fully rolled back").isZero();
+            blocker.rollback();
+        }
+        assertThat((UUID)tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Retry",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(doc)))).isNotNull();
+        tx.executeWithoutResult(t->assertThat(jdbc.queryForObject("SHOW lock_timeout",String.class)).isEqualTo("0"));
+    }
+
+    @Test void keheNumericTextBarcodePreservesSourceAndCreatesDraftWithoutStock(){
+        var row=Map.of("ShipItem","=\"00702258\"","Upc","=\"093966113105\"","Description","Fixture cheese","Brand","Fixture","ShipQuantity","2","NetEach","5.00","PackSize","6/8 OZ");
+        UUID session=tx.execute(t->new ReceivingIntakeService(receiving).start(tenant,actor,vendor,"INVOICE","USD","KEHE fixture",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(new ReceivingIntakeService.IntakeDocument("fixture.csv","kehe-numeric-text",List.of(row)))));
+        assertThat(session).isNotNull();
+        assertThat(jdbc.queryForObject("SELECT raw_data->>'Upc' FROM receiving_document_lines WHERE tenant_id=?",String.class,tenant)).isEqualTo("=\"093966113105\"");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers WHERE identifier_type='UPC' AND identifier_value='093966113105'",Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
+    }
+
+    @Test void packingListUsesOnlyAccountVendorDefaultAndPreservesHistory(){
+        var f=fixture("INVOICE");
+        tx.executeWithoutResult(t->{setTenant();jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,vendor_item_code,list_cost,currency,is_default) VALUES (?,?,?,'COST-FIXTURE',0.01,'USD',true)",tenant,vendor,f.product());});
+        long ledgerBefore=jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Long.class,tenant);
+        var intake=new ReceivingIntakeService(receiving);
+        UUID session=tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Cost fixture",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(new ReceivingIntakeService.IntakeDocument("cost.csv",UUID.randomUUID().toString(),List.of(Map.of("VendorItemCode","COST-FIXTURE","Description","Fixture","ShipQuantity","42"))))));
+        assertThat(jdbc.queryForObject("SELECT i.unit_cost FROM purchase_order_items i JOIN purchase_orders p ON p.id=i.purchase_order_id WHERE p.receiving_session_id=?",BigDecimal.class,session)).isEqualByComparingTo("0.01");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Long.class,tenant)).isEqualTo(ledgerBefore);
+        tx.executeWithoutResult(t->{setTenant();jdbc.update("UPDATE vendor_catalog_offers SET effective_to=current_date WHERE tenant_id=? AND vendor_item_code='COST-FIXTURE'",tenant);});
+        assertThatThrownBy(()->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Unknown cost",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(new ReceivingIntakeService.IntakeDocument("cost.csv",UUID.randomUUID().toString(),List.of(Map.of("AccountSKU","MISSING","Description","Fixture","ShipQuantity","1"))))))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void packingListAccountSkuFallbackPreservesExactIdentityAndRejectsConflicts() {
+        UUID other=UUID.randomUUID(),foreign=UUID.randomUUID(),foreignGlobal=UUID.randomUUID(),own=UUID.randomUUID(),ownGlobal=UUID.randomUUID();
+        tx.executeWithoutResult(t->{
+            jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,?)",other,"qa-"+other,"Other account");
+            jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Own product'),(?,'Foreign product')",ownGlobal,foreignGlobal);
+            jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES (?,?,?,'00042'),(?,?,?,'Foreign-Only')",own,tenant,ownGlobal,foreign,other,foreignGlobal);
+            jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) VALUES (?,'UPC','012345678901',true)",foreignGlobal);
+        });
+        tx.executeWithoutResult(t->{setTenant();jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,list_cost) VALUES (?,?,?,0.01)",tenant,vendor,own);});
+        var intake=new ReceivingIntakeService(receiving);
+        java.util.function.Function<Map<String,String>,UUID> upload=row->tx.execute(t->intake.start(tenant,actor,vendor,"PACKING_LIST","USD","Exact identity",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,List.of(new ReceivingIntakeService.IntakeDocument("identity.csv",UUID.randomUUID().toString(),List.of(row)))));
+        UUID session=upload.apply(Map.of("Account SKU","00042","Description","Source label","Quantity","2","UPC / EAN","B09INVALID1"));
+        assertThat(jdbc.queryForObject("SELECT account_catalog_item_id FROM receiving_document_lines WHERE tenant_id=?",UUID.class,tenant)).isEqualTo(own);
+        assertThat(jdbc.queryForObject("SELECT raw_data->>'UPC / EAN' FROM receiving_document_lines WHERE tenant_id=?",String.class,tenant)).isEqualTo("B09INVALID1");
+        tx.executeWithoutResult(t->{
+            UUID caseGlobal=UUID.randomUUID();
+            jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Case-sensitive product')",caseGlobal);
+            jdbc.update("INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku) VALUES (?,?,'Case-Only')",tenant,caseGlobal);
+        });
+        for(String sku:List.of("42","Foreign-Only","case-only"))assertThatThrownBy(()->upload.apply(Map.of("SKU",sku,"Description","Source","Quantity","1"))).isInstanceOf(IllegalArgumentException.class);
+        long identifiersBefore=jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers",Long.class);
+        long productsBefore=jdbc.queryForObject("SELECT count(*) FROM global_catalog_products",Long.class);
+        assertThatThrownBy(()->upload.apply(Map.of("SKU","Unknown-ASIN","Description","Source","Quantity","1","UPC / EAN","B09TPK5QQS"))).hasMessageContaining("An ASIN cannot be used as a barcode");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_product_identifiers",Long.class)).isEqualTo(identifiersBefore);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM global_catalog_products",Long.class)).isEqualTo(productsBefore);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_catalog_offers WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+        assertThatThrownBy(()->upload.apply(Map.of("Account SKU","Unknown","Description","Source","Quantity","1"))).hasMessageContaining("No active product matches account SKU");
+        assertThatThrownBy(()->upload.apply(Map.of("Account SKU","00042","SKU","42","Description","Source","Quantity","1"))).hasMessageContaining("different Account SKU and SKU");
+        assertThatThrownBy(()->upload.apply(Map.of("SKU","00042","Description","Source","Quantity","1","UPC / EAN","012345678901"))).hasMessageContaining("Barcode conflicts");
+        tx.executeWithoutResult(t->{setTenant();jdbc.update("UPDATE account_catalog_items SET status='INACTIVE' WHERE tenant_id=? AND id=?",tenant,own);});
+        assertThatThrownBy(()->upload.apply(Map.of("SKU","00042","Description","Source","Quantity","1"))).hasMessageContaining("inactive");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_sessions WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
+        assertThat(jdbc.queryForObject("SELECT account_sku FROM account_catalog_items WHERE id=?",String.class,own)).isEqualTo("00042");
+        assertThat(session).isNotNull();
+    }
+
+    @Test void additiveOutcomesAndIndependentUndoReconcileWithActiveHistory(){
+        for(int[] values:List.of(new int[]{12,0,0,0},new int[]{8,0,0,0},new int[]{8,4,0,0},new int[]{8,0,4,0},new int[]{8,0,0,4},new int[]{6,2,2,2},new int[]{14,0,0,0})){
+            var f=twelve();outcomes(f,values[0],values[1],values[2],values[3]);
+            assertThat(stock(f)).isEqualByComparingTo(String.valueOf(values[0]));
+            var active=work.receipts(tenant,f.line());
+            for(var receipt:active){
+                work.undo(tenant,actor,f.line(),receipt.id(),"Independent QA undo");
+                var history=work.receipts(tenant,f.line());
+                assertThat(history).anyMatch(r->r.id().equals(receipt.id())&&r.undone());
+                var effective=history.stream().filter(r->!r.undone()).toList();
+                BigDecimal received=effective.stream().filter(r->!r.disposition().equals("SHORT_SHIPPED")).map(ReceivingWorkflowRepository.Receipt::quantity).reduce(BigDecimal.ZERO,BigDecimal::add);
+                BigDecimal accounted=effective.stream().filter(r->!r.disposition().equals("OVER_SHIPPED")).map(ReceivingWorkflowRepository.Receipt::quantity).reduce(BigDecimal.ZERO,BigDecimal::add);
+                var current=work.lines(tenant,List.of(f.document())).getFirst();
+                assertThat(current.received()).isEqualByComparingTo(received);
+                assertThat(current.remaining()).isEqualByComparingTo(new BigDecimal("12").subtract(accounted).max(BigDecimal.ZERO));
+                assertThat(work.documents(tenant,List.of(f.document())).getFirst().outstanding()).isEqualByComparingTo(current.remaining());
+                String batches=work.lineDetails(tenant,List.of(f.document())).getFirst().get("batches").toString();
+                if(effective.stream().noneMatch(r->r.disposition().equals(receipt.disposition())))assertThat(batches).doesNotContain(receipt.disposition());
+            }
+            assertThat(stock(f)).isZero();outcomes(f,3,0,0,0);outcomes(f,4,0,0,0);
+            assertThat(stock(f)).isEqualByComparingTo("7");assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isEqualByComparingTo("5");
+        }
+    }
+    @Test void screenshotSequenceExcludesBothUndoneReceipts(){
+        var f=twelve();tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET ordered_quantity=24 WHERE tenant_id=? AND id=?",tenant,f.line());});
+        outcomes(f,24,0,0,0);work.undo(tenant,actor,f.line(),receipt(f),"First receipt undone");
+        outcomes(f,3,6,3,3);
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().received()).isEqualByComparingTo("12");
+        var good=work.receipts(tenant,f.line()).stream().filter(r->!r.undone()&&r.disposition().equals("SELLABLE")).findFirst().orElseThrow();
+        work.undo(tenant,actor,f.line(),good.id(),"Sellable undone");
+        var current=work.lines(tenant,List.of(f.document())).getFirst();
+        assertThat(current.received()).isEqualByComparingTo("9");assertThat(current.remaining()).isEqualByComparingTo("12");assertThat(stock(f)).isZero();
+        assertThat(work.lineDetails(tenant,List.of(f.document())).getFirst().get("batches").toString()).doesNotContain("SELLABLE");
+    }
+    @Test void casePackRequiresExplicitCommandAndNeverRewritesInvoice(){
+        var f=twelve();work.updateCasePack(tenant,actor,f.line(),new BigDecimal("6"));outcomes(f,8,0,0,0);
+        assertThat(new BigDecimal(work.lineDetails(tenant,List.of(f.document())).getFirst().get("catalogPack").toString())).isEqualByComparingTo("6");
+        work.updateCasePack(tenant,actor,f.line(),new BigDecimal("8"));
+        assertThat(new BigDecimal(work.lineDetails(tenant,List.of(f.document())).getFirst().get("catalogPack").toString())).isEqualByComparingTo("8");
+        var current=work.lines(tenant,List.of(f.document())).getFirst();assertThat(current.expected()).isEqualByComparingTo("12");assertThat(current.unitsPerCase()).isEqualByComparingTo("1");assertThat(stock(f)).isEqualByComparingTo("8");
+    }
+    void delivery(Fixture f,int delivered,int damage,int missing,int wrong,LocalDate date){
+        work.receiveDelivery(tenant,actor,f.line(),BigDecimal.valueOf(delivered),BigDecimal.valueOf(damage),BigDecimal.valueOf(missing),BigDecimal.valueOf(wrong),date,f.location(),new BigDecimal("6"),true);
+    }
+    @Test void deliveryAcceptanceQuantitiesAndIndependentExceptions(){
+        for(int[] example:List.of(new int[]{12,0,0,12,0},new int[]{8,0,0,8,4},new int[]{10,0,2,10,0},new int[]{10,2,2,8,0},new int[]{14,0,0,14,0})){
+            var f=twelve();delivery(f,example[0],example[1],example[2],0,expiry);
+            assertThat(stock(f)).isEqualByComparingTo(String.valueOf(example[3]));
+            assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isEqualByComparingTo(String.valueOf(example[4]));
+            assertThat(work.lines(tenant,List.of(f.document())).getFirst().expected()).isEqualByComparingTo("12");
+            if(example[0]==14)tx.executeWithoutResult(s->{setTenant();
+                assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND unit_cost=0",BigDecimal.class,tenant,f.product())).isEqualByComparingTo("2");
+                assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND unit_cost=2",BigDecimal.class,tenant,f.product())).isEqualByComparingTo("12");
+            });
+        }
+        var wrong=twelve();delivery(wrong,10,2,2,1,expiry);assertThat(stock(wrong)).isEqualByComparingTo("7");
+    }
+    @Test void deliveryIsAtomicRetrySafeAndUsesCurrentBalance(){
+        var f=twelve();UUID request=UUID.randomUUID();
+        assertThat(work.execute(tenant,request,"delivery",f.line(),"same",()->delivery(f,8,0,0,0,expiry))).isTrue();
+        assertThat(work.execute(tenant,request,"delivery",f.line(),"same",()->delivery(f,8,0,0,0,expiry))).isFalse();
+        delivery(f,6,0,0,0,expiry);assertThat(stock(f)).isEqualByComparingTo("14");
+        assertThat(work.receipts(tenant,f.line())).anyMatch(r->r.disposition().equals("OVER_SHIPPED")&&r.quantity().intValueExact()==2);
+        var failed=twelve();
+        assertThatThrownBy(()->delivery(failed,10,2,2,0,null)).hasMessageContaining("expiration");
+        assertThat(work.receipts(tenant,failed.line())).isEmpty();assertThat(stock(failed)).isZero();
+        for(int[] invalid:List.of(new int[]{2,3,0},new int[]{10,0,3},new int[]{0,0,0}))
+            assertThatThrownBy(()->delivery(failed,invalid[0],invalid[1],invalid[2],0,expiry)).isInstanceOf(IllegalArgumentException.class);
+        var undo=twelve();delivery(undo,10,2,2,0,expiry);
+        for(var r:work.receipts(tenant,undo.line()))work.undo(tenant,actor,undo.line(),r.id(),"QA correction");
+        assertThat(stock(undo)).isZero();assertThat(work.lines(tenant,List.of(undo.document())).getFirst().remaining()).isEqualByComparingTo("12");
+    }
+    @Test void deliveryDerivesExpirationFromAccountPolicy(){
+        inventory.saveShelfLifePolicy(tenant,actor,4,18);
+        assertThat(work.expirationStatus(tenant,LocalDate.now().plusDays(19)).disposition()).isEqualTo("SELLABLE");
+        assertThat(work.expirationStatus(tenant,LocalDate.now().plusDays(18)).tone()).isEqualTo("warning");
+        assertThat(work.expirationStatus(tenant,LocalDate.now().plusDays(4)).tone()).isEqualTo("danger");
+        for(var date:List.of(LocalDate.now().minusDays(1),LocalDate.now().plusDays(15))){
+            var f=twelve();delivery(f,12,0,0,0,date);assertThat(stock(f)).isEqualByComparingTo("12");
+            assertThat(work.receipts(tenant,f.line()).getFirst().disposition()).isEqualTo(date.isBefore(LocalDate.now())?"EXPIRED":"SOON_EXPIRED");
+        }
+    }
+    @Test void locationPermissionUsesSelectedMembershipNotAnotherAccount(){
+        var access=new com.nextaicommerce.platform.web.WorkspaceAccessRepository(jdbc);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'VIEWER')",tenant,user);
+            assertThat(access.canOperateAccount(tenant,actor)).isFalse();
+            jdbc.update("UPDATE tenant_memberships SET role='OPERATOR' WHERE tenant_id=? AND user_id=?",tenant,user);
+            assertThat(access.canOperateAccount(tenant,actor)).isTrue();
+            assertThat(access.canOperateAccount(UUID.randomUUID(),actor)).isFalse();
+        });
+    }
+    @Test void emptyStockItemsCanBeAdjustedAndOptionsAreTenantScoped(){
+        var f=fixture("INVOICE");
+        var options=inventory.adjustmentItems(tenant,List.of(f.product()));
+        assertThat(options).hasSize(1);assertThat(options.getFirst().expirationRequired()).isTrue();
+        assertThat(inventory.adjustmentItems(UUID.randomUUID(),List.of(f.product()))).isEmpty();
+        assertThatThrownBy(()->inventory.adjustInventory(tenant,actor,f.product(),null,f.location(),BigDecimal.ONE,"COUNT_CORRECTION","Found stock"))
+            .hasMessageContaining("expiration");
+        inventory.adjustInventory(tenant,actor,f.product(),expiry,f.location(),new BigDecimal("24"),"COUNT_CORRECTION","Found stock");
+        assertThat(stock(f)).isEqualByComparingTo("24");
+        assertThat(inventory.inventory(tenant,List.of(f.product()))).hasSize(1);
+        assertThat(inventory.inventory(tenant,List.of(UUID.randomUUID()))).isEmpty();
+        assertThat(inventory.inventory(tenant)).hasSize(1);
+    }
+    @Test void documentReceivedCasesUseProductMasterCasesAndOmitUnreconciledHistory(){
+        var f=fixture("INVOICE");
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().receivedCases()).isZero();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE global_catalog_products SET units_per_case=5 WHERE id=(SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?)",tenant,f.product());
+            jdbc.update("UPDATE purchase_order_items SET received_quantity=10,units_per_case=99 WHERE tenant_id=? AND id=?",tenant,f.line());
+            jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id) VALUES (?,?,6,1,'SELLABLE',?,?),(?,?,4,1,'DAMAGED',?,?)",tenant,f.line(),user,f.location(),tenant,f.line(),user,f.location());
+            jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id,voided_at) VALUES (?,?,8,2,'SELLABLE',?,?,now())",tenant,f.line(),user,f.location());
+            jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id) VALUES (?,?,2,2,'SHORT_SHIPPED',?,?)",tenant,f.line(),user,f.location());
+        });
+        var document=work.documents(tenant,List.of(f.document())).getFirst();
+        assertThat(document.received()).isEqualByComparingTo("10");
+        assertThat(document.receivedCases()).isEqualByComparingTo("2");
+        assertThat(document.receivedCasesLabel()).isEqualTo("2");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE global_catalog_products SET units_per_case=10 WHERE id=(SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?)",tenant,f.product());});
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().receivedCases()).isEqualByComparingTo("1");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE global_catalog_products SET units_per_case=5 WHERE id=(SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?)",tenant,f.product());});
+        var second=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE global_catalog_products SET units_per_case=4 WHERE id=(SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?)",tenant,second.product());
+            jdbc.update("UPDATE purchase_order_items SET purchase_order_id=(SELECT purchase_order_id FROM purchase_order_items WHERE tenant_id=? AND id=?) WHERE tenant_id=? AND id=?",tenant,f.line(),tenant,second.line());
+            jdbc.update("UPDATE purchase_order_items SET received_quantity=6 WHERE tenant_id=? AND id=?",tenant,second.line());
+            jdbc.update("INSERT INTO receiving_line_receipts(tenant_id,purchase_order_item_id,each_quantity,units_per_case,disposition,received_by,location_id) VALUES (?,?,6,1,'SELLABLE',?,?)",tenant,second.line(),user,second.location());
+        });
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().receivedCases()).isEqualByComparingTo("3.5");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET received_quantity=11 WHERE tenant_id=? AND id=?",tenant,f.line());});
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().receivedCases()).isNull();
+        assertThat(work.documents(UUID.randomUUID(),List.of(f.document()))).isEmpty();
+    }
+    @Test void manualReceiptRecordsItemDateLocationAndExplanation(){
+        var f=fixture("INVOICE");
+        inventory.receiveUninvoicedItem(tenant,actor,f.product(),new BigDecimal("5"),expiry,f.location(),"Received extra delivery without invoice");
+        assertThat(stock(f)).isEqualByComparingTo("5");
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT notes FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",String.class,tenant,f.product())).contains("extra delivery");});
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().received()).isEqualByComparingTo("0");
+    }
+    @Test void adjustmentCreatesTheEnteredExpirationWithoutChangingAnotherBatch(){
+        var f=fixture("INVOICE");receive(f,6);LocalDate entered=expiry.plusDays(29);
+        inventory.adjustInventory(tenant,actor,f.product(),entered,f.location(),new BigDecimal("6"),"COUNT_CORRECTION","New date adjustment");
+        tx.executeWithoutResult(s->{setTenant();
+            for(LocalDate date:List.of(expiry,entered))assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=? AND expiration_date=?",BigDecimal.class,tenant,f.product(),f.location(),date)).isEqualByComparingTo("6");
+        });
+        inventory.adjustInventory(tenant,actor,f.product(),entered,f.location(),new BigDecimal("2"),"COUNT_CORRECTION","Same date adjustment");
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND location_id=? AND expiration_date=?",BigDecimal.class,tenant,f.product(),f.location(),entered)).isEqualByComparingTo("8");});
+    }
+    @Test void expirationCorrectionPreservesQuantityAndHistory(){
+        var f=fixture("INVOICE");receive(f,10);
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        UUID connection=mappedOrder(f,4,"Unshipped");tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        LocalDate corrected=expiry.plusDays(5);
+        inventory.changeExpiration(tenant,actor,f.product(),f.location(),expiry,corrected,BigDecimal.TEN,repo);
+        tx.executeWithoutResult(s->{setTenant();
+            assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,f.product())).isEqualByComparingTo("10");
+            assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=?",BigDecimal.class,tenant,f.product(),expiry)).isEqualByComparingTo("0");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND source_type='EXPIRATION_CORRECTION'",Long.class,tenant,f.product())).isEqualTo(2);
+            assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM order_inventory_reservations WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=? AND status='ACTIVE'",BigDecimal.class,tenant,f.product(),corrected)).isEqualByComparingTo("4");
+        });
+        assertThatThrownBy(()->inventory.changeExpiration(tenant,actor,f.product(),f.location(),corrected,expiry,BigDecimal.ONE,repo)).hasMessageContaining("quantity changed");
+        assertThatThrownBy(()->inventory.changeExpiration(UUID.randomUUID(),actor,f.product(),f.location(),corrected,expiry,BigDecimal.TEN,repo)).hasMessageContaining("unavailable");
+        LocalDate existing=corrected.plusDays(5);
+        inventory.adjustInventory(tenant,actor,f.product(),existing,f.location(),new BigDecimal("2"),"COUNT_CORRECTION","Merge target");
+        inventory.changeExpiration(tenant,actor,f.product(),f.location(),corrected,existing,BigDecimal.TEN,repo);
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=?",BigDecimal.class,tenant,f.product(),existing)).isEqualByComparingTo("12");});
+    }
+    @Test void imageSyncWithoutAnEligibleMappingKeepsImagesUnchanged(){
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'OPERATOR')",tenant,user);});
+        var client=org.mockito.Mockito.mock(com.nextaicommerce.platform.sync.AmazonSpApiClient.class);
+        var controller=new com.nextaicommerce.platform.sync.CatalogImageSyncController(jdbc,tx,client,context.getBean(CatalogRepository.class));
+        var session=new org.springframework.mock.web.MockHttpSession();session.setAttribute("selectedTenantId",tenant);
+        var auth=org.mockito.Mockito.mock(org.springframework.security.core.Authentication.class);org.mockito.Mockito.when(auth.getName()).thenReturn(actor);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,"access",context.getBean(com.nextaicommerce.platform.web.WorkspaceAccessRepository.class));
+        var response=controller.sync(fixture("INVOICE").product(),session,auth);
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody().get("error")).contains("No active Amazon SKU");
+        org.mockito.Mockito.verifyNoInteractions(client);
+        assertThat(controller.globalImage(UUID.randomUUID()).getStatusCode().value()).isEqualTo(404);
+    }
+    @Test void locationsCanOnlyBeChangedWhenUnused(){
+        var catalog=context.getBean(CatalogRepository.class);
+        UUID unused=catalog.addLocation(tenant,"QA-EMPTY","Empty shelf");
+        catalog.changeLocation(tenant,unused,"QA-RENAMED","Renamed shelf",false);
+        assertThat(catalog.listLocations(tenant)).anyMatch(l->l.id().equals(unused)&&l.code().equals("QA-RENAMED"));
+        assertThatThrownBy(()->catalog.changeLocation(UUID.randomUUID(),unused,"OTHER","Other",true))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("this account");
+        UUID duplicate=catalog.addLocation(tenant,"QA-DUPLICATE","Duplicate");
+        assertThatThrownBy(()->catalog.changeLocation(tenant,unused,"QA-DUPLICATE","Other",false)).hasMessageContaining("already exists");
+        assertThatThrownBy(()->catalog.changeLocation(tenant,unused,"bad code","Other",false)).hasMessageContaining("location code");
+        var f=fixture("INVOICE");
+        catalog.setDefaultLocation(tenant,f.product(),unused);
+        assertThatThrownBy(()->catalog.changeLocation(tenant,unused,"QA-NEW","Other",false)).hasMessageContaining("1 catalogue location assignments");
+        assertThatThrownBy(()->catalog.changeLocation(tenant,unused,"","",true)).hasMessageContaining("catalogue location assignments");
+        assertThatThrownBy(()->catalog.changeLocation(tenant,f.location(),"","",true)).hasMessageContaining("MAIN");
+        UUID historical=catalog.addLocation(tenant,"QA-HISTORY","Historical shelf");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,entry_type,quantity,source_type,notes,location_id,idempotency_key,occurred_at) VALUES (?,?,'ADJUSTMENT',1,'MANUAL','Location protection test',?,?,now())",tenant,f.product(),historical,"location-test-"+UUID.randomUUID());});
+        assertThatThrownBy(()->catalog.changeLocation(tenant,historical,"NEW","New",false)).hasMessageContaining("1 inventory ledger records");
+        assertThatThrownBy(()->catalog.changeLocation(tenant,historical,"","",true)).hasMessageContaining("Historical records");
+        catalog.changeLocation(tenant,duplicate,"","",true);
+        assertThat(catalog.listLocations(tenant)).noneMatch(l->l.id().equals(duplicate));
+    }
+    Fixture fixture(String type){
+        return tx.execute(s->{
+            setTenant();UUID product=UUID.randomUUID(),global=UUID.randomUUID(),document=UUID.randomUUID(),sourceLine=UUID.randomUUID(),po=UUID.randomUUID(),line=UUID.randomUUID();
+            UUID session=receiving.createSession(tenant,actor,"QA-"+document,"USD",BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,"VALUE");
+            jdbc.update("INSERT INTO global_catalog_products(id,canonical_name,requires_expiration_date) VALUES (?,'QA yogurt',true)",global);
+            jdbc.update("INSERT INTO account_catalog_items(id,tenant_id,global_product_id,account_sku) VALUES (?,?,?,?)",product,tenant,global,"QA-"+product);
+            UUID location=jdbc.queryForObject("SELECT location_id FROM account_catalog_item_locations WHERE tenant_id=? AND account_catalog_item_id=? AND is_default",UUID.class,tenant,product);
+            jdbc.update("INSERT INTO receiving_documents(id,tenant_id,receiving_session_id,vendor_id,document_type,document_number,original_filename,file_sha256,currency) VALUES (?,?,?,?,?,?,? ,?,'USD')",document,tenant,session,vendor,type,"QA-"+document,"qa.csv",document.toString().replace("-","").repeat(2));
+            jdbc.update("INSERT INTO receiving_document_lines(id,tenant_id,receiving_document_id,account_catalog_item_id,source_description,ordered_quantity,invoice_unit_cost,currency) VALUES (?,?,?,?,'QA yogurt',10,2,'USD')",sourceLine,tenant,document,product);
+            jdbc.update("INSERT INTO purchase_orders(id,tenant_id,receiving_session_id,receiving_document_id,vendor_id,po_number,created_by) VALUES (?,?,?,?,?,?,?)",po,tenant,session,document,vendor,"QA-"+po,user);
+            jdbc.update("INSERT INTO purchase_order_items(id,tenant_id,purchase_order_id,receiving_line_id,account_catalog_item_id,description,ordered_quantity,unit_cost,currency,invoice_unit,units_per_case) VALUES (?,?,?,?,?,'QA yogurt',10,2,'USD','EACH',1)",line,tenant,po,sourceLine,product);
+            return new Fixture(session,document,line,product,location);
+        });
+    }
+    void receive(Fixture f,int amount){
+        long start=System.nanoTime();
+        work.receive(tenant,actor,f.line(),BigDecimal.valueOf(amount),expiry,"SELLABLE",f.location(),"QA receipt");
+        System.out.println("RECEIVE_OPERATION_MS="+((System.nanoTime()-start)/1_000_000));
+    }
+    BigDecimal stock(Fixture f){return tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,f.product());});}
+    UUID receipt(Fixture f){return work.receipts(tenant,f.line()).getFirst().id();}
+
+    @Test void invoiceRejectsConflictingCatalogueIdentityWithoutChangingHistory(){
+        var mapped=fixture("INVOICE");var other=fixture("INVOICE");
+        String barcode="856502006480";
+        UUID originalGlobal=tx.execute(s->{setTenant();
+            jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,vendor_item_code,list_cost,is_default) VALUES (?,?,?,'299405',5.07,true)",tenant,vendor,mapped.product());
+            jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) SELECT global_product_id,'UPC',?,true FROM account_catalog_items WHERE tenant_id=? AND id=?",barcode,tenant,other.product());
+            return jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenant,mapped.product());
+        });
+        assertThatThrownBy(()->receiving.addDocument(tenant,mapped.session(),vendor,"INVOICE","invoice-4046298.csv",
+            UUID.randomUUID().toString().replace("-","").repeat(2),"USD",List.of(Map.of(
+                "InvoiceNumber","4046298","Description","Invoice product description","ItemNumber","299405",
+                "UPC",barcode,"ShipQuantity","2","NetEach","6.25")),actor)).hasMessageContaining("Conflicting or inactive");
+        tx.executeWithoutResult(s->{setTenant();
+            assertThat(jdbc.queryForObject("SELECT global_product_id FROM account_catalog_items WHERE tenant_id=? AND id=?",UUID.class,tenant,mapped.product())).isEqualTo(originalGlobal);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM account_catalog_items WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(2);
+            assertThat(jdbc.queryForObject("SELECT list_cost FROM vendor_catalog_offers WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,mapped.product())).isEqualByComparingTo("5.07");
+        });
+    }
+
+    @Test void documentSearchIncludesInvoiceItemCodesWithoutDuplicatingDocuments(){
+        var a=fixture("INVOICE");var b=fixture("INVOICE");
+        tx.execute(s->{setTenant();
+            jdbc.update("UPDATE receiving_document_lines SET vendor_item_code='299405' WHERE tenant_id=? AND receiving_document_id=?",tenant,a.document());
+            jdbc.update("INSERT INTO receiving_document_lines(tenant_id,receiving_document_id,vendor_item_code) VALUES (?,?,'299405')",tenant,a.document());
+            return null;
+        });
+        var page=work.documentPage(tenant," 299405 ",0,25);
+        assertThat(page.items()).extracting(ReceivingWorkflowRepository.Document::id).containsExactly(a.document());
+        assertThat(work.documentPage(tenant,"9940",0,25).items()).hasSize(1);
+        assertThat(work.documentPage(tenant,"no-such-item",0,25).items()).isEmpty();
+    }
+
+    @Test void confirmedInvoiceSeedsOnlyMissingDefaultAndKeepsEachBasis(){
+        var a=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET unit_cost=5.07,vendor_item_code='299405' WHERE id=?",a.line());});
+        receive(a,2);
+        tx.executeWithoutResult(s->{setTenant();
+            assertThat(jdbc.queryForObject("SELECT list_cost FROM vendor_catalog_offers WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,a.product())).isEqualByComparingTo("5.07");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_cost_history WHERE tenant_id=? AND source_type='INVOICE'",Integer.class,tenant)).isEqualTo(1);
+            jdbc.update("UPDATE purchase_order_items SET unit_cost=8 WHERE id=?",a.line());
+        });
+        receive(a,1);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.queryForObject("SELECT initialize_received_item_cost(?,?)",Object.class,tenant,a.product());
+            assertThat(jdbc.queryForObject("SELECT list_cost FROM vendor_catalog_offers WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,a.product())).isEqualByComparingTo("5.07");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_cost_history WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+        });
+    }
+    @Test void packingListOrUnknownInvoiceCostDoesNotSeedDefault(){
+        var packing=fixture("PACKING_LIST");var unknown=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE receiving_document_lines SET invoice_unit_cost=NULL WHERE tenant_id=? AND receiving_document_id=?",tenant,unknown.document());});
+        receive(packing,1);receive(unknown,1);
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT count(*) FROM vendor_catalog_offers WHERE tenant_id=?",Integer.class,tenant)).isZero();});
+    }
+
+    @Test void separateDocumentsPartialContinuationAndIdempotency(){
+        var a=fixture("INVOICE");var b=fixture("PACKING_LIST");
+        assertThat(work.documentPage(tenant,"packing list",0,25).items()).extracting(ReceivingWorkflowRepository.Document::id).containsExactly(b.document());
+        assertThat(work.lines(tenant,List.of(a.document(),b.document()))).hasSize(2);
+        UUID request=UUID.randomUUID();
+        assertThat(work.execute(tenant,request,"receive",a.line(),"test",()->receive(a,3))).isTrue();
+        assertThat(work.execute(tenant,request,"receive",a.line(),"test",()->receive(a,3))).isFalse();
+        assertThatThrownBy(()->work.execute(tenant,request,"receive",b.line(),"other",()->receive(b,3))).isInstanceOf(IllegalArgumentException.class);
+        receive(a,2);receive(b,4);
+        assertThat(stock(a)).isEqualByComparingTo("5");assertThat(stock(b)).isEqualByComparingTo("4");
+        assertThatThrownBy(()->receive(a,6)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(stock(a)).isEqualByComparingTo("5");
+        assertThat(work.documents(UUID.randomUUID(),List.of(a.document()))).isEmpty();
+        assertThatThrownBy(()->work.receipts(UUID.randomUUID(),a.line())).isInstanceOf(IllegalArgumentException.class);
+    }
+    @Test void untouchedReceiptUndoPreservesHistoryAndCannotBeRepublished(){
+        var f=fixture("INVOICE");receive(f,4);UUID receipt=receipt(f);
+        work.undo(tenant,actor,f.line(),receipt,"Entered wrong quantity");
+        assertThat(stock(f)).isEqualByComparingTo("0");
+        assertThat(work.receipts(tenant,f.line())).hasSize(1).first().extracting(ReceivingWorkflowRepository.Receipt::undone).isEqualTo(true);
+        receiving.publishReceipts(tenant,f.session());assertThat(stock(f)).isEqualByComparingTo("0");
+        assertThatThrownBy(()->work.undo(tenant,actor,f.line(),receipt,"Again")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->work.removeDocument(tenant,actor,f.document())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->receiving.receive(tenant,f.session(),f.line(),actor,BigDecimal.ZERO,BigDecimal.ONE,
+            new BigDecimal("2"),expiry,"SELLABLE","",BigDecimal.ZERO,BigDecimal.ZERO,f.location(),false))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("locked");
+        receive(f,2);assertThat(stock(f)).isEqualByComparingTo("2");
+    }
+    @Test void usedStockCannotBeUndoneButAdjustmentsRemainTraceable(){
+        var f=fixture("INVOICE");receive(f,6);UUID receipt=receipt(f);
+        inventory.adjustInventory(tenant,actor,f.product(),expiry,f.location(),new BigDecimal("-1"),"DAMAGE","Damaged after receipt");
+        assertThat(work.receipts(tenant,f.line()).getFirst().blockedReason()).contains("no longer on hand");
+        assertThatThrownBy(()->work.undo(tenant,actor,f.line(),receipt,"Cannot rewrite")).isInstanceOf(IllegalArgumentException.class);
+        work.adjust(tenant,actor,f.line(),receipt,BigDecimal.ONE,"DECREASE","DONATION","One donated");
+        assertThat(stock(f)).isEqualByComparingTo("4");
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().received()).isEqualByComparingTo("6");
+    }
+
+    @Test void itemHistoryIncludesAllDatedAndFifoBatchesAndIsTenantScoped(){
+        var f=fixture("INVOICE");receive(f,3);
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,entry_type,quantity,expiration_date,source_type,notes,location_id,occurred_at,idempotency_key) VALUES (?,?,'ADJUSTMENT',2,NULL,'MANUAL','FIFO test',?,now(),?)",tenant,f.product(),f.location(),"test-"+UUID.randomUUID());});
+        assertThat(inventory.movements(tenant,f.product(),null,null,true,0)).hasSize(2);
+        assertThat(inventory.movements(tenant,f.product(),null,f.location(),false,0)).hasSize(1);
+        assertThat(inventory.movements(tenant,f.product(),expiry,f.location(),false,0)).hasSize(1);
+        assertThat(inventory.movements(UUID.randomUUID(),f.product(),null,null,true,0)).isEmpty();
+    }
+    @Test void pricingCooldownPersistsAndIsTenantScoped(){
+        UUID connection=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Pricing test','America/Los_Angeles',now())",connection,tenant,"test-"+connection);});
+        var amazon=org.mockito.Mockito.mock(com.nextaicommerce.platform.sync.AmazonSpApiClient.class);
+        var pricing=new com.nextaicommerce.platform.sync.AmazonCompetitivePricingService(jdbc,amazon,tx,new tools.jackson.databind.ObjectMapper());
+        pricing.refresh(tenant,connection,"ATVPDKIKX0DER");
+        java.util.function.Supplier<java.time.Instant> deadline=()->tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT buy_box_refresh_after FROM marketplace_connections WHERE tenant_id=? AND id=?",java.sql.Timestamp.class,tenant,connection).toInstant();});
+        var first=deadline.get();
+        assertThat(first).isAfter(java.time.Instant.now().plusSeconds(10790));
+        pricing.refresh(tenant,connection,"ATVPDKIKX0DER");
+        pricing.refresh(UUID.randomUUID(),connection,"ATVPDKIKX0DER");
+        assertThat(deadline.get()).isEqualTo(first);
+        org.mockito.Mockito.verifyNoInteractions(amazon);
+    }
+
+    @Test void orderPicturesAreScopedToStoreSkuAndNeverChangeCatalogueImages() throws Exception {
+        UUID connection=UUID.randomUUID(),item=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Picture test','America/Los_Angeles',now())",connection,tenant,"picture-"+connection);
+            jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status) VALUES (?,?,'ATVPDKIKX0DER','PICTURE',now(),'Pending')",tenant,connection);
+            jdbc.update("INSERT INTO amazon_order_items(id,tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,'PICTURE','PICTURE-ITEM','BUNDLE',1)",item,tenant,connection);
+        });
+        var access=org.mockito.Mockito.mock(com.nextaicommerce.platform.web.WorkspaceAccessRepository.class);
+        var controller=new com.nextaicommerce.platform.orders.OrderPictureController(jdbc,tx,access,null);
+        var session=new org.springframework.mock.web.MockHttpSession();session.setAttribute("selectedTenantId",tenant);session.setAttribute(com.nextaicommerce.platform.web.AccountSelectionController.STORE_ID,connection);
+        var auth=new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"unused");
+        var out=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2,2,java.awt.image.BufferedImage.TYPE_INT_RGB),"png",out);
+        var file=new org.springframework.mock.web.MockMultipartFile("image","product.png","image/png",out.toByteArray());
+        assertThatThrownBy(()->controller.upload(item,file,session,auth)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        org.mockito.Mockito.when(access.canOperateAccount(tenant,actor)).thenReturn(true);
+        assertThat(controller.upload(item,file,session,auth).getStatusCode().value()).isEqualTo(200);
+        assertThat(controller.picture(item,session,auth).getBody()).isEqualTo(out.toByteArray());
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        var image=tx.execute(s->{setTenant();return repo.itemsForOrders(tenant,connection,List.of("PICTURE")).get("PICTURE").getFirst().imageUrl();});
+        assertThat(image).isEqualTo("/app/orders/items/"+item+"/picture");
+        Integer cataloguePictures=tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT count(*) FROM account_catalog_product_images WHERE tenant_id=?",Integer.class,tenant);});
+        assertThat(cataloguePictures).isZero();
+        session.setAttribute(com.nextaicommerce.platform.web.AccountSelectionController.STORE_ID,UUID.randomUUID());
+        assertThatThrownBy(()->controller.picture(item,session,auth)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
+    @Test void buyboxLostExcludesStockoutsAndOrderDateSortsAcrossPages(){
+        var f=fixture("INVOICE");UUID connection=mappedOrder(f,1,"Unshipped");
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,price,buy_box_price,quantity,fulfillment_channel) VALUES (?,?,'QA','SHELF-SKU',20,19,99,'MFN')",tenant,connection);
+            // A price-comparison alert requires a priced order item, not missing revenue.
+            jdbc.update("UPDATE amazon_order_items SET item_price=20 WHERE tenant_id=? AND marketplace_connection_id=?",tenant,connection);
+        });
+        // Mapped physical availability is authoritative, not stale Amazon quantity.
+        assertThat(repo.orders(tenant,connection,"BUY_BOX_LOST","",0,25).total()).isZero();
+        receive(f,10);
+        assertThat(repo.orders(tenant,connection,"BUY_BOX_LOST","",0,25).total()).isEqualTo(1);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE amazon_listings SET fulfillment_channel='AMAZON_NA' WHERE tenant_id=? AND marketplace_connection_id=?",tenant,connection);
+        });
+        assertThat(repo.orders(tenant,connection,"BUY_BOX_LOST","",0,25).total()).isZero();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO amazon_inventory_snapshots(tenant_id,marketplace_connection_id,marketplace_id,seller_sku,fulfillable_quantity,snapshot_at) VALUES (?,?,'QA','SHELF-SKU',3,now())",tenant,connection);
+            for(int n=0;n<12;n++){
+                jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status,fulfillment_state) VALUES (?,?,'QA',?,now()-(? * interval '1 day'),'Unshipped','READY_TO_SHIP')",tenant,connection,"DATED-"+n,n+2);
+                jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,?,?,1)",tenant,connection,"DATED-"+n,"DATED-ITEM-"+n,"DATED-SKU-"+n);
+            }
+        });
+        assertThat(repo.orders(tenant,connection,"BUY_BOX_LOST","",0,25).total()).isEqualTo(1);
+        assertThat(repo.tabs(tenant,connection).stream().filter(tab->tab.key().equals("BUY_BOX_LOST")).findFirst().orElseThrow().orders()).isEqualTo(1);
+        assertThat(repo.orders(tenant,connection,"ALL","",0,10,Map.of("smartSort","date_asc")).rows().getFirst().amazonOrderId()).isEqualTo("DATED-11");
+        assertThat(repo.orders(tenant,connection,"ALL","",1,10,Map.of("smartSort","date_asc")).rows().getLast().amazonOrderId()).isEqualTo("SHELF-ORDER");
+        assertThat(repo.orders(tenant,connection,"ALL","",0,10,Map.of("smartSort","date_desc")).rows().getFirst().amazonOrderId()).isEqualTo("SHELF-ORDER");
+        assertThat(repo.orders(tenant,UUID.randomUUID(),"BUY_BOX_LOST","",0,25).total()).isZero();
+    }
+    @Test void orderTabsCountUnitsAndCombinePendingWithoutIncludingShippedOrders(){
+        UUID connection=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Tab test','America/Los_Angeles',now())",connection,tenant,"test-"+connection);
+            var statuses=List.of("Pending","Unshipped","Shipped - Waiting for Pick Up","Shipped","Partially shipped","Cancelled");
+            for(int n=0;n<statuses.size();n++){
+                jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,order_status,fulfillment_state,fulfillment_channel) VALUES (?,?,'ATVPDKIKX0DER',?,now(),?,?,'MFN')",tenant,connection,"TAB-"+n,statuses.get(n),n<2?"READY_TO_SHIP":"SHIPPED");
+                jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,?,?,?,3)",tenant,connection,"TAB-"+n,"ITEM-"+n,"SKU-"+n);
+            }
+            jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,'TAB-0','SECOND-ITEM','SECOND-SKU',1)",tenant,connection);
+        });
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        var tabs=repo.tabs(tenant,connection).stream().collect(java.util.stream.Collectors.toMap(com.nextaicommerce.platform.orders.OrderRepository.OrderTab::key,t->t));
+        assertThat(tabs.get("ALL").orders()).isEqualTo(6);assertThat(tabs.get("ALL").units()).isEqualTo(19);
+        assertThat(tabs.get("UNSHIPPED").orders()).isEqualTo(2);assertThat(tabs.get("UNSHIPPED").units()).isEqualTo(7);
+        assertThat(tabs).doesNotContainKeys("PENDING","READY_TO_SHIP");
+        for(String key:List.of("UNSHIPPED","WAITING_FOR_PICKUP","SHIPPED")){
+            var page=repo.orders(tenant,connection,key,"",0,25);
+            assertThat(page.total()).isEqualTo(tabs.get(key).orders()).isEqualTo(key.equals("UNSHIPPED")?2:1);
+        }
+        assertThat(repo.orders(tenant,connection,"WAITING_FOR_PICKUP","",0,25).rows().getFirst().amazonOrderId()).isEqualTo("TAB-2");
+        assertThat(repo.orders(tenant,connection,"SHIPPED","",0,25).rows().getFirst().amazonOrderId()).isEqualTo("TAB-3");
+        assertThat(repo.tabs(tenant,UUID.randomUUID())).allMatch(t->t.orders()==0&&t.units()==0);
+        String before=repo.streamVersion(tenant,connection);
+        assertThat(repo.setPickupOverride(tenant,connection,"TAB-0",true,"operator@test")).isTrue();
+        assertThat(repo.pickupOverrides(tenant,connection)).containsExactly("TAB-0");
+        assertThat(repo.streamVersion(tenant,connection)).isNotEqualTo(before);
+        assertThat(repo.orders(tenant,connection,"UNSHIPPED","",0,25).total()).isEqualTo(1);
+        assertThat(repo.orders(tenant,connection,"WAITING_FOR_PICKUP","",0,25).total()).isEqualTo(2);
+        // Simulate an Amazon refresh with its unchanged Pending status.
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE amazon_orders SET order_status='Pending',updated_at=now() WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id='TAB-0'",tenant,connection);});
+        var restarted=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        assertThat(restarted.pickupOverrides(tenant,connection)).contains("TAB-0");
+        assertThat(restarted.orders(tenant,connection,"WAITING_FOR_PICKUP","TAB-0",0,25).rows().getFirst().amazonStatus()).isEqualTo("Pending");
+        assertThat(repo.setPickupOverride(tenant,UUID.randomUUID(),"TAB-0",false,"other")).isFalse();
+        assertThat(repo.setPickupOverride(tenant,connection,"TAB-3",true,"operator@test")).isFalse();
+        assertThat(repo.setPickupOverride(tenant,connection,"TAB-0",false,"operator@test")).isTrue();
+        assertThat(repo.pickupOverrides(tenant,connection)).isEmpty();
+        assertThat(repo.orders(tenant,connection,"UNSHIPPED","",0,25).total()).isEqualTo(2);
+    }
+
+    @Test void orderReportAndApiReuseItemsWithoutDuplicatingSales() throws Exception {
+        UUID connection=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Import test','America/Los_Angeles',now())",connection,tenant,"test-"+connection);
+        });
+        var json=new tools.jackson.databind.ObjectMapper();
+        var normalizer=new com.nextaicommerce.platform.sync.AmazonReportNormalizer(jdbc,tx,json,null);
+        var now=java.time.Instant.now();
+        var job=new com.nextaicommerce.platform.sync.AmazonSyncStore.Job(UUID.randomUUID(),tenant,UUID.randomUUID(),connection,"ORDERS_30_DAY","STARTUP_ORDERS","ATVPDKIKX0DER",now.minusSeconds(2592000),now,null,0,0,false,null);
+        for(boolean reportFirst:List.of(true,false)){
+            String order=reportFirst?"REPORT-FIRST":"API-FIRST";
+            String report="amazon-order-id\tpurchase-date\torder-status\tfulfillment-channel\tsku\tasin\tquantity\titem-price\tcurrency\n"+order+"\t2026-09-13T19:00:00Z\tUnshipped\tMerchant\tSKU\tASIN\t1\t10.00\tUSD\n";
+            normalizer.normalizeOrderPage(job,json.readTree("{\"payload\":{\"Orders\":[{\"AmazonOrderId\":\""+order+"\",\"PurchaseDate\":\"2026-09-13T19:00:00Z\",\"OrderStatus\":\"Unshipped\",\"FulfillmentChannel\":\"MFN\"}]}}"),null);
+            var items=json.readTree("{\"payload\":{\"OrderItems\":[{\"OrderItemId\":\""+order+"-ITEM\",\"SellerSKU\":\"SKU\",\"ASIN\":\"ASIN\",\"QuantityOrdered\":1,\"ItemPrice\":{\"Amount\":\"10.00\",\"CurrencyCode\":\"USD\"}}]}}");
+            if(reportFirst)normalizer.normalize(job,report,null);
+            normalizer.normalizeOrderItems(job,order,items,null);
+            normalizer.normalize(job,report,null);
+            normalizer.normalizeOrderItems(job,order,items,null);
+            tx.executeWithoutResult(s->{setTenant();
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM amazon_order_items WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",Integer.class,tenant,connection,order)).isEqualTo(1);
+                assertThat(jdbc.queryForObject("SELECT sum(item_price) FROM amazon_order_items WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",BigDecimal.class,tenant,connection,order)).isEqualByComparingTo("10.00");
+            });
+            var twoItems=json.readTree("{\"payload\":{\"OrderItems\":[{\"OrderItemId\":\""+order+"-ITEM\",\"SellerSKU\":\"SKU\",\"ASIN\":\"ASIN\",\"QuantityOrdered\":1,\"ItemPrice\":{\"Amount\":\"10.00\",\"CurrencyCode\":\"USD\"}},{\"OrderItemId\":\""+order+"-ITEM-2\",\"SellerSKU\":\"SKU\",\"ASIN\":\"ASIN\",\"QuantityOrdered\":1,\"ItemPrice\":{\"Amount\":\"10.00\",\"CurrencyCode\":\"USD\"}}]}}");
+            normalizer.normalizeOrderItems(job,order,twoItems,null);
+            normalizer.normalize(job,report.replace("\t1\t10.00\t","\t2\t20.00\t"),null);
+            normalizer.normalizeOrderItems(job,order,twoItems,null);
+            tx.executeWithoutResult(s->{setTenant();
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM amazon_order_items WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",Integer.class,tenant,connection,order)).isEqualTo(2);
+                assertThat(jdbc.queryForObject("SELECT sum(item_price) FROM amazon_order_items WHERE tenant_id=? AND marketplace_connection_id=? AND amazon_order_id=?",BigDecimal.class,tenant,connection,order)).isEqualByComparingTo("20.00");
+            });
+        }
+    }
+
+    @Test void skippedSyncDoesNotAdvanceWatermarkAndFinishedRunRepairIsGuarded() throws Exception {
+        UUID connection=UUID.randomUUID();
+        var old=java.time.Instant.parse("2026-09-10T00:00:00Z");
+        var end=old.plusSeconds(86400);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test-only','ACTIVE','Recovery test','America/Los_Angeles',now())",connection,tenant,"test-"+connection);
+            jdbc.update("INSERT INTO amazon_sync_watermarks(tenant_id,marketplace_connection_id,dataset,high_watermark,last_success_at) VALUES (?,?,'ORDER_CHANGES',?,?)",tenant,connection,java.sql.Timestamp.from(old),java.sql.Timestamp.from(old));
+        });
+        var store=new com.nextaicommerce.platform.sync.AmazonSyncStore(jdbc,tx);
+        for(String status:List.of("SKIPPED","COMPLETED")){
+            UUID run=UUID.randomUUID(),finalJob=UUID.randomUUID();
+            tx.executeWithoutResult(s->{setTenant();
+                jdbc.update("INSERT INTO marketplace_sync_runs(id,tenant_id,marketplace_connection_id,run_type,sync_profile,window_start,window_end,status) VALUES (?,?,?,'INCREMENTAL','ORDER_CHANGES',?,?,'RUNNING')",run,tenant,connection,java.sql.Timestamp.from(old),java.sql.Timestamp.from(end));
+                jdbc.update("INSERT INTO marketplace_sync_jobs(tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,status,required_for_ready) VALUES (?,?,?,'ORDERS_API_DELTA',1,?,false)",tenant,run,connection,status);
+                jdbc.update("INSERT INTO marketplace_sync_jobs(id,tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,required_for_ready) VALUES (?,?,?,?,'FINAL_RECONCILIATION',2,false)",finalJob,tenant,run,connection);
+            });
+            store.finishRun(new com.nextaicommerce.platform.sync.AmazonSyncStore.Job(finalJob,tenant,run,connection,"FINAL_RECONCILIATION","ORDER_CHANGES","ATVPDKIKX0DER",old,end,null,0,0,false,null),"Done");
+            var actual=tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT high_watermark FROM amazon_sync_watermarks WHERE tenant_id=? AND marketplace_connection_id=? AND dataset='ORDER_CHANGES'",java.sql.Timestamp.class,tenant,connection).toInstant();});
+            assertThat(actual).isEqualTo(status.equals("SKIPPED")?old:end);
+        }
+        var repair=new String(getClass().getResourceAsStream("/db/migration/V68__repair_finished_sync_run_tracking.sql").readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE marketplace_sync_runs SET status='RUNNING' WHERE tenant_id=? AND marketplace_connection_id=?",tenant,connection);
+            jdbc.execute(repair);setTenant();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM marketplace_sync_runs WHERE tenant_id=? AND marketplace_connection_id=? AND status='RUNNING'",Integer.class,tenant,connection)).isZero();
+        });
+    }
+
+    @Test void catalogueCountsAndRowsAgreeForSecondaryIdentifiersAndMappedAsins(){
+        var first=fixture("INVOICE");var other=fixture("INVOICE");UUID connection=UUID.randomUUID(),mapping=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) SELECT global_product_id,'MPN','PRIMARY-'||id,true FROM account_catalog_items WHERE id=?",first.product());
+            jdbc.update("INSERT INTO global_product_identifiers(global_product_id,identifier_type,identifier_value,is_primary) SELECT global_product_id,'MPN','SECONDARY-NEEDLE',false FROM account_catalog_items WHERE id=?",first.product());
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON','synthetic','ATVPDKIKX0DER','test-only','ACTIVE','Test store','America/Los_Angeles',now())",connection,tenant);
+            jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,marketplace_sku,asin,account_catalog_item_id,quantity_per_marketplace_unit,status) VALUES (?,?,?,'QA-MAPPED-SKU','B0TESTASIN1',?,1,'ACTIVE')",mapping,tenant,connection,first.product());
+        });
+        var catalog=context.getBean(CatalogRepository.class);
+        for(String query:List.of("SECONDARY-NEEDLE","B0TESTASIN1","QA-MAPPED-SKU")){
+            var result=catalog.pageAccountItems(tenant,query,0,25);
+            assertThat(result.total()).isEqualTo(1);assertThat(result.rows()).extracting(CatalogRepository.AccountItemView::id).containsExactly(first.product());
+        }
+        assertThat(catalog.searchAccountItems(tenant,"B0TESTASIN1",20)).extracting(CatalogRepository.AccountItemView::id).containsExactly(first.product());
+        assertThat(catalog.pageAccountItems(tenant,"%",0,25).rows()).isEmpty();
+    }
+    @Test void catalogueServerSortPrecedesPagingAndKeepsTenantSearchCacheAndValues(){
+        List<UUID> ids=new ArrayList<>();
+        for(int i=0;i<12;i++){
+            var f=fixture("INVOICE");ids.add(f.product());final int index=i;
+            tx.executeWithoutResult(t->{setTenant();jdbc.update("UPDATE account_catalog_items SET display_name=? WHERE tenant_id=? AND id=?",String.format("Sort %02d",index),tenant,f.product());
+                jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,vendor_item_code,list_cost,is_default) VALUES (?,?,?,?,?,true)",tenant,vendor,f.product(),"CODE-"+index,new BigDecimal(12-index));});
+        }
+        UUID foreign=UUID.randomUUID(),global=UUID.randomUUID();
+        tx.executeWithoutResult(t->{jdbc.update("INSERT INTO tenants(id,slug,display_name) VALUES (?,?,'Other tenant')",foreign,"foreign-"+foreign);
+            jdbc.update("INSERT INTO global_catalog_products(id,canonical_name) VALUES (?,'Sort 99')",global);
+            jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,foreign.toString());
+            jdbc.update("INSERT INTO account_catalog_items(tenant_id,global_product_id,display_name) VALUES (?,?,'Sort 99')",foreign,global);});
+        var repo=context.getBean(CatalogRepository.class);var reads=context.getBean(com.nextaicommerce.platform.catalog.CatalogReadService.class);
+        var first=reads.page(tenant,"Sort",0,10,"product","asc");
+        assertThat(first.page().total()).isEqualTo(12);assertThat(first.page().rows()).hasSize(12);assertThat(first.page().rows().getFirst().name()).isEqualTo("Sort 00");
+        assertThat(reads.page(tenant,"Sort",0,10,"product","asc")).isSameAs(first);
+        assertThat(reads.page(tenant,"Sort",0,10,"product","desc").page().rows().getFirst().name()).isEqualTo("Sort 11");
+        assertThat(repo.pageAccountItems(tenant,"Sort",1,10,"product","asc").rows()).extracting(CatalogRepository.AccountItemView::name).containsExactly("Sort 10","Sort 11");
+        assertThat(reads.page(tenant,"Sort",0,10,"cost","asc").page().rows().getFirst().name()).isEqualTo("Sort 11");
+        for(String key:List.of("product","vendorCode","marketplace","identifier","vendors","cost","location","receiving","status")){
+            assertThat(repo.pageAccountItems(tenant,"Sort",0,10,key,"desc").total()).isEqualTo(12);
+        }
+        assertThat(repo.pageAccountItems(tenant,"Sort",0,10,"vendors","desc").rows()).extracting(CatalogRepository.AccountItemView::id)
+            .containsExactlyElementsOf(ids.stream().sorted(java.util.Comparator.comparing(UUID::toString)).limit(10).toList());
+        assertThat(repo.pageAccountItems(tenant,"Sort 11",0,10,"cost","desc").rows()).extracting(CatalogRepository.AccountItemView::id).containsExactly(ids.getLast());
+        assertThat(repo.pageAccountItems(tenant,"Sort",0,10,"product; DROP TABLE vendors","DESC; SELECT 1").rows().getFirst().name()).isEqualTo("Sort 00");
+        tx.executeWithoutResult(t->{setTenant();assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=?",Integer.class,tenant)).isZero();
+            assertThat(jdbc.queryForObject("SELECT sum(list_cost) FROM vendor_catalog_offers WHERE tenant_id=?",BigDecimal.class,tenant)).isEqualByComparingTo("78");});
+    }
+    @Test void catalogueCacheInvalidatesOnlyAfterCommittedWrites(){
+        var f=fixture("INVOICE");var reads=context.getBean(com.nextaicommerce.platform.catalog.CatalogReadService.class);
+        var first=reads.page(tenant,"",0,25);
+        assertThat(reads.page(tenant,"",0,25)).isSameAs(first);
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE account_catalog_items SET display_name='Rolled back' WHERE id=?",f.product());s.setRollbackOnly();});
+        assertThat(reads.page(tenant,"",0,25)).isSameAs(first);
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE account_catalog_items SET display_name='Updated catalogue item' WHERE id=?",f.product());});
+        assertThat(reads.page(tenant,"",0,25).page().rows().getFirst().name()).isEqualTo("Updated catalogue item");
+    }
+    @Test void catalogueTwentyThousandItemsMeetsTheLocalQueryBudget(){
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO global_catalog_products(id,canonical_name,brand) SELECT md5(?||n)::uuid,'Grocery item '||lpad(n::text,5,'0'),CASE WHEN n%250=0 THEN 'Egglife' ELSE 'Synthetic QA' END FROM generate_series(1,20000) n",tenant.toString());
+            jdbc.update("INSERT INTO account_catalog_items(tenant_id,global_product_id,account_sku) SELECT ?,md5(?||n)::uuid,'PERF-'||n FROM generate_series(1,20000) n",tenant,tenant.toString());
+            jdbc.update("INSERT INTO vendor_catalog_offers(tenant_id,vendor_id,account_catalog_item_id,vendor_item_code,list_cost,is_default) SELECT ?,?,id,account_sku,2.50,true FROM account_catalog_items WHERE tenant_id=?",tenant,vendor,tenant);
+        });
+        jdbc.execute("ANALYZE");
+        var reads=context.getBean(com.nextaicommerce.platform.catalog.CatalogReadService.class);
+        long start=System.nanoTime();var all=reads.page(tenant,"",0,25);long firstMs=(System.nanoTime()-start)/1_000_000;
+        start=System.nanoTime();var search=reads.page(tenant,"Egglife",0,25);long searchMs=(System.nanoTime()-start)/1_000_000;
+        start=System.nanoTime();reads.page(tenant,"Egglife",0,25);long cachedMicros=(System.nanoTime()-start)/1_000;
+        System.out.printf("CATALOGUE_BENCHMARK products=20000 page_ms=%d search_ms=%d cached_us=%d%n",firstMs,searchMs,cachedMicros);
+        assertThat(all.page().total()).isEqualTo(20000);assertThat(all.page().rows()).hasSize(25);
+        assertThat(search.page().total()).isEqualTo(80);assertThat(search.page().rows()).hasSize(25);
+        assertThat(firstMs).isLessThan(1000);assertThat(searchMs).isLessThan(1000);
+        var catalog=context.getBean(CatalogRepository.class);
+        start=System.nanoTime();var picker=catalog.searchAccountItems(tenant,"Egglife",20);catalog.pickerImages(tenant,picker.stream().map(CatalogRepository.AccountItemView::id).toList());long pickerMs=(System.nanoTime()-start)/1_000_000;
+        System.out.printf("CATALOGUE_PICKER_BENCHMARK products=20000 search_ms=%d%n",pickerMs);
+        assertThat(picker).hasSize(20);assertThat(pickerMs).isLessThan(1000);
+    }
+    @Test void closeAllowsAlreadyPostedHistoricalUndatedReceiptWithoutAddingStock(){
+        var f=fixture("INVOICE");receive(f,3);
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE receiving_line_receipts SET expiration_date=NULL WHERE tenant_id=? AND id=?",tenant,receipt(f));});
+        work.closeDocument(tenant,actor,f.document(),"Physical count completed; no further receipts",false,new BigDecimal("3"),new BigDecimal("7"));
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().closed()).isTrue();
+        assertThat(stock(f)).isEqualByComparingTo("3");
+    }
+    @Test void closeStillRejectsUnpostedReceiptMissingRequiredExpiration(){
+        var f=fixture("INVOICE");receive(f,3);UUID receipt=receipt(f);
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE receiving_line_receipts SET expiration_date=NULL WHERE tenant_id=? AND id=?",tenant,receipt);
+            jdbc.update("DELETE FROM inventory_ledger_entries WHERE tenant_id=? AND source_type='RECEIVING' AND source_id=?",tenant,receipt);
+        });
+        assertThatThrownBy(()->work.closeDocument(tenant,actor,f.document(),"No further receipts",false,new BigDecimal("3"),new BigDecimal("7")))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("required expiration date");
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().closed()).isFalse();
+        assertThat(stock(f)).isEqualByComparingTo("0");
+    }
+    @Test void physicalCountKeepsDistinctItemCodesSeparateAtTheSameExpiration(){
+        var a=fixture("INVOICE");var b=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE account_catalog_items SET account_sku='381003' WHERE tenant_id=? AND id=?",tenant,a.product());
+            jdbc.update("UPDATE account_catalog_items SET account_sku='381005' WHERE tenant_id=? AND id=?",tenant,b.product());
+        });
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,List.of(
+            new InventoryRepository.PhysicalCountRow(2,"381005",new BigDecimal("60"),expiry,"MAIN"),
+            new InventoryRepository.PhysicalCountRow(3,"381003",new BigDecimal("156"),expiry,"MAIN"),
+            new InventoryRepository.PhysicalCountRow(4,"381003",new BigDecimal("144"),expiry.plusDays(22),"MAIN")));
+        assertThat(stock(a)).isEqualByComparingTo("300");assertThat(stock(b)).isEqualByComparingTo("60");
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=? AND expiration_date=?",BigDecimal.class,tenant,a.product(),expiry)).isEqualByComparingTo("156");});
+    }
+    @Test void closePartialRequiresCurrentPreviewAndLocksOriginalReceipts(){
+        var f=fixture("INVOICE");receive(f,3);
+        assertThatThrownBy(()->work.closeDocument(tenant,actor,f.document(),"Balance cancelled",false,BigDecimal.ZERO,BigDecimal.TEN)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("changed");
+        work.closeDocument(tenant,actor,f.document(),"Supplier cannot deliver remainder",true,new BigDecimal("3"),new BigDecimal("7"));
+        var d=work.documents(tenant,List.of(f.document())).getFirst();
+        assertThat(d.closed()).isTrue();assertThat(d.partial()).isTrue();assertThat(stock(f)).isEqualByComparingTo("3");
+        assertThatThrownBy(()->receive(f,1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->receiving.reopenLine(tenant,f.session(),f.line(),actor)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->work.undo(tenant,actor,f.line(),receipt(f),"No")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->work.removeDocument(tenant,actor,f.document())).isInstanceOf(IllegalArgumentException.class);
+        work.adjust(tenant,actor,f.line(),receipt(f),BigDecimal.ONE,"DECREASE","LOSS","Stock correction");
+        assertThat(stock(f)).isEqualByComparingTo("2");
+    }
+    @Test void removeOnlyNeverReceivedDocumentsAndValidateExpiredReceipts(){
+        var unused=fixture("INVOICE");work.removeDocument(tenant,actor,unused.document());
+        assertThat(work.documents(tenant,List.of(unused.document()))).isEmpty();
+        assertThatThrownBy(()->receive(unused,1)).isInstanceOf(IllegalArgumentException.class);
+        var expired=fixture("PACKING_LIST");
+        assertThatThrownBy(()->work.receive(tenant,actor,expired.line(),BigDecimal.ONE,LocalDate.now().minusDays(1),"SELLABLE",expired.location(),"")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(stock(expired)).isEqualByComparingTo("0");
+        work.receive(tenant,actor,expired.line(),BigDecimal.ONE,LocalDate.now().minusDays(1),"EXPIRED",expired.location(),"Expired stock visible");
+        assertThat(stock(expired)).isEqualByComparingTo("1");
+    }
+    UUID reserve(Fixture f,int quantity){
+        return tx.execute(s->{
+            setTenant();UUID connection=UUID.randomUUID(),orderItem=UUID.randomUUID(),reservation=UUID.randomUUID();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'QA','not-a-real-credential','QA only','America/Los_Angeles',now())",connection,tenant,"qa-"+connection);
+            jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,order_status) VALUES (?,?,'QA','QA-ORDER','Unshipped')",tenant,connection);
+            jdbc.update("INSERT INTO amazon_order_items(id,tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku) VALUES (?,?,?,'QA-ORDER','QA-ITEM','QA-SKU')",orderItem,tenant,connection);
+            jdbc.update("INSERT INTO order_inventory_reservations(id,tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,account_catalog_item_id,location_id,expiration_date,quantity) VALUES (?,?,?,'QA-ORDER',?,?,?,?,?)",reservation,tenant,connection,orderItem,f.product(),f.location(),expiry,quantity);
+            return reservation;
+        });
+    }
+    @Test void activeAndShippedOrdersLockReceiptsAndProtectAdjustmentFloor(){
+        var f=fixture("INVOICE");receive(f,8);UUID r=receipt(f),reservation=reserve(f,3);
+        assertThat(work.receipts(tenant,f.line()).getFirst().blockedReason()).contains("active orders");
+        assertThatThrownBy(()->work.undo(tenant,actor,f.line(),r,"Blocked")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->work.adjust(tenant,actor,f.line(),r,new BigDecimal("6"),"DECREASE","LOSS","Blocked")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(stock(f)).isEqualByComparingTo("8");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE order_inventory_reservations SET status='SHIPPED' WHERE tenant_id=? AND id=?",tenant,reservation);jdbc.update("INSERT INTO inventory_ledger_entries(tenant_id,account_catalog_item_id,location_id,entry_type,quantity,expiration_date,source_type,notes,occurred_at,idempotency_key) VALUES (?,?,?,'ADJUSTMENT',-3,?,'MANUAL','Shipped stock fixture',now(),?)",tenant,f.product(),f.location(),expiry,"shipped-stock-"+reservation);});
+        assertThatThrownBy(()->work.undo(tenant,actor,f.line(),r,"Sold")).isInstanceOf(IllegalArgumentException.class);
+    }
+    @Test void reservationOnAnotherExpirationBatchDoesNotBlockReceiptAdjustment(){
+        var f=fixture("INVOICE");
+        work.receiveBatches(tenant,actor,f.line(),List.of(
+            new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("4"),expiry),
+            new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("6"),expiry.plusDays(1))),
+            BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,BigDecimal.ZERO);
+        reserve(f,3);
+        var receipts=work.receipts(tenant,f.line());
+        var reserved=receipts.stream().filter(r->expiry.equals(r.expiration())).findFirst().orElseThrow();
+        var free=receipts.stream().filter(r->expiry.plusDays(1).equals(r.expiration())).findFirst().orElseThrow();
+        work.adjust(tenant,actor,f.line(),free.id(),new BigDecimal("6"),"DECREASE","COUNT_CORRECTION","Unreserved batch only");
+        assertThat(stock(f)).isEqualByComparingTo("4");
+        assertThatThrownBy(()->work.adjust(tenant,actor,f.line(),reserved.id(),new BigDecimal("2"),"DECREASE","COUNT_CORRECTION","Protect reservations"))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("reserved");
+        assertThat(stock(f)).isEqualByComparingTo("4");
+        tx.executeWithoutResult(s->{setTenant();
+            assertThat(jdbc.queryForObject("SELECT sum(quantity) FROM order_inventory_reservations WHERE tenant_id=? AND account_catalog_item_id=? AND status='ACTIVE'",BigDecimal.class,tenant,f.product())).isEqualByComparingTo("3");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_line_receipts WHERE tenant_id=? AND purchase_order_item_id=? AND voided_at IS NULL",Integer.class,tenant,f.line())).isEqualTo(2);
+        });
+    }
+    @Test void expiredPhysicalCountWritesDeltaAndLeavesUnlistedBatches(){
+        var f=fixture("INVOICE");receive(f,4);LocalDate expired=LocalDate.now().minusDays(4);
+        var rows=List.of(new InventoryRepository.PhysicalCountRow(2,"QA-"+f.product(),new BigDecimal("2"),expired,"MAIN"));
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows);
+        assertThat(stock(f)).isEqualByComparingTo("6");
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows);
+        assertThat(stock(f)).isEqualByComparingTo("6");
+        reserve(f,2);
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows,true);
+        assertThat(stock(f)).isEqualByComparingTo("2");
+    }
+    void discussionAccessFixture(){
+        tx.executeWithoutResult(s->{
+            jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'ADMIN') ON CONFLICT DO NOTHING",tenant,user);
+            UUID otherReader=jdbc.queryForObject("INSERT INTO app_users(email,display_name) VALUES ('other@example.test','Other') ON CONFLICT(email) DO UPDATE SET display_name=excluded.display_name RETURNING id",UUID.class);
+            jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'ADMIN') ON CONFLICT DO NOTHING",tenant,otherReader);
+            UUID source=jdbc.queryForObject("SELECT marketplace_connection_id FROM amazon_orders WHERE tenant_id=? AND amazon_order_id='SHELF-ORDER'",UUID.class,tenant);
+            jdbc.update("INSERT INTO amazon_listings(tenant_id,marketplace_connection_id,marketplace_id,seller_sku) VALUES (?,?,'ATVPDKIKX0DER','SHELF-SKU')",tenant,source);
+        });
+    }
+    @Test void orderConversationsFollowMappedAssetsWithoutLeakingPrivateNotes(){
+        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");discussionAccessFixture();
+        var repo=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc);
+        tx.executeWithoutResult(s->{
+            var publicNote=repo.create(tenant,"ORDER","SHELF-ORDER","Synthetic order","Amazon","NOTE","QA","Public note","TEAM_CHAT","{}","/app/orders?q=SHELF-ORDER",actor,null,null,List.of());
+            repo.create(tenant,"ORDER","SHELF-ORDER","Synthetic order","Amazon","NOTE","QA","Private note","PRIVATE_NOTE","{}","/app/orders?q=SHELF-ORDER",actor,null,null,List.of());
+            var origin=repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),actor).get("SHELF-ORDER");
+            assertThat(origin.originCount()).isEqualTo(2);assertThat(origin.mineCount()).isZero();
+            var related=repo.openSubjectSummaries(tenant,"CATALOG",List.of(f.product().toString()),actor).get(f.product().toString());
+            assertThat(related.relatedCount()).isEqualTo(2);assertThat(related.originCount()).isZero();assertThat(related.mineCount()).isZero();
+            assertThat(repo.subjectReviews(tenant,"MARKETPLACE_SKU","SHELF-SKU",false,"other@example.test")).hasSize(1);
+            assertThat(repo.subjectReviews(tenant,"CATALOG",f.product().toString(),false,actor)).allSatisfy(review->assertThat(review.parentUrl()).isEqualTo("/app/orders?q=SHELF-ORDER"));
+            assertThat(repo.openSubjectSummaries(tenant,"INVENTORY",List.of(f.product()+"|"),"other@example.test").get(f.product()+"|").activeCount()).isEqualTo(1);
+            assertThat(repo.openSubjectSummaries(UUID.randomUUID(),"ORDER",List.of("SHELF-ORDER"),actor)).isEmpty();
+            setTenant();jdbc.update("UPDATE collaboration_reviews SET status='CLOSED',closed_at=now() WHERE id=?",publicNote.reviewId());
+            assertThat(repo.openSubjectSummaries(tenant,"MARKETPLACE_SKU",List.of("SHELF-SKU"),"other@example.test").get("SHELF-SKU").activeCount()).isZero();
+        });
+    }
+
+    @Test void ordersInheritSkuDiscussionsButNotOtherTenantsOrPrivateNotes(){
+        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");discussionAccessFixture();
+        var repo=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc);
+        tx.executeWithoutResult(s->{
+            var shared=repo.create(tenant,"MARKETPLACE_SKU","SHELF-SKU","SKU","Amazon","NOTE","QA","Shared SKU note","TEAM_CHAT","{}","/app/marketplace-skus",actor,null,null,List.of());
+            repo.create(tenant,"MARKETPLACE_SKU","SHELF-SKU","SKU","Amazon","NOTE","QA","Private SKU note","PRIVATE_NOTE","{}","/app/marketplace-skus",actor,null,null,List.of());
+            var summary=repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),"other@example.test").get("SHELF-ORDER");
+            assertThat(summary.relatedCount()).isEqualTo(1);assertThat(summary.originCount()).isZero();
+            assertThat(repo.subjectReviews(tenant,"ORDER","SHELF-ORDER",false,"other@example.test")).hasSize(1);
+            assertThat(repo.subjectReviews(tenant,"ORDER","SHELF-ORDER",false,actor)).hasSize(2);
+            jdbc.update("UPDATE collaboration_reviews SET due_at=now()-interval '1 day' WHERE tenant_id=? AND id=?",tenant,shared.reviewId());
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),"other@example.test").get("SHELF-ORDER").mineCount()).isZero();
+            jdbc.update("UPDATE collaboration_reviews SET assigned_to=? WHERE tenant_id=? AND id=?",user,tenant,shared.reviewId());
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),actor).get("SHELF-ORDER").mineCount()).isEqualTo(1);
+            var otherStore=UUID.randomUUID();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'ATVPDKIKX0DER','test://none','ACTIVE','Other test store','America/Los_Angeles',now())",otherStore,tenant,otherStore.toString());
+            jdbc.update("UPDATE collaboration_reviews SET marketplace_connection_id=? WHERE tenant_id=? AND id=?",otherStore,tenant,shared.reviewId());
+            assertThat(repo.subjectReviews(tenant,"ORDER","SHELF-ORDER",false,"other@example.test")).isEmpty();
+            assertThat(repo.openSubjectSummaries(UUID.randomUUID(),"ORDER",List.of("SHELF-ORDER"),actor)).isEmpty();
+        });
+    }
+    @Test void collaborationReadReceiptsArePersonalExactAndPreserveAssignments(){
+        var f=fixture("INVOICE");mappedOrder(f,2,"Unshipped");discussionAccessFixture();
+        var repo=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc);
+        tx.executeWithoutResult(s->{
+            var reader=UUID.randomUUID();String email="reader-"+reader+"@example.test";
+            jdbc.update("INSERT INTO app_users(id,email,display_name) VALUES (?,?,'Reader')",reader,email);
+            jdbc.update("INSERT INTO tenant_memberships(tenant_id,user_id,role) VALUES (?,?,'ADMIN')",tenant,reader);
+            var first=repo.create(tenant,"MARKETPLACE_SKU","SHELF-SKU","SKU","Amazon","NOTE","QA","@reader first","TEAM_CHAT","{}","/app/marketplace-skus",actor,null,null,List.of());
+            jdbc.update("INSERT INTO collaboration_mentions(tenant_id,review_id,message_id,mentioned_user_id) VALUES (?,?,?,?)",tenant,first.reviewId(),first.messageId(),reader);
+            var second=repo.reply(tenant,first.reviewId(),actor,"@reader arrived later","TEAM_CHAT",null,List.of());
+            jdbc.update("INSERT INTO collaboration_mentions(tenant_id,review_id,message_id,mentioned_user_id) VALUES (?,?,?,?)",tenant,first.reviewId(),second.messageId(),reader);
+            var privateNote=repo.reply(tenant,first.reviewId(),actor,"Secret","PRIVATE_NOTE",null,List.of());
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),email).get("SHELF-ORDER").urgentUnreadMentionCount()).isEqualTo(2);
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),actor).get("SHELF-ORDER").urgentUnreadMentionCount()).isZero();
+            assertThat(repo.unreadMentionMessages(tenant,first.reviewId(),email)).containsExactlyInAnyOrder(first.messageId(),second.messageId());
+            assertThat(repo.review(tenant,first.reviewId(),email).unreadMessageCount()).isEqualTo(2);
+            assertThat(repo.review(tenant,first.reviewId(),actor).unreadMessageCount()).isZero();
+            assertThat(repo.openSubjectSummaries(tenant,"MARKETPLACE_SKU",List.of("SHELF-SKU"),email).get("SHELF-SKU").unreadMessageCount()).isEqualTo(2);
+            assertThat(repo.acknowledgeMessages(tenant,first.reviewId(),email,List.of(first.messageId(),privateNote.messageId()))).isTrue();
+            assertThat(repo.acknowledgeMessages(tenant,first.reviewId(),email,List.of(first.messageId()))).isTrue();
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),email).get("SHELF-ORDER").urgentUnreadMentionCount()).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM collaboration_read_receipts WHERE tenant_id=?",Integer.class,tenant)).isEqualTo(1);
+            repo.acknowledgeMessages(tenant,first.reviewId(),actor,List.of(second.messageId()));
+            assertThat(repo.unreadMentionMessages(tenant,first.reviewId(),email)).containsExactly(second.messageId());
+            assertThat(repo.acknowledgeMessages(UUID.randomUUID(),first.reviewId(),email,List.of(second.messageId()))).isFalse();
+            setTenant();jdbc.update("UPDATE collaboration_reviews SET assigned_to=? WHERE tenant_id=? AND id=?",reader,tenant,first.reviewId());
+            repo.acknowledgeMessages(tenant,first.reviewId(),email,List.of(second.messageId()));
+            var fresh=new com.nextaicommerce.platform.collaboration.CollaborationRepository(jdbc).openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),email).get("SHELF-ORDER");
+            assertThat(fresh.urgentUnreadMentionCount()).isZero();assertThat(fresh.mineCount()).isEqualTo(1);
+            assertThat(repo.unreadMentionMessages(tenant,first.reviewId(),email)).isEmpty();
+            assertThat(repo.review(tenant,first.reviewId(),email).unreadMessageCount()).isZero();
+            var ordinary=repo.reply(tenant,first.reviewId(),actor,"A reply without a mention","TEAM_CHAT",null,List.of());
+            assertThat(repo.review(tenant,first.reviewId(),email).unreadMessageCount()).isEqualTo(1);
+            assertThat(repo.unreadMentionMessages(tenant,first.reviewId(),email)).isEmpty();
+            repo.acknowledgeMessages(tenant,first.reviewId(),email,List.of(ordinary.messageId()));
+            assertThat(repo.openSubjectSummaries(tenant,"MARKETPLACE_SKU",List.of("SHELF-SKU"),email).get("SHELF-SKU").unreadMessageCount()).isZero();
+            var direct=repo.openSubjectSummaries(tenant,"MARKETPLACE_SKU",List.of("SHELF-SKU"),email).get("SHELF-SKU");
+            assertThat(direct.originCount()).isEqualTo(1);assertThat(direct.directMessageCount()).isEqualTo(3);
+            assertThat(repo.openSubjectSummaries(tenant,"ORDER",List.of("SHELF-ORDER"),email).get("SHELF-ORDER").relatedMessageCount()).isEqualTo(3);
+            assertThat(repo.openSubjectSummaries(tenant,"MARKETPLACE_SKU",List.of("SHELF-SKU"),actor).get("SHELF-SKU").directMessageCount()).isEqualTo(3);
+        });
+    }
+    @Test void replenishmentSoonStockIsASubsetOfSellableStock(){
+        var f=fixture("INVOICE");mappedOrder(f,1,"Shipped");
+        inventory.saveShelfLifePolicy(tenant,actor,10,20);
+        var today=LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"));
+        work.receive(tenant,actor,f.line(),new BigDecimal("6"),today.plusDays(15),"SELLABLE",f.location(),"Soon sellable");
+        work.receive(tenant,actor,f.line(),new BigDecimal("4"),today.plusDays(5),"SELLABLE",f.location(),"Cutoff stock");
+        var row=tx.execute(s->new ReplenishmentDataLoader(jdbc,inventory).load(tenant,0).stream().filter(r->r.get("id").equals(f.product())).findFirst().orElseThrow());
+        assertThat((BigDecimal)row.get("available")).isEqualByComparingTo("6");
+        assertThat((BigDecimal)row.get("soon")).isEqualByComparingTo("6");
+        assertThat((BigDecimal)row.get("physical")).isEqualByComparingTo("10");
+    }
+    @Test void replenishmentCombinesSkuComponentsExcludesCancelledAndCachesPerTenant(){
+        var f=fixture("INVOICE");UUID connection=mappedOrder(f,3,"Shipped - Delivered to Buyer");
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("UPDATE marketplace_sku_mapping_components SET quantity=6 WHERE tenant_id=? AND account_catalog_item_id=?",tenant,f.product());
+            UUID mapping=UUID.randomUUID();
+            jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,account_catalog_item_id,marketplace_sku) VALUES (?,?,?,?,'SECOND-SKU')",mapping,tenant,connection,f.product());
+            jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,2)",tenant,mapping,f.product());
+            jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,'SHELF-ORDER','SECOND','SECOND-SKU',4)",tenant,connection);
+        });
+        var loader=new ReplenishmentDataLoader(jdbc,inventory);
+        var service=new ReplenishmentSuggestions(jdbc,tx,loader,new tools.jackson.databind.ObjectMapper()){@Override public void queueRefresh(){/* This test drives the synchronous builder; dispatch is covered in ReplenishmentActivationTest. */}};
+        service.save(tenant,actor,7,14,35,Map.of(vendor+"_lead","12",vendor+"_low","8"));
+        assertThat(service.pending(tenant)).isTrue();service.refresh();
+        var snapshot=service.snapshot(tenant);assertThat(snapshot).isNotNull();
+        var row=snapshot.items().stream().filter(r->r.get("id").equals(f.product())).findFirst().orElseThrow();
+        assertThat((BigDecimal)row.get("demand")).isEqualByComparingTo("26");
+        assertThat(row.get("weeks").toString()).endsWith("26.0000");
+        assertThat(service.snapshot(UUID.randomUUID())).isNull();assertThat(service.pending(tenant)).isFalse();
+        assertThat(ReplenishmentSuggestions.REFRESH_SECONDS).isEqualTo(21600);
+        service.refresh();assertThat(service.snapshot(tenant)).isSameAs(snapshot);
+        service.requestRefresh(tenant);assertThat(service.pending(tenant)).isTrue();
+        service.requestRefresh(tenant);service.refresh();assertThat(service.pending(tenant)).isFalse();
+        assertThat(service.snapshot(tenant)).isNotSameAs(snapshot);
+        // Cancellation removes demand after the next requested rebuild.
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE amazon_orders SET order_status='Canceled' WHERE tenant_id=? AND marketplace_connection_id=?",tenant,connection);});
+        service.save(tenant,actor,7,14,35,Map.of());service.refresh();
+        assertThat(service.snapshot(tenant).items()).noneMatch(r->r.get("id").equals(f.product()));
+        // A previous snapshot remains stable for requests already using it.
+        assertThat(snapshot.items()).anyMatch(r->r.get("id").equals(f.product()));
+    }
+    @Test void replenishmentSettingsRejectInvalidOverrideWithoutSaving(){
+        var service=new ReplenishmentSuggestions(jdbc,tx,new ReplenishmentDataLoader(jdbc,inventory),new tools.jackson.databind.ObjectMapper());
+        assertThatThrownBy(()->service.save(tenant,actor,7,14,35,Map.of(vendor+"_low","25"))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(service.configuration(tenant).get("low")).isEqualTo(7);
+        service.save(tenant,actor,5,12,30,Map.of(vendor+"_lead","9"));
+        var fresh=new ReplenishmentSuggestions(jdbc,tx,new ReplenishmentDataLoader(jdbc,inventory),new tools.jackson.databind.ObjectMapper());
+        assertThat(fresh.configuration(tenant).get("low")).isEqualTo(5);
+        assertThat(ReplenishmentSuggestions.policy(fresh.configuration(tenant),vendor,"Synthetic supplier").lead()).isEqualTo(9);
+    }
+    @Test void replenishmentIncludesDeliveredSalesInEveryWeeklyBucket(){
+        var f=fixture("INVOICE");UUID connection=mappedOrder(f,3,"Shipped - Delivered to Buyer");
+        var loader=new ReplenishmentDataLoader(jdbc,inventory);
+        for(int week=0;week<4;week++){
+            final int days=week*7+2;
+            tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE amazon_orders SET purchase_date=now()-make_interval(days=>?) WHERE tenant_id=? AND marketplace_connection_id=?",days,tenant,connection);
+                var row=loader.load(tenant,0).stream().filter(r->r.get("id").equals(f.product())).findFirst().orElseThrow();
+                String[] buckets=row.get("weeks").toString().split(" \\| ");
+                for(int i=0;i<4;i++)assertThat(new BigDecimal(buckets[i])).isEqualByComparingTo(i==3-(days/7)?"3":"0");
+            });
+        }
+    }
+    UUID mappedOrder(Fixture f,int quantity,String status){
+        UUID connection=UUID.randomUUID(),mapping=UUID.randomUUID();
+        tx.executeWithoutResult(s->{setTenant();
+            jdbc.update("INSERT INTO marketplace_connections(id,tenant_id,channel,seller_identifier,marketplace_identifier,credential_secret_ref,status,display_name,reporting_timezone,inventory_activated_at) VALUES (?,?,'AMAZON',?,'QA','test-only','ACTIVE','Shelf test','America/Los_Angeles',now()-interval '2 days')",connection,tenant,"shelf-"+connection);
+            jdbc.update("INSERT INTO amazon_orders(tenant_id,marketplace_connection_id,marketplace_id,amazon_order_id,purchase_date,last_update_date,order_status,fulfillment_channel,fulfillment_state) VALUES (?,?,'QA','SHELF-ORDER',now()-interval '1 day',now()-interval '1 hour',?,'MFN','INVENTORY_SHORTAGE')",tenant,connection,status);
+            jdbc.update("INSERT INTO amazon_order_items(tenant_id,marketplace_connection_id,amazon_order_id,amazon_order_item_id,seller_sku,quantity_ordered) VALUES (?,?,'SHELF-ORDER','SHELF-ITEM','SHELF-SKU',?)",tenant,connection,quantity);
+            jdbc.update("INSERT INTO marketplace_sku_mappings(id,tenant_id,marketplace_connection_id,account_catalog_item_id,marketplace_sku) VALUES (?,?,?,?,'SHELF-SKU')",mapping,tenant,connection,f.product());
+            jdbc.update("INSERT INTO marketplace_sku_mapping_components(tenant_id,marketplace_sku_mapping_id,account_catalog_item_id,quantity) VALUES (?,?,?,1)",tenant,mapping,f.product());
+        });
+        return connection;
+    }
+    @Test void completedOrderGetsOneZeroAuditAndNeverConsumesNewShelfStock(){
+        var f=fixture("INVOICE");receive(f,10);UUID connection=mappedOrder(f,4,"Shipped - Delivered to Buyer");
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        assertThat(stock(f)).isEqualByComparingTo("10");
+        tx.executeWithoutResult(s->{setTenant();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND entry_type='SHIPMENT_UNRECORDED' AND quantity=0",Integer.class,tenant)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT fulfillment_state FROM amazon_orders WHERE tenant_id=? AND marketplace_connection_id=?",String.class,tenant,connection)).isEqualTo("SHIPPED");
+        });
+        assertThat(repo.tabs(tenant,connection).stream().filter(t->t.key().equals("INVENTORY_SHORTAGE")).findFirst().orElseThrow().orders()).isZero();
+    }
+    @Test void packingDeductsOnceCountExcludesPackedAndUndoRestoresRecordedStock(){
+        var f=fixture("INVOICE");receive(f,10);UUID connection=mappedOrder(f,4,"Pending");
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        tx.executeWithoutResult(s->assertThat(repo.setPickupOverride(tenant,connection,"SHELF-ORDER",true,actor)).isTrue());
+        assertThat(stock(f)).isEqualByComparingTo("6");
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,List.of(new InventoryRepository.PhysicalCountRow(1,"QA-"+f.product(),new BigDecimal("6"),expiry,"MAIN")));
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        tx.executeWithoutResult(s->repo.setPickupOverride(tenant,connection,"SHELF-ORDER",true,actor));
+        assertThat(stock(f)).isEqualByComparingTo("6");
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT count(*) FROM order_inventory_reservations WHERE tenant_id=? AND status='ACTIVE'",Integer.class,tenant)).isZero();});
+        tx.executeWithoutResult(s->repo.setPickupOverride(tenant,connection,"SHELF-ORDER",false,actor));
+        assertThat(stock(f)).isEqualByComparingTo("10");
+        tx.executeWithoutResult(s->repo.setPickupOverride(tenant,connection,"SHELF-ORDER",true,actor));
+        assertThat(stock(f)).isEqualByComparingTo("6");
+    }
+    @Test void lowerShelfCountRebuildsOpenDemandAndKeepsUnchangedCountEvidence(){
+        var f=fixture("INVOICE");receive(f,10);UUID connection=mappedOrder(f,8,"Unshipped");
+        var repo=new com.nextaicommerce.platform.orders.OrderRepository(jdbc);
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        var rows=List.of(new InventoryRepository.PhysicalCountRow(1,"QA-"+f.product(),new BigDecimal("3"),expiry,"MAIN"));
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows);
+        tx.executeWithoutResult(s->repo.reconcile(tenant,connection));
+        assertThat(stock(f)).isEqualByComparingTo("3");
+        assertThat(repo.tabs(tenant,connection).stream().filter(t->t.key().equals("INVENTORY_SHORTAGE")).findFirst().orElseThrow().orders()).isEqualTo(1);
+        inventory.reconcilePhysicalCountSnapshot(tenant,actor,UUID.randomUUID(),null,rows);
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT count(*) FROM inventory_ledger_entries WHERE tenant_id=? AND source_type='PHYSICAL_COUNT' AND quantity=0",Integer.class,tenant)).isEqualTo(1);});
+    }
+    @Test void packFeesOverageAndShortageStayConsistent(){
+        var f=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET invoice_unit='CASE',ordered_quantity=2 WHERE tenant_id=? AND id=?",tenant,f.line());});
+        work.prepare(tenant,actor,f.line(),new BigDecimal("6"),new BigDecimal(".1"),new BigDecimal(".2"));
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().expected()).isEqualByComparingTo("12");
+        work.receive(tenant,actor,f.line(),new BigDecimal("14"),expiry,"OVER_SHIPPED",f.location(),"Two extra");
+        assertThat(stock(f)).isEqualByComparingTo("14");
+        assertThat(work.receipts(tenant,f.line())).hasSize(2);
+        BigDecimal value=tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT sum(quantity*unit_cost) FROM inventory_ledger_entries WHERE tenant_id=? AND account_catalog_item_id=?",BigDecimal.class,tenant,f.product());});
+        assertThat(value).isEqualByComparingTo("27.6");
+        assertThatThrownBy(()->work.prepare(tenant,actor,f.line(),BigDecimal.ONE,BigDecimal.ZERO,BigDecimal.ZERO)).isInstanceOf(IllegalArgumentException.class);
+        var shortage=fixture("PACKING_LIST");
+        work.receive(tenant,actor,shortage.line(),new BigDecimal("4"),null,"SHORT_SHIPPED",shortage.location(),"Not delivered");
+        assertThat(stock(shortage)).isEqualByComparingTo("0");
+        assertThat(work.lines(tenant,List.of(shortage.document())).getFirst().remaining()).isEqualByComparingTo("6");
+        assertThat(work.documents(tenant,List.of(shortage.document())).getFirst().hasHistory()).isTrue();
+        assertThatThrownBy(()->work.removeDocument(tenant,actor,shortage.document())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->work.receive(tenant,actor,shortage.line(),new BigDecimal(".5"),expiry,"SELLABLE",shortage.location(),"")).isInstanceOf(IllegalArgumentException.class);
+    }
+    @Test void pagedDocumentReadsStayBoundedAndFast(){
+        var f=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("""
+            INSERT INTO receiving_documents(tenant_id,receiving_session_id,vendor_id,document_type,document_number,original_filename,file_sha256,currency)
+            SELECT ?,?,?,'INVOICE','PERF-'||n,'synthetic-perf.csv',md5(n::text)||md5(n::text),'USD'
+            FROM generate_series(1,2000) n
+            """,tenant,f.session(),vendor);});
+        List<Long> times=new ArrayList<>();
+        for(int i=0;i<5;i++){
+            long started=System.nanoTime();var page=work.documentPage(tenant,"PERF",i,25);
+            times.add((System.nanoTime()-started)/1_000_000);
+            assertThat(page.total()).isEqualTo(2000);assertThat(page.items()).hasSize(25);assertThat(page.page()).isEqualTo(i);
+        }
+        System.out.println("DOCUMENT_PAGE_2000_ROWS_MS="+times);
+        assertThat(Collections.max(times)).isLessThan(1000L);
+    }
+    @Test void receiptCommandWaitsForBriefInventoryContentionAndRemainsIdempotent() throws Exception{
+        var f=fixture("INVOICE");var request=UUID.randomUUID();
+        var executor=java.util.concurrent.Executors.newSingleThreadExecutor();
+        try(var blocker=source.getConnection()){
+            blocker.setAutoCommit(false);
+            try(var statement=blocker.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))")){
+                statement.setObject(1,tenant);statement.execute();
+            }
+            var entered=new java.util.concurrent.CountDownLatch(1);
+            var result=executor.submit(()->{entered.countDown();return work.execute(tenant,request,"batches",f.line(),"same",()->receive(f,2));});
+            assertThat(entered.await(2,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Thread.sleep(200);
+            assertThat(result.isDone()).as("first click waits for the existing inventory writer").isFalse();
+            blocker.commit();
+            assertThat(result.get(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(stock(f)).isEqualByComparingTo("2");
+            assertThat(work.execute(tenant,request,"batches",f.line(),"same",()->receive(f,2))).isFalse();
+            assertThat(stock(f)).isEqualByComparingTo("2");
+        }finally{executor.shutdownNow();}
+    }
+    @Test void receiptCommandTimeoutDoesNotMutateAndCanRetryWithSameIdentity() throws Exception{
+        var f=fixture("INVOICE");var request=UUID.randomUUID();
+        try(var blocker=source.getConnection()){
+            blocker.setAutoCommit(false);
+            try(var statement=blocker.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))")){
+                statement.setObject(1,tenant);statement.execute();
+            }
+            assertThatThrownBy(()->work.execute(tenant,request,"batches",f.line(),"same",()->receive(f,2)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Nothing changed");
+            assertThat(stock(f)).isEqualByComparingTo("0");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM receiving_commands WHERE tenant_id=? AND request_id=?",Integer.class,tenant,request)).isZero();
+            blocker.rollback();
+        }
+        assertThat(work.execute(tenant,request,"batches",f.line(),"same",()->receive(f,2))).isTrue();
+        assertThat(stock(f)).isEqualByComparingTo("2");
+        tx.executeWithoutResult(s->assertThat(jdbc.queryForObject("SHOW lock_timeout",String.class)).isEqualTo("0"));
+    }
+    @Test void concurrentInventoryWriterFailsFastWithoutMutation() throws Exception{
+        var f=fixture("INVOICE");
+        try(var connection=source.getConnection()){
+            connection.setAutoCommit(false);
+            try(var statement=connection.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?::text,0))")){
+                statement.setString(1,tenant.toString());statement.execute();
+            }
+            long started=System.nanoTime();
+            assertThatThrownBy(()->receive(f,2)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("another operation");
+            assertThat((System.nanoTime()-started)/1_000_000).isLessThan(1000L);
+            assertThat(stock(f)).isEqualByComparingTo("0");connection.rollback();
+        }
+        receive(f,2);assertThat(stock(f)).isEqualByComparingTo("2");
+    }
+    @Test void fullReceiptCloseAndDamagedUndoPreserveQuantities(){
+        var f=fixture("INVOICE");receive(f,10);
+        work.closeDocument(tenant,actor,f.document(),null,false,BigDecimal.TEN,BigDecimal.ZERO);
+        assertThat(work.documents(tenant,List.of(f.document())).getFirst().partial()).isFalse();
+        assertThat(stock(f)).isEqualByComparingTo("10");
+        var damaged=fixture("INVOICE");
+        work.receive(tenant,actor,damaged.line(),new BigDecimal("2"),null,"DAMAGED",damaged.location(),"");
+        UUID first=receipt(damaged);
+        work.receive(tenant,actor,damaged.line(),new BigDecimal("3"),null,"DAMAGED",damaged.location(),"");
+        work.undo(tenant,actor,damaged.line(),first,"Wrong condition");
+        assertThat(stock(damaged)).isEqualByComparingTo("0");
+        BigDecimal claim=tx.execute(s->{setTenant();return jdbc.queryForObject("SELECT quantity FROM vendor_credit_requests WHERE tenant_id=? AND purchase_order_item_id=? AND status='OPEN'",BigDecimal.class,tenant,damaged.line());});
+        assertThat(claim).isEqualByComparingTo("3");
+    }
+    @Test void shortageHistoryAndUndoRestoreOnlyMissingBalance(){
+        var f=fixture("INVOICE");receive(f,2);
+        work.receive(tenant,actor,f.line(),new BigDecimal("4"),null,"SHORT_SHIPPED",f.location(),null);
+        var missing=work.receipts(tenant,f.line()).stream().filter(r->r.disposition().equals("SHORT_SHIPPED")).findFirst().orElseThrow();
+        assertThat(missing.canUndo()).isTrue();
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isEqualByComparingTo("4");
+        assertThat(work.lineDetails(tenant,List.of(f.document())).getFirst().get("batches").toString()).contains("SHORT_SHIPPED");
+        work.undo(tenant,actor,f.line(),missing.id(),"Delivery arrived later");
+        var updated=work.lines(tenant,List.of(f.document())).getFirst();
+        assertThat(updated.received()).isEqualByComparingTo("2");assertThat(updated.remaining()).isEqualByComparingTo("8");
+        assertThat(stock(f)).isEqualByComparingTo("2");
+    }
+    @Test void legacyShortageCanBeUndoneWithoutRewritingStock(){
+        var f=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET discrepancy_quantity=6,discrepancy_status='SHORT_SHIPPED' WHERE tenant_id=? AND id=?",tenant,f.line());});
+        assertThat(work.receipts(tenant,f.line())).hasSize(1);
+        work.undo(tenant,actor,f.line(),f.line(),"Correct old shortage");
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isEqualByComparingTo("10");
+        assertThat(work.receipts(tenant,f.line())).isEmpty();assertThat(stock(f)).isEqualByComparingTo("0");
+    }
+    @Test void catalogueReceivingPreferencesAreAtomicWithReceipt(){
+        var f=fixture("INVOICE");
+        work.execute(tenant,UUID.randomUUID(),"receive",f.line(),"preferences",()->{
+            work.saveCatalogueSettings(tenant,actor,f.line(),new BigDecimal("6"),false);
+            work.receive(tenant,actor,f.line(),new BigDecimal("6"),null,"SELLABLE",f.location(),null);
+        });
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().requiresExpiration()).isFalse();
+        assertThat(work.lineDetails(tenant,List.of(f.document())).getFirst().get("catalogPack").toString()).startsWith("6");
+        assertThatThrownBy(()->work.execute(tenant,UUID.randomUUID(),"receive",f.line(),"bad",()->{
+            work.saveCatalogueSettings(tenant,actor,f.line(),new BigDecimal("12"),true);
+            work.receive(tenant,actor,f.line(),BigDecimal.ONE,null,"SELLABLE",f.location(),null);
+        })).hasMessageContaining("expiration");
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().requiresExpiration()).isFalse();
+        assertThat(stock(f)).isEqualByComparingTo("6");
+    }
+    @Test void expirationBatchesCommitTogetherWithExceptionsAndIdempotency(){
+        var f=twelve();var request=UUID.randomUUID();
+        var batches=List.of(new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("4"),expiry),new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("5"),expiry.plusDays(10)));
+        Runnable action=()->work.receiveBatches(tenant,actor,f.line(),batches,BigDecimal.ONE,BigDecimal.ONE,BigDecimal.ONE,f.location(),true,BigDecimal.ZERO);
+        assertThat(work.execute(tenant,request,"batches",f.line(),"same",action)).isTrue();
+        assertThat(work.execute(tenant,request,"batches",f.line(),"same",action)).isFalse();
+        assertThat(stock(f)).isEqualByComparingTo("9");assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isZero();
+        assertThat(work.receipts(tenant,f.line())).hasSize(5);
+        assertThat(work.receipts(tenant,f.line()).stream().filter(r->r.disposition().equals("SELLABLE")).map(r->r.expiration())).containsExactlyInAnyOrder(expiry,expiry.plusDays(10));
+    }
+    @Test void invalidLaterExpirationRollsBackAllBatchesAndExceptions(){
+        var f=twelve();var batches=List.of(new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("4"),expiry),new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("5"),null));
+        assertThatThrownBy(()->work.receiveBatches(tenant,actor,f.line(),batches,BigDecimal.ONE,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,BigDecimal.ZERO)).hasMessageContaining("expiration");
+        assertThat(work.receipts(tenant,f.line())).isEmpty();assertThat(stock(f)).isZero();
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isEqualByComparingTo("12");
+    }
+    @Test void batchOverageRequiresExactConfirmationAgainstCurrentRemaining(){
+        var f=twelve();var batches=List.of(new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("8"),expiry),new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("6"),expiry.plusDays(1)));
+        assertThatThrownBy(()->work.receiveBatches(tenant,actor,f.line(),batches,BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,null)).hasMessageContaining("confirmation");
+        assertThat(stock(f)).isZero();
+        work.receiveBatches(tenant,actor,f.line(),batches,BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,new BigDecimal("2"));
+        assertThat(stock(f)).isEqualByComparingTo("14");
+        assertThat(work.receipts(tenant,f.line()).stream().filter(r->r.disposition().equals("OVER_SHIPPED")).map(r->r.quantity())).containsExactly(new BigDecimal("2.0000"));
+    }
+    @Test void dedicatedOverageRejectsExpectedUnitsAndKeepsExtraStockZeroCost(){
+        var f=twelve();
+        assertThatThrownBy(()->work.execute(tenant,UUID.randomUUID(),"overage",f.line(),"pending",()->work.requireOverageReady(tenant,f.line())))
+            .hasMessageContaining("expected units first");
+        assertThat(stock(f)).isZero();
+        work.receiveBatches(tenant,actor,f.line(),List.of(new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("12"),expiry)),BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,BigDecimal.ZERO);
+        UUID request=UUID.randomUUID();
+        Runnable extra=()->{
+            work.requireOverageReady(tenant,f.line());
+            work.receiveBatches(tenant,actor,f.line(),List.of(new ReceivingWorkflowRepository.ReceiptBatch(new BigDecimal("2"),expiry)),BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,f.location(),true,new BigDecimal("2"));
+        };
+        assertThat(work.execute(tenant,request,"overage",f.line(),"extra",extra)).isTrue();
+        assertThat(work.execute(tenant,request,"overage",f.line(),"extra",extra)).isFalse();
+        assertThat(stock(f)).isEqualByComparingTo("14");
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().remaining()).isZero();
+        tx.executeWithoutResult(s->{setTenant();assertThat(jdbc.queryForObject("SELECT sum(e.unit_cost*e.quantity) FROM inventory_ledger_entries e JOIN receiving_line_receipts r ON r.id=e.source_id AND r.tenant_id=e.tenant_id WHERE e.tenant_id=? AND r.purchase_order_item_id=? AND r.disposition='OVER_SHIPPED'",BigDecimal.class,tenant,f.line())).isZero();});
+    }
+    @Test void unmatchedReceivingItemCanJoinCatalogueBeforeReceipt(){
+        var f=fixture("INVOICE");
+        tx.executeWithoutResult(s->{setTenant();jdbc.update("UPDATE purchase_order_items SET account_catalog_item_id=null,vendor_item_code='NEW-RECEIVING',source_identifier='012345678901' WHERE tenant_id=? AND id=?",tenant,f.line());});
+        work.addCatalogueItem(tenant,actor,f.line(),context.getBean(CatalogRepository.class),"012345678901",new BigDecimal("6"),true);
+        var l=work.lines(tenant,List.of(f.document())).getFirst();
+        assertThat(l.productId()).isNotNull();assertThat(l.requiresExpiration()).isTrue();
+        work.receive(tenant,actor,f.line(),new BigDecimal("6"),expiry,"SELLABLE",f.location(),null);
+        assertThat(work.lines(tenant,List.of(f.document())).getFirst().received()).isEqualByComparingTo("6");
+    }
+}

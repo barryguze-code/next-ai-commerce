@@ -1,0 +1,80 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const path=require('node:path');
+const {chromium}=require('playwright');
+test('header presence opens a floating huddle, protects text, minimizes, and sends',async()=>{
+ const browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})});
+ try{
+  const page=await browser.newPage();
+  await page.route('**/app/collaboration/teammates',route=>route.fulfill({contentType:'application/json',body:JSON.stringify([{id:'me',name:'Barry'},{id:'jack',name:'Jack'},{id:'ecem',name:'Ecem'},{id:'alex',name:'Alex Offline',email:'alex@example.com'}])}));
+  await page.route('http://huddle.test/',route=>route.fulfill({contentType:'text/html',body:'<main></main>'}));
+  await page.goto('http://huddle.test/');
+  await page.setContent('<body class="app-page"><main><header class="workspace-header"><h1>Orders</h1><div class="header-actions"></div></header><button id="work">Work on order</button></main>');
+  await page.addStyleTag({content:'.workspace-header{display:flex;align-items:center;justify-content:space-between}'});
+  await page.addStyleTag({path:path.resolve('src/main/resources/static/css/platform-ui.css')});
+  await page.addStyleTag({path:path.resolve('src/main/resources/static/css/collaboration-thread.css')});
+  await page.addStyleTag({path:path.resolve('src/main/resources/static/css/huddle-floating.css')});
+  await page.addStyleTag({path:path.resolve('src/main/resources/static/css/chat-composer.css')});
+  await page.addScriptTag({path:path.resolve('src/main/resources/static/js/huddle-floating.js')});
+  await page.addScriptTag({path:path.resolve('src/main/resources/static/js/ux-components.js')});
+  await page.evaluate(()=>{
+   window.sent=[];window.sender=x=>{sent.push(x);return true;};
+   window.people=[{id:'me',name:'Barry'},{id:'jack',name:'Jack'},{id:'ecem',name:'Ecem'}];
+   LiveHuddleUI.event({type:'WELCOME',self:people[0],canHuddle:true,online:people,huddles:[]},sender);
+  });
+  await page.getByRole('button',{name:'Open huddle and online teammates'}).hover();
+  assert.equal(await page.getByRole('button',{name:'Online',exact:true}).getAttribute('aria-pressed'),'true');
+  assert.equal(await page.getByRole('button',{name:'Alex Offline · Offline',exact:true}).count(),0);
+  await page.getByRole('button',{name:'All teammates',exact:true}).click();
+  await page.getByRole('button',{name:'Alex Offline · Offline',exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Alex Offline · Offline',exact:true}).isDisabled(),true);
+  await page.getByRole('searchbox',{name:'Search teammates'}).fill('alex@example.com');
+  assert.equal(await page.locator('.huddle-directory-person').count(),1);
+  await page.getByRole('searchbox',{name:'Search teammates'}).fill('');
+  await page.getByRole('button',{name:'Online',exact:true}).click();
+  assert.equal(await page.locator('.huddle-presence-dot').first().evaluate(el=>getComputedStyle(el).width),'9px');
+  assert.equal(await page.locator('.huddle-person-identity').first().evaluate(el=>getComputedStyle(el).display),'flex');
+  await page.getByRole('button',{name:'Jack · Online',exact:true}).click();
+  await page.getByRole('button',{name:'Start Collaboration',exact:true}).click();
+  assert.deepEqual(await page.evaluate(()=>sent[0].participantIds),['jack']);
+  await page.evaluate(()=>{window.room={id:'room',status:'ACTIVE',startedBy:people[0],participants:people.slice(0,2),messages:[{senderId:'jack',senderName:'Jack',body:'<img src=x onerror=alert(1)>'}]};LiveHuddleUI.event({type:'HUDDLE_STARTED',huddle:room},sender);});
+  assert.equal(await page.locator('.floating-huddle').count(),1);
+  assert.equal(await page.locator('.floating-huddle-messages img').count(),0);
+  assert.match(await page.locator('.floating-huddle-messages').innerText(),/<img/);
+  if(process.env.HUDDLE_SCREENSHOT)await page.screenshot({path:process.env.HUDDLE_SCREENSHOT});
+  assert.equal(await page.getByRole('button',{name:'Pin',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'End for everyone',exact:true}).count(),0);
+  assert.deepEqual(await page.locator('.huddle-header-avatars .huddle-person-avatar').allTextContents(),['JA']);
+  await page.locator('#work').click();assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).isVisible(),true);
+  await page.getByRole('textbox',{name:'Huddle message'}).fill('Hello Jack');
+  await page.getByRole('button',{name:'Send',exact:true}).click();
+  assert.equal(await page.evaluate(()=>sent.at(-1).body),'Hello Jack');
+  await page.locator('#work').click();
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).isVisible(),true,'Working elsewhere does not hide incoming chat');
+  await page.getByRole('button',{name:'Minimize collaboration',exact:true}).click();
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).isVisible(),false);
+  await page.evaluate(()=>LiveHuddleUI.event({type:'ROOM_PEOPLE',huddleId:'room',online:people},sender));
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).isVisible(),false,'Presence updates do not reopen minimized windows');
+  await page.evaluate(()=>LiveHuddleUI.open(room));
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).getAttribute('rows'),'1');
+
+  await page.getByRole('button',{name:'Minimize collaboration',exact:true}).click();
+  await page.evaluate(()=>{room={...room,messages:[...room.messages,{senderId:'jack',senderName:'Jack',body:'Unread check'}]};LiveHuddleUI.event({type:'HUDDLE_UPDATED',huddle:room},sender);});
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).isVisible(),true);
+  await page.getByRole('button',{name:'Minimize collaboration',exact:true}).click();
+  const head=await page.locator('.floating-huddle header').boundingBox();
+  await page.mouse.move(head.x+40,head.y+15);await page.mouse.down();await page.mouse.move(head.x-100,head.y-100);await page.mouse.up();
+  assert.equal(await page.locator('.floating-huddle').evaluate(el=>el.style.position),'fixed');
+  await page.getByRole('button',{name:'Restore collaboration',exact:true}).click();
+  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='Huddle message');
+  assert.equal(await page.getByRole('textbox',{name:'Huddle message'}).evaluate(el=>el===document.activeElement),true);
+  assert.equal(await page.getByRole('button',{name:'Close collaboration',exact:true}).isEnabled(),true);
+  await page.evaluate(()=>LiveHuddleUI.event({type:'OFFLINE'},sender));
+  assert.equal(await page.getByRole('button',{name:'Send',exact:true}).isDisabled(),true);
+ }finally{await browser.close();}
+});
+test('Store task entry reuses shared dialog without online selection and respects server permission',async()=>{
+ const browser=await chromium.launch({headless:true});try{
+ for(const permitted of [true,false]){const page=await browser.newPage();await page.route('**/app/collaboration/teammates',r=>r.fulfill({contentType:'application/json',body:'[]'}));await page.setContent('<body><header class="workspace-header"></header>'+(permitted?'<button class="sidebar-create-task" data-new-task>Existing task entry</button>':''));await page.addScriptTag({path:path.resolve('src/main/resources/static/js/huddle-floating.js')});await page.evaluate(()=>{window.taskCalls=0;window.openGeneralTask=trigger=>{window.taskCalls++;window.taskOpener=trigger.getAttribute('aria-label');};LiveHuddleUI.event({type:'WELCOME',self:{id:'me',name:'Me'},canHuddle:false,online:[],huddles:[]},()=>false);});await page.getByRole('button',{name:'Open huddle and online teammates'}).click();const task=page.getByRole('button',{name:'Create a store task',exact:true});assert.equal(await task.count(),permitted?1:0);if(permitted){assert.equal(await page.getByRole('button',{name:'Select teammate',exact:true}).isDisabled(),true);await task.click();assert.equal(await page.evaluate(()=>window.taskCalls),1);assert.equal(await page.evaluate(()=>window.taskOpener),'Open huddle and online teammates');assert.equal(await page.locator('#huddle-teammates').evaluate(e=>e.hidden),true);}await page.close();}
+ }finally{await browser.close();}
+});

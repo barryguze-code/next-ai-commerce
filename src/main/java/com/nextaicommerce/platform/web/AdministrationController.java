@@ -1,0 +1,219 @@
+package com.nextaicommerce.platform.web;
+
+import jakarta.servlet.http.HttpSession;
+import java.util.UUID;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+@Controller
+public class AdministrationController {
+    private final WorkspaceAccessRepository repository;
+    private final MarketplaceCredentialService credentialService;
+    private final ShopifyConnectionService shopify;
+    private final ShopifyConnectionAccess shopifyAccess;
+
+    AdministrationController(WorkspaceAccessRepository repository, MarketplaceCredentialService credentialService, ShopifyConnectionService shopify, ShopifyConnectionAccess shopifyAccess) {
+        this.repository = repository;
+        this.credentialService = credentialService;
+        this.shopify=shopify;this.shopifyAccess=shopifyAccess;
+    }
+
+    @GetMapping("/app/connections")
+    String connections(Authentication authentication, HttpSession session, Model model) {
+        if (!PageController.addTenantModel(session, model)) return "redirect:/app/select-account";
+        PageController.addAccessModel(authentication, model);
+        UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
+        String tenantName = (String) session.getAttribute(AccountSelectionController.TENANT_NAME);
+        var choices=repository.listAccountOptions(authentication.getName(),repository.isCurrentPlatformAdmin(authentication.getName()));
+        var connections=choices.stream().filter(a->a.id().equals(tenantId)).flatMap(a->a.stores().stream()).toList();
+        var visible=connections.stream().map(WorkspaceAccessRepository.ConnectionView::id).collect(Collectors.toSet());
+        model.addAttribute("connectionAccounts",repository.connectionDestinations(tenantId,authentication.getName()));
+        var connectionErrors = new java.util.LinkedHashMap<UUID,String>();
+        var shopifyVerified = new java.util.LinkedHashMap<UUID,String>();
+        for (var connection : connections) {
+            if (connection.credentialsStored()) {
+                try {
+                    var saved=credentialService.credentials(tenantId, connection.id());
+                    if("SHOPIFY".equals(connection.channel())){
+                        boolean fresh;
+                        try{fresh=java.time.Instant.parse(saved.getOrDefault("expiresAt","")).isAfter(java.time.Instant.now());}catch(java.time.DateTimeException ex){fresh=false;}
+                        shopifyVerified.put(connection.id(),fresh&&"ACTIVE".equals(connection.status())?(shopify.ordersEnabled()?(shopify.setupState(tenantId,connection.id()).ordersPermitted()?"Connected · Orders ready":"Connected · Order access needed"):"Connected · Orders not enabled"):"Verify saved authorization");
+                    }
+                }
+                catch (IllegalStateException ex) {
+                    connectionErrors.put(connection.id(), "Stored credentials cannot be opened. Re-enter all credentials and verify the connection. Imported data is retained.");
+                }
+            }
+        }
+        model.addAttribute("connectionErrors", connectionErrors);
+        model.addAttribute("shopifyEnabled",shopify.enabled());
+        model.addAttribute("shopifyVerified",shopifyVerified);
+        model.addAttribute("connections", connections);
+        model.addAttribute("connectionCount", connections.size());
+        model.addAttribute("activeConnectionCount", connections.stream()
+            .filter(connection -> "ACTIVE".equals(connection.status()) && !connectionErrors.containsKey(connection.id())).count());
+        model.addAttribute("setupConnectionCount", connections.stream()
+            .filter(connection -> "PENDING".equals(connection.status()) || "ERROR".equals(connection.status()) || connectionErrors.containsKey(connection.id())).count());
+        var syncStatuses=repository.listCurrentSyncStatuses(tenantId).stream().filter(s->visible.contains(s.connectionId())).toList();
+        model.addAttribute("syncStatuses",syncStatuses);
+        model.addAttribute("connectionSyncNotes",syncStatuses.stream().filter(s->s.message()!=null&&!s.message().isBlank()).filter(s->java.util.Set.of("FAILED","CANCELLED","COMPLETED_WITH_WARNINGS").contains(s.status()))
+            .collect(java.util.stream.Collectors.toMap(WorkspaceAccessRepository.SyncStatusView::connectionId,WorkspaceAccessRepository.SyncStatusView::message,(a,b)->a)));
+        model.addAttribute("syncInProgress",syncStatuses.stream().anyMatch(sync->
+            "QUEUED".equals(sync.status())||"RUNNING".equals(sync.status())));
+        model.addAttribute("syncJobsByConnection", repository.listCurrentSyncJobs(tenantId).stream()
+            .filter(s->visible.contains(s.connectionId())).collect(Collectors.groupingBy(WorkspaceAccessRepository.SyncJobView::connectionId)));
+        return "connections";
+    }
+
+    @PostMapping("/app/connections/name")
+    String renameConnection(@RequestParam UUID id,@RequestParam String displayName,HttpSession session,Authentication authentication,RedirectAttributes redirect){
+        UUID tenant=(UUID)session.getAttribute(AccountSelectionController.TENANT_ID);
+        if(tenant==null)return "redirect:/app/select-account";
+        shopifyAccess.require(tenant,id,authentication);
+        try{repository.renameConnection(tenant,id,displayName);
+            if(id.equals(session.getAttribute(AccountSelectionController.STORE_ID)))session.setAttribute(AccountSelectionController.STORE_NAME,displayName.trim());
+            redirect.addFlashAttribute("connectionSuccess","Store name updated.");
+        }catch(IllegalArgumentException ex){redirect.addFlashAttribute("connectionError",ex.getMessage());}
+        return "redirect:/app/connections";
+    }
+
+    @PostMapping("/app/connections/{connectionId}/disconnect")
+    String disconnectConnection(@PathVariable UUID connectionId, HttpSession session, Authentication authentication, RedirectAttributes redirect) {
+        UUID tenantId=(UUID)session.getAttribute(AccountSelectionController.TENANT_ID);
+        if(tenantId==null)return "redirect:/app/select-account";
+        try {
+            shopifyAccess.require(tenantId,connectionId,authentication);
+            boolean isShopify="SHOPIFY".equals(repository.findConnection(tenantId,connectionId).channel());
+            if(isShopify){repository.disconnectShopifyConnection(tenantId,connectionId);}
+            else repository.disconnectConnection(tenantId,connectionId);
+            if(connectionId.equals(session.getAttribute(AccountSelectionController.STORE_ID))){
+                session.removeAttribute(AccountSelectionController.STORE_ID);
+                session.removeAttribute(AccountSelectionController.STORE_NAME);
+            }
+            redirect.addFlashAttribute("connectionSuccess","Store disconnected. Imported history was retained safely.");
+        } catch(RuntimeException ex){redirect.addFlashAttribute("connectionError",ex.getMessage());}
+        return "redirect:/app/connections";
+    }
+
+    @PostMapping("/app/connections/{connectionId}/credentials")
+    String saveCredentials(@PathVariable UUID connectionId, @RequestParam Map<String, String> form,
+            HttpSession session, Authentication authentication, RedirectAttributes redirect) {
+        UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
+        if (tenantId == null) return "redirect:/app/select-account";
+        try {
+            shopifyAccess.require(tenantId,connectionId,authentication);
+            credentialService.connect(tenantId, connectionId, form);
+            redirect.addFlashAttribute("connectionSuccess",
+                "Connection verified. We are now preparing the store's Amazon data.");
+        } catch (RuntimeException ex) {
+            redirect.addFlashAttribute("connectionError", ex.getMessage());
+        }
+        return "redirect:/app/connections";
+    }
+
+    @PostMapping("/app/connections")
+    String addConnection(@RequestParam String channel, @RequestParam String displayName,
+            @RequestParam(defaultValue = "") String sellerIdentifier,
+            @RequestParam String marketplaceIdentifier,@RequestParam(required=false) UUID accountId,
+            HttpSession session, Authentication authentication, RedirectAttributes redirect) {
+        UUID tenantId = (UUID) session.getAttribute(AccountSelectionController.TENANT_ID);
+        if (tenantId == null) return "redirect:/app/select-account";
+        try {
+            tenantId=repository.connectionDestination(tenantId,accountId,authentication.getName());
+            repository.addConnection(tenantId, channel, displayName, sellerIdentifier, marketplaceIdentifier);
+            redirect.addFlashAttribute("connectionSuccess", "Store added. Select Set up to connect it.");
+        } catch (RuntimeException ex) {
+            redirect.addFlashAttribute("connectionError", ex.getMessage());
+        }
+        return "redirect:/app/connections";
+    }
+
+    @GetMapping("/app/platform/accounts")
+    String accounts(Authentication authentication,
+            @RequestParam(defaultValue = "false") boolean create, Model model) {
+        PageController.addAccessModel(authentication, model);
+        var accounts = repository.listAllAccounts();
+        model.addAttribute("accounts", accounts);
+        model.addAttribute("accountCount", accounts.size());
+        model.addAttribute("memberInitials",accounts.stream().collect(Collectors.toMap(WorkspaceAccessRepository.AccountView::id,a->repository.memberInitials(a.id()))));
+        model.addAttribute("autoOpenAddAccount", create);
+        return "accounts";
+    }
+
+    @GetMapping("/app/platform/accounts/{account}/business-details") @ResponseBody
+    WorkspaceAccessRepository.BusinessDetails businessDetails(@PathVariable UUID account,Authentication actor) {
+        return repository.businessDetails(account,actor.getName());
+    }
+
+    @PostMapping("/app/platform/accounts/{account}/business-details") @ResponseBody
+    ResponseEntity<?> saveBusinessDetails(@PathVariable UUID account,Authentication actor,@RequestParam String displayName,@RequestParam String name,@RequestParam String address,@RequestParam(required=false) MultipartFile logo) throws java.io.IOException {
+        try { repository.saveBusinessDetails(account,actor.getName(),displayName,name,address,logo==null||logo.isEmpty()?null:validatedLogo(logo)); return ResponseEntity.noContent().build(); }
+        catch(IllegalArgumentException ex){ return ResponseEntity.badRequest().body(Map.of("error",ex.getMessage())); }
+    }
+
+    @PostMapping("/app/platform/accounts")
+    String addAccount(@RequestParam String displayName, Authentication actor, RedirectAttributes redirect) {
+        try {
+            repository.createClient(displayName, actor.getName());
+            redirect.addFlashAttribute("accountSuccess", "Account created. Open it to add marketplace stores.");
+        } catch (RuntimeException ex) {
+            redirect.addFlashAttribute("accountError", ex.getMessage());
+        }
+        return "redirect:/app/platform/accounts";
+    }
+
+    @PostMapping("/app/platform/accounts/{tenantId}/logo")
+    String uploadLogo(@PathVariable UUID tenantId,@RequestParam MultipartFile logo,
+            Authentication authentication,RedirectAttributes redirect){
+        boolean superAdmin=authentication.getAuthorities().stream()
+            .anyMatch(authority->authority.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
+        if(!repository.canAdministerAccount(tenantId,authentication.getName(),superAdmin))
+            return "redirect:/app?accountLogoError=forbidden";
+        try{
+            var picture=validatedLogo(logo);
+            repository.saveAccountLogo(tenantId,picture.contentType(),picture.bytes());
+            redirect.addFlashAttribute("accountSuccess","Company logo saved. It now appears wherever this account is selected.");
+        }catch(Exception e){redirect.addFlashAttribute("accountError",e instanceof IllegalArgumentException?e.getMessage():"The company logo could not be saved.");}
+        return superAdmin?"redirect:/app/platform/accounts":"redirect:/app";
+    }
+    private WorkspaceAccessRepository.LogoData validatedLogo(MultipartFile logo) throws java.io.IOException {
+            if(logo==null||logo.isEmpty())throw new IllegalArgumentException("Choose a PNG, JPEG, or WebP logo.");
+            if(logo.getSize()>2_000_000)throw new IllegalArgumentException("Use a logo smaller than 2 MB.");
+            String type=logo.getContentType()==null?"":logo.getContentType();
+            if(!java.util.Set.of("image/png","image/jpeg","image/webp").contains(type))throw new IllegalArgumentException("Use a PNG, JPEG, or WebP logo.");
+            return new WorkspaceAccessRepository.LogoData(logo.getBytes(),type);
+    }
+    @GetMapping("/app/platform/accounts/{tenantId}/logo") @ResponseBody
+    ResponseEntity<byte[]> logo(@PathVariable UUID tenantId, Authentication authentication){
+        boolean superAdmin = authentication.getAuthorities().stream()
+            .anyMatch(authority -> authority.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
+        if (!repository.canAccessAccount(tenantId, authentication.getName(), superAdmin))
+            return ResponseEntity.notFound().build();
+        var logo=repository.accountLogo(tenantId);if(logo==null)return ResponseEntity.notFound().build();
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(logo.contentType())).cacheControl(org.springframework.http.CacheControl.noCache()).body(logo.bytes());
+    }
+
+    @GetMapping("/app/platform/accounts/{tenantId}/open")
+    String openAccount(@PathVariable UUID tenantId, HttpSession session) {
+        var account = repository.listAllAccounts().stream()
+            .filter(candidate -> candidate.id().equals(tenantId)).findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Account was not found."));
+        session.setAttribute(AccountSelectionController.TENANT_ID, account.id());
+        session.setAttribute(AccountSelectionController.TENANT_NAME, account.name());
+        session.removeAttribute(AccountSelectionController.STORE_ID);
+        session.removeAttribute(AccountSelectionController.STORE_NAME);
+        return "redirect:/app?chooseStore=true";
+    }
+}

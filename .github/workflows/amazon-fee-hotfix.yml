@@ -1,0 +1,23 @@
+name: Amazon fee hotfix
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn --batch-mode -Dtest=AmazonFeeCurrencyDatabaseTest,ProfitDatabaseTest,AmazonProductFeeSyncTest,ShopifyOrderProfitTest test
+      - run: mvn --batch-mode -Dmaven.test.skip=true package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amazon-fee-1.14.17-package
+          path: target/next-ai-commerce-1.14.17.jar
+          if-no-files-found: error

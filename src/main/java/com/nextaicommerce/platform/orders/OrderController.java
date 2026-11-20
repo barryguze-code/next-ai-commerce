@@ -1,0 +1,283 @@
+package com.nextaicommerce.platform.orders;
+
+import com.nextaicommerce.platform.web.AccountSelectionController;
+import com.nextaicommerce.platform.web.PageController;
+import com.nextaicommerce.platform.web.WorkspaceAccessRepository;
+import jakarta.servlet.http.HttpSession;
+import java.time.format.DateTimeFormatter;
+import java.util.UUID;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
+import java.util.Map;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import com.nextaicommerce.platform.sync.AmazonManualOrderSync;
+import com.nextaicommerce.platform.collaboration.CollaborationRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+
+@Controller
+public class OrderController {
+    private final OrderRepository orders;private final WorkspaceAccessRepository workspace;private final AmazonManualOrderSync manualSync;private final PackingSlipRepository packingSlips;private CollaborationRepository collaboration;
+    public OrderController(OrderRepository orders,WorkspaceAccessRepository workspace,AmazonManualOrderSync manualSync,PackingSlipRepository packingSlips){this.orders=orders;this.workspace=workspace;this.manualSync=manualSync;this.packingSlips=packingSlips;}
+    @Autowired(required=false) void configureCollaboration(CollaborationRepository repository){this.collaboration=repository;}
+    @org.springframework.beans.factory.annotation.Value("${app.amazon.fee-variance-ui-enabled:false}") private boolean feeVarianceUi;
+    @org.springframework.beans.factory.annotation.Value("${app.fedex.sandbox-label-test-enabled:false}") private boolean fedexSandboxLabelTest;
+    @Autowired(required=false) private com.nextaicommerce.platform.fees.AmazonFeeVarianceRepository feeVariances;
+    @Autowired private OrderProfitSummary profitSummary;
+    @Autowired private com.nextaicommerce.platform.catalog.CatalogRepository catalog;
+    @Autowired private SkuRefundHistory refundHistory;
+    @Autowired private com.nextaicommerce.platform.fba.FbaReadRepository fba;
+    @Autowired(required=false) private com.nextaicommerce.platform.shopify.ShopifyOrderPage shopifyOrders;
+    @org.springframework.beans.factory.annotation.Value("${app.fedex.amazon-sandbox-enabled:false}") private boolean fedexAmazonSandbox;
+    @org.springframework.beans.factory.annotation.Value("${app.fedex.sandbox-rate-only.enabled:false}") private boolean fedexSandboxRateOnly;
+    @GetMapping("/app/orders/refund-history") @ResponseBody
+    SkuRefundHistory.RefundPage refundOrders(@RequestParam(defaultValue="") String sku,
+            @RequestParam(defaultValue="28") int days,@RequestParam(defaultValue="-1") int week,
+            @RequestParam(defaultValue="0") int page,@RequestParam(required=false) java.time.Instant asOf,HttpSession session){
+        Object store=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(store instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a store");
+        try{return refundHistory.orders(tenant(session),connection,sku,days,week,page,asOf);}
+        catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+    @GetMapping("/app/orders/product-refund-history") @ResponseBody
+    SkuRefundHistory.RefundPage productRefundOrders(@RequestParam UUID product,@RequestParam(defaultValue="28") int days,
+            @RequestParam(defaultValue="-1") int week,@RequestParam(defaultValue="0") int page,
+            @RequestParam(required=false) java.time.Instant asOf,HttpSession session,Authentication auth){
+        UUID account=tenant(session);
+        if(auth==null)throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        boolean admin=auth.getAuthorities().stream().anyMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));
+        var accounts=workspace.listAccountOptions(auth.getName(),admin);
+        if(accounts.stream().noneMatch(a->a.id().equals(account)))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        var visible=accounts.stream().filter(a->a.id().equals(account)).flatMap(a->a.stores().stream()).map(s->s.id()).collect(java.util.stream.Collectors.toSet());
+        if(!workspace.listConnections(account,"").stream().allMatch(c->visible.contains(c.id())))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Account-wide refund history requires access to all stores in this account.");
+        try{return refundHistory.productOrders(account,product,days,week,page,asOf);}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+    @GetMapping("/app/orders/profit-summary") @ResponseBody
+    OrderProfitSummary.Result profitSummary(@RequestParam(defaultValue="ALL") String status,@RequestParam(defaultValue="") String q,@RequestParam Map<String,String> parameters,HttpSession session){
+        Object store=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(store instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a store");
+        try{return profitSummary.get(tenant(session),connection,OrderRepository.TAB_KEYS.contains(status.toUpperCase(java.util.Locale.ROOT))?status.toUpperCase(java.util.Locale.ROOT):"ALL",q,OrderSmartFilters.clean(parameters));}
+        catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
+    @GetMapping("/app/orders") String orders(@RequestParam(defaultValue="ALL") String status,
+            @RequestParam(defaultValue="") String q,@RequestParam(defaultValue="0") int page,
+            @RequestParam(required=false) Integer goToPage,
+            @RequestParam(defaultValue=com.nextaicommerce.platform.web.TablePaging.DEFAULT_PARAMETER) int size,
+            Authentication auth,HttpSession session,Model model,@RequestParam Map<String,String> smartParameters){
+        if(!PageController.addTenantModel(session,model))return "redirect:/app/select-account";
+        PageController.addAccessModel(auth,model);model.addAttribute("selectedStatus",status.toUpperCase());model.addAttribute("query",q);
+        UUID tenant=tenant(session);model.addAttribute("fedexAmazonSandbox",fedexAmazonSandbox&&workspace.canOperateAccount(tenant,auth.getName()));model.addAttribute("fedexSandboxLabelTest",fedexSandboxLabelTest&&workspace.canOperateAccount(tenant,auth.getName()));model.addAttribute("fedexSandboxRateOnly",fedexSandboxRateOnly&&workspace.canOperateAccount(tenant,auth.getName()));Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection)){model.addAttribute("storeSelectionRequired",true);model.addAttribute("chooseStore",true);return "orders";}
+        var identity=workspace.findConnection(tenant,connection);
+        if("SHOPIFY".equalsIgnoreCase(identity.channel())&&shopifyOrders!=null)
+            return shopifyOrders.show(tenant,connection,auth,status,q,goToPage==null?page:Math.max(0,goToPage-1),com.nextaicommerce.platform.web.TablePaging.size(size),model);
+        model.addAttribute("vendors",Boolean.TRUE.equals(model.asMap().get("canEditCatalog"))&&catalog!=null?catalog.listVendorChoices(tenant):java.util.List.of());
+        if(!"AMAZON".equalsIgnoreCase(identity.channel())){model.addAttribute("unsupportedChannel",true);return "orders";}
+        // Workspace advice has restored the authenticated account/store before this handler.
+        if(feeVariances!=null&&feeVariances.visible())model.addAttribute("feeVarianceOrders",feeVariances.count(tenant,connection,false));
+        if(java.util.List.of("PENDING","READY_TO_SHIP").contains(status.toUpperCase(java.util.Locale.ROOT)))status="UNSHIPPED";
+        if(!OrderRepository.TAB_KEYS.contains(status.toUpperCase(java.util.Locale.ROOT)))status="ALL";
+        model.addAttribute("selectedStatus",status.toUpperCase(java.util.Locale.ROOT));
+        model.addAttribute("orderTabs",orders.tabs(tenant,connection));
+        model.addAttribute("pickupOverrides",orders.pickupOverrides(tenant,connection));
+        model.addAttribute("pickupEligibleOrders",orders.pickupEligibleOrders(tenant,connection));
+        int requestedPage=goToPage==null?page:Math.max(0,goToPage-1);
+        if(!feeVarianceUi&&smartParameters.containsKey("f_fee_variance"))throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        Map<String,String> smart;try{smart=OrderSmartFilters.clean(smartParameters);}catch(IllegalArgumentException ex){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,ex.getMessage());}
+        var orderPage=orders.orders(tenant,connection,status,q,requestedPage,com.nextaicommerce.platform.web.TablePaging.size(size),smart);var rows=orderPage.rows();
+        if(!q.isBlank()||!"ALL".equalsIgnoreCase(status)||smart.keySet().stream().anyMatch(k->k.startsWith("f_")&&!k.endsWith("_op")))
+            model.addAttribute("filteredSummary",orders.filteredSummary(tenant,connection,status,q,smart));
+        var items=orders.itemsForOrders(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList());
+        if(smart.keySet().stream().anyMatch(k->k.startsWith("f_"))){var matches=orders.matchingItems(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList(),smart);items.replaceAll((id,list)->list.stream().filter(item->matches.contains(item.id())).toList());}
+        model.addAttribute("soldTotals",orders.soldTotals(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).distinct().toList()));
+        model.addAttribute("fbaStock",fba.stocks(tenant,connection,rows.stream()
+            .filter(order->"FBA".equals(order.fulfillmentTag()))
+            .flatMap(order->items.getOrDefault(order.amazonOrderId(),java.util.List.of()).stream())
+            .map(OrderRepository.OrderItemView::sellerSku).toList()));
+        model.addAttribute("buyBoxLostItems",orders.buyBoxLostItems(tenant,connection,rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList()));
+        model.addAttribute("fourWeekSales",orders.fourWeekSales(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).toList()));
+        model.addAttribute("refundHistory",refundHistory.fourWeeks(tenant,connection,items.values().stream().flatMap(java.util.Collection::stream).map(OrderRepository.OrderItemView::sellerSku).toList()));
+        model.addAttribute("orders",rows);model.addAttribute("orderPage",orderPage);model.addAttribute("itemsByOrder",items);var summary=orders.summary(tenant,connection);
+        model.addAttribute("threadsByOrder",collaboration==null?java.util.Map.of():collaboration.openSubjectSummaries(
+            tenant,"ORDER",rows.stream().map(OrderRepository.OrderView::amazonOrderId).toList(),auth.getName()));
+        model.addAttribute("orderStreamKey",orders.streamVersion(tenant,connection));
+        model.addAttribute("todayOrders",summary.todayOrders());model.addAttribute("todayUnits",summary.todayUnits());model.addAttribute("todaySales",summary.todaySales());
+        model.addAttribute("sales30Days",summary.sales30Days());model.addAttribute("liveCount",summary.live());
+        model.addAttribute("historicalCount",summary.historical());
+        var syncAvailability=manualSync.availability(tenant,connection);boolean fresh=summary.lastSyncedAt()!=null&&java.time.Duration.between(summary.lastSyncedAt(),java.time.Instant.now()).compareTo(java.time.Duration.ofMinutes(5))<0;
+        model.addAttribute("orderSyncAvailable",syncAvailability.allowed());model.addAttribute("orderSyncActive",syncAvailability.activeRun()!=null);
+        model.addAttribute("orderSyncFresh",fresh);model.addAttribute("orderSyncRun",syncAvailability.activeRun());
+        model.addAttribute("lastOrderSync",summary.lastSyncedAt()==null?"Waiting for Amazon":
+            "Last Amazon order check · "+orderTime(identity.marketplaceId()).format(summary.lastSyncedAt()));
+        model.addAttribute("orderTime",orderTime(identity.marketplaceId()));
+        return "orders";
+    }
+
+    static DateTimeFormatter orderTime(String marketplaceId){
+        return DateTimeFormatter.ofPattern("MM/dd/yy · h:mm a z",java.util.Locale.US)
+            .withZone(com.nextaicommerce.platform.sync.AmazonMarketplaceTime.zone(marketplaceId));
+    }
+
+    @PostMapping("/app/orders/sync") String syncOrders(Authentication auth,HttpSession session,RedirectAttributes redirect){
+        UUID tenant=tenant(session);Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection)){redirect.addFlashAttribute("orderError","Choose an Amazon store first.");return "redirect:/app/orders";}
+        try{
+            if("SHOPIFY".equalsIgnoreCase(workspace.findConnection(tenant,connection).channel())&&shopifyOrders!=null){shopifyOrders.sync(tenant,connection,auth.getName());return "redirect:/app/orders";}
+            return "redirect:/app/orders?orderSyncJob="+manualSync.enqueue(tenant,connection);
+        }catch(IllegalStateException|IllegalArgumentException cooldown){redirect.addFlashAttribute("orderError",cooldown.getMessage());return "redirect:/app/orders";}
+    }
+
+    @GetMapping("/app/orders/sync/{runId}/progress") @ResponseBody ResponseEntity<AmazonManualOrderSync.Progress> syncProgress(@PathVariable UUID runId,HttpSession session){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);if(!(selected instanceof UUID connection))return ResponseEntity.status(409).build();
+        var progress=manualSync.progress(tenant(session),connection,runId);return progress==null?ResponseEntity.notFound().build():ResponseEntity.ok(progress);
+    }
+    @PostMapping("/app/orders/shopify/cancel") String cancelShopifyOrders(Authentication auth,HttpSession session){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection)||shopifyOrders==null||!"SHOPIFY".equalsIgnoreCase(workspace.findConnection(tenant(session),connection).channel()))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a Shopify store.");
+        shopifyOrders.cancel(tenant(session),connection,auth.getName());return "redirect:/app/orders";
+    }
+
+    @GetMapping("/app/orders/stream-version") @ResponseBody ResponseEntity<String> streamVersion(HttpSession session,Authentication auth){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection))return ResponseEntity.status(409).build();
+        if("SHOPIFY".equalsIgnoreCase(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null)
+            return ResponseEntity.ok(shopifyOrders.version(tenant(session),connection,auth));
+        return ResponseEntity.ok(orders.streamVersion(tenant(session),connection));
+    }
+
+    @GetMapping("/app/orders/{orderId}/packing-slip") String packingSlip(@PathVariable String orderId,Authentication auth,HttpSession session,Model model){
+        PageController.addAccessModel(auth,model);
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
+        if("SHOPIFY".equals(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null)return shopifyOrders.packing(tenant(session),connection,UUID.fromString(orderId),auth,model);
+        var slip=packingSlips.find(tenant(session),connection,orderId);
+        if(slip==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"This order is not available in the selected store.");
+        model.addAttribute("pickupEligible",orders.pickupEligibleOrders(tenant(session),connection).contains(orderId));
+        model.addAttribute("pickupMarked",orders.pickupOverrides(tenant(session),connection).contains(orderId));
+        model.addAttribute("packageNames",packingSlips.packageNames(tenant(session)));
+        boolean mayEdit=mayEditPacking(tenant(session),connection,auth);
+        model.addAttribute("canEditPacking",mayEdit);
+        model.addAttribute("packingLocations",mayEdit?catalog.listLocations(tenant(session)):java.util.List.of());
+        model.addAttribute("slip",slip);return "packing-slip";
+    }
+
+    @PostMapping("/app/orders/{orderId}/packing-slip/package") @ResponseBody Map<String,String> savePackingPackage(
+            @PathVariable String orderId,@RequestParam String packageName,HttpSession session,Authentication auth){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
+        if(!mayEditPacking(tenant(session),connection,auth))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        try{if("SHOPIFY".equals(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null)return Map.of("packageName",shopifyOrders.savePackage(tenant(session),connection,UUID.fromString(orderId),packageName,auth));
+            return Map.of("packageName",packingSlips.savePackaging(tenant(session),connection,orderId,packageName,auth.getName()));}
+        catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
+    @Autowired private PackingPackageNames packageNames;
+    @Autowired private PackageCatalogueReadService packageCatalogue;
+    @Autowired private com.nextaicommerce.platform.profit.ProfitCostRepository packageCosts;
+    @GetMapping("/app/orders/packing-packages") @ResponseBody
+    java.util.List<PackingPackageNames.Choice> packageChoices(HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        return packageCatalogue.choices(tenant(session),java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")));
+    }
+
+    @GetMapping("/app/orders/packing-packages/history") @ResponseBody
+    PackingPackageNames.History packageHistory(@RequestParam String name,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{return packageNames.history(tenant(session),name,packageCosts.rates(tenant(session)),java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")));}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+    @PostMapping("/app/orders/packing-packages/rates") @ResponseBody
+    Map<String,String> savePackageRate(@RequestParam String name,@RequestParam @org.springframework.format.annotation.DateTimeFormat(iso=org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate effectiveFrom,@RequestParam java.math.BigDecimal amount,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{packageNames.saveRate(tenant(session),name,effectiveFrom,amount,auth.getName());profitSummary.invalidate(tenant(session));return Map.of("status","saved");}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
+    @GetMapping("/app/orders/packing-packages/removal") @ResponseBody
+    PackingPackageNames.Removal reviewPackageRemoval(@RequestParam String name,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{return packageNames.removal(tenant(session),name);}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.CONFLICT,e.getMessage());}
+    }
+    @PostMapping("/app/orders/packing-packages/remove") @ResponseBody
+    Map<String,String> removePackage(@RequestBody Map<String,String> body,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{packageNames.remove(tenant(session),body.get("name"),auth.getName());profitSummary.invalidate(tenant(session));return Map.of("status","removed");}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.CONFLICT,e.getMessage());}
+    }
+
+    @PostMapping("/app/orders/packing-packages/details") @ResponseBody
+    Map<String,String> savePackageDetails(@RequestBody PackingPackageNames.DetailsChange change,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{packageNames.saveDetails(tenant(session),change,auth.getName());profitSummary.invalidate(tenant(session));return Map.of("status","saved");}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
+    @PostMapping("/app/orders/packing-packages/dimensions") @ResponseBody
+    Map<String,String> savePackageDimensions(@RequestParam String name,@RequestParam(required=false) java.math.BigDecimal length,@RequestParam(required=false) java.math.BigDecimal width,@RequestParam(required=false) java.math.BigDecimal height,@RequestParam String unit,@RequestParam long revision,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{packageNames.saveDimensions(tenant(session),name,new PackingPackageNames.Dimensions(length,width,height,unit,revision),auth.getName());return Map.of("status","saved");}catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
+    private void requirePackageManagement(HttpSession session,Authentication auth){
+        UUID account=tenant(session);
+        boolean admin=auth!=null&&auth.getAuthorities().stream().anyMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));
+        if(auth==null||!workspace.canOperateAccount(account,auth.getName()))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        var visible=workspace.listAccountOptions(auth.getName(),admin).stream().filter(a->a.id().equals(account)).flatMap(a->a.stores().stream()).map(store->store.id()).collect(java.util.stream.Collectors.toSet());
+        if(!workspace.listConnections(account,"").stream().allMatch(c->visible.contains(c.id())))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Managing account-wide packages requires access to all its stores.");
+    }
+    @PostMapping("/app/orders/packing-packages/review") @ResponseBody
+    org.springframework.http.ResponseEntity<?> reviewPackageName(@RequestParam String source,@RequestParam String destination,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{return org.springframework.http.ResponseEntity.ok(packageNames.preview(tenant(session),source,destination));}catch(IllegalArgumentException e){return org.springframework.http.ResponseEntity.badRequest().body(Map.of("detail",e.getMessage()));}
+    }
+    @PostMapping("/app/orders/packing-packages/apply") @ResponseBody
+    org.springframework.http.ResponseEntity<?> applyPackageName(@RequestParam String source,@RequestParam String destination,@RequestParam String revision,@RequestParam int affectedAssignments,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{return org.springframework.http.ResponseEntity.ok(packageNames.apply(tenant(session),source,destination,revision,affectedAssignments,auth.getName()));}catch(IllegalArgumentException e){return org.springframework.http.ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("detail",e.getMessage()));}
+    }
+
+    private boolean mayEditPacking(UUID tenantId,UUID connection,Authentication auth){
+        if(auth==null||!workspace.canOperateAccount(tenantId,auth.getName()))return false;
+        boolean admin=auth.getAuthorities().stream().anyMatch(a->"ROLE_PLATFORM_ADMIN".equals(a.getAuthority()));
+        return workspace.listAccountOptions(auth.getName(),admin).stream().filter(a->a.id().equals(tenantId))
+            .flatMap(a->a.stores().stream()).anyMatch(store->store.id().equals(connection));
+    }
+
+    @PostMapping("/app/orders/{orderId}/packing-slip/products/{itemId}") @ResponseBody
+    ResponseEntity<?> savePackingProduct(@PathVariable String orderId,@PathVariable UUID itemId,
+            @RequestParam String description,@RequestParam(required=false) UUID locationId,HttpSession session,Authentication auth){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose an Amazon store first.");
+        if(!mayEditPacking(tenant(session),connection,auth))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        if("SHOPIFY".equals(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null)shopifyOrders.requireOperate(tenant(session),connection,auth);
+        try{return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(
+            catalog.updatePackingProductDetails(tenant(session),connection,orderId,itemId,description,locationId));}
+        catch(IllegalArgumentException e){return ResponseEntity.badRequest().body(Map.of("error",e.getMessage()));}
+        catch(org.springframework.dao.DataIntegrityViolationException e){return ResponseEntity.status(409).body(Map.of("error","The product or location changed while saving. Refresh and try again; nothing was changed by this request."));}
+    }
+
+    @PostMapping("/app/orders/{orderId}/pickup-override") String pickupOverride(
+            @PathVariable String orderId,@RequestParam boolean waiting,
+            @RequestParam(defaultValue="ALL") String status,Authentication auth,HttpSession session,RedirectAttributes redirect){
+        Object selected=session.getAttribute(AccountSelectionController.STORE_ID);
+        if(!(selected instanceof UUID connection))throw new ResponseStatusException(HttpStatus.CONFLICT,"Choose a store first.");
+        if("SHOPIFY".equals(workspace.findConnection(tenant(session),connection).channel())&&shopifyOrders!=null){
+            try{shopifyOrders.pickup(tenant(session),connection,UUID.fromString(orderId),waiting,auth);redirect.addFlashAttribute("orderSuccess",waiting?"Marked shipped — awaiting pickup locally. Shopify is unchanged.":"Local packing undone. Shopify is unchanged.");}
+            catch(IllegalArgumentException ex){throw new ResponseStatusException(HttpStatus.CONFLICT,ex.getMessage());}
+            return "redirect:/app/orders?status="+(com.nextaicommerce.platform.shopify.ShopifyOrderReadRepository.TABS.contains(status)?status:"ALL");
+        }
+        if(!orders.setPickupOverride(tenant(session),connection,orderId,waiting,auth.getName()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,"This order is no longer eligible. Refresh the page.");
+        redirect.addFlashAttribute("orderSuccess",waiting?"Marked shipped — awaiting pickup in this platform only. Amazon is unchanged.":"Platform mark removed. Amazon status is unchanged.");
+        String tab=OrderRepository.TAB_KEYS.contains(status)?status:"ALL";
+        return "redirect:/app/orders?status="+tab;
+    }
+
+    private static UUID tenant(HttpSession session){Object id=session.getAttribute(AccountSelectionController.TENANT_ID);if(id instanceof UUID value)return value;throw new IllegalArgumentException("Choose an account first.");}
+}

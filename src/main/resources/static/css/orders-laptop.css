@@ -1,0 +1,90 @@
+/* Laptop budget: one document scroll surface; retain all default columns. */
+@media(min-width:1000px) and (max-width:1500px){
+ body.app-page:has(.orders-workspace){grid-template-columns:190px minmax(0,1fr)}
+ .orders-workspace.workspace{padding:16px 18px 0;min-width:0}
+ .orders-workspace .workspace-header{margin:0;padding:0 0 8px;min-height:40px}
+ .orders-workspace .workspace-header h1,.orders-workspace .workspace-header .page-intro{margin:0}
+ .orders-workspace .workspace-header h1{font-size:22px}
+ .orders-workspace .workspace-header .page-intro{font-size:10px;max-width:420px}
+ .orders-workspace .order-summary{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}
+ .orders-workspace .order-summary article{min-height:0;padding:8px 10px;gap:0;align-items:start;border-radius:10px}
+ .orders-workspace .order-summary article>span{display:none}
+ .orders-workspace .order-summary article>div{display:flex;flex-direction:column;align-items:stretch;min-width:0;width:100%;gap:2px}
+ .orders-workspace .order-summary article strong{font-size:18px;line-height:1.25;white-space:nowrap}
+ .orders-workspace .order-summary small{font-size:9px;line-height:1.25}
+ .orders-workspace .order-summary .summary-filtered,.orders-workspace .order-summary .period-financials{position:static;transform:none;min-width:0;width:auto;max-height:none;margin:4px 0 0;padding:4px 0 0;border-radius:0;border-top:1px solid var(--line);background:transparent;color:var(--ink);display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px}
+ .orders-workspace .order-summary .summary-filtered b,.orders-workspace .period-financials b{font-size:12px;line-height:1.3}
+ .orders-workspace .period-refunds{flex-basis:100%;font-size:10px}
+ .orders-workspace .order-toolbar{padding:8px 10px}
+ .orders-workspace .order-heading-note{display:none}
+ .orders-workspace .order-toolbar h2{font-size:14px}
+ .orders-workspace .order-sync-time{font-size:9px}
+ .orders-workspace .order-card{overflow:visible;min-width:0}
+ .orders-workspace .orders-filter-anchor{position:static;background:var(--white);border-radius:10px 10px 0 0}
+ .orders-workspace .table-standard-toolbar{padding:7px 10px;gap:6px;min-height:0;flex-wrap:wrap}
+ .orders-workspace .table-standard-search input{width:200px;min-width:100px;font-size:11px}
+ .orders-workspace .table-widget-tools{gap:5px}
+ .orders-workspace .table-standard-toolbar .secondary-button{padding:6px 8px;font-size:10px;min-height:30px}
+ .orders-workspace .order-tab-panel{padding:4px 7px;gap:4px;min-height:0}
+ .orders-workspace .order-tab-caption{display:none}
+ .orders-workspace .order-filters{flex-wrap:wrap;overflow:visible;gap:2px;padding:0}
+ .orders-workspace .order-filters a{padding:4px 5px;font-size:10px;gap:4px}
+ .orders-workspace .order-tab-count{font-size:9px;padding:2px 4px}
+ .orders-workspace .order-tab-panel .order-filters a{padding:4px 5px;font-size:10px;gap:4px}
+ .orders-workspace .order-tab-count>i,.orders-workspace .order-tab-count>span{display:none}
+ .orders-workspace .order-pagination{position:sticky;bottom:0;z-index:13;background:var(--white);padding:7px 10px;box-shadow:0 -3px 10px #172b4410;border-top:1px solid var(--line);border-radius:0 0 10px 10px;gap:8px}
+ .orders-workspace .order-pagination .table-page-context{gap:10px;font-size:10px}
+ .orders-workspace .order-pagination nav{gap:4px}
+ .orders-workspace .order-pagination .secondary-button{padding:6px 8px;font-size:10px}
+ .orders-workspace .order-pagination .table-local-page{font-size:10px}
+ .orders-workspace .summary-filtered em{font-size:9px}
+ .orders-workspace .live-indicator.stale{background:var(--surface,#f3f5f8);color:var(--muted)}
+ .orders-workspace .live-indicator.stale i{background:var(--muted);box-shadow:none}
+}
+.collaboration-row-button .collaboration-unread-dot{position:absolute;top:-3px;right:-3px;width:7px;height:7px;border:2px solid var(--white,#fff);border-radius:50%;background:var(--blue,#2c6bea);pointer-events:none}
+@media print{.orders-filter-anchor,.orders-workspace .order-pagination,.orders-workspace .table-grid-header{position:static!important}}
+
+/* Orders owns its width budget; density follows the card's measured content width. */
+@media(min-width:761px){
+ .orders-workspace .order-card{--order-record-width:132px;--order-picture-size:80px;--order-order-width:185px;--order-sales-width:130px;--order-profit-width:112px;--order-stock-width:80px;--order-fba-width:144px;--order-weeks-width:144px;--order-actions-width:80px;--order-cell-gap:10px;--order-row-pad:14px;--order-primary-number-size:20px;min-width:0}
+ .orders-workspace .order-card[data-orders-density=compact]{--order-record-width:100px;--order-picture-size:58px;--order-order-width:150px;--order-sales-width:108px;--order-profit-width:108px;--order-fba-width:124px;--order-weeks-width:128px;--order-actions-width:76px;--order-cell-gap:8px;--order-row-pad:10px}
+ .orders-workspace .order-card[data-orders-density=narrow]{--order-record-width:80px;--order-picture-size:46px;--order-order-width:138px;--order-sales-width:100px;--order-profit-width:100px;--order-stock-width:72px;--order-fba-width:112px;--order-weeks-width:108px;--order-actions-width:72px;--order-cell-gap:6px;--order-row-pad:8px}
+ .orders-workspace .order-list.table-widget{width:100%;min-width:0;max-width:100%}
+ .orders-workspace .order-list.table-widget>.order-row{min-width:0}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header){width:100%;min-width:0;box-sizing:border-box;gap:var(--order-cell-gap);padding-inline:var(--order-row-pad)!important}
+ .orders-workspace .order-list.table-widget .order-item-grid-header{position:static;top:auto}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column]{min-width:0!important;box-sizing:border-box;padding-inline:0;width:auto}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=picture]{flex:0 0 var(--order-record-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=product]{flex:1 1 0}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=order]{flex:0 0 var(--order-order-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=quantity]{flex:0 0 28px}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=sales]{flex:0 0 var(--order-sales-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=profit]{flex:0 0 var(--order-profit-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=available]{flex:0 0 var(--order-stock-width)}
+ .orders-workspace .order-list.table-widget:has(.fba-stock) :is(.order-item,.order-item-grid-header)>[data-column=available]{flex-basis:var(--order-fba-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=four-week-sales]{flex:0 0 var(--order-weeks-width)}
+ .orders-workspace .order-list.table-widget :is(.order-item,.order-item-grid-header)>[data-column=action]{flex:0 0 var(--order-actions-width)!important}
+ .orders-workspace .order-list .order-item>.order-picture-cell{display:flex;flex-flow:row nowrap;gap:6px}
+ .orders-workspace .order-picture-cell .order-product-stage{width:var(--order-picture-size)!important;height:var(--order-picture-size)!important;flex:0 0 var(--order-picture-size)!important;min-width:0!important;min-height:0!important;margin:0!important}
+ /* Keep the photo inside its density slot despite the shared auto-sized thumbnail rule. */
+ /* Shared product-thumbnails.css now owns this exact contained-photo contract. */
+ .orders-workspace .order-picture-cell>.order-engagement{flex:0 0 28px;gap:6px}
+ .orders-workspace .order-list .order-engagement>:is(.order-stage-chat,.order-picture-more){width:28px!important;height:28px!important;min-width:28px;padding:0!important}
+ .orders-workspace .order-engagement>:is(.order-stage-chat,.order-picture-more)>.platform-icon{width:26px!important;height:26px!important;max-width:26px}
+ .orders-workspace .order-list.table-widget .item-product-copy>strong{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:break-word;font-size:.84rem!important;line-height:1.45}
+ .orders-workspace .item-order-reference>.order-number{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+ .orders-workspace .order-list.table-widget .table-grid-header>[data-column]{white-space:normal;overflow-wrap:normal;letter-spacing:.04em;line-height:1.4}
+ .orders-workspace .order-list.table-widget .item-weekly-sales{width:auto;max-width:none;min-width:0}
+ .orders-workspace .item-weekly-sales .weekly-sales{width:100%!important;min-width:0;max-width:100%}
+ .orders-workspace .weekly-sold-totals{display:flex;justify-content:center;flex-wrap:wrap;white-space:normal;gap:2px 4px}
+ .orders-workspace .item-weekly-sales .sku-refund-summary{white-space:normal}
+ .orders-workspace .fba-stock-totals{gap:3px 6px}
+ .orders-workspace .fba-stock-totals dt{white-space:normal}
+}
+/* Ledger links must retain the same primary numeric hierarchy as Profit. */
+.orders-workspace .order-list.table-widget :is(.item-profit .profit-open:not(.profit-missing)>span,[data-column=available]>strong,[data-column=available] .inventory-ledger-link>strong,[data-column=available] .fba-stock-totals>dd:first-of-type){font-size:var(--order-primary-number-size,20px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1.35;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+/* Bound both the control and its artwork, including old min-width declarations. */
+.orders-workspace .order-list.table-widget .item-actions{gap:4px;flex-wrap:wrap;align-content:center}
+.orders-workspace .item-actions :is(.order-action-tip,.platform-pickup-action){flex:0 0 34px;width:34px;min-width:34px;margin:0}
+.orders-workspace .item-actions .order-icon-action{flex:0 0 34px;width:34px!important;min-width:34px!important;max-width:34px!important;height:34px!important;box-sizing:border-box;padding:0!important}
+.orders-workspace .item-actions .order-icon-action>.platform-icon{display:block;position:static;width:32px!important;min-width:0;height:32px!important;max-width:100%;object-fit:contain;transform:none}

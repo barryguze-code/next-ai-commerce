@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Seller Central</title>
+  <desc id="desc">Dark rounded Seller Central destination icon with orange marketplace smile.</desc>
+  <defs>
+    <linearGradient id="seller-bg" x1="7" y1="3" x2="33" y2="38" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#26384B"/>
+      <stop offset="1" stop-color="#0E1B2A"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="38" height="38" rx="10" fill="url(#seller-bg)" stroke="#50657B"/>
+  <text x="20" y="15.5" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700" text-anchor="middle">amazon</text>
+  <text x="20" y="24" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700" text-anchor="middle">seller</text>
+  <path d="M11.5 28.1c5.1 3.4 11.8 3.6 17.2.4" stroke="#FF9900" stroke-width="2.25" stroke-linecap="round"/>
+  <path d="m26.6 27.3 2.9.5-1.4 2.6" stroke="#FF9900" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

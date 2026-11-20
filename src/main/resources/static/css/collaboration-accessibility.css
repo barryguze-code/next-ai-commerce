@@ -1,0 +1,50 @@
+/* Readability floor independent of the compact table/root font scale. */
+#contextual-thread-dialog{--conversation-secondary:#526174;font-size:max(14px,.875rem);line-height:1.5}
+#contextual-thread-dialog .thread-record h2{font-size:max(22px,1.375rem);font-weight:650;line-height:1.3;margin:4px 0;overflow-wrap:anywhere}
+#contextual-thread-dialog .thread-record p{font-size:max(14px,.875rem);line-height:1.5;color:var(--conversation-secondary);overflow-wrap:anywhere}
+#contextual-thread-dialog .thread-status-line small{font-size:max(13px,.8125rem);line-height:1.5;font-weight:600;color:var(--conversation-secondary)}
+#contextual-thread-dialog .thread-record-badges{gap:6px;flex-wrap:wrap;margin-top:8px}
+#contextual-thread-dialog .thread-record-badges span{font-size:max(12px,.75rem);font-weight:650;line-height:1.5;padding:4px 9px;letter-spacing:normal}
+#contextual-thread-dialog .thread-record-badges [data-status=EXPIRED]{background:#fff0f0;color:#a52232}
+#contextual-thread-dialog .thread-record-badges .expiration{background:#fff3df;color:#85500a}
+#contextual-thread-dialog .thread-management{flex-wrap:wrap;gap:8px}
+#contextual-thread-dialog .thread-management:not([hidden]){display:flex;align-items:center}
+#contextual-thread-dialog .thread-management button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;flex-shrink:0}
+#contextual-thread-dialog .thread-management button,
+#contextual-thread-dialog .thread-assignment summary,
+#contextual-thread-dialog .dialog-actions button,
+#contextual-thread-dialog .thread-mode-switch button{box-sizing:border-box;min-height:44px;font-size:max(14px,.875rem);line-height:1.4;padding:9px 12px}
+#contextual-thread-dialog .thread-mode-switch strong{font-size:inherit;font-weight:600}
+#contextual-thread-dialog .dialog-close{min-width:44px;min-height:44px;flex-shrink:0}
+#contextual-thread-dialog .thread-record>div{min-width:0}
+#contextual-thread-dialog .conversation-picker>header{gap:4px;padding-bottom:8px}
+#contextual-thread-dialog .conversation-picker>header strong{font-size:max(16px,1rem);font-weight:600;line-height:1.5}
+#contextual-thread-dialog .conversation-picker>header span,
+#contextual-thread-dialog .conversation-picker>div small,
+#contextual-thread-dialog .conversation-thread-meta,
+#contextual-thread-dialog .conversation-messages article time,
+#contextual-thread-dialog .chat-compose-hint,
+#contextual-thread-dialog .chat-file-status,
+#contextual-thread-dialog .conversation-empty span,
+#contextual-thread-dialog [data-thread-composer-hint],
+#contextual-thread-dialog [data-attachment-name]{font-size:max(13px,.8125rem);line-height:1.5;font-weight:400;color:var(--conversation-secondary)}
+#contextual-thread-dialog .conversation-picker>div{gap:10px}
+#contextual-thread-dialog .conversation-picker>div>button{grid-template-columns:36px minmax(0,1fr) 16px;gap:12px;padding:12px 14px;min-height:76px;border-radius:12px}
+#contextual-thread-dialog .conversation-picker>div strong{font-size:max(14px,.875rem);font-weight:600;line-height:1.5}
+#contextual-thread-dialog .conversation-picker>div small{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+#contextual-thread-dialog .conversation-picker-meta{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px}
+#contextual-thread-dialog .conversation-picker-status{font-weight:600}
+#contextual-thread-dialog .conversation-picker-count{white-space:nowrap}
+#contextual-thread-dialog .conversation-picker footer{gap:8px;flex-wrap:wrap}
+#contextual-thread-dialog .conversation-new-button,
+#contextual-thread-dialog .conversation-history-link{display:inline-flex;align-items:center;min-height:44px;box-sizing:border-box;padding:8px;font-size:max(14px,.875rem);font-weight:600;line-height:1.5}
+#contextual-thread-dialog .conversation-messages article header strong{font-size:max(14px,.875rem);line-height:1.5}
+#contextual-thread-dialog .conversation-messages article p,
+#contextual-thread-dialog textarea{font-size:max(15px,.9375rem);line-height:1.5}
+#contextual-thread-dialog .thread-assignment-popover>strong,
+#contextual-thread-dialog [data-thread-assignment-options] label{font-size:max(14px,.875rem);line-height:1.5}
+#contextual-thread-dialog :is(button,a,summary,input,textarea):focus-visible{outline:2px solid var(--blue,#2e6be6);outline-offset:3px}
+html[data-theme=dark] #contextual-thread-dialog{--conversation-secondary:#b9c6d7}
+html[data-theme=dark] #contextual-thread-dialog .thread-record-badges [data-status=EXPIRED]{background:#492830;color:#ffc3cc}
+html[data-theme=dark] #contextual-thread-dialog .thread-record-badges .expiration{background:#42341e;color:#ffda9d}
+@media(max-width:600px){#contextual-thread-dialog .thread-record h2{font-size:max(20px,1.25rem)}#contextual-thread-dialog .conversation-picker>div>button{padding:10px;gap:8px}#contextual-thread-dialog .thread-management .thread-assignment{max-width:100%}#contextual-thread-dialog .thread-assignment summary{white-space:normal}}

@@ -1,0 +1,88 @@
+package com.nextaicommerce.platform.web;
+
+import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.ui.Model;
+
+@ControllerAdvice
+public class WorkspaceModelAdvice {
+    private final WorkspaceAccessRepository repository;
+    @org.springframework.beans.factory.annotation.Value("${app.fba.replenishment-enabled:false}") private boolean fbaReplenishmentEnabled;
+    @ModelAttribute("fbaReplenishmentEnabled") boolean fbaReplenishmentEnabled(){return fbaReplenishmentEnabled;}
+
+    WorkspaceModelAdvice(WorkspaceAccessRepository repository) {
+        this.repository = repository;
+    }
+
+    @ModelAttribute
+    void accountSwitcher(Authentication authentication, HttpSession session,
+            HttpServletRequest request, Model model) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication instanceof AnonymousAuthenticationToken) return;
+        if((request.getRequestURI().matches("/app/inventory/physical-counts/[^/]+/progress")
+                || request.getRequestURI().matches("/app/catalog/imports/[^/]+/progress")
+                || request.getRequestURI().matches("/app/orders/sync/[^/]+/progress"))
+                && session.getAttribute(AccountSelectionController.TENANT_ID) instanceof java.util.UUID)return;
+        // JSON/image responses do not render a workspace picker. Keep live authorization
+        // in the membership filter/repositories; avoid rebuilding its display model per request.
+        Object handler=request.getAttribute(org.springframework.web.servlet.HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE);
+        if(handler instanceof org.springframework.web.method.HandlerMethod method
+                && (method.hasMethodAnnotation(org.springframework.web.bind.annotation.ResponseBody.class)
+                    || method.getBeanType().isAnnotationPresent(org.springframework.web.bind.annotation.RestController.class))
+                && (session.getAttribute(AccountSelectionController.TENANT_ID) instanceof java.util.UUID
+                    || request.getRequestURI().startsWith("/app/collaboration/personal/")))return;
+        boolean superAdmin = authentication.getAuthorities().stream()
+            .anyMatch(authority -> authority.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
+        var accountOptions = repository.listAccountOptions(authentication.getName(), superAdmin);
+        restoreRememberedWorkspace(request,session,accountOptions);
+        model.addAttribute("accountOptions", accountOptions);
+        model.addAttribute("currentWorkspacePath", request.getRequestURI());
+        String path=request.getRequestURI();
+        boolean warehouse=(path.startsWith("/app/inventory")&&!path.startsWith("/app/inventory/fba-shipments"))||path.startsWith("/app/receiving");
+        model.addAttribute("warehouseWorkspace",warehouse);
+        String warehouseReturn=path.startsWith("/app/receiving")?"/app/receiving":path.startsWith("/app/inventory/ledger")?"/app/inventory/ledger":
+            path.startsWith("/app/inventory/replenishment")?"/app/inventory/replenishment":path.startsWith("/app/inventory/physical-counts")?"/app/inventory/physical-counts/history":"/app/inventory";
+        model.addAttribute("warehouseReturnTo",warehouseReturn);
+        Object selectedAccountId = session.getAttribute(AccountSelectionController.TENANT_ID);
+        model.addAttribute("tableShortcutScope",selectedAccountId+":"+authentication.getName());
+        accountOptions.stream().filter(account -> account.id().equals(selectedAccountId)).findFirst()
+            .ifPresent(account -> { model.addAttribute("selectedAccountInitials", account.initials()); model.addAttribute("selectedAccountLogoUrl", account.logoUrl()); });
+        Object selectedStoreId = session.getAttribute(AccountSelectionController.STORE_ID);
+        model.addAttribute("selectedStoreId", selectedStoreId);
+        model.addAttribute("selectedStoreName", session.getAttribute(AccountSelectionController.STORE_NAME));
+        if (selectedStoreId instanceof java.util.UUID storeId) {
+            accountOptions.stream().flatMap(account -> account.stores().stream())
+                .filter(store -> store.id().equals(storeId)).findFirst()
+                .ifPresent(store -> model.addAttribute("selectedStore", store));
+        }
+    }
+
+    private static void restoreRememberedWorkspace(HttpServletRequest request,HttpSession session,
+            java.util.List<WorkspaceAccessRepository.AccountOption> options) {
+        Object selected=session.getAttribute(AccountSelectionController.TENANT_ID);
+        if(selected instanceof java.util.UUID)return;
+        session.removeAttribute(AccountSelectionController.TENANT_ID);session.removeAttribute(AccountSelectionController.TENANT_NAME);
+        session.removeAttribute(AccountSelectionController.STORE_ID);session.removeAttribute(AccountSelectionController.STORE_NAME);
+        java.util.UUID remembered=cookieUuid(request,AccountSelectionController.LAST_TENANT_COOKIE);
+        var account=options.stream().filter(option->option.id().equals(remembered)).findFirst().orElse(null);
+        if(account==null&&options.size()==1)account=options.getFirst();
+        if(account==null)return;
+        session.setAttribute(AccountSelectionController.TENANT_ID,account.id());
+        session.setAttribute(AccountSelectionController.TENANT_NAME,account.name());
+        java.util.UUID rememberedStore=cookieUuid(request,AccountSelectionController.LAST_STORE_COOKIE);
+        account.stores().stream().filter(store->store.id().equals(rememberedStore)).findFirst().ifPresent(store->{
+            session.setAttribute(AccountSelectionController.STORE_ID,store.id());
+            session.setAttribute(AccountSelectionController.STORE_NAME,store.name());
+        });
+    }
+
+    private static java.util.UUID cookieUuid(HttpServletRequest request,String name){
+        if(request.getCookies()==null)return null;
+        for(var cookie:request.getCookies())if(name.equals(cookie.getName()))try{return java.util.UUID.fromString(cookie.getValue());}catch(IllegalArgumentException ignored){return null;}
+        return null;
+    }
+}

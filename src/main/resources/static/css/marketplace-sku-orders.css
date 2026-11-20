@@ -1,0 +1,49 @@
+.sku-workspace .sku-table.table-widget{width:100%;min-width:1100px}
+.sku-workspace .sku-table.table-widget th{width:auto}
+.sku-workspace .sku-table.table-widget td[data-label="Status"] .fulfillment-pill{display:table;margin:6px auto 0}
+.sku-workspace .sku-table.table-widget td[data-label="Price (+ shipping)"]>.profit-price-link,.sku-workspace .sku-table .profit-open>span,.sku-workspace .sku-table td[data-label="Available"]>strong{font-size:20px;font-weight:700}
+.sku-workspace .sku-table .profit-open{display:inline-grid;grid-template-columns:auto 22px;gap:2px 3px;align-items:center;padding:0}
+.sku-workspace .sku-table .profit-open>span{grid-column:1;grid-row:1}
+.sku-workspace .sku-table .profit-open>small{grid-column:1/-1;grid-row:2}
+.sku-workspace .sku-table .profit-open .profit-calculator-art{grid-column:2;grid-row:1;margin:0;width:22px;height:22px}
+.sku-inline-buybox{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:5px;white-space:nowrap}
+.sku-inline-buybox>small{font-size:10px;text-transform:uppercase;color:var(--muted)}
+.sku-workspace .sku-inline-buybox .buy-box-price{font-size:12px}
+.sku-inline-buybox .buy-box-price:before{display:none}
+.sku-workspace .sku-fees{display:flex;align-items:center;justify-content:center;gap:5px}
+.sku-fees dl{display:grid;grid-template-columns:auto auto;gap:2px 8px;font-size:10px;line-height:14px;margin:0}
+.sku-fees dt{color:var(--muted);white-space:nowrap;text-align:left}
+.sku-fees dd{margin:0;text-align:right;font-weight:600}
+.sku-fees button{border:0;background:transparent;color:#2c6ce5;padding:4px;font-size:16px;cursor:pointer}
+.sku-workspace .sku-table.table-widget td[data-label="Estimated fees"]{min-width:145px}
+.sku-workspace .sku-table.table-widget td[data-label="Profit"]{min-width:105px}
+.sku-workspace .sku-table.table-widget td[data-label="Available"]{min-width:65px}
+.sku-workspace .sku-table .item-weekly-sales{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:78px}
+.sku-workspace .sku-table .weekly-sold-totals{font-size:11px;white-space:nowrap;margin-bottom:4px}
+.sku-workspace .sku-inline-buybox.price-different .buy-box-price{color:#c73547}
+.sku-workspace .sku-inline-buybox.price-match .buy-box-price{color:#16865b}
+.sku-workspace .sku-inline-buybox.price-unknown .buy-box-price{color:var(--muted)}
+.sku-inline-buybox.price-match .profit-calculator-art{display:none}
+.sku-workspace .sku-table .item-weekly-sales .weekly-sales-bars{height:31px;min-height:31px;padding-top:10px;box-sizing:border-box;width:88px;min-width:88px}
+.sku-workspace .sku-table .item-weekly-sales .weekly-sales-bars>span{max-height:20px}
+
+/* Final SKU commercial-column presentation, after shared widget and profit styles. */
+@media(min-width:761px){
+  .sku-workspace .sku-table.table-widget th[data-column=product-details]{width:343px}
+  .sku-workspace .sku-table.table-widget th[data-column=status]{width:115px}
+  .sku-workspace .sku-table.table-widget th[data-column=price-shipping]{width:150px}
+  .sku-workspace .sku-table.table-widget th[data-column=profit]{width:150px}
+  .sku-workspace .sku-table.table-widget th[data-column=available],.sku-workspace .sku-table.table-widget th[data-column="4w-sales"]{width:170px}
+  .sku-workspace .sku-table.table-widget td[data-label="Status"] .fulfillment-pill{margin:6px 0 0;font-size:var(--ui-meta,12px);font-weight:600}
+  .sku-workspace .sku-table.table-widget td[data-label="Price (+ shipping)"]>.profit-price-link,.sku-workspace .sku-table .profit-open>span,.sku-workspace .sku-table td[data-label="Available"]>strong{font-size:18px;font-weight:650;font-variant-numeric:tabular-nums}
+  .sku-workspace .sku-inline-buybox{align-items:flex-start;justify-content:flex-start;flex-wrap:wrap;gap:2px 6px;white-space:normal;line-height:1.5}
+  .sku-workspace .sku-inline-buybox>small{font-size:var(--ui-meta,12px);text-transform:none}
+  .sku-workspace .sku-inline-buybox .buy-box-price{font-size:13px}
+  .sku-workspace .customer-shipping-note{justify-content:flex-start;font-size:13px}
+  .sku-workspace .sku-table .item-weekly-sales{align-items:flex-start;min-height:78px}
+  .sku-workspace .sku-table .weekly-sold-totals{font-size:14px;font-weight:600}
+  .sku-workspace .sku-table .weekly-sales{margin:18px 0 0}
+  .sku-workspace .sku-table .fba-stock{align-items:flex-start}
+  .sku-workspace .sku-table .fba-stock-totals dd{color:var(--ink)}
+  .sku-workspace .sku-table .fba-stock-totals dd:first-of-type{font-size:18px;font-weight:650}
+}

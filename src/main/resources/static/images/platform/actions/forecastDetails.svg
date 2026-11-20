@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <defs><mask id="forecastDetails-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24" style="mask-type:luminance"><rect width="24" height="24" fill="white" stroke="none"/><rect x="12" y="9.1" width="12" height="14.9" rx="1.6" fill="black" stroke="none"/></mask></defs>
+  <g mask="url(#forecastDetails-cut)"><path d="M3 4v16h15M5.5 12v5M8.5 7v10M11.5 10v7"/></g>
+  <rect x="13.75" y="10.85" width="7.7" height="11" rx=".825"/>
+  <path d="M15.4 12.5h4.4v2.2h-4.4zM15.4 16.9h.55M19.25 16.9h.55M15.4 19.1h.55M19.25 19.1h.55"/>
+</svg>

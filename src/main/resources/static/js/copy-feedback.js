@@ -1,0 +1,13 @@
+/* Copy feedback follows the existing successful clipboard operation; never intercept writes. */
+(()=>{
+ if(window.NextAiCopyFeedback)return;
+ const selector='[data-ui-copy],[data-order-copy],[data-copy-sku],.sku-identifier-copy';
+ const tip=document.createElement('div');tip.className='platform-copy-feedback';tip.id='platform-copy-feedback';tip.setAttribute('role','status');tip.setAttribute('aria-live','polite');tip.hidden=true;document.body.append(tip);let timer,hideTimer,anchor,described='';const positions=new WeakMap();
+ function hide(){clearTimeout(timer);clearTimeout(hideTimer);if(anchor?.getAttribute('aria-describedby')===tip.id){if(described)anchor.setAttribute('aria-describedby',described);else anchor.removeAttribute('aria-describedby');}anchor=null;tip.hidden=true;tip.classList.remove('is-fading');}
+ function capture(target){if(!target)return;const rect=target.getBoundingClientRect();if(rect.width&&rect.height)positions.set(target,{left:rect.left,bottom:rect.bottom});}
+ function show(target,text,success=false){const prior=positions.get(target);hide();if(!target)return;anchor=target;capture(target);const rect=positions.get(target)||prior;if(!rect)return;target.removeAttribute('title');target.removeAttribute('data-tooltip');described=target.getAttribute('aria-describedby')||'';(target.closest('dialog[open]')||document.body).append(tip);tip.textContent=text;tip.hidden=false;tip.style.left=Math.max(8,Math.min(rect.left,innerWidth-tip.offsetWidth-8))+'px';tip.style.top=Math.max(8,Math.min(rect.bottom+6,innerHeight-tip.offsetHeight-8))+'px';target.setAttribute('aria-describedby',tip.id);if(success)timer=setTimeout(()=>{tip.classList.add('is-fading');hideTimer=setTimeout(hide,180);},1000);}
+ const hover=e=>{const target=e.target.closest(selector);if(!target||target.contains(e.relatedTarget)||(target===anchor&&tip.textContent==='Copied!'&&!tip.hidden))return;show(target,'Copy');};
+ document.addEventListener('mouseover',hover);document.addEventListener('focusin',hover);document.addEventListener('click',e=>{const target=e.target.closest(selector);if(target){capture(target);show(target,'Copy');}},true);
+ const leave=e=>{const target=e.target.closest(selector);if(target&&!target.contains(e.relatedTarget)&&tip.textContent!=='Copied!')hide();};document.addEventListener('mouseout',leave);document.addEventListener('focusout',leave);window.addEventListener('scroll',hide,true);document.addEventListener('close',hide,true);document.addEventListener('keydown',e=>{if(e.key==='Escape')hide();});
+ window.NextAiCopyFeedback=Object.freeze({capture,success:target=>show(target,'Copied!',true),failure:(target,text='Copy unavailable')=>show(target,text,true)});
+})();

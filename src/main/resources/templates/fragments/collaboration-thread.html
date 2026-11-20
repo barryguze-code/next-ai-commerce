@@ -1,0 +1,53 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org"><body>
+<th:block th:fragment="modal(returnTo)">
+<dialog id="contextual-thread-dialog" class="invite-dialog contextual-thread-dialog">
+  <section class="dialog-shell">
+    <div class="dialog-header thread-dialog-header">
+      <div class="thread-record"><img id="thread-account-logo" class="thread-record-visual" src="/images/next-ai-mark-transparent.png" alt="Account logo" hidden>
+        <a id="thread-parent-link" class="thread-record-visual" href="#" data-tooltip="Go to original source" aria-label="Go to original source" hidden><img src="/images/platform/table/collaboration-original-redirect.png?v=20261008-1" alt="" decoding="async"></a>
+        <div><div class="thread-status-line"><img id="thread-status-icon" src="/images/platform/optimized32/collaboration-no-message-gray.png?v=20261109-icons32-1" alt="No messages"><small id="thread-record-type" class="eyebrow dark">Collaboration</small></div><div class="thread-subject-heading"><h2 id="thread-record-title">Record conversation</h2><button type="button" data-thread-edit-title aria-label="Edit subject" title="Edit subject" hidden><img src="/images/platform/table/edit.png" alt=""></button></div><div class="thread-subject-editor" hidden><input id="thread-title-input" aria-label="Subject" maxlength="240" autocomplete="off" placeholder="What needs to be done?"><button type="button" class="primary-button compact-button" data-thread-save-title>Save</button><button type="button" class="secondary-button compact-button" data-thread-cancel-title>Cancel</button></div><p data-thread-title-error role="alert" hidden></p><label id="thread-new-account" hidden>Account<select aria-label="Task account"></select></label><p id="thread-record-context">Record context</p><div class="thread-record-meta"><div id="thread-record-badges" class="thread-record-badges"></div></div></div>
+      </div>
+      <button class="dialog-close" type="button" aria-label="Close conversation" data-thread-dialog-close>×</button>
+    </div>
+    <div class="thread-content">
+    <div id="thread-management" class="thread-management" th:attr="data-current-email=${signedInEmail}" hidden>
+      <details class="thread-assignment"><summary>Assigned to · <span data-thread-assignees>Unassigned</span></summary><div class="thread-assignment-popover"><strong>Assign teammates</strong><div data-thread-assignment-options></div><button type="button" data-thread-save-assignment>Apply assignment</button></div></details>
+      <button type="button" data-thread-assign-self>Assign to me</button>
+      <button type="button" class="task-due-button" data-edit-due data-thread-due aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4M16 3v4M4 11h16"/></svg><span>Add due date</span></button>
+      <button class="conversation-close-button" type="submit" form="thread-conversation-reply" name="status" value="CLOSED" formnovalidate><img src="/images/platform/optimized32/collaboration-complete.png?v=20261109-icons32-1" alt="" width="24" height="24"><span>Close conversation</span></button>
+      <label data-thread-draft-date hidden>Due date<input type="date" aria-label="Task due date"></label><span data-thread-management-error role="status"></span>
+    </div>
+    <div class="thread-mode-switch" role="tablist" aria-label="Conversation visibility">
+      <button type="button" role="tab" aria-selected="true" data-thread-tab="TEAM_CHAT"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v9H9l-4 4v-13Z"/></svg><span><strong>Collaborate</strong><small>Visible to permitted teammates</small></span></button>
+      <button type="button" role="tab" aria-selected="false" data-thread-tab="PRIVATE_NOTE"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="10" width="12" height="10" rx="2"/><path d="M9 10V7a3 3 0 016 0v3"/></svg><span><strong>Private Note</strong><small>Visible only to you</small></span></button>
+    </div>
+    <div id="thread-persistent-panel" class="dialog-body thread-dialog-body">
+      <div id="thread-conversation-list" class="conversation-list"><div class="conversation-loading">Loading conversations…</div></div>
+      <form id="thread-conversation-start" method="post" enctype="multipart/form-data" th:action="@{/app/collaboration/reviews}" class="conversation-compose collaboration-composer" hidden>
+        <input name="subjectType" type="hidden"><input name="subjectKey" type="hidden"><input name="subjectLabel" type="hidden"><input name="actionKind" value="CONVERSATION" type="hidden"><input name="title" type="hidden"><input name="messageType" value="TEAM_CHAT" type="hidden"><input name="contextSnapshot" type="hidden"><input name="parentUrl" type="hidden"><input name="returnTo" th:value="${returnTo}" type="hidden">
+        <input type="hidden" name="timeZone" value="America/Los_Angeles">
+        <textarea data-collaboration-composer name="message" maxlength="4000" placeholder="Write a message… Type @ to mention a teammate"></textarea><div class="mention-menu" role="listbox" hidden></div>
+        <div class="thread-compose-tools"><label class="thread-attachment-button"><input type="file" name="attachments" multiple accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv,.xls,.xlsx"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 12 5.5-5.5a3 3 0 014.2 4.2l-7.4 7.4a5 5 0 01-7.1-7.1l7.1-7.1"/></svg><span>Attach</span></label><small data-attachment-name>No files selected</small></div>
+        <footer><small data-thread-composer-hint>Type @ to notify a teammate by email.</small><button class="primary-button compact-button" type="submit">Start conversation</button></footer>
+      </form>
+      <form id="thread-conversation-reply" method="post" enctype="multipart/form-data" th:action="@{/app/collaboration/reviews/placeholder/reply}" class="conversation-reply collaboration-composer" hidden>
+        <input name="messageType" value="TEAM_CHAT" type="hidden"><input name="returnTo" th:value="${returnTo}" type="hidden">
+        <textarea data-collaboration-composer name="body" maxlength="4000" placeholder="Reply… Type @ to notify a teammate"></textarea><div class="mention-menu" role="listbox" hidden></div>
+        <div class="thread-compose-tools"><label class="thread-attachment-button"><input type="file" name="attachments" multiple accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv,.xls,.xlsx"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 12 5.5-5.5a3 3 0 014.2 4.2l-7.4 7.4a5 5 0 01-7.1-7.1l7.1-7.1"/></svg><span>Attach</span></label><small data-attachment-name>No files selected</small></div>
+        <footer><small data-thread-composer-hint>History stays with this record.</small><div class="conversation-buttons"><button class="primary-button compact-button" type="submit">Send</button></div></footer>
+      </form>
+    </div>
+    </div>
+    <footer class="dialog-actions"><button type="button" class="secondary-button" data-thread-dialog-close>Close</button></footer>
+  </section>
+</dialog>
+<div th:fragment="dueEditor" id="collaboration-due-editor" class="task-date-inline" hidden>
+  <form method="post" th:action="@{/app/collaboration/reviews/placeholder/due-date}">
+    <input type="date" name="dueDate" aria-label="Due date"><input type="hidden" name="timeZone">
+    <button type="submit" aria-label="Save due date" title="Save date">✓</button><button type="button" data-date-cancel aria-label="Cancel date edit" title="Cancel">×</button>
+    <p data-date-error role="alert" hidden></p>
+  </form>
+</div>
+</th:block>
+</body></html>

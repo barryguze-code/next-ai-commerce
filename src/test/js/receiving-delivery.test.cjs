@@ -1,0 +1,131 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {chromium}=require('playwright');
+const root='src/main/resources/';
+const template=fs.readFileSync(root+'templates/receiving-work.html','utf8');
+const dialogs=template.slice(template.indexOf('<dialog'),template.indexOf('<script th:inline'));
+test('receiving tabs, expiration batches, fee navigation and overage confirmation',async()=>{
+ const browser=await chromium.launch({headless:true,...(process.env.TEST_BROWSER_CHANNEL?{channel:process.env.TEST_BROWSER_CHANNEL}:{})});
+ try{
+  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));let submitted,posts=0,packPosts=0,failRefresh=false;
+  const state={documents:[{id:'doc',type:'INVOICE',number:'QA'}],lines:[{id:'line',documentId:'doc',productId:'item',product:'QA Yogurt',code:'381005',remaining:12,received:0,receipts:0,unitsPerCase:6,depositFee:0,otherFee:0,locationId:'main',unitCost:2,currency:'USD',requiresExpiration:true}],locations:[{id:'main',code:'MAIN',name:'Main storage',status:'ACTIVE'}],details:[],policy:{minimumSellableDays:4,warningDays:18}};
+  await page.route('**/*',route=>{
+   const path=new URL(route.request().url()).pathname;
+   if(path.endsWith('/identity'))return route.fulfill({json:{imageUrl:''}});
+   if(path.endsWith('/expiration-status'))return route.fulfill({json:{tone:'success',message:'Expiration OK'}});
+   if(path.endsWith('/state'))return route.fulfill(failRefresh?{status:500,json:{message:'Test refresh failure'}}:{json:state});
+   if(path.includes('/prepare/'))return route.fulfill({json:{message:'Fees saved.'}});
+   if(path.includes('/case-pack/')){packPosts++;return route.fulfill({json:{message:'Catalogue updated.'}});}
+   if(path.includes('/batches/')){posts++;submitted=JSON.parse(route.request().postData());return route.fulfill({json:{message:'Receipt saved.'}});}
+   return route.fulfill({contentType:'text/html',body:'<main class="receive-work" data-can-edit="true" data-can-add-location="false"><div id="rw-lines-card"><label class="table-standard-search"><input type="search" aria-label="Search table"></label></div><button data-receive="line">Receive</button><table class="rw-table"></table><p id="rw-feedback"></p></main>'+dialogs});
+  });
+  await page.goto('http://localhost/receiving-fixture');await page.evaluate(state=>window.receivingWork=state,state);
+  await page.evaluate(()=>document.body.className='app-page platform-standard-tables');
+  for(const file of ['app.css','brand.css','access.css','platform-controls.css','receiving-work.css','standard-record-tables.css','order-pictures.css','platform-ui.css'])await page.addStyleTag({path:root+'static/css/'+file});
+  for(const file of ['platform-controls.js','receiving-work.js'])await page.addScriptTag({path:root+'static/js/'+file});
+  await page.getByRole('button',{name:'Receive',exact:true}).click();
+  assert.equal(await page.locator('[name=quantity]').inputValue(),'12');
+  assert.equal(await page.locator('[name=cases]').inputValue(),'2');
+  assert.equal(await page.locator('[name=pack]').inputValue(),'6');
+  assert.equal(await page.locator('[data-pack-feedback]').textContent(),'');
+  assert.equal(await page.locator('[name=quantity]').getAttribute('readonly'),'');
+  assert.equal(await page.getByText('Loose units',{exact:true}).count(),0);
+  await page.waitForFunction(()=>document.activeElement?.name==='expiration');
+  // A click auto-scrolls in Playwright and previously masked the inaccessible action.
+  // Assert geometry and hit testing before clicking, with the production CSS cascade.
+  for(const viewport of [{width:1280,height:720},{width:1440,height:640},{width:390,height:664}]){
+   await page.setViewportSize(viewport);
+   assert.equal(await page.getByRole('button',{name:'Save receipt',exact:true}).evaluate(button=>{
+    const r=button.getBoundingClientRect();
+    return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth&&document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===button;
+   }),true,'Save receipt must remain visible and unobstructed at '+JSON.stringify(viewport));
+  }
+  await page.setViewportSize({width:1280,height:720});
+  await page.locator('[name=pack]').fill('5');assert.equal(await page.locator('[name=cases]').inputValue(),'2');assert.equal(await page.locator('[name=quantity]').inputValue(),'10');
+  assert.equal(packPosts,0);
+  await page.getByRole('button',{name:'Update catalogue case size',exact:true}).click();
+  await page.locator('#rw-warning-dialog').getByRole('button',{name:'Keep editing',exact:true}).last().click();assert.equal(packPosts,0);
+  await page.getByRole('button',{name:'Update catalogue case size',exact:true}).click();
+  await page.getByRole('button',{name:'Update catalogue',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('[data-pack-feedback]').textContent.includes('updated to 5'));
+  assert.equal(packPosts,1);
+  await page.locator('[name=pack]').fill('6');
+  assert.equal(await page.locator('.rw-form legend').count(),0);
+  assert.equal(await page.locator('[data-summary-received]').getAttribute('data-receipt-progress'),'complete');
+  assert.equal(await page.getByRole('tab',{name:'Damaged',exact:true}).getAttribute('data-enabled'),'false');
+  await page.getByRole('tab',{name:'Damaged',exact:true}).click();
+  assert.equal(await page.locator('[name=locationId]').isVisible(),false);
+  assert.equal(await page.locator('[name=damaged]').inputValue(),'0');
+  assert.equal(await page.getByRole('tab',{name:'Damaged',exact:true}).getAttribute('data-enabled'),'false');
+  await page.locator('[name=damagedCases]').fill('1');await page.locator('[name=damagedPack]').fill('6');
+  assert.equal(await page.locator('[name=damaged]').inputValue(),'6');
+  await page.getByRole('tab',{name:'Damaged',exact:true}).click();await page.locator('#rw-warning-dialog').getByRole('button',{name:'Keep editing',exact:true}).last().click();
+  assert.equal(await page.locator('[name=damaged]').inputValue(),'6');
+  await page.getByRole('tab',{name:'Damaged',exact:true}).click();await page.getByRole('button',{name:'Clear quantity',exact:true}).click();
+  // Native dialog close events are queued; wait for the confirmed action to finish.
+  await page.waitForFunction(()=>document.querySelector('[name=damaged]').value==='0');
+  assert.equal(await page.locator('[name=damaged]').inputValue(),'0');
+  assert.equal(await page.getByRole('tab',{name:'Damaged',exact:true}).getAttribute('data-enabled'),'false');
+  assert.equal(await page.locator('[name=damagedCases]').inputValue(),'0');assert.equal(await page.locator('[name=damagedPack]').inputValue(),'0');
+  await page.getByRole('tab',{name:'Sellable',exact:true}).click();
+  await page.locator('[name=cases]').fill('1');await page.locator('[name=pack]').fill('8');assert.equal(await page.locator('[name=quantity]').inputValue(),'8');
+  assert.equal(await page.locator('[data-summary-received]').getAttribute('data-receipt-progress'),'partial');
+  assert.match(await page.locator('[data-summary-remaining]').textContent(),/4 each remaining/);
+  assert.match(await page.locator('[data-remainder=quantity]').textContent(),/1 cases × 8 units/);
+  await page.locator('[name=expiration]').fill('2027-01-16');
+  await page.getByRole('button',{name:'+ Add quantity / expiration date',exact:true}).click();
+  assert.equal(await page.locator('[data-batch-quantity]').getAttribute('readonly'),'');
+  await page.locator('[data-batch-cases]').fill('1');await page.locator('[name=batchPack1]').fill('2');await page.locator('[data-batch-date]').fill('2027-02-16');
+  await page.getByRole('tab',{name:'Damaged',exact:true}).click();assert.equal(await page.locator('[name=damaged]').inputValue(),'0');await page.locator('[name=damagedCases]').fill('1');await page.locator('[name=damagedPack]').fill('2');
+  await page.getByRole('tab',{name:'Sellable',exact:true}).click();assert.equal(await page.locator('[name=quantity]').inputValue(),'8');
+  await page.getByRole('button',{name:'Item fees…',exact:true}).click();
+  assert.equal(await page.locator('[data-rw-footer-submit]').count(),0,'Receipt action must not remain on the fee panel');
+  await page.getByRole('button',{name:'Back to receipt',exact:true}).click();assert.equal(await page.locator('[name=quantity]').inputValue(),'8');assert.equal(await page.locator('[data-batch-quantity]').inputValue(),'2');
+  await page.getByRole('button',{name:'Item fees…',exact:true}).click();await page.getByRole('button',{name:'Save and continue receiving',exact:true}).click();await page.locator('[name=quantity]').waitFor();
+  assert.equal(await page.locator('[name=quantity]').inputValue(),'8');assert.equal(await page.locator('[data-batch-date]').inputValue(),'2027-02-16');
+  // Let the restored receipt finish its deferred autofocus before editing its pack size.
+  await page.waitForFunction(()=>document.activeElement?.name==='expiration');
+  await page.locator('[name=pack]').fill('10');await page.waitForFunction(()=>document.querySelector('[name=quantity]').value==='10').catch(async error=>{error.message+=' Receipt state: '+JSON.stringify(await page.evaluate(()=>({active:document.activeElement?.name,forms:[...document.querySelectorAll('.rw-form')].map(f=>({requestId:f.dataset.requestId,cases:f.elements.cases?.value,pack:f.elements.pack?.value,quantity:f.elements.quantity?.value,expiration:f.elements.expiration?.value}))})));throw error;});assert.equal(await page.locator('[name=quantity]').inputValue(),'10');
+  await page.getByRole('button',{name:'Save receipt',exact:true}).click();await page.locator('#rw-warning-dialog').getByRole('button',{name:'Keep editing',exact:true}).last().click();assert.equal(posts,0);
+  await page.getByRole('button',{name:'Save receipt',exact:true}).click();await page.getByRole('button',{name:'Receive with overage',exact:true}).click();
+  await page.waitForFunction(()=>!document.getElementById('receiving-drawer').open);
+  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='Search table');
+  assert.equal(posts,1);assert.equal(submitted.confirmedOverage,2);assert.equal(submitted.damaged,2);assert.equal(submitted.unitsPerCase,undefined);
+  assert.deepEqual(submitted.batches,[{quantity:10,expiration:'2027-01-16'},{quantity:2,expiration:'2027-02-16'}]);
+  assert.equal(await page.locator('#rw-feedback').isVisible(),false);assert.deepEqual(errors,[]);
+  await page.evaluate(()=>{window.receivingWork.lines[0].received=6;window.receivingWork.lines[0].remaining=6;});
+  await page.getByRole('button',{name:'Receive',exact:true}).click();
+  // Owner-approved receiving default: prefill the six each still outstanding.
+  assert.equal(await page.locator('[name=quantity]').inputValue(),'6');
+  assert.equal(await page.locator('[name=cases]').inputValue(),'1');assert.equal(await page.locator('[name=pack]').inputValue(),'6');
+  await page.waitForFunction(()=>document.activeElement?.name==='expiration');
+  await page.locator('[name=cases]').fill('1');
+  await page.waitForFunction(()=>document.querySelector('[name=quantity]').value==='6');
+  assert.equal(await page.locator('[name=quantity]').inputValue(),'6');
+  await page.locator('[name=cases]').fill('0');
+  assert.equal(await page.getByRole('button',{name:'Save receipt',exact:true}).isEnabled(),false);
+  for(const [tab,key] of [['Damaged','damaged'],['Short shipped','shortShipped'],['Mispick','wrongItem']]){
+   await page.getByRole('tab',{name:tab,exact:true}).click();
+   assert.equal(await page.locator('[name='+key+']').inputValue(),'0');
+   assert.equal(await page.getByRole('tab',{name:tab,exact:true}).getAttribute('data-enabled'),'false');
+   await page.getByRole('tab',{name:tab,exact:true}).click();assert.equal(await page.locator('#rw-warning-dialog').isVisible(),false);
+   await page.locator('[name='+key+'Cases]').fill('1');await page.locator('[name='+key+'Pack]').fill('2');
+   assert.equal(await page.getByRole('tab',{name:tab,exact:true}).getAttribute('data-enabled'),'true');
+   assert.equal(await page.getByRole('button',{name:'Save receipt',exact:true}).isEnabled(),true);
+   await page.getByRole('tab',{name:tab,exact:true}).click();await page.getByRole('button',{name:'Clear quantity',exact:true}).click();
+   await page.waitForFunction(key=>document.querySelector('[name='+key+']').value==='0',key);
+   assert.equal(await page.locator('[name='+key+'Cases]').inputValue(),'0');assert.equal(await page.locator('[name='+key+'Pack]').inputValue(),'0');
+   assert.equal(await page.getByRole('button',{name:'Save receipt',exact:true}).isEnabled(),false);
+  }
+  await page.getByRole('tab',{name:'Sellable',exact:true}).click();
+  await page.locator('[name=cases]').fill('1');
+  await page.locator('[name=expiration]').fill('2027-01-16');
+  failRefresh=true;
+  await page.getByRole('button',{name:'Save receipt',exact:true}).click();
+  await page.locator('#rw-receipt-form[data-saved]').waitFor();
+  assert.equal(posts,2);
+  assert.equal(await page.getByRole('button',{name:'Save receipt',exact:true}).isEnabled(),false,'Saved receipt cannot be resubmitted after refresh failure');
+  assert.deepEqual(errors,[]);
+ }finally{await browser.close();}
+});

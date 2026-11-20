@@ -1,0 +1,21 @@
+/* Desktop keeps the existing sidebar children and layout. Mobile uses page flow, not an overlay. */
+.platform-navigation-region{display:contents}
+.platform-navigation-region[hidden]{display:none}
+.mobile-navigation-trigger,.mobile-navigation-context{display:none}
+@media(max-width:760px){
+ body.app-page>.sidebar[data-mobile-navigation-ready]{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;position:static;height:auto;min-width:0;padding:16px;overflow:visible}
+ .sidebar[data-mobile-navigation-ready]>.brand{align-self:center;min-width:0;min-height:44px;margin:0}
+ .mobile-navigation-trigger{align-self:center;display:block;min-height:44px;min-width:64px;padding:8px 14px;border:1px solid #8296ad;border-radius:9px;background:transparent;color:#fff;font:inherit;font-weight:650;cursor:pointer}
+ .mobile-navigation-trigger:focus-visible{outline:3px solid #a9d5ff;outline-offset:3px}
+ .mobile-navigation-trigger[aria-expanded=true]{background:#ffffff18}
+ .sidebar[data-mobile-navigation-ready]~.workspace .workspace-header>div:first-child{flex:0 1 auto}
+ .mobile-navigation-context{display:block;grid-column:1/-1;min-width:0;color:var(--ink)}
+ .mobile-navigation-context:empty{display:none}
+ .mobile-navigation-context>.context-menu{width:100%}
+ .sidebar .platform-navigation-region{display:block;grid-column:1/-1;min-width:0}
+ .sidebar .platform-navigation-region[hidden]{display:none}
+ .sidebar .platform-navigation-region .product-nav{margin-top:0}
+ .sidebar .platform-navigation-region .product-nav a,.sidebar .platform-navigation-region .product-nav summary{min-height:44px;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}
+ .sidebar .platform-navigation-region .sidebar-user{margin-top:16px}
+ .sidebar .platform-navigation-region .sidebar-user button{min-height:44px;min-width:44px}
+}

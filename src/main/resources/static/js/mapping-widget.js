@@ -1,0 +1,142 @@
+/* Shared mapping presentation for Orders and Marketplace SKUs. */
+(()=>{'use strict';
+const endpoint=id=>'/app/catalog/products/'+encodeURIComponent(id)+'/image';
+function thumbnail(id,source){const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';img.src=source||endpoint(id);img.onerror=()=>{img.hidden=true};return img}
+function identityLabel(product){const name=product.productName||product.name||'',brand=product.brand?.trim();return brand&&!name.toLowerCase().includes(brand.toLowerCase())?name+' · '+brand:name;}
+function identityHelp(product){return '';}
+
+function imageFrame(img){const frame=document.createElement('span');frame.className='mw-image-frame';frame.append(img);return frame}
+function picture(line,product){
+ const id=product?.id||product?.itemId||line.querySelector('[name=productId]')?.value;
+ let holder=line.querySelector('.mapping-component-picture');if(!holder){holder=document.createElement('span');holder.className='mapping-component-picture';line.prepend(holder)}
+ holder.style.backgroundImage='none';holder.replaceChildren();holder.classList.remove('has-image');
+ if(!id){holder.hidden=true;return}holder.hidden=false;
+ const img=thumbnail(id,product?.imageUrl);img.onerror=()=>{holder.hidden=true};holder.append(imageFrame(img));
+ if(line.closest('dialog').dataset.canEdit!=='true')return;
+ attachEditor(holder,id);
+}
+function attachEditor(holder,productId,sku){
+ if(dialog?.dataset.provider==='SHOPIFY'&&!productId)return;
+ if(!sku&&dialog?.dataset.canEdit!=='true')return;
+ if(holder.querySelector('.mw-picture-edit'))return;
+ const edit=node('button','mw-picture-edit');edit.type='button';edit.title='Edit SKU picture';edit.setAttribute('aria-label',edit.title);
+ edit.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 16-1 4 4-1L20 7l-3-3Z M14 7l3 3"/></svg>';
+ holder.append(edit);edit.onclick=()=>dialog?.dataset.provider==='SHOPIFY'&&productId?window.NextAiStandardTables?.editPicture(edit,holder,endpoint(productId)):pictureMenu(edit,holder,productId,sku);
+}
+function pictureMenu(trigger,holder,productId,sku){
+ const menu=node('dialog','order-picture-menu mw-picture-menu');
+ menu.innerHTML='<header><strong>Edit SKU picture</strong><button type="button" aria-label="Close">×</button></header>';
+ const feedback=node('p','mw-picture-status');feedback.setAttribute('role','status');
+ const close=()=>{menu.close();menu.remove();trigger.focus()};
+ menu.querySelector('button').onclick=close;menu.addEventListener('cancel',e=>{e.preventDefault();close()});
+ menu.addEventListener('click',e=>{if(e.target===menu){const r=menu.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)close()}});
+ const entry=(icon,title,description,action)=>{const b=node('button','order-picture-entry');b.type='button';b.innerHTML=icon;const copy=node('span');copy.append(node('strong','',title),node('small','',description));b.append(copy);b.onclick=action;menu.append(b)};
+ const save=async(file,amazon)=>{
+  menu.querySelectorAll('.order-picture-entry').forEach(b=>b.disabled=true);feedback.textContent=amazon?'Syncing…':'Uploading…';
+  const data=new FormData();data.append('sku',sku||dialog.querySelector('[name=sellerSku]').value);if(productId)data.append('productId',productId);if(file)data.append('image',file);data.append('amazon',String(amazon));
+  const csrf=document.getElementById('buy-shipping-csrf'),headers={Accept:'application/json'};if(csrf)headers[csrf.dataset.header]=csrf.value;
+  try{const r=await fetch('/app/marketplace-skus/mapping-picture',{method:'POST',body:data,headers});const result=await r.json();if(!r.ok)throw Error(result.error||'Picture update failed.');
+   let img=holder.querySelector('img');if(!img){img=node('img');img.alt='';holder.prepend(holder.matches('.mw-product-image,.mapping-component-picture')?imageFrame(img):img)}holder.querySelectorAll('b').forEach(b=>b.hidden=true);img.hidden=false;img.src=result.imageUrl+(result.imageUrl.includes('?')?'&':'?')+'v='+Date.now();
+   if(!productId){const sku=data.get('sku');document.querySelectorAll('[data-seller-sku]').forEach(el=>{if(el.dataset.sellerSku===sku){el.dataset.image=img.src;const tile=el.matches('[data-picture-actions]')?el.querySelector('img'):null;if(tile)tile.src=img.src}})}
+   close();
+  }catch(e){feedback.textContent=e.message;menu.querySelectorAll('.order-picture-entry').forEach(b=>b.disabled=false)}
+ };
+ entry('<span class="order-picture-symbol"><svg viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6"/></svg></span>','Upload from device','JPG, PNG up to 5 MB',()=>{const input=node('input');input.type='file';input.accept='image/jpeg,image/png';input.onchange=()=>{const file=input.files[0];if(!file)return;if(file.size>5000000||!['image/jpeg','image/png'].includes(file.type)){feedback.textContent='Choose a JPG or PNG up to 5 MB.';return}save(file,false)};input.click()});
+ entry('<span class="order-picture-symbol order-picture-amazon">a</span>','Sync from Amazon','Use the latest image for this SKU’s ASIN',()=>save(null,true));
+ menu.append(feedback);document.body.append(menu);menu.showModal();
+ const r=trigger.getBoundingClientRect(),m=menu.getBoundingClientRect();menu.style.left=Math.max(12,Math.min(r.left,innerWidth-m.width-12))+'px';menu.style.top=Math.max(12,Math.min(r.bottom+10,innerHeight-m.height-12))+'px';
+}
+function option(button,product){button.prepend(thumbnail(product.id,product.imageUrl));button.classList.add('mapping-picture-option')}
+
+let dialog,opener,requestNumber=0;
+const node=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text)e.textContent=text;return e};
+function shell(){
+ if(dialog)return dialog;
+ dialog=node('dialog','mapping-widget');dialog.setAttribute('aria-labelledby','mapping-widget-title');
+ dialog.innerHTML='<form method="post" action="/app/marketplace-skus/mappings"><header><div><span class="mw-eyebrow">Catalogue mapping</span><h2 id="mapping-widget-title"></h2><p data-title></p></div><button type="button" class="mw-close" aria-label="Close mapping">×</button></header><section class="mw-body"><div class="mw-intro"><span class="mw-product-image"></span><div><strong>What does one marketplace unit contain?</strong><small>Choose one product, or add products for a bundle.</small></div></div><p class="mw-feedback" role="status"></p><div class="mw-lines"></div><button type="button" class="mw-add"><span>＋</span> Add another product</button><div class="mw-help"><strong>Single product or bundle</strong><small>The quantity is how many eaches are included in one sold marketplace SKU.</small></div></section><footer><button type="submit" class="mw-clear" formaction="/app/marketplace-skus/mappings/clear" formnovalidate>Clear mapping</button><button type="button" class="secondary-button mw-cancel">Cancel</button><button type="submit" class="primary-button mw-save">Save mapping</button></footer></form>';
+ document.body.append(dialog);
+ dialog.addEventListener('cancel',event=>{if(dialog.querySelector('form').dataset.saving)event.preventDefault()});
+ const close=()=>{if(dialog.querySelector('form').dataset.saving)return;dialog.close();opener?.focus({preventScroll:true})};
+ async function persist(form,submitter){if(!window.NextAiTableContinuity?.saveMapping){form.dataset.asinConfirmed='true';form.requestSubmit(submitter);delete form.dataset.asinConfirmed;return;}const restore=window.NextAiTableContinuity.capture();const controls=[...dialog.querySelectorAll('button')].map(button=>[button,button.disabled]);form.dataset.saving='true';controls.forEach(([button])=>button.disabled=true);try{const message=await window.NextAiTableContinuity.saveMapping(form,submitter);delete form.dataset.saving;dialog.dataset.mappingSaved='true';close();restore();requestAnimationFrame(restore);if(window.NextAiToast)window.NextAiToast(message);}catch(error){dialog.querySelector('.mw-feedback').textContent=error.message;}finally{delete form.dataset.saving;controls.forEach(([button,disabled])=>button.disabled=disabled);update();}}
+ dialog.querySelector('.mw-close').onclick=close;dialog.querySelector('.mw-cancel').onclick=close;
+ dialog.addEventListener('click',e=>{if(e.target===dialog)close()});
+ dialog.querySelector('.mw-add').onclick=()=>{if(valid()){line().querySelector('input[type=search]').focus();update()}};
+ dialog.querySelector('form').onsubmit=async e=>{
+  const form=e.currentTarget;if(form.dataset.saving){e.preventDefault();return;}if(e.submitter?.classList.contains('mw-clear')){if(window.NextAiTableContinuity?.saveMapping){e.preventDefault();await persist(form,e.submitter);}return;}
+  if(!valid()){e.preventDefault();dialog.querySelector('input[type=search]')?.focus();return;}
+  if(form.dataset.asinConfirmed==='true'){delete form.dataset.asinConfirmed;return;}if(form.action.includes('/shopify/')){if(window.NextAiTableContinuity?.saveMapping){e.preventDefault();await persist(form,e.submitter);}return;}
+  e.preventDefault();if(form.dataset.asinPending)return;form.dataset.asinPending='true';const version=requestNumber;const save=dialog.querySelector('.mw-save');save.disabled=true;
+  try{const response=await fetch('/app/marketplace-skus/mappings/asin-preview?sku='+encodeURIComponent(form.elements.sellerSku.value));if(!response.ok)throw Error();const preview=await response.json();
+   if(version!==requestNumber||!dialog.open)return;
+   let replace=false;if(preview.existingMappings>0){if(!window.NextAiConfirm)throw Error();replace=await NextAiConfirm({title:'Replace related Amazon mappings?',message:preview.existingMappings+' same-ASIN SKU(s) already have mappings. Replace them with this complete mapping? Different explicit pack sizes are kept. Cancel saves nothing.',accept:'Replace mappings',cancel:'Cancel save'});if(!replace)return;}
+   if(version!==requestNumber||!dialog.open)return;
+   for(const [name,value]of Object.entries({replaceAsinMappings:String(replace),asinMappingRevision:preview.revision})){let field=form.querySelector('[name="'+name+'"]');if(!field){field=node('input');field.type='hidden';field.name=name;form.append(field);}field.value=value;}
+   save.disabled=false;await persist(form,save);
+  }catch{dialog.querySelector('.mw-feedback').textContent='Related mappings could not be checked. Nothing saved; please retry.';}
+  finally{delete form.dataset.asinPending;update();}
+ };
+ dialog.addEventListener('input',update);
+ return dialog;
+}
+function valid(){return [...dialog.querySelectorAll('.mw-line')].length>0&&[...dialog.querySelectorAll('.mw-line')].every(l=>l.querySelector('[name=productId]').value&&l.querySelector('[name=quantity]').checkValidity())}
+function update(){const disabled=dialog.dataset.canEdit!=='true'||Boolean(dialog.querySelector('form').dataset.saving)||!valid();dialog.querySelector('.mw-add').disabled=disabled;dialog.querySelector('.mw-save').disabled=disabled}
+function line(product,defaultQuantity=1,itemCode=null){
+ const row=node('div','mw-line');row.dataset.itemCode=itemCode||'';row.innerHTML='<div class="mw-picker"><label><span>Product</span><input type="search" placeholder="Search product, UPC, or vendor item code" autocomplete="off" required><input type="hidden" name="productId"><small class="mw-selection-status" role="status"></small></label><div class="mw-results"></div><button type="button" class="mw-create-product">Add to catalogue</button></div><label><span>Quantity</span><input type="number" name="quantity" min="1" max="10000" step="1" value="1" required></label><button type="button" class="mw-remove" aria-label="Remove product">−</button>';
+ dialog.querySelector('.mw-lines').append(row);
+ const input=row.querySelector('[type=search]'),id=row.querySelector('[name=productId]'),results=row.querySelector('.mw-results');
+ row.querySelector('[name=quantity]').value=product?.quantity||defaultQuantity;
+ if(product){input.value=identityLabel(product);id.value=product.itemId||product.id;row.querySelector('[name=quantity]').value=product.quantity||defaultQuantity}
+ picture(row,product);
+ const addProduct=row.querySelector('.mw-create-product');addProduct.onclick=()=>{
+  const version=requestNumber;
+  window.openCatalogAddProduct({query:input.value.trim(),vendorItemCode:dialog.querySelectorAll('.mw-line').length===1?row.dataset.itemCode:'',lastQuery:input.dataset.lastQuery||'',onClose:()=>addProduct.focus(),onSelect:(p,created)=>{
+   if(!row.isConnected||!dialog.open||version!==requestNumber)return;
+   clearTimeout(timer);controller?.abort();input.value=identityLabel(p);id.value=p.id;
+   row.querySelector('.mw-selection-status').textContent=created?'Product added to your account. Save mapping to apply this selection.':'Existing account product selected. Save mapping to apply this selection.';
+   results.replaceChildren();picture(row,p);update();input.focus();
+  }});
+ };
+ let timer,controller;
+ input.oninput=()=>{id.value='';row.querySelector('.mw-selection-status').textContent='Select a product to map';picture(row);update();clearTimeout(timer);controller?.abort();results.replaceChildren();const q=input.value.trim();input.dataset.lastQuery=q;if(q.length<2)return;timer=setTimeout(async()=>{controller=new AbortController();try{const response=await fetch('/app/catalog/product-search?q='+encodeURIComponent(q),{signal:controller.signal});if(!response.ok)throw Error();const products=await response.json();if(!input.isConnected||input.value.trim()!==q)return;results.replaceChildren();products.forEach(p=>{const b=node('button','mw-option');b.type='button';const copy=node('span');copy.append(node('strong','',p.name),node('small','',[p.brand,p.vendorItemCode||p.accountSku].filter(Boolean).join(' · ')));if(p.imageUrl)b.append(thumbnail(p.id,p.imageUrl));b.append(copy);b.onclick=()=>{input.value=identityLabel(p);id.value=p.id;row.querySelector('.mw-selection-status').textContent='';picture(row,p);results.replaceChildren();update()};results.append(b)});}catch(e){if(e.name!=='AbortError')results.textContent='Search unavailable. Please try again.'}},200)};
+ row.querySelector('.mw-remove').onclick=()=>{controller?.abort();if(dialog.querySelectorAll('.mw-line').length===1){input.value='';id.value='';row.querySelector('.mw-selection-status').textContent='';picture(row);results.replaceChildren()}else row.remove();update()};
+ if(dialog.dataset.canEdit!=='true')row.querySelectorAll('input,button').forEach(e=>e.disabled=true);
+ return row;
+}
+function draftQuantity(suggestion){const quantity=Number(suggestion?.quantity);return Number.isInteger(quantity)&&quantity>=1&&quantity<=10000?quantity:1;}
+
+async function open(trigger){
+ if(dialog?.querySelector('form').dataset.saving)return;
+ opener=trigger;const d=shell(),version=++requestNumber;delete d.dataset.mappingSaved;
+ const record=trigger.dataset.target?document.getElementById(trigger.dataset.target):trigger;
+ const stage=trigger.closest('.order-item')?.querySelector('[data-picture-actions]');
+ const data=record?.dataset||{};
+ const shopify=data.provider==='SHOPIFY';d.dataset.provider=shopify?'SHOPIFY':'AMAZON';
+ d.querySelector('form').action=shopify?'/app/marketplace-skus/shopify/mappings':'/app/marketplace-skus/mappings';
+ d.querySelector('.mw-clear').formAction=shopify?'/app/marketplace-skus/shopify/mappings/clear':'/app/marketplace-skus/mappings/clear';
+ d.dataset.canEdit=String((data.canEdit||stage?.dataset.canEdit||'true')==='true');
+ d.querySelector('h2').textContent=data.sellerSku||stage?.dataset.sellerSku||(shopify?'No SKU':'');
+ d.querySelector('[data-title]').textContent=data.productTitle||stage?.dataset.productTitle||'';
+ const photo=d.querySelector('.mw-product-image');photo.replaceChildren();const image=data.image||stage?.querySelector('img')?.src;
+ photo.hidden=!image;if(image){const img=node('img');img.src=image;img.alt='';img.onerror=()=>photo.hidden=true;photo.append(imageFrame(img))}
+ attachEditor(photo);
+ d.querySelectorAll('form > input[type=hidden]').forEach(e=>e.remove());
+ const hidden=(name,value)=>{const e=node('input');e.type='hidden';e.name=name;e.value=value;d.querySelector('form').append(e)};
+ hidden('sellerSku',d.querySelector('h2').textContent);hidden('returnTo',location.pathname+location.search);
+ if(shopify){hidden('variantId',data.variantId);hidden('variantRevision',data.variantRevision);}
+ const csrf=document.getElementById('buy-shipping-csrf');if(csrf)hidden('_csrf',csrf.value);
+ d.querySelector('.mw-lines').replaceChildren();d.querySelector('.mw-feedback').textContent='Loading mapping…';
+ d.querySelectorAll('.mw-save,.mw-add,.mw-clear').forEach(b=>b.disabled=true);
+ d.querySelector('.mw-clear').hidden=d.dataset.canEdit!=='true';
+ d.showModal();
+ try{
+  const sku=d.querySelector('h2').textContent,r=await fetch(shopify?'/app/marketplace-skus/shopify/components?variantId='+encodeURIComponent(data.variantId):'/app/marketplace-skus/mappings/components?sku='+encodeURIComponent(sku));if(!r.ok)throw Error();const products=await r.json();if(version!==requestNumber||!d.open)return;
+  if(products.length){products.forEach(p=>line(p));d.querySelector('.mw-feedback').textContent='';}
+  else{let suggestion=null;try{const response=await fetch(shopify?'/app/marketplace-skus/shopify/draft?variantId='+encodeURIComponent(data.variantId):'/app/marketplace-skus/mappings/draft?sku='+encodeURIComponent(sku));if(response.ok)suggestion=await response.json();}catch{}if(version!==requestNumber||!d.open)return;
+   line(data.reviewProduct?JSON.parse(data.reviewProduct):suggestion?.product||null,draftQuantity(suggestion),suggestion?.itemCode);d.querySelector('.mw-feedback').textContent=data.reviewProduct?'Review the product and quantity, then Save mapping.':suggestion?.product?'Product suggested from an exact account code. Review and Save mapping.':suggestion?.quantity>1?'Quantity detected from the SKU. Choose a product, then Save mapping.':'';
+  }
+  d.querySelector('.mw-clear').disabled=!products.length;update();
+ }catch{if(version===requestNumber)d.querySelector('.mw-feedback').textContent='Could not load mapping. Close and try again; nothing has changed.'}
+}
+window.NextAiMappingWidget={picture,option,open,attachEditor,identityLabel,getDialog:shell};
+window.openOrderMapping=open;
+})();

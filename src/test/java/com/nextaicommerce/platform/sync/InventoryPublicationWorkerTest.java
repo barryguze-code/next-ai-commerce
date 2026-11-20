@@ -1,0 +1,51 @@
+package com.nextaicommerce.platform.sync;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
+import com.nextaicommerce.platform.sync.InventoryPublicationRepository.Pending;
+
+class InventoryPublicationWorkerTest {
+ final InventoryPublicationRepository repo=mock(InventoryPublicationRepository.class);
+ final AmazonSpApiClient amazon=mock(AmazonSpApiClient.class);final ObjectMapper json=new ObjectMapper();
+ final UUID allowedConnection=UUID.randomUUID();
+ @org.junit.jupiter.api.BeforeEach void currentByDefault(){when(repo.current(any(),any())).thenReturn(true);}
+ @Test void invalidatedWarehouseHoldPreventsSubmission(){var p=pending(8,"PENDING",0);when(repo.current(eq(p),any())).thenReturn(false);worker("LIVE",false,true).process(p);verifyNoInteractions(amazon);}
+ InventoryPublicationWorker worker(String mode,boolean local,boolean writes){return new InventoryPublicationWorker(repo,mock(TransactionTemplate.class),amazon,json,mode,local,writes,false,allowedConnection.toString(),"");}
+ Pending pending(int q,String status,int attempts){return new Pending(UUID.randomUUID(),allowedConnection,"ATVPDKIKX0DER","sku / +",q,2,status,attempts,"seller");}
+ @Test void missingAllowlistRejectsLiveStartup(){assertThatThrownBy(()->new InventoryPublicationWorker(repo,mock(TransactionTemplate.class),amazon,json,"LIVE",false,true,false,"","")).isInstanceOf(IllegalStateException.class);}
+ @Test void canaryRestrictsSkuAsWellAsConnection(){new InventoryPublicationWorker(repo,mock(TransactionTemplate.class),amazon,json,"LIVE",false,true,false,allowedConnection.toString(),"canary-only").process(pending(9,"PENDING",0));verifyNoInteractions(amazon);}
+ @Test void anotherConnectionNeverCallsAmazon(){worker("LIVE",false,true).process(new Pending(UUID.randomUUID(),UUID.randomUUID(),"ATVPDKIKX0DER","outside-scope",9,1,"PENDING",0,"seller"));verifyNoInteractions(amazon);verifyNoInteractions(repo);}
+ AmazonSpApiClient.ApiResponse response(String body){return new AmazonSpApiClient.ApiResponse(200,"test",json.readTree(body),body);}
+ @Test void localCanNeverEnableLiveWrites(){assertThatThrownBy(()->worker("LIVE",true,true)).isInstanceOf(IllegalStateException.class);assertThatThrownBy(()->worker("LIVE",false,false)).isInstanceOf(IllegalStateException.class);}
+ @Test void dryRunDoesNotReadOrWriteAmazon(){var p=pending(0,"PENDING",0);worker("DRY_RUN",true,false).process(p);verifyNoInteractions(amazon);verify(repo).result(eq(p),eq("DRY_RUN"),eq(0),eq(0),anyString(),isNull());}
+ @Test void acceptedIsNotConfirmedAndPatchOnlyMergesQuantity(){var p=pending(0,"PENDING",0);when(amazon.patch(any(),any(),anyString(),anyString())).thenReturn(response("{\"status\":\"ACCEPTED\"}"));worker("LIVE",false,true).process(p);verify(repo).result(p,"VERIFYING",1,10,null,null);var body=org.mockito.ArgumentCaptor.forClass(String.class);verify(amazon).patch(eq(p.tenant()),eq(p.connection()),contains("sku%20%2F%20%2B"),body.capture());assertThat(body.getValue()).contains("\"op\":\"merge\"","\"quantity\":0").doesNotContain("lead_time","restock_date");}
+ @Test void liveQuantityConfirmsInsteadOfSubmittedAttributes(){var p=pending(0,"VERIFYING",1);when(amazon.get(any(),any(),anyString())).thenReturn(response("{\"attributes\":{\"quantity\":99},\"fulfillmentAvailability\":[{\"fulfillmentChannelCode\":\"DEFAULT\",\"quantity\":0}]}"));worker("LIVE",false,true).process(p);verify(repo).result(p,"CONFIRMED",0,900,null,0);verify(amazon,never()).patch(any(),any(),anyString(),anyString());}
+ @Test void lowerQuantityNeverRestocksPotentialUnimportedSale(){var p=pending(5,"VERIFYING",1);when(amazon.get(any(),any(),anyString())).thenReturn(response("{\"fulfillmentAvailability\":[{\"fulfillmentChannelCode\":\"DEFAULT\",\"quantity\":3}]}"));worker("LIVE",false,true).process(p);verify(repo).result(eq(p),eq("ATTENTION"),eq(2),eq(300),anyString(),eq(3));verify(amazon,never()).patch(any(),any(),anyString(),anyString());}
+ @Test void zeroRemainsRetryableAfterThreeFailures(){var p=pending(0,"ATTENTION",4);when(amazon.get(any(),any(),anyString())).thenReturn(response("{\"fulfillmentAvailability\":[{\"fulfillmentChannelCode\":\"DEFAULT\",\"quantity\":2}]}"));worker("LIVE",false,true).process(p);verify(repo).result(eq(p),eq("PENDING"),eq(5),anyInt(),contains("Urgent"),eq(2));}
+ @Test void failureIsDurableNotCompleted(){var p=pending(0,"PENDING",0);when(amazon.patch(any(),any(),anyString(),anyString())).thenThrow(new IllegalStateException("429"));worker("LIVE",false,true).process(p);verify(repo).result(eq(p),eq("RETRY"),eq(1),anyInt(),anyString(),isNull());}
+ @Test void invalidSubmissionIsNotSuccess(){var p=pending(0,"PENDING",0);when(amazon.patch(any(),any(),anyString(),anyString())).thenReturn(response("{\"status\":\"INVALID\"}"));worker("LIVE",false,true).process(p);verify(repo).result(eq(p),eq("RETRY"),eq(1),anyInt(),anyString(),isNull());}
+ @Test void errorsExposeHttpStatusWithoutSensitiveResponseBody(){
+  var p=pending(0,"VERIFYING",1);
+  when(amazon.get(any(),any(),anyString())).thenThrow(new AmazonSpApiClient.AmazonApiException(403,null,"private response"));
+  worker("LIVE",false,true).process(p);
+  verify(repo).result(eq(p),eq("RETRY"),eq(2),anyInt(),eq("Amazon HTTP 403 during quantity verification. Verification/retry pending."),isNull());
+ }
+ @Test void busyFirstTenantDoesNotStarveOtherTenantsOrTheirPlanning(){
+  UUID first=UUID.randomUUID(),second=UUID.randomUUID();
+  when(repo.tenants()).thenReturn(java.util.List.of(first,second));
+  var transaction=mock(TransactionTemplate.class);
+  doAnswer(call->{((java.util.function.Consumer<org.springframework.transaction.TransactionStatus>)call.getArgument(0)).accept(new org.springframework.transaction.support.SimpleTransactionStatus());return null;}).when(transaction).executeWithoutResult(any());
+  when(transaction.execute(any())).thenAnswer(call->((org.springframework.transaction.support.TransactionCallback<?>)call.getArgument(0)).doInTransaction(new org.springframework.transaction.support.SimpleTransactionStatus()));
+  when(repo.next(any(),any(),any(),anyString())).thenAnswer(call->java.util.Optional.of(new Pending(call.getArgument(0),allowedConnection,"ATVPDKIKX0DER","sku",1,1,"PENDING",0,"seller")));
+  when(repo.acquireRequestSlot()).thenReturn(true);
+  when(amazon.patch(any(),any(),anyString(),anyString())).thenReturn(response("{\"status\":\"ACCEPTED\"}"));
+  var live=new InventoryPublicationWorker(repo,transaction,amazon,json,"LIVE",false,true,false,allowedConnection.toString(),"");
+  live.tick();live.tick();
+  verify(repo,times(2)).plan(first);verify(repo,times(2)).plan(second);
+  verify(amazon).patch(eq(first),any(),anyString(),anyString());verify(amazon).patch(eq(second),any(),anyString(),anyString());
+ }
+}
