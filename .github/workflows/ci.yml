@@ -24,39 +24,255 @@ on:
     branches: ["**"]
 permissions:
   contents: read
+  actions: read
+concurrency:
+  # Cancel obsolete validation runs on the same branch/PR, never a deployment.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
-  test:
-    if: inputs.amazon_fee_hotfix != true && inputs.package_selection_performance != true && inputs.inventory_location_hotfix != true
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  plan:
+    if: inputs.amazon_fee_hotfix != true && inputs.package_selection_performance != true && inputs.inventory_location_hotfix != true && inputs.release_recovery != true
+    runs-on: ubuntu-24.04
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      image: ${{ steps.plan.outputs.image }}
+      java_key: ${{ steps.plan.outputs.java_key }}
+      fixtures_key: ${{ steps.plan.outputs.fixtures_key }}
+      browser_key: ${{ steps.plan.outputs.browser_key }}
+      java_reuse: ${{ steps.plan.outputs.java_reuse }}
+      fixtures_reuse: ${{ steps.plan.outputs.fixtures_reuse }}
+      browser_reuse: ${{ steps.plan.outputs.browser_reuse }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify workflow reuse and promotion safety contracts
+        run: python3 scripts/ci/test_policy.py
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/validation.py plan
+
+  java:
+    name: Java verification
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      artifact: ${{ steps.identity.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Restore validation contract
+        env:
+          PLAN: ${{ needs.plan.outputs.plan }}
+        run: printf '%s' "$PLAN" > .ci-plan.json
+      - run: python3 scripts/ci/validation.py host
+      - name: Reuse independently passed Java result
+        if: needs.plan.outputs.java_reuse != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ needs.plan.outputs.java_reuse }}
+        run: python3 scripts/ci/validation.py load --kind java --artifact "$ARTIFACT" --output .ci-result/java
       - uses: actions/setup-java@v4
+        if: needs.plan.outputs.java_reuse == ''
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: '21.0.13+9'
           cache: maven
-      - run: mvn --batch-mode verify
-        if: inputs.release_recovery != true
-      - name: Catalogue removal recovery checks and package
-        if: inputs.release_recovery == true
+      - name: Verify Java and build once
+        if: needs.plan.outputs.java_reuse == ''
         run: |
-          mvn --batch-mode -Dtest=GlobalCatalogDatabaseTest,CatalogRemovalDatabaseTest,CatalogRemovalAccessTest,CollaborationQueueDatabaseTest,ReplenishmentSuggestedPoControllerTest test
-          mvn --batch-mode -Dmaven.test.skip=true package
-      - name: Verify feature release operational helpers
-        if: github.ref == 'refs/heads/codex/fba-release-1.14.28'
-        run: |
+          mvn --batch-mode verify
           python3 -m py_compile scripts/release-feature-1.14.28.py
           python3 scripts/test-feature-release-guards.py
           mvn --batch-mode dependency:build-classpath -Dmdep.outputFile=target/release-migration-classpath.txt
           javac -cp "$(cat target/release-migration-classpath.txt)" -d target/release-helpers scripts/ApplyFbaReleaseMigrations.java
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
-        if: inputs.release_recovery != true
-      - name: Recovery first-render regressions
-        if: inputs.release_recovery == true
-        run: node --test src/test/js/inventory-first-paint.test.cjs src/test/js/collaboration-close-direct.test.cjs src/test/js/collaboration-solved-duration.test.cjs src/test/js/replenishment-suggested-po.test.cjs
+          mkdir -p .ci-result/java
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import shutil
+          jars=[p for p in Path('target').glob('next-ai-commerce-*.jar') if not p.name.endswith('.original')]
+          assert len(jars)==1
+          shutil.copy2(jars[0],'.ci-result/java/application.jar')
+          PYTHON
+          python3 scripts/ci/validation.py record --kind java --output .ci-result/java
+      - uses: actions/upload-artifact@v4
+        id: saved
+        if: needs.plan.outputs.java_reuse == ''
+        with:
+          name: validation-java-${{ needs.plan.outputs.java_key }}
+          path: .ci-result/java/
+          if-no-files-found: error
+          retention-days: 30
+      - id: identity
+        env:
+          REUSED: ${{ needs.plan.outputs.java_reuse }}
+          CREATED: ${{ steps.saved.outputs.artifact-id }}
+        run: echo "artifact=${REUSED:-$CREATED}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: always() && needs.plan.outputs.java_reuse == ''
+        with:
+          name: java-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/surefire-reports/
+          if-no-files-found: ignore
+
+  fixtures:
+    name: Browser fixtures
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      artifact: ${{ steps.identity.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - env:
+          PLAN: ${{ needs.plan.outputs.plan }}
+        run: printf '%s' "$PLAN" > .ci-plan.json
+      - run: python3 scripts/ci/validation.py host
+      - name: Reuse verified fixture bundle
+        if: needs.plan.outputs.fixtures_reuse != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ needs.plan.outputs.fixtures_reuse }}
+        run: python3 scripts/ci/validation.py load --kind fixtures --artifact "$ARTIFACT" --output .ci-result/fixtures
+      - uses: actions/setup-java@v4
+        if: needs.plan.outputs.fixtures_reuse == ''
+        with:
+          distribution: temurin
+          java-version: '21.0.13+9'
+          cache: maven
+      - name: Generate explicit portable browser prerequisites
+        if: needs.plan.outputs.fixtures_reuse == ''
+        run: |
+          mvn --batch-mode -DfbaPreview=true -Dtest=TemplateRenderingTest,CollaborationBoardTemplateTest,MarketplaceOrganizationTemplateTest,MarketplaceSafetyTemplateTest,FbaTemplateTest test
+          mkdir -p .ci-result/fixtures
+          python3 scripts/ci/validation.py fixtures --output .ci-result/fixtures/fixtures.tar.gz
+          python3 scripts/ci/validation.py record --kind fixtures --output .ci-result/fixtures
+      - uses: actions/upload-artifact@v4
+        id: saved
+        if: needs.plan.outputs.fixtures_reuse == ''
+        with:
+          name: validation-fixtures-${{ needs.plan.outputs.fixtures_key }}
+          path: .ci-result/fixtures/
+          if-no-files-found: error
+          retention-days: 30
+      - id: identity
+        env:
+          REUSED: ${{ needs.plan.outputs.fixtures_reuse }}
+          CREATED: ${{ steps.saved.outputs.artifact-id }}
+        run: echo "artifact=${REUSED:-$CREATED}" >> "$GITHUB_OUTPUT"
+
+  browser:
+    name: Browser verification
+    needs: [plan, fixtures]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      artifact: ${{ steps.identity.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - env:
+          PLAN: ${{ needs.plan.outputs.plan }}
+        run: printf '%s' "$PLAN" > .ci-plan.json
+      - run: python3 scripts/ci/validation.py host
+      - name: Reuse independently passed browser result
+        if: needs.plan.outputs.browser_reuse != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ needs.plan.outputs.browser_reuse }}
+        run: python3 scripts/ci/validation.py load --kind browser --artifact "$ARTIFACT" --output .ci-result/browser
+      - uses: actions/setup-node@v4
+        if: needs.plan.outputs.browser_reuse == ''
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Restore explicit fixtures
+        if: needs.plan.outputs.browser_reuse == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ needs.fixtures.outputs.artifact }}
+        run: |
+          python3 scripts/ci/validation.py load --kind fixtures --artifact "$ARTIFACT" --output .ci-result/fixtures
+          python3 scripts/ci/validation.py restore --output .ci-result/fixtures/fixtures.tar.gz
+      - name: All browser tests in the prepared, digest-pinned image
+        if: needs.plan.outputs.browser_reuse == ''
+        env:
+          BROWSER_IMAGE: ${{ needs.plan.outputs.image }}
+        run: |
+          mkdir -p "$HOME/.npm"
+          docker run --rm --ipc=host --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp/ci-home -e CI=true -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+            -v "$(dirname "$GITHUB_WORKSPACE"):$(dirname "$GITHUB_WORKSPACE")" \
+            -v /opt/google/chrome:/opt/google/chrome:ro \
+            -v /tmp/marketplace-organization-review:/tmp/marketplace-organization-review:ro \
+            -v /tmp/sku008-010-review:/tmp/sku008-010-review:ro \
+            -v /tmp/variation-trial-operator-review:/tmp/variation-trial-operator-review:ro \
+            -v "$HOME/.npm:/tmp/ci-npm-cache" -w "$GITHUB_WORKSPACE" \
+            "$BROWSER_IMAGE" bash scripts/ci/browser.sh
+          mkdir -p .ci-result/browser
+          python3 scripts/ci/validation.py record --kind browser --output .ci-result/browser
+      - uses: actions/upload-artifact@v4
+        id: saved
+        if: needs.plan.outputs.browser_reuse == ''
+        with:
+          name: validation-browser-${{ needs.plan.outputs.browser_key }}
+          path: .ci-result/browser/
+          if-no-files-found: error
+          retention-days: 30
+      - id: identity
+        env:
+          REUSED: ${{ needs.plan.outputs.browser_reuse }}
+          CREATED: ${{ steps.saved.outputs.artifact-id }}
+        run: echo "artifact=${REUSED:-$CREATED}" >> "$GITHUB_OUTPUT"
+
+  test:
+    # Preserve the required CI gate name; a reused result is independently verified.
+    needs: [plan, java, fixtures, browser]
+    if: always() && inputs.amazon_fee_hotfix != true && inputs.package_selection_performance != true && inputs.inventory_location_hotfix != true && inputs.release_recovery != true
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every verification job
+        env:
+          PLAN: ${{ needs.plan.result }}
+          JAVA: ${{ needs.java.result }}
+          FIXTURES: ${{ needs.fixtures.result }}
+          BROWSER: ${{ needs.browser.result }}
+        run: test "$PLAN" = success && test "$JAVA" = success && test "$FIXTURES" = success && test "$BROWSER" = success
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - env:
+          PLAN: ${{ needs.plan.outputs.plan }}
+        run: printf '%s' "$PLAN" > .ci-plan.json
+      - name: Verify successful job identities and compose exact package
+        id: package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JAVA: ${{ needs.java.outputs.artifact }}
+          FIXTURES: ${{ needs.fixtures.outputs.artifact }}
+          BROWSER: ${{ needs.browser.outputs.artifact }}
+        run: |
+          python3 scripts/ci/validation.py load --kind java --artifact "$JAVA" --output .ci-result/java
+          python3 scripts/ci/validation.py load --kind fixtures --artifact "$FIXTURES" --output .ci-result/fixtures
+          python3 scripts/ci/validation.py load --kind browser --artifact "$BROWSER" --output .ci-result/browser
+          python3 scripts/ci/validation.py compose --output .ci-result
+          node scripts/check-release-history.cjs
+          mkdir -p target
+      - env:
+          VERSION: ${{ steps.package.outputs.version }}
+        run: cp .ci-result/java/application.jar "target/next-ai-commerce-$VERSION.jar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-release-${{ github.sha }}
+          path: .ci-result/verified/
+          if-no-files-found: error
+          retention-days: 30
       - name: Preserve tested notice hotfix artifact
         if: github.ref == 'refs/heads/codex/notice-only-hotfix'
         uses: actions/upload-artifact@v4
@@ -195,6 +411,183 @@ jobs:
             target/next-ai-commerce-1.14.28.jar
             target/surefire-reports/
           if-no-files-found: error
+
+
+  recovery:
+    if: inputs.release_recovery == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: mvn --batch-mode verify
+        if: inputs.release_recovery != true
+      - name: Catalogue removal recovery checks and package
+        if: inputs.release_recovery == true
+        run: |
+          mvn --batch-mode -Dtest=GlobalCatalogDatabaseTest,CatalogRemovalDatabaseTest,CatalogRemovalAccessTest,CollaborationQueueDatabaseTest,ReplenishmentSuggestedPoControllerTest test
+          mvn --batch-mode -Dmaven.test.skip=true package
+      - name: Verify feature release operational helpers
+        if: github.ref == 'refs/heads/codex/fba-release-1.14.28'
+        run: |
+          python3 -m py_compile scripts/release-feature-1.14.28.py
+          python3 scripts/test-feature-release-guards.py
+          mvn --batch-mode dependency:build-classpath -Dmdep.outputFile=target/release-migration-classpath.txt
+          javac -cp "$(cat target/release-migration-classpath.txt)" -d target/release-helpers scripts/ApplyFbaReleaseMigrations.java
+      - uses: actions/setup-node@v4
+        with:
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+        if: inputs.release_recovery != true
+      - name: Recovery first-render regressions
+        if: inputs.release_recovery == true
+        run: node --test src/test/js/inventory-first-paint.test.cjs src/test/js/collaboration-close-direct.test.cjs src/test/js/collaboration-solved-duration.test.cjs src/test/js/replenishment-suggested-po.test.cjs
+
+      - name: Preserve tested notice hotfix artifact
+        if: github.ref == 'refs/heads/codex/notice-only-hotfix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: notice-hotfix-package
+          path: target/next-ai-commerce-1.6.10.jar
+          if-no-files-found: error
+      - name: Preserve tested minor release artifact
+        if: github.ref == 'refs/heads/codex/minor-1-7-release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: minor-1-7-package
+          path: target/next-ai-commerce-1.7.2.jar
+          if-no-files-found: error
+      - name: Preserve tested tooltip hotfix artifact
+        if: github.ref == 'refs/heads/codex/tooltip-resize-hotfix-1-7-3'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tooltip-hotfix-package
+          path: target/next-ai-commerce-1.7.3.jar
+          if-no-files-found: error
+      - name: Preserve tested fee minor release artifact
+        if: github.ref == 'refs/heads/codex/fee-variance-release-1-8'
+        uses: actions/upload-artifact@v4
+        with:
+          name: minor-1-8-package
+          path: target/next-ai-commerce-1.8.0.jar
+          if-no-files-found: error
+      - name: Preserve tested UI hotfix artifact
+        if: github.ref == 'refs/heads/codex/ui-hotfix-1-8-1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-hotfix-1-8-1-package
+          path: target/next-ai-commerce-1.8.1.jar
+          if-no-files-found: error
+      - name: Preserve tested catalogue minor release artifact
+        if: github.ref == 'refs/heads/codex/catalogue-isolation-1-9'
+        uses: actions/upload-artifact@v4
+        with:
+          name: minor-1-9-package
+          path: target/next-ai-commerce-1.9.0.jar
+          if-no-files-found: error
+      - name: Preserve verified Shopify release candidate
+        if: github.ref == 'refs/heads/codex/shopify-release-1-10'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopify-release-1-10-package
+          path: |
+            target/next-ai-commerce-1.10.0.jar
+            target/surefire-reports/
+          if-no-files-found: error
+      - name: Preserve verified receiving expiry hotfix
+        if: github.ref == 'refs/heads/codex/receiving-expiry-year-1-10-1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: receiving-expiry-1-10-1-package
+          path: |
+            target/next-ai-commerce-1.10.1.jar
+            target/surefire-reports/
+          if-no-files-found: error
+      - name: Preserve verified Shopify inventory activation hotfix
+        if: github.ref == 'refs/heads/codex/shopify-inventory-activation'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopify-inventory-1-10-3-package
+          path: |
+            target/next-ai-commerce-1.10.3.jar
+            target/surefire-reports/
+          if-no-files-found: error
+      - name: Preserve verified collaboration minor candidate
+        if: github.ref == 'refs/heads/codex/collaboration-minor-1-11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: collaboration-minor-1-11-package
+          path: |
+            target/next-ai-commerce-1.11.0.jar
+            target/surefire-reports/
+          if-no-files-found: error
+      - name: Preserve tested performance hotfix artifact
+        if: github.ref == 'refs/heads/codex/platform-performance-hotfix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-performance-hotfix-package
+          path: target/next-ai-commerce-1.11.1.jar
+          if-no-files-found: error
+      - name: Preserve tested receiving lock hotfix artifact
+        if: github.ref == 'refs/heads/codex/packing-list-hotfix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packing-list-hotfix-package
+          path: target/next-ai-commerce-1.11.2.jar
+          if-no-files-found: error
+
+      - name: Preserve tested receipt performance hotfix artifact
+        if: github.ref == 'refs/heads/codex/workspace-identity-hotfix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-identity-hotfix-package
+          path: target/next-ai-commerce-1.11.7.jar
+          if-no-files-found: error
+
+      - name: Preserve verified FBA and purchase plans release package
+        if: github.ref == 'refs/heads/codex/frontend-standardization-hotfix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-packages-1-14-2-package
+          path: |
+            target/next-ai-commerce-1.14.2.jar
+            target/surefire-reports/
+          if-no-files-found: error
+
+      - name: Preserve verified local parity package
+        if: github.ref == 'refs/heads/codex/local-parity-1.14.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-parity-1.14.13-package
+          path: |
+            target/next-ai-commerce-1.14.13.jar
+            target/surefire-reports/
+          if-no-files-found: error
+
+      - name: Preserve catalogue removal hotfix
+        if: inputs.release_recovery == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalogue-collaboration-1.14.16-package
+          path: target/next-ai-commerce-1.14.16.jar
+          if-no-files-found: error
+
+      - name: Preserve verified combined FBA feature release
+        if: github.ref == 'refs/heads/codex/fba-release-1.14.28'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fba-combined-1.14.28
+          path: |
+            target/next-ai-commerce-1.14.28.jar
+            target/surefire-reports/
+          if-no-files-found: error
+
 
   amazon-fee-hotfix:
     if: inputs.amazon_fee_hotfix == true

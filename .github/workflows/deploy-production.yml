@@ -1,9 +1,24 @@
 name: Deploy production
 
 on:
-  push:
-    branches: ["release/v1.0.0"]
   workflow_dispatch:
+    inputs:
+      source_run:
+        description: Successful normal CI run containing the verified release artifact
+        required: true
+        type: string
+      revision:
+        description: Exact validated 40-character source revision
+        required: true
+        type: string
+      package_sha256:
+        description: Exact verified CI JAR SHA-256
+        required: true
+        type: string
+      release_plan:
+        description: Reviewed application-only baseline and compatible recovery JSON (no credentials)
+        required: true
+        type: string
 
 concurrency:
   group: next-ai-commerce-production
@@ -11,61 +26,40 @@ concurrency:
 
 permissions:
   contents: write
+  actions: read
   id-token: write
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # Production promotion tools are executed only from the repository's protected
+    # default workflow ref, never from an arbitrary PR or candidate checkout.
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
     environment: production
     steps:
       - uses: actions/checkout@v4
-      - name: Verify user-facing release notes
-        run: |
-          node scripts/check-release-history.cjs
-          release_version=1.14.9
-          echo "RELEASE_VERSION=$release_version" >> "$GITHUB_ENV"
-      - uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
-      - run: mvn --batch-mode verify
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
-      - name: Publish verified deployment package
+          persist-credentials: false
+      - name: Verify and publish the exact successful CI artifact (no rebuild or retest)
         env:
           GH_TOKEN: ${{ github.token }}
-          REVISION: ${{ github.sha }}
-        run: |
-          asset="next-ai-commerce-${RELEASE_VERSION}-${REVISION}.jar"
-          cp "target/next-ai-commerce-${RELEASE_VERSION}.jar" "$asset"
-          sha256sum "$asset" > "$asset.sha256"
-          tag="build-${REVISION}"
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" "$asset" "$asset.sha256" --target "$REVISION" --prerelease --title "Deployment package ${REVISION:0:12}" --notes "Verified v${RELEASE_VERSION} deployment package. Production deployment is tracked separately."
-          fi
-          mkdir -p .package-check
-          gh release download "$tag" --pattern "$asset" --dir .package-check
-          test "$(sha256sum .package-check/"$asset" | cut -d' ' -f1)" = "$(sha256sum "$asset" | cut -d' ' -f1)"
-          echo "PACKAGE_SHA256=$(sha256sum "$asset" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          SOURCE_RUN: ${{ inputs.source_run }}
+          PROMOTION_REVISION: ${{ inputs.revision }}
+          PACKAGE_SHA256: ${{ inputs.package_sha256 }}
+          RELEASE_PLAN: ${{ inputs.release_plan }}
+          REVIEWED_PLAN_SHA256: ${{ vars.PRODUCTION_MANIFEST_SHA256 }}
+        run: python3 scripts/ci/promote.py
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::038462776212:role/NextAICommerceGitHubDeployRole
           aws-region: us-west-1
-      - env:
+      - name: Application-only installation using existing guarded SSM target
+        env:
           INSTANCE_ID: i-043ea7df8377dd0a9
-          REVISION: ${{ github.sha }}
-          REVIEWED_MANIFEST_SHA256: ${{ vars.PRODUCTION_MANIFEST_SHA256 }}
         run: |
-          [[ -z "$REVIEWED_MANIFEST_SHA256" || "$REVIEWED_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
-          reviewed_scope="$REVIEWED_MANIFEST_SHA256"
-          if [[ "$RELEASE_VERSION" == "1.9.0" ]]; then reviewed_scope=OWNER_APPROVED_CATALOGUE_MINOR_1_9; fi
-          encoded=$(tar -czf - scripts/production-release.sh scripts/fee-release-manifest.py | base64 -w0)
-          command="set -eu; work=\$(mktemp -d /opt/next-ai-commerce/releases/.release-tools-XXXXXX); trap 'rm -f \"\$work/scripts/production-release.sh\" \"\$work/scripts/fee-release-manifest.py\"; rmdir \"\$work/scripts\" \"\$work\"' EXIT; printf '%s' '$encoded' | base64 -d | tar -xzf - -C \"\$work\"; FEE_RELEASE_OPERATION_REVISION='$REVISION' FEE_RELEASE_GUARD=\"\$work/scripts/fee-release-manifest.py\" bash \"\$work/scripts/production-release.sh\" '$REVISION' '$RELEASE_VERSION' '$PACKAGE_SHA256' '$reviewed_scope'"
-          parameters=$(jq -n --arg command "$command" '{commands:[$command],executionTimeout:["1800"]}')
-          command_id=$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --parameters "$parameters" --query 'Command.CommandId' --output text)
-          for attempt in $(seq 1 120); do
+          command_id=$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --parameters file://.promotion-command.json --query Command.CommandId --output text)
+          status=Pending
+          for attempt in $(seq 1 80); do
             status=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || echo Pending)
             case "$status" in Success|Failed|Cancelled|TimedOut) break;; esac
             sleep 15
