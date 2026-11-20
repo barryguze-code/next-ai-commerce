@@ -1,7 +1,8 @@
 # FBA shipment read lifecycle
 
-Applies to every Amazon account/store. This is a local development change, not a
-production deployment. The staged 1.14.30 presentation hotfix is separate.
+Applies to every Amazon account/store. Production activation is governed by the
+[combined1.14.31 deployment plan](deployments/1.14.31-fba-optimization.md), which also
+includes the Sync Now presentation fix; staged1.14.30 is superseded.
 
 ## Coverage and resumption
 
