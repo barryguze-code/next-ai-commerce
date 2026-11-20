@@ -25,6 +25,7 @@ import static com.nextaicommerce.platform.fba.FbaInboundWorkflow.*;
  */
 @Component
 public class FbaInboundDocuments implements FbaInboundOrchestration.Documents {
+ @org.springframework.beans.factory.annotation.Autowired void configureLocalSafety(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){if(download instanceof AmazonDownload amazon)amazon.client=safety.guard(amazon.client);}
  static final int MAX_BYTES=10*1024*1024;
  interface Download { byte[] pdf(URI uri); }
  private final JdbcTemplate jdbc;private final TransactionTemplate tx;private final ShippingLabelCrypto crypto;
@@ -86,7 +87,7 @@ public class FbaInboundDocuments implements FbaInboundOrchestration.Documents {
   try(var pdf=Loader.loadPDF(bytes)){int count=pdf.getNumberOfPages();if(pdf.isEncrypted()||count<1||count>200)throw new IllegalArgumentException("Amazon PDF requires review before storage.");return count;}catch(IOException e){throw new IllegalArgumentException("Amazon PDF could not be verified.");}
  }
  static class AmazonDownload implements Download {
-  private final Set<String> hosts;private final HttpClient client;
+  private final Set<String> hosts;private HttpClient client;
   AmazonDownload(String configured){var values=new HashSet<String>();if(configured!=null)for(String host:configured.split(","))if(!host.isBlank()){host=host.trim().toLowerCase(Locale.ROOT);if(!trustedHost(host))throw new IllegalArgumentException("Document host must be an exact reviewed Amazon-controlled host.");values.add(host);}hosts=Set.copyOf(values);client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER).build();}
   static boolean trustedHost(String host){return host.matches("[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?")&&(host.endsWith(".amazonaws.com")||host.endsWith(".amazonaws.com.cn")||host.endsWith(".amazon.com"))&&!host.contains("..");}
   void validate(URI uri){if(uri==null||!"https".equalsIgnoreCase(uri.getScheme())||uri.getUserInfo()!=null||uri.getFragment()!=null||uri.getHost()==null||uri.getPort()!=-1&&uri.getPort()!=443||uri.toString().length()>16384||!hosts.contains(uri.getHost().toLowerCase(Locale.ROOT)))throw new IllegalArgumentException("Amazon document download host is not approved.");}

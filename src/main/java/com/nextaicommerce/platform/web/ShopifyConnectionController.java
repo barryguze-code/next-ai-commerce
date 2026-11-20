@@ -9,6 +9,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 @Controller
 public class ShopifyConnectionController {
+    @org.springframework.beans.factory.annotation.Autowired private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
     private final WorkspaceAccessRepository repository;
     private final ShopifyConnectionService service;
     private final ShopifyConnectionAccess access;
@@ -54,6 +55,7 @@ public class ShopifyConnectionController {
         return "redirect:/app/connections";
     }
     private String initializeCatalogue(UUID tenant,UUID connection,String actor){
+        if(localSafety.local())return "";
         if(orderPage!=null)try{orderPage.initialize(tenant,connection,actor);}catch(RuntimeException ignored){/* Catalogue and saved authorization remain intact. */}
         String orders=service.ordersEnabled()?(service.setupState(tenant,connection).ordersPermitted()?"Orders sync continues after product import.":"Approve Orders read access in Shopify, then refresh installed permissions."):"Orders are not enabled.";
         if(catalogueJobs==null||catalogueWorker==null||!catalogueJobs.enabled())return orders;

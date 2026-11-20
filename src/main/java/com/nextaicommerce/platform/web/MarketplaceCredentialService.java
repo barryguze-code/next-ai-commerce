@@ -22,10 +22,12 @@ import com.nextaicommerce.platform.sync.AmazonInitializationService;
 
 @Service
 public class MarketplaceCredentialService {
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalTransport(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.httpClient=safety.guard(this.httpClient);this.localSafety=safety;}
+    private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
     public record EncryptedCredentials(byte[] payload, byte[] nonce) {}
 
     private final WorkspaceAccessRepository repository;
-    private final HttpClient httpClient;
+    private HttpClient httpClient;
     private final byte[] encryptionKey;
     private final AmazonInitializationService initializationService;
 
@@ -55,7 +57,7 @@ public class MarketplaceCredentialService {
         Map<String, String> credentials = credentialsFor(connection.channel(), form);
         validate(connection.channel(), connection.marketplaceId(), credentials);
         EncryptedCredentials encrypted = encrypt(credentials);
-        boolean amazon = "AMAZON".equals(connection.channel());
+        boolean amazon = "AMAZON".equals(connection.channel())&&!localSafety.local();
         repository.saveCredentials(tenantId, connectionId, encrypted.payload(), encrypted.nonce(), amazon);
         if (amazon) initializationService.enqueue(tenantId, connectionId);
     }

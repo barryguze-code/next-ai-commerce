@@ -9,10 +9,13 @@ import org.springframework.stereotype.Component;
 /** Explicit existing async executor; no startup enqueue, scheduler, Shopify mutation or hidden service. */
 @Component
 public class ShopifyOrderWorker {
+    private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalSafety(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.localSafety=safety;}
     private final ShopifyOrderJobs jobs;private final ShopifyOrderClient client;
     private final java.util.Set<UUID> active=java.util.concurrent.ConcurrentHashMap.newKeySet();
     public ShopifyOrderWorker(ShopifyOrderJobs jobs,ShopifyOrderClient client){this.jobs=jobs;this.client=client;}
     @Async public void start(UUID tenant,UUID connection,UUID id){
+        localSafety.requireManualRead();
         if(!jobs.enabled()||!active.add(id))return;
         try{
         for(int step=0;step<2400&&!Thread.currentThread().isInterrupted();step++){

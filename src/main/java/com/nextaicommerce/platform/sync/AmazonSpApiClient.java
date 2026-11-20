@@ -24,11 +24,13 @@ import org.slf4j.LoggerFactory;
 
 @Component
 public class AmazonSpApiClient {
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalTransport(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.http=safety.guard(this.http);}
+
     private static final Logger log=LoggerFactory.getLogger(AmazonSpApiClient.class);
     private static final URI LWA = URI.create("https://api.amazon.com/auth/o2/token");
     private static final String NA_ENDPOINT = "https://sellingpartnerapi-na.amazon.com";
     private final MarketplaceCredentialService credentialService;
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+    private HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
     private final ObjectMapper json;
     private final Map<TokenKey,CachedToken> accessTokens=new ConcurrentHashMap<>();
     @org.springframework.beans.factory.annotation.Value("${app.integrations.external-enabled:true}")

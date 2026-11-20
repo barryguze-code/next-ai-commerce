@@ -22,6 +22,8 @@ import tools.jackson.databind.ObjectMapper;
 /** Fixed carrier hosts, bounded token cache, and no automatic retry of shipment mutations. */
 @Component
 public class FedExClient {
+    private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalSafety(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.localSafety=safety;}
     public enum Environment {
         SANDBOX("https://apis-sandbox.fedex.com"), PRODUCTION("https://apis.fedex.com");
         final String host;
@@ -182,6 +184,7 @@ public class FedExClient {
     }
     private JsonNode send(HttpRequest request, boolean mutation) {
         try {
+            if(!simulated)localSafety.checkRequest(request);
             Reply reply = transport.send(request);
             if (reply.status < 200 || reply.status >= 300) {
                 // Never echo carrier bodies: they can contain credentials or customer addresses.

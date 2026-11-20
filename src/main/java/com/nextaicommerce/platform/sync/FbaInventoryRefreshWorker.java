@@ -9,9 +9,10 @@ import tools.jackson.databind.ObjectMapper;
 /** Bounded explicit GET-only inventory read; no scheduled/general worker activation. */
 @Component
 public class FbaInventoryRefreshWorker {
+    @org.springframework.beans.factory.annotation.Autowired private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
  private final FbaInventoryRefresh refresh;private final AmazonSpApiClient amazon;private final ObjectMapper json;private final com.nextaicommerce.platform.fba.FbaReplenishmentForecasts forecasts;
  public FbaInventoryRefreshWorker(FbaInventoryRefresh refresh,AmazonSpApiClient amazon,ObjectMapper json,com.nextaicommerce.platform.fba.FbaReplenishmentForecasts forecasts){this.refresh=refresh;this.amazon=amazon;this.json=json;this.forecasts=forecasts;}
- @Async @EventListener public void read(FbaInventoryRefresh.Request request){String market=refresh.claim(request);if(market==null)return;try{
+ @Async @EventListener public void read(FbaInventoryRefresh.Request request){localSafety.requireManualRead();String market=refresh.claim(request);if(market==null)return;try{
   var pages=json.createArrayNode();var tokens=new HashSet<String>();String next="";Instant deadline=Instant.now().plusSeconds(600);
   // Marketplace routing is explicit; the generic client defaults to North America.
   String endpoint=endpoint(market);

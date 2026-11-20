@@ -20,6 +20,8 @@ import org.slf4j.LoggerFactory;
 
 @Component
 public class AmazonSyncWorker {
+    private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalSafety(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.localSafety=safety;}
     private static final Logger log=LoggerFactory.getLogger(AmazonSyncWorker.class);
     private static final Map<String,String> REPORT_TYPES=Map.ofEntries(
         Map.entry("LISTINGS_SNAPSHOT","GET_MERCHANT_LISTINGS_ALL_DATA"),
@@ -64,7 +66,10 @@ public class AmazonSyncWorker {
     }
 
     private void processClaimed(AmazonSyncStore.Job job){
-        if(job==null)return;
+        if(job==null||!localSafety.allowedRun(job.runId()))return;
+        try(var manual=localSafety.manualRequest()){processAuthorized(job);}
+    }
+    private void processAuthorized(AmazonSyncStore.Job job){
         log.info("{} started — {}. Data window: {} to {}. Attempt {}.",runLabel(job),stageLabel(job.type()),
             job.windowStart(),job.windowEnd(),job.attempts()+1);
         // Fee jobs own finite budgets and fenced transitions. Never fall through to the

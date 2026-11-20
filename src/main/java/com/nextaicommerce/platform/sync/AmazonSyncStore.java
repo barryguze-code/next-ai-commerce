@@ -17,6 +17,8 @@ import org.slf4j.LoggerFactory;
 
 @Repository
 public class AmazonSyncStore {
+    private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalSafety(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.localSafety=safety;}
     private static final Logger log=LoggerFactory.getLogger(AmazonSyncStore.class);
     public record Job(UUID id, UUID tenantId, UUID runId, UUID connectionId, String type,
         String profile, String marketplaceId, Instant windowStart, Instant windowEnd, String reportId, int attempts,
@@ -82,6 +84,7 @@ public class AmazonSyncStore {
                 OR (j.status='RUNNING' AND j.lease_expires_at<now())
               )
                   AND (?=false OR r.sync_profile='ORDER_CHANGES')
+                  AND (?=false OR j.sync_run_id::text=ANY(string_to_array(?,',')))
                   AND ((CAST(? AS uuid) IS NULL AND NOT (j.job_type='FEES_SNAPSHOT' AND jsonb_exists(j.cursor,'feeRun')))
                     OR (CAST(? AS uuid) IS NOT NULL AND j.id=? AND j.job_type='FEES_SNAPSHOT'
                       AND j.marketplace_connection_id=? AND c.marketplace_identifier=? AND jsonb_exists(j.cursor,'feeRun')))
@@ -100,7 +103,7 @@ public class AmazonSyncStore {
                 rs.getObject(3,UUID.class),rs.getObject(4,UUID.class),rs.getString(5),rs.getString(6),rs.getString(7),
                 rs.getTimestamp(8).toInstant(),rs.getTimestamp(9).toInstant(),rs.getString(10),rs.getInt(11),
                 rs.getInt(12),rs.getBoolean(13),rs.getTimestamp(14)==null?null:rs.getTimestamp(14).toInstant()),
-            tenant,orderRefreshOnly,feeJob,feeJob,feeJob,feeConnection,feeMarketplace);
+            tenant,orderRefreshOnly,localSafety.local(),localSafety.allowedRuns().stream().map(UUID::toString).collect(java.util.stream.Collectors.joining(",")),feeJob,feeJob,feeJob,feeConnection,feeMarketplace);
         if (jobs.isEmpty()) return null;
         Job job=jobs.getFirst();
         if("FEES_SNAPSHOT".equals(job.type())){

@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AmazonManualOrderSync {
+    private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalSafety(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.localSafety=safety;}
     private static final Duration COOLDOWN=Duration.ofMinutes(5);
     private final JdbcTemplate jdbc;
     public AmazonManualOrderSync(JdbcTemplate jdbc){this.jdbc=jdbc;}
@@ -38,7 +40,7 @@ public class AmazonManualOrderSync {
     public UUID enqueue(UUID tenantId,UUID connectionId){
         setTenant(tenantId);jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?::text,52))",rs->{},connectionId);
         Availability availability=availability(tenantId,connectionId);
-        if(availability.activeRun()!=null)return availability.activeRun();
+        if(availability.activeRun()!=null){localSafety.allowRun(availability.activeRun());return availability.activeRun();}
         if(!availability.allowed())throw new IllegalStateException("Amazon orders were checked less than five minutes ago.");
         Instant end=Instant.now().minusSeconds(120),fallback=end.minusSeconds(24*60*60L);
         Instant watermark=jdbc.query("""
@@ -57,6 +59,7 @@ public class AmazonManualOrderSync {
             INSERT INTO marketplace_sync_jobs(tenant_id,sync_run_id,marketplace_connection_id,job_type,sequence_number,required_for_ready)
             VALUES(?,?,?,'ORDERS_API_DELTA',1,false),(?,?,?,'FINAL_RECONCILIATION',2,false)
             """,tenantId,runId,connectionId,tenantId,runId,connectionId);
+        localSafety.allowRun(runId);
         return runId;
     }
 

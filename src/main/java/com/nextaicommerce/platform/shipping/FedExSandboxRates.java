@@ -17,6 +17,8 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class FedExSandboxRates {
     private final ObjectMapper json;
+    private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
+    @Autowired void configureLocalSafety(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.localSafety=safety;}
     private final String account;
     private final FedExClient client;
     private final boolean labels;
@@ -43,6 +45,7 @@ public class FedExSandboxRates {
             if(!"https".equals(request.uri().getScheme())||!"apis-sandbox.fedex.com".equals(request.uri().getHost())
                 ||!"POST".equals(request.method())||!(List.of("/oauth/token","/rate/v1/comprehensiverates/quotes").contains(request.uri().getPath())||(labels&&"/ship/v1/shipments".equals(request.uri().getPath()))))
                 throw new IllegalStateException("Sandbox rate-only endpoint rejected.");
+            localSafety.checkRequest(request);
             return transport.send(request);
         },FedExClient.RateApi.COMPREHENSIVE);
     }

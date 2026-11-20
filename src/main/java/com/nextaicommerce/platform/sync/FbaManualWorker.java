@@ -11,11 +11,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** The existing async/queue infrastructure, limited to the exact explicitly requested FBA job. */
 @Component
 public class FbaManualWorker {
+    private com.nextaicommerce.platform.config.LocalIntegrationSafety localSafety=new com.nextaicommerce.platform.config.LocalIntegrationSafety(false);
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalSafety(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.localSafety=safety;}
     private final JdbcTemplate jdbc;private final TransactionTemplate tx;private final FbaInboundSync inbound;private final AmazonSyncStore store;
     private final Set<UUID> active=ConcurrentHashMap.newKeySet();
     public FbaManualWorker(JdbcTemplate jdbc,TransactionTemplate tx,FbaInboundSync inbound,AmazonSyncStore store){this.jdbc=jdbc;this.tx=tx;this.inbound=inbound;this.store=store;}
     public boolean running(UUID id){return active.contains(id);}
     @Async public void start(UUID tenant,UUID connection,UUID id){
+        localSafety.requireManualRead();
         if(!active.add(id))return;
         try{
             // Finite activation; after restart/budget exhaustion Sync now resumes the stored checkpoint.

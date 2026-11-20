@@ -13,10 +13,12 @@ import tools.jackson.databind.ObjectMapper;
 /** Merchant-owned Dev Dashboard apps only. Fixed reads and separately guarded inventory publication. */
 @Service
 public class ShopifyConnectionService {
+    @org.springframework.beans.factory.annotation.Autowired void configureLocalTransport(com.nextaicommerce.platform.config.LocalIntegrationSafety safety){this.http=safety.guard(this.http);}
+
     static final String API_VERSION="2026-10";
     private final WorkspaceAccessRepository repository;
     private final MarketplaceCredentialService crypto;
-    private final HttpClient http;
+    private HttpClient http;
     private final Clock clock;
     private final boolean enabled;
     @Value("${app.shopify.orders.enabled:false}") private boolean ordersEnabled;
