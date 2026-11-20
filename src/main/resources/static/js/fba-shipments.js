@@ -36,4 +36,30 @@ document.addEventListener('DOMContentLoaded',()=>{const prefs=window.NextAiTable
  dialog.addEventListener('close',()=>{request?.abort();version++;opener?.focus();});
 })();
 
-(()=>{const form=document.querySelector('[data-fba-sync]');if(!form)return;const button=form.querySelector('button'),feedback=document.querySelector('[data-fba-sync-status]');let timer,polls=0,wasRunning=feedback.dataset.running==='true';async function refreshRows(){const y=window.scrollY;const response=await fetch(location.href,{headers:{Accept:'text/html'}});if(!response.ok)return;const doc=new DOMParser().parseFromString(await response.text(),'text/html');for(const selector of ['.fba-shipment-table','.table-pagination']){const fresh=doc.querySelector(selector),current=document.querySelector(selector);if(fresh&&current)current.replaceWith(fresh);}window.NextAiTableWidget?.refresh();window.scrollTo({top:y});}async function check(){try{const response=await fetch(form.action,{headers:{Accept:'application/json'}});if(!response.ok)throw Error();const state=await response.json();feedback.hidden=state.running||state.status==='COMPLETED'||!state.message;feedback.textContent=state.running?'':state.message||'';const pill=document.querySelector('[data-fba-compact-status]');pill.textContent=state.running?'Syncing…':state.status==='COMPLETED'?'Synced':state.status==='NOT_STARTED'?'Not synced':'Needs attention';pill.classList.toggle('syncing',state.running);pill.classList.toggle('not-synced',!state.running&&state.status!=='COMPLETED');button.textContent=state.running&&!state.enabled?'Syncing…':'↻ Sync now';button.disabled=!state.enabled;document.querySelector('[data-fba-check]').textContent=state.checkedAt?'Last Amazon shipment check · '+new Date(state.checkedAt).toLocaleString():'Amazon shipment check · Not completed';if(state.running&&++polls<900)timer=setTimeout(check,2500);else if(!state.running){button.textContent='↻ Sync now';if(wasRunning)await refreshRows();}wasRunning=state.running;}catch(_){feedback.hidden=false;feedback.textContent='Status unavailable. Refresh to check the saved sync progress.';button.disabled=false;}}form.addEventListener('submit',async event=>{event.preventDefault();if(button.disabled)return;button.disabled=true;feedback.hidden=true;document.querySelector('[data-fba-compact-status]').textContent='Syncing…';try{const response=await fetch(form.action,{method:'POST',body:new FormData(form)}),value=await response.json();if(!response.ok)throw Error(value.error||'Sync could not start.');polls=0;wasRunning=true;clearTimeout(timer);check();}catch(error){feedback.hidden=false;feedback.textContent=error.message;button.disabled=false;}});if(feedback.dataset.running==='true')check();})();
+(()=>{
+ const form=document.querySelector('[data-fba-sync]');if(!form)return;
+ const button=form.querySelector('button'),label=button.querySelector('[data-fba-sync-label]'),feedback=document.querySelector('[data-fba-sync-status]');
+ let timer,polls=0,wasRunning=feedback.dataset.running==='true',pending=false,enabled=!button.disabled;
+ function showState(running,allowed){button.disabled=running||!allowed;button.setAttribute('aria-busy',String(running));label.textContent=running?'Syncing…':'Sync now';}
+ async function refreshRows(){const y=window.scrollY;const response=await fetch(location.href,{headers:{Accept:'text/html'}});if(!response.ok)return;const doc=new DOMParser().parseFromString(await response.text(),'text/html');for(const selector of ['.fba-shipment-table','.table-pagination']){const fresh=doc.querySelector(selector),current=document.querySelector(selector);if(fresh&&current)current.replaceWith(fresh);}window.NextAiTableWidget?.refresh();window.scrollTo({top:y});}
+ function retryStatus(){if(++polls<900)timer=setTimeout(check,2500);}
+ async function check(){
+  try{
+   const response=await fetch(form.action,{headers:{Accept:'application/json'}});if(!response.ok)throw Error();
+   const state=await response.json();pending=false;enabled=state.enabled;
+   feedback.hidden=state.running||state.status==='COMPLETED'||!state.message;feedback.textContent=state.running?'':state.message||'';
+   const pill=document.querySelector('[data-fba-compact-status]');pill.textContent=state.running?'Syncing…':state.status==='COMPLETED'?'Synced':state.status==='NOT_STARTED'?'Not synced':'Needs attention';pill.classList.toggle('syncing',state.running);pill.classList.toggle('not-synced',!state.running&&state.status!=='COMPLETED');
+   showState(state.running,enabled);
+   document.querySelector('[data-fba-check]').textContent=state.checkedAt?'Last Amazon shipment check · '+new Date(state.checkedAt).toLocaleString():'Amazon shipment check · Not completed';
+   const completed=wasRunning&&!state.running;wasRunning=state.running;
+   if(state.running)retryStatus();else if(completed)await refreshRows();
+  }catch(_){feedback.hidden=false;feedback.textContent='Status unavailable. Refresh to check the saved sync progress.';showState(wasRunning||pending,enabled);if(wasRunning||pending)retryStatus();}
+ }
+ form.addEventListener('submit',async event=>{
+  event.preventDefault();if(button.disabled||pending||wasRunning)return;
+  pending=true;polls=0;clearTimeout(timer);showState(true,enabled);feedback.hidden=true;document.querySelector('[data-fba-compact-status]').textContent='Syncing…';
+  try{const response=await fetch(form.action,{method:'POST',body:new FormData(form)}),value=await response.json();if(!response.ok)throw Error(value.error||'Sync could not start.');wasRunning=true;await check();}
+  catch(error){feedback.hidden=false;feedback.textContent=error.message;retryStatus();}
+ });
+ if(wasRunning){showState(true,enabled);check();}
+})();
