@@ -25,7 +25,7 @@ public class FbaManualSync {
             String message=running?("true".equals(r.getString("items_only"))?"Refreshing selected shipment items…":"Importing shipments and inbound fees…"):List.of("FAILED","SKIPPED").contains(status)?"Previous Amazon shipment sync could not complete. Existing data is retained.":"";if("true".equals(r.getString("fees_unavailable")))message="Shipments imported; Amazon fees were unavailable. Existing charges are retained.";
             String coverage=r.getString("parent_coverage");boolean parentsOnly="true".equals(r.getString("parents_only"));
             if(parentsOnly)message=parentMessage(status,coverage);
-            if("COMPLETED".equals(status)&&(parentsOnly&&!"API_DISCOVERY_COMPLETE".equals(coverage)||"PARTIAL".equals(coverage)||"UNAVAILABLE".equals(coverage))){status="COMPLETED_WITH_WARNINGS";message=parentMessage(status,coverage);}
+            if("COMPLETED".equals(status)&&(parentsOnly&&!("API_DISCOVERY_COMPLETE".equals(coverage)||"RECENT_WINDOW_COMPLETE".equals(coverage))||"PARTIAL".equals(coverage)||"UNAVAILABLE".equals(coverage))){status="COMPLETED_WITH_WARNINGS";message=parentMessage(status,coverage);}
             if(!running&&List.of("QUEUED","RUNNING","WAITING").contains(status))message="Shipment sync paused. Sync now resumes the saved checkpoint.";
             if("COMPLETED".equals(status)&&"true".equals(r.getString("unresolved_open"))){status="COMPLETED_WITH_WARNINGS";message="Some older shipment updates could not be verified. Existing data is retained.";}
             return new State(enabled&&!running,running,status,message==null?"":message,r.getTimestamp("completed_at")==null?null:r.getTimestamp("completed_at").toInstant());},tenant,connection);});}
@@ -37,6 +37,7 @@ public class FbaManualSync {
     }
     static String parentMessage(String status,String coverage){
         if(List.of("QUEUED","RUNNING","WAITING").contains(status))return "Refreshing parent shipment links…";
+        if("COMPLETED".equals(status)&&"RECENT_WINDOW_COMPLETE".equals(coverage))return "Parent shipment links refreshed for the last three months.";
         if("COMPLETED".equals(status)&&"API_DISCOVERY_COMPLETE".equals(coverage))return "Parent shipment links refreshed.";
         if("PARTIAL".equals(coverage))return "Some parent shipment links could not be verified. Existing links are retained.";
         return "Parent shipment links could not be refreshed. Existing links are retained.";

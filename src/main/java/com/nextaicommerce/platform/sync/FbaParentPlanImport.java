@@ -14,6 +14,40 @@ final class FbaParentPlanImport {
     static final int MAX_REQUESTS=10_000, MAX_CHILDREN=200;
     static final String BASE="/inbound/fba/2024-03-20/inboundPlans";
     private static final ObjectMapper JSON=new ObjectMapper();
+    static final String AWD_UNSUPPORTED="Operation GetInboundPlan is not supported for Amazon Warehousing and Distribution inbound plans.";
+    static boolean skipUnsupportedAwd(ObjectNode state,int status,String message){
+        if(status!=400||!(AWD_UNSUPPORTED.equals(message)||("ERROR: "+AWD_UNSUPPORTED).equals(message))||state.path("entry").isObject()||!state.path("listed").isArray())return false;
+        int index=state.path("planIndex").asInt();if(index<0||index>=state.path("listed").size())return false;
+        String plan=id(state.path("listed").get(index).path("inboundPlanId"));
+        state.withArray("skippedAwd").addObject().put("planId",plan).put("httpStatus",400).put("reason","UNSUPPORTED_AWD_PLAN");
+        state.put("skippedAwdPlans",state.path("skippedAwdPlans").asInt()+1).put("requests",state.path("requests").asInt()+1);
+        advancePlan(state);return true;
+    }
+    /** A query token never changes sort contract. Only an explicitly authorized recovery can replace legacy ASC. */
+    static boolean initializeWindow(AmazonSyncStore.Job job,ObjectNode state){
+        if(state.path("windowRevision").asInt()==1)return false;
+        var recovery=state.path("parentRecovery");boolean transitioning=recovery.path("authorized").asBoolean();
+        Instant start=job.windowEnd().atZone(java.time.ZoneOffset.UTC).minusMonths(3).toInstant();
+        if(transitioning){
+            if(state.has("legacyAscCheckpoint")||state.path("entry").isObject()||state.path("incremental").asBoolean()||!state.path("listed").isArray())throw new IllegalStateException("Legacy parent recovery checkpoint changed.");
+            int index=state.path("planIndex").asInt();String failed=id(state.path("listed").get(index).path("inboundPlanId"));
+            if(!failed.equals(recovery.path("unsupportedAwdPlanId").asText())||state.path("httpStatus").asInt()!=400||!"REQUEST_OR_PAGINATION_REJECTED".equals(state.path("coverageReason").asText()))throw new IllegalStateException("Parent recovery evidence does not match the saved failure.");
+            var archived=state.deepCopy();
+            if(!skipUnsupportedAwd(state,recovery.path("providerHttpStatus").asInt(),recovery.path("providerMessage").asText()))throw new IllegalStateException("Parent recovery is not the exact unsupported AWD error.");
+            var retained=JSON.createArrayNode();for(int n=state.path("planIndex").asInt();state.path("listed").isArray()&&n<state.path("listed").size();n++){var plan=state.path("listed").get(n);if(inWindow(plan,start,job.windowEnd()))retained.add(plan.deepCopy());}
+            state.set("legacyAscCheckpoint",archived);state.remove(List.of("entry","childIndex","listed","planIndex","nextToken","seenTokens","statusIndex","lastListedUpdate","parentRecovery","httpStatus","coverageReason","coveredThrough"));
+            state.put("statusIndex",0).put("listingSortBy","CREATION_TIME").put("listingSortOrder","DESC").put("queryTransition","LEGACY_ASC_TO_RECENT_DESC").put("coverage","IN_PROGRESS");
+            if(!retained.isEmpty()){state.set("listed",retained);state.put("planIndex",0).put("drainingRetained",true);}else state.remove("listingRequestId");
+        }else{
+            boolean fresh=state.path("requests").asInt()==0&&!state.has("listed")&&!state.has("entry")&&state.path("nextToken").asText("").isBlank();
+            state.put("listingSortBy",fresh?"CREATION_TIME":state.path("incremental").asBoolean()?"LAST_UPDATED_TIME":"CREATION_TIME");
+            state.put("listingSortOrder",fresh||state.path("incremental").asBoolean()?"DESC":"ASC");
+        }
+        state.put("windowRevision",1).put("windowStart",start.toString()).put("windowEnd",job.windowEnd().toString()).put("windowScope","CREATED_LAST_3_CALENDAR_MONTHS");return true;
+    }
+    private static boolean inWindow(JsonNode plan,Instant start,Instant end){String created=plan.path("createdAt").asText();return !validTime(created)||!Instant.parse(created).isBefore(start)&&!Instant.parse(created).isAfter(end);}
+    static String completedCoverage(ObjectNode state){return state.path("scopeAmbiguousPlans").asInt()>0||state.path("uncertainOrder").asBoolean()||state.path("windowOrderUncertain").asBoolean()||state.path("windowMissingDate").asBoolean()?"PARTIAL":state.path("windowRevision").asInt()==1?"RECENT_WINDOW_COMPLETE":"API_DISCOVERY_COMPLETE";}
+    private static void advancePlan(ObjectNode state){state.put("planIndex",state.path("planIndex").asInt()+1);if(state.path("planIndex").asInt()>=state.path("listed").size())advancePage(state);}
     static boolean complete(ObjectNode state){return state.path("statusIndex").asInt()>=STATUSES.size();}
     static String path(ObjectNode state){
         if(complete(state))throw new IllegalStateException("Parent discovery already complete.");
@@ -27,7 +61,7 @@ final class FbaParentPlanImport {
         var listed=state.path("listed");
         if(listed.isArray())return BASE+"/"+id(listed.get(state.path("planIndex").asInt()).path("inboundPlanId"));
         return BASE+"?pageSize=30&status="+STATUSES.get(state.path("statusIndex").asInt())+
-            (state.path("incremental").asBoolean()?"&sortBy=LAST_UPDATED_TIME&sortOrder=DESC":"&sortBy=CREATION_TIME&sortOrder=ASC")+(state.path("nextToken").asText("").isBlank()?"":"&paginationToken="+encode(state.path("nextToken").asText()));
+            ("&sortBy="+state.path("listingSortBy").asText(state.path("incremental").asBoolean()?"LAST_UPDATED_TIME":"CREATION_TIME")+"&sortOrder="+state.path("listingSortOrder").asText(state.path("incremental").asBoolean()?"DESC":"ASC"))+(state.path("nextToken").asText("").isBlank()?"":"&paginationToken="+encode(state.path("nextToken").asText()));
     }
     /** Returns only a complete plan document; a partial child set never becomes trusted evidence. */
     static ObjectNode accept(AmazonSyncStore.Job job,ObjectNode state,JsonNode response,String requestId){
@@ -54,12 +88,23 @@ final class FbaParentPlanImport {
             return children.isEmpty()?finish(job,state):null;
         }
         if(!response.path("inboundPlans").isArray()||response.path("inboundPlans").size()>30)throw new IllegalStateException("Amazon inbound plan listing unavailable or exceeds requested page size.");
-        var listed=state.putArray("listed");var ids=new HashSet<String>();
+        var listed=state.putArray("listed");var ids=new HashSet<String>();boolean olderBoundary=false;
         for(var plan:response.path("inboundPlans")){
             id(plan.path("inboundPlanId"));
             if(!ids.add(plan.path("inboundPlanId").asText()))throw new IllegalStateException("Duplicate inbound plan in listing page.");
             if(!plan.path("marketplaceIds").isArray()||plan.path("marketplaceIds").isEmpty())throw new IllegalStateException("Inbound plan marketplace scope missing; coverage incomplete.");
             var markets=new HashSet<String>();for(var value:plan.path("marketplaceIds"))if(!value.isString()||!value.asText().matches("[A-Z0-9]{1,20}")||!markets.add(value.asText()))throw new IllegalStateException("Invalid inbound plan marketplace scope.");
+            if(state.path("windowRevision").asInt()==1){
+                String created=plan.path("createdAt").asText();
+                if(!validTime(created))state.put("windowMissingDate",true);
+                else{
+                    Instant date=Instant.parse(created);String previous=state.path("lastWindowCreated").asText();
+                    if("DESC".equals(state.path("listingSortOrder").asText())&&validTime(previous)&&date.isAfter(Instant.parse(previous)))state.put("windowOrderUncertain",true);
+                    state.put("lastWindowCreated",created);
+                    if(date.isBefore(Instant.parse(state.path("windowStart").asText())))olderBoundary=true;
+                }
+                if(!inWindow(plan,Instant.parse(state.path("windowStart").asText()),Instant.parse(state.path("windowEnd").asText()))){state.put("outsideWindowPlans",state.path("outsideWindowPlans").asInt()+1);continue;}
+            }
             if(market(plan,job.marketplaceId())){
                 var sanitized=sanitizePlan(plan);var known=state.path("knownVersions").path(plan.path("inboundPlanId").asText());
                 boolean reused=known.isObject()&&validTime(plan.path("lastUpdatedAt").asText())&&known.equals(sanitized);
@@ -68,7 +113,7 @@ final class FbaParentPlanImport {
             else {state.put("otherMarketplacePlans",state.path("otherMarketplacePlans").asInt()+1);for(var value:plan.path("marketplaceIds"))if(job.marketplaceId().equals(value.asText()))state.put("scopeAmbiguousPlans",state.path("scopeAmbiguousPlans").asInt()+1);}
         }
         String next=response.path("pagination").path("nextToken").asText("");
-        if(state.path("incremental").asBoolean()){
+        if(state.path("windowRevision").asInt()!=1&&state.path("incremental").asBoolean()){
             boolean stable=!response.path("inboundPlans").isEmpty();
             for(var plan:response.path("inboundPlans")){
                 String updated=plan.path("lastUpdatedAt").asText();
@@ -82,6 +127,7 @@ final class FbaParentPlanImport {
             // Only stop on a whole known unchanged older page, never on an unknown/unverified plan.
             if(stable&&!state.path("uncertainOrder").asBoolean()&&!state.path("unresolvedOpenParents").asBoolean())next="";
         }
+        if(olderBoundary&&"CREATION_TIME".equals(state.path("listingSortBy").asText())&&"DESC".equals(state.path("listingSortOrder").asText())&&!state.path("windowOrderUncertain").asBoolean()&&!state.path("windowMissingDate").asBoolean())next="";
         if(next.length()>1024)throw new IllegalStateException("Invalid parent pagination token.");
         if(!next.isBlank()){
             var seen=state.withArray("seenTokens");for(var old:seen)if(next.equals(old.asText()))throw new IllegalStateException("Repeated parent pagination token; coverage incomplete.");
@@ -96,11 +142,10 @@ final class FbaParentPlanImport {
         doc.put("listingRequestId",state.path("listingRequestId").asText());doc.put("completedAt",Instant.now().toString());
         var listing=doc.putObject("listing").putArray("inboundPlans");listing.add(state.path("listed").get(state.path("planIndex").asInt()).deepCopy());
         doc.putArray("plans").add(state.path("entry").deepCopy());state.remove("entry");state.remove("childIndex");
-        state.put("completedPlans",state.path("completedPlans").asInt()+1);state.put("planIndex",state.path("planIndex").asInt()+1);
-        if(state.path("planIndex").asInt()>=state.path("listed").size())advancePage(state);
+        state.put("completedPlans",state.path("completedPlans").asInt()+1);advancePlan(state);
         return doc;
     }
-    private static void advancePage(ObjectNode state){state.remove("listed");state.remove("planIndex");if(state.path("nextToken").asText("").isBlank()){state.put("statusIndex",state.path("statusIndex").asInt()+1);state.remove("seenTokens");state.remove("lastListedUpdate");}}
+    private static void advancePage(ObjectNode state){state.remove("listed");state.remove("planIndex");if(state.path("drainingRetained").asBoolean()){state.remove("drainingRetained");state.remove("listingRequestId");return;}if(state.path("nextToken").asText("").isBlank()){state.put("statusIndex",state.path("statusIndex").asInt()+1);state.remove("seenTokens");state.remove("lastListedUpdate");state.remove("lastWindowCreated");}}
     static boolean validTime(String value){try{Instant.parse(value);return true;}catch(java.time.DateTimeException ex){return false;}}
     /** Only exact fully scoped listing + plan + every child evidence may be reused. */
     static ObjectNode verifiedVersion(AmazonSyncStore.Job job,JsonNode doc){

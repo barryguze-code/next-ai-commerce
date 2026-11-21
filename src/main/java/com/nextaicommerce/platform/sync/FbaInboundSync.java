@@ -143,9 +143,15 @@ public class FbaInboundSync {
             state.put("cutoff",FbaShipmentReadPlan.windowStart(job.windowEnd(),watermark).toString());
             state.put("unresolvedOpenParents",history.unresolvedOpenParents(job));
         });
+        if(FbaParentPlanImport.initializeWindow(job,state))tx.executeWithoutResult(s->{scope(job);jdbc.update("UPDATE marketplace_sync_jobs SET cursor=CAST(? AS jsonb) WHERE tenant_id=? AND id=?",cursor.toString(),job.tenantId(),job.id());});
         AmazonSpApiClient.ApiResponse response;
         try{response=amazon.getAt(job.tenantId(),job.connectionId(),AmazonSpApiClient.endpoint(job.marketplaceId()),FbaParentPlanImport.path(state));}
         catch(AmazonSpApiClient.AmazonApiException ex){
+            if(FbaParentPlanImport.skipUnsupportedAwd(state,ex.status(),ex.getMessage())){
+                if(FbaParentPlanImport.complete(state)){cursor.put("parentsComplete",true);state.put("coverage",FbaParentPlanImport.completedCoverage(state));}
+                else state.put("coverage","IN_PROGRESS");
+                tx.executeWithoutResult(s->{scope(job);saveParentCursor(job,cursor,3);completeParentOnly(job,cursor);});return;
+            }
             if(ex.status()!=400&&ex.status()!=403&&ex.status()!=404)throw ex;
             // Permission/history/token unavailability does not erase previously verified relationships.
             state.put("coverage",state.path("completedPlans").asInt()==0?"UNAVAILABLE":"PARTIAL").put("httpStatus",ex.status());
@@ -154,8 +160,9 @@ public class FbaInboundSync {
         }
         var document=FbaParentPlanImport.accept(job,state,response.json(),response.requestId());
         cursor.put("consecutiveFailures",0);
-        if(FbaParentPlanImport.complete(state)){cursor.put("parentsComplete",true);state.put("coverage",state.path("scopeAmbiguousPlans").asInt()>0||state.path("uncertainOrder").asBoolean()?"PARTIAL":"API_DISCOVERY_COMPLETE");}
+        if(FbaParentPlanImport.complete(state)){cursor.put("parentsComplete",true);state.put("coverage",FbaParentPlanImport.completedCoverage(state));}
         else state.put("coverage","IN_PROGRESS");
+        if("RECENT_WINDOW_COMPLETE".equals(state.path("coverage").asText()))state.put("windowCoveredThrough",job.windowEnd().toString());
         if("API_DISCOVERY_COMPLETE".equals(state.path("coverage").asText()))state.put("coveredThrough",job.windowEnd().toString());
         tx.executeWithoutResult(s->{scope(job);
             if(document!=null)store.saveFbaParentEvidence(job,document.toString(),response.requestId());

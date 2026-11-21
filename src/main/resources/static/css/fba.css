@@ -263,3 +263,7 @@ html body.fba-shipments-page .fba-shipment-table>tbody>tr[data-fba-parent].is-se
 .fba-shipment-table .fba-direct-actions>[hidden]{display:none!important}
 html body .fba-shipment-table .fba-direct-actions .fba-row-icon{width:36px;min-width:36px;height:36px;margin:0;padding:4px}
 html body .fba-shipment-table .fba-direct-actions .fba-row-icon img{width:28px;height:28px;object-fit:contain}
+
+/* Verified state overlays the existing pin; city remains its own unaltered line. */
+.fba-origin-frame .fba-origin-pin{position:relative;display:block;width:28px;height:28px;flex:0 0 28px}
+.fba-origin-frame .fba-origin-state{position:absolute;bottom:0;left:50%;transform:translateX(-50%);max-width:28px;padding:0 2px;border-radius:3px;background:var(--white);color:var(--blue);font-size:11px;font-weight:700;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
