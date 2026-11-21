@@ -14,10 +14,15 @@ public class FbaShipmentParents {
  private final JdbcTemplate jdbc;private final ObjectMapper json;
  public FbaShipmentParents(JdbcTemplate jdbc,ObjectMapper json){this.jdbc=jdbc;this.json=json;}
  public record Plan(UUID id,String name,JsonNode checkpoint){}
- public record Parent(String id,String name,UUID localPlan,UUID warehouse,String child,String city,String postal,java.time.Instant created,Set<String> declaredChildren,String evidenceRevision){
+ public record Parent(String id,String name,UUID localPlan,UUID warehouse,String child,String city,String postal,java.time.Instant created,Set<String> declaredChildren,String evidenceRevision,Destination destination){
+  public Parent(String id,String name,UUID localPlan,UUID warehouse,String child,String city,String postal,java.time.Instant created,Set<String> declaredChildren,String evidenceRevision){this(id,name,localPlan,warehouse,child,city,postal,created,declaredChildren,evidenceRevision,null);}
   public Parent(String id,String name,UUID localPlan,UUID warehouse,String child){this(id,name,localPlan,warehouse,child,null,null,null,Set.of(),null);}
   public String displayName(){return name==null||name.isBlank()||name.equals(id)?"Shipments":name;}
  }
+ public record Destination(String warehouse,String state,String postal,String country){
+  public String forCenter(String center){if(center==null||!center.equals(warehouse))return "";return java.util.stream.Stream.of(state,postal).filter(v->v!=null&&!v.isBlank()).collect(java.util.stream.Collectors.joining(" · "));}
+ }
+ private static Destination destination(JsonNode child){var d=child.path("destination");String id=text(d,"warehouseId");if(child.path("destinationEvidenceVersion").asInt()!=1)return null;if(!"AMAZON_WAREHOUSE".equals(d.path("destinationType").asText())||id==null||!id.matches("[A-Z0-9]{2,10}"))return new Destination("",null,null,null);var a=d.path("address");return new Destination(id,text(a,"stateOrProvinceCode"),text(a,"postalCode"),text(a,"countryCode"));}
  public record Projection(Map<String,Parent> links,Set<String> ambiguous){}
  @Transactional(readOnly=true) public Projection read(UUID tenant,UUID store,Collection<String> imported){
   jdbc.queryForObject("SELECT set_config('app.tenant_id',?,true)",String.class,tenant.toString());
@@ -57,7 +62,7 @@ public class FbaShipmentParents {
     var returned=new HashSet<String>();for(var response:entry.path("children")){String childId=response.path("shipment").path("shipmentId").asText("");if(response.path("requestId").asText("").isBlank()||!expected.contains(childId)||!returned.add(childId))valid=false;}
     if(!valid||!expected.equals(returned))continue;
     var links=new LinkedHashMap<String,Parent>();var ambiguous=new HashSet<String>();for(var response:entry.path("children")){var child=response.path("shipment");String childId=child.path("shipmentId").asText();var refs=new LinkedHashSet<String>();if(imported.contains(childId))refs.add(childId);String confirmation=child.path("shipmentConfirmationId").asText("");if(!confirmation.isBlank()&&imported.contains(confirmation))refs.add(confirmation);
-     if(refs.size()>1){ambiguous.addAll(refs);continue;}if(refs.isEmpty())continue;String reference=refs.iterator().next();var value=new Parent(id,plan.path("name").asText(""),null,null,childId,text(plan.path("sourceAddress"),"city"),text(plan.path("sourceAddress"),"postalCode"),instant(plan.path("createdAt").asText()),Set.copyOf(expected),digest(entry.toString()));var old=links.putIfAbsent(reference,value);if(old!=null&&(!old.child().equals(childId)||!old.declaredChildren().equals(value.declaredChildren())))ambiguous.add(reference);
+     if(refs.size()>1){ambiguous.addAll(refs);continue;}if(refs.isEmpty())continue;String reference=refs.iterator().next();var value=new Parent(id,plan.path("name").asText(""),null,null,childId,text(plan.path("sourceAddress"),"city"),text(plan.path("sourceAddress"),"postalCode"),instant(plan.path("createdAt").asText()),Set.copyOf(expected),digest(entry.toString()),destination(child));var old=links.putIfAbsent(reference,value);if(old!=null&&(!old.child().equals(childId)||!old.declaredChildren().equals(value.declaredChildren())))ambiguous.add(reference);
     }ambiguous.forEach(links::remove);result=merge(result,new Projection(Map.copyOf(links),Set.copyOf(ambiguous)));
    }
   }return result;
@@ -66,7 +71,7 @@ public class FbaShipmentParents {
  private static String text(JsonNode node,String key){String value=node.path(key).asText("");return value.isBlank()?null:value;}
  private static java.time.Instant instant(String value){try{return java.time.Instant.parse(value);}catch(Exception invalid){return null;}}
  private static boolean singleMarket(JsonNode plan,String market){return plan.path("marketplaceIds").isArray()&&plan.path("marketplaceIds").size()==1&&market.equals(plan.path("marketplaceIds").get(0).asText());}
- static Projection merge(Projection first,Projection second){var links=new LinkedHashMap<>(first.links());var ambiguous=new HashSet<>(first.ambiguous());ambiguous.addAll(second.ambiguous());second.links().forEach((reference,parent)->{var old=links.putIfAbsent(reference,parent);if(old!=null&&(!old.id().equals(parent.id())||!old.child().equals(parent.child())||!old.declaredChildren().equals(parent.declaredChildren())))ambiguous.add(reference);});ambiguous.forEach(links::remove);return new Projection(Map.copyOf(links),Set.copyOf(ambiguous));}
+ static Projection merge(Projection first,Projection second){var links=new LinkedHashMap<>(first.links());var ambiguous=new HashSet<>(first.ambiguous());ambiguous.addAll(second.ambiguous());second.links().forEach((reference,parent)->{var old=links.putIfAbsent(reference,parent);if(old!=null&&(!old.id().equals(parent.id())||!old.child().equals(parent.child())||!old.declaredChildren().equals(parent.declaredChildren())))ambiguous.add(reference);else if(old!=null&&parent.destination()!=null){var destination=old.destination()==null?parent.destination():old.destination().equals(parent.destination())?old.destination():new Destination("",null,null,null);links.put(reference,new Parent(old.id(),old.name(),old.localPlan(),old.warehouse(),old.child(),old.city(),old.postal(),old.created(),old.declaredChildren(),old.evidenceRevision(),destination));}});ambiguous.forEach(links::remove);return new Projection(Map.copyOf(links),Set.copyOf(ambiguous));}
  public record Cases(Long each,Long cases,Long remainder,Long perCase){}
  static Cases cases(long skuUnits,BigDecimal componentEach,BigDecimal masterCase){
   if(skuUnits<0||componentEach==null||componentEach.signum()<=0||componentEach.stripTrailingZeros().scale()>0)return new Cases(null,null,null,null);

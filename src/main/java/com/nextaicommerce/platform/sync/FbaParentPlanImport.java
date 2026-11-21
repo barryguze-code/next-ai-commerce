@@ -73,7 +73,7 @@ final class FbaParentPlanImport {
             String expected=entry.path("plan").path("shipments").get(state.path("childIndex").asInt()).path("shipmentId").asText();
             if(!expected.equals(id(response.path("shipmentId"))))throw new IllegalStateException("Amazon parent child identity mismatch; existing relationships retained.");
             var child=JSON.createObjectNode();child.put("requestId",requestId);
-            child.set("shipment",pick(response,List.of("shipmentId","shipmentConfirmationId","status")));
+            child.set("shipment",sanitizeChild(response));
             ((tools.jackson.databind.node.ArrayNode)entry.path("children")).add(child);
             state.put("childIndex",state.path("childIndex").asInt()+1);
             if(state.path("childIndex").asInt()<entry.path("plan").path("shipments").size())return null;
@@ -154,10 +154,19 @@ final class FbaParentPlanImport {
         var listing=doc.path("listing").path("inboundPlans").get(0);var entry=doc.path("plans").get(0);var plan=entry.path("plan");
         if(!market(listing,job.marketplaceId())||!market(plan,job.marketplaceId())||!listing.path("inboundPlanId").equals(plan.path("inboundPlanId"))||entry.path("planRequestId").asText().isBlank()||!plan.path("shipments").isArray()||!entry.path("children").isArray())return null;
         var declared=new HashSet<String>();for(var child:plan.path("shipments"))if(!declared.add(child.path("shipmentId").asText())||child.path("shipmentId").asText().isBlank())return null;
-        var returned=new HashSet<String>();for(var child:entry.path("children"))if(child.path("requestId").asText().isBlank()||!returned.add(child.path("shipment").path("shipmentId").asText()))return null;
+        var returned=new HashSet<String>();for(var child:entry.path("children"))if(child.path("requestId").asText().isBlank()||child.path("shipment").path("destinationEvidenceVersion").asInt()!=1||!returned.add(child.path("shipment").path("shipmentId").asText()))return null;
         if(!declared.equals(returned)||!listing.path("lastUpdatedAt").equals(plan.path("lastUpdatedAt"))||!listing.path("status").equals(plan.path("status")))return null;
         try{id(listing.path("inboundPlanId"));for(String child:declared)id(JSON.getNodeFactory().stringNode(child));}catch(IllegalStateException invalid){return null;}
         return sanitizePlan(listing);
+    }
+    /** Versioned negative evidence also caches an optimized/missing destination without retaining private address fields. */
+    static ObjectNode sanitizeChild(JsonNode input){
+        var result=pick(input,List.of("shipmentId","shipmentConfirmationId","status"));result.put("destinationEvidenceVersion",1);
+        if(input.path("destination").isObject()){
+            var destination=pick(input.path("destination"),List.of("warehouseId","destinationType"));
+            if(input.path("destination").path("address").isObject())destination.set("address",pick(input.path("destination").path("address"),List.of("stateOrProvinceCode","postalCode","countryCode")));
+            result.set("destination",destination);
+        }return result;
     }
     static ObjectNode sanitizePlan(JsonNode input){var result=pick(input,List.of("inboundPlanId","name","createdAt","lastUpdatedAt","status","marketplaceIds"));
         if(input.has("shipments")){var children=result.putArray("shipments");for(var child:input.path("shipments"))children.add(pick(child,List.of("shipmentId","status")));}

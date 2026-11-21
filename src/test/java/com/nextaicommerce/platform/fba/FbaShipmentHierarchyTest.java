@@ -39,4 +39,13 @@ class FbaShipmentHierarchyTest {
   assertThat(FbaShipmentHierarchy.summarize(List.of(a,invalid),Map.of(),2).displayDate(parent)).isEqualTo("—");
   assertThat(FbaShipmentHierarchy.summarize(List.of(),Map.of(),0).displayDate(parent)).isEqualTo("—");
  }
+ @org.junit.jupiter.api.Test void remainingWarehouseEligibilityIncludesHiddenMembersAndIgnoresCompletedSiblings(){
+  var done=new FbaWorkspaceRepository.DepletionState(false,true,false,null);var pending=new FbaWorkspaceRepository.DepletionState(false,false,false,null);
+  var states=java.util.Map.of("A",done,"B",pending,"C",pending);
+  org.assertj.core.api.Assertions.assertThat(FbaShipmentHierarchy.remainingMatched(java.util.List.of("A","B","C"),states,java.util.Set.of("B","C"),true)).isTrue();
+  org.assertj.core.api.Assertions.assertThat(FbaShipmentHierarchy.remainingMatched(java.util.List.of("A","B","C"),states,java.util.Set.of("B"),true)).isFalse();
+  org.assertj.core.api.Assertions.assertThat(FbaShipmentHierarchy.remainingMatched(java.util.List.of("A","B","C"),states,java.util.Set.of("B","C"),false)).isFalse();
+  org.assertj.core.api.Assertions.assertThat(FbaShipmentHierarchy.remainingMatched(java.util.List.of("A"),states,java.util.Set.of(),true)).isFalse();
+  org.assertj.core.api.Assertions.assertThat(FbaShipmentHierarchy.remainingMatched(java.util.List.of("B","unknown"),states,java.util.Set.of("B","unknown"),true)).isFalse();
+ }
 }

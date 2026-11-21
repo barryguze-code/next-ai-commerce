@@ -197,10 +197,9 @@ public class FbaInboundSync {
         }return count;
     }
     private void importShipmentFees(AmazonSyncStore.Job job,ObjectNode cursor,int pages){
-        // Tokens belong to an exact query contract; never reuse the legacy per-shipment query token.
-        if(cursor.path("feeQueryRevision").asInt()!=2){cursor.remove("feeNext");cursor.put("feeQueryRevision",2);}
+        // Freeze the eligible date range before the first request; every token page uses identical arguments.
+        String path=financePath(job,cursor,java.time.Instant.now());
         String token=cursor.path("feeNext").asText("");
-        String path=financePath(job,token);
         AmazonSpApiClient.ApiResponse response;
         try{response=amazon.get(job.tenantId(),job.connectionId(),path);}
         catch(AmazonSpApiClient.AmazonApiException ex){
@@ -251,12 +250,26 @@ public class FbaInboundSync {
         if(job.leaseOwner()!=null&&jdbc.queryForList("SELECT id FROM marketplace_sync_jobs WHERE tenant_id=? AND id=? AND status='RUNNING' AND lease_owner=? AND lease_expires_at>clock_timestamp() FOR UPDATE",UUID.class,job.tenantId(),job.id(),job.leaseOwner()).isEmpty())throw new AmazonSyncStore.LostOrderLease();
     }
     static long requestDelay(AmazonSpApiClient.ApiResponse response){return response.rateLimit()==null||!Double.isFinite(response.rateLimit())||response.rateLimit()<=0?3:Math.max(3,(long)Math.ceil(1.0/response.rateLimit()));}
-    static String financePath(AmazonSyncStore.Job job,String token){
-        // Finances supports date windows, not FBA shipment IDs as an ORDER_ID filter.
-        var end=job.windowEnd();var start=job.windowStart().isBefore(end.minus(java.time.Duration.ofDays(180)))?end.minus(java.time.Duration.ofDays(180)):job.windowStart();
+    static String financePath(AmazonSyncStore.Job job,ObjectNode cursor,java.time.Instant now){
+        if(cursor.path("feeQueryRevision").asInt()!=3){
+            // A token cannot cross query contracts. Preserve its old context/error without rewriting charges.
+            if(cursor.has("feeQueryRevision")||cursor.has("feeNext")){
+                var previous=cursor.withArray("feeQueryHistory").addObject();
+                for(String key:java.util.List.of("feeQueryRevision","feeNext","feeFailureStatus","feesUnavailable","feeRestartCount","feePostedAfter","feePostedBefore","feeQueryMarketplace"))if(cursor.has(key))previous.set(key,cursor.path(key).deepCopy());
+            }
+            var eligible=now.minusSeconds(121);var end=job.windowEnd().isBefore(eligible)?job.windowEnd():eligible;
+            var start=job.windowStart();if(!start.isBefore(end))start=end.minus(java.time.Duration.ofDays(7));
+            if(start.isBefore(end.minus(java.time.Duration.ofDays(180))))start=end.minus(java.time.Duration.ofDays(180));
+            cursor.remove(java.util.List.of("feeNext","feeFailureStatus","feesUnavailable","feeRestartCount"));
+            cursor.put("feeQueryRevision",3).put("feePostedAfter",start.toString()).put("feePostedBefore",end.toString()).put("feeQueryMarketplace",job.marketplaceId());
+        }
+        java.time.Instant start,end;
+        try{start=java.time.Instant.parse(cursor.path("feePostedAfter").asText());end=java.time.Instant.parse(cursor.path("feePostedBefore").asText());}
+        catch(java.time.DateTimeException invalid){throw new IllegalStateException("Saved FBA fee query is invalid; existing progress retained.");}
+        if(!start.isBefore(end)||start.isBefore(end.minus(java.time.Duration.ofDays(180)))||end.isAfter(job.windowEnd())||!end.isBefore(now.minusSeconds(120))||!job.marketplaceId().equals(cursor.path("feeQueryMarketplace").asText()))throw new IllegalStateException("Saved FBA fee query changed; existing progress retained.");
+        String token=cursor.path("feeNext").asText("");
         return "/finances/2024-06-19/transactions?postedAfter="+encode(start.toString())+"&postedBefore="+encode(end.toString())+
-            ("&marketplaceId="+encode(job.marketplaceId()))+
-            (token==null||token.isBlank()?"":"&nextToken="+encode(token));
+            "&marketplaceId="+encode(job.marketplaceId())+(token.isBlank()?"":"&nextToken="+encode(token));
     }
     static java.sql.Timestamp shipmentDate(JsonNode row){
         for(String key:List.of("CreationDate","ShipmentCreatedDate","LastUpdatedDate")){

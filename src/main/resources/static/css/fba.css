@@ -266,8 +266,14 @@ html body .fba-shipment-table .fba-direct-actions .fba-row-icon img{width:28px;h
 
 /* Verified state overlays the existing pin; city remains its own unaltered line. */
 .fba-origin-frame .fba-origin-pin{position:relative;display:block;width:28px;height:28px;flex:0 0 28px}
-.fba-origin-frame .fba-origin-state-overlay{position:absolute;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;bottom:0;left:50%;transform:translateX(-50%);width:28px;height:14px;min-width:0;min-height:0;max-width:28px;padding:0 2px;border:0;border-radius:3px;background:var(--white);color:var(--blue);font-size:11px;font-weight:700;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fba-origin-frame .fba-origin-state-overlay{position:absolute;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;bottom:0;left:50%;transform:translateX(-50%);width:28px;height:14px;min-width:0;min-height:0;max-width:28px;padding:0 2px;border:0;border-radius:0;background:transparent;color:var(--text);font-family:inherit;font-size:14px;font-weight:700;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 .fba-shipment-table td[data-column=status]{overflow:visible}
 #fba-depletion-dialog .fba-parent-demand table{width:100%;border-collapse:collapse}
 #fba-depletion-dialog .fba-parent-demand h3{margin:0 0 8px}
+
+/* Keep source and destination separate; status badges occupy their own compact line. */
+.fba-shipment-table .fba-amazon-status{display:block;white-space:nowrap}
+.fba-shipment-table .fba-depletion-status{display:block}
+.fba-shipment-table td.fba-shipment-status .status-badge{display:inline-flex;max-width:100%;margin-top:4px}
+.fba-shipment-table td.fba-shipment-date,.fba-shipment-table td.fba-shipment-date>span{white-space:nowrap!important;overflow-wrap:normal;word-break:normal}
