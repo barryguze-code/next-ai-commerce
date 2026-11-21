@@ -35,6 +35,7 @@ public class FbaInboundSync {
         if(parentWorkflow(job.profile())&&(parentsOnly||cursor.path("shipmentsComplete").asBoolean()&&!cursor.path("itemsRefreshOnly").asBoolean())&&!cursor.path("parentsComplete").asBoolean()){
             importParents(job,cursor);return;
         }
+        if(cursor.path("shipmentsComplete").asBoolean()&&cursor.path("feesComplete").asBoolean()&&cursor.path("parentsComplete").asBoolean()){tx.executeWithoutResult(s->{scope(job);store.complete(job,cursor.path("records").asLong());});return;}
         if(!admitRead(job,cursor))return;
         if(cursor.has("shipmentRead")&&!cursor.path("shipmentsComplete").asBoolean()&&cursor.path("pending").isEmpty()&&cursor.path("next").asText("").isBlank()&&"OPEN".equals(cursor.path("shipmentRead").path("stage").asText())){
             boolean available=tx.execute(s->{scope(job);return history.nextOpenBatch(job,cursor);});
