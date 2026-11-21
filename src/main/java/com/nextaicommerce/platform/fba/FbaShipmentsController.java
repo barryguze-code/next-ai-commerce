@@ -95,7 +95,7 @@ public class FbaShipmentsController {
     @GetMapping("/app/inventory/fba-shipments/parent-visibility") @ResponseBody
     Object parentVisibility(@RequestParam String parent,@RequestParam UUID connection,HttpSession session){var s=selection(session,connection);return parentActions.group(s.tenant(),s.connection(),parent);}
     @PostMapping("/app/inventory/fba-shipments/parent-confirm") @ResponseBody
-    Object parentConfirm(@RequestBody FbaParentActions.Request r,@RequestParam UUID connection,Authentication auth,HttpSession session){requireManual();var s=selection(session,connection);return java.util.Map.of("ids",parentActions.confirm(s.tenant(),s.connection(),auth.getName(),r),"message","Stock decreased for every shipment in the plan.");}
+    Object parentConfirm(@RequestBody FbaParentActions.Request r,@RequestParam UUID connection,Authentication auth,HttpSession session){requireManual();var s=selection(session,connection);return java.util.Map.of("ids",parentActions.confirm(s.tenant(),s.connection(),auth.getName(),r),"message","Stock decreased for all remaining shipments in the plan.");}
     @PostMapping("/app/inventory/fba-shipments/parent-visibility") @ResponseBody
     Object parentVisibility(@RequestBody FbaParentActions.Visibility r,@RequestParam UUID connection,Authentication auth,HttpSession session){var s=selection(session,connection);parentActions.visibility(s.tenant(),s.connection(),auth.getName(),r);return java.util.Map.of("saved",true);}
     @GetMapping("/app/inventory/fba-shipments/items") @ResponseBody

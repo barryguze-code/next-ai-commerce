@@ -59,11 +59,12 @@ class FbaTemplateTest {
         context.setVariable("canEditCatalog",false);html=engine().process("fba-shipments",context);
         assertThat(html).doesNotContain("data-choice-manager=\"warehouse\"","id=\"warehouse-dialog\"").contains("All warehouses");
     }
-    @Test void decreasedShipmentOffersStandardEditInsteadOfRepeatDecrease(){
+    @Test void decreasedShipmentKeepsDisabledDecreaseAndSeparateReview(){
         var c=context();c.setVariable("query","");c.setVariable("amazonStore",true);c.setVariable("manualDepletionEnabled",true);c.setVariable("canEditCatalog",true);c.setVariable("selectedStatus","");c.setVariable("depletableShipments",Set.of());
         c.setVariable("shipments",new FbaReadRepository.ShipmentPage(List.of(new FbaReadRepository.Shipment("FBA123","Shipment","SHIPPED","SCK8",null,null,2,30,6)),1,0,25));
         c.setVariable("depletionStates",Map.of("FBA123",new com.nextaicommerce.platform.fba.FbaWorkspaceRepository.DepletionState(false,true,false,null)));
-        String html=engine().process("fba-shipments",c);assertThat(html).contains(">Decreased</span>","aria-label=\"Review stock decrease\"","data-fba-review-deduction","/images/platform/table/edit.png").doesNotContain("data-fba-deplete ");
+        String html=engine().process("fba-shipments",c);assertThat(html).contains(">Decreased</span>","aria-label=\"Review stock decrease\"","data-fba-review-deduction","/images/platform/table/edit.png").contains("data-fba-already-decreased=\"true\"", "Stock already decreased");
+        assertThat(java.util.regex.Pattern.compile("<button[^>]*data-fba-deplete[^>]*disabled[^>]*>").matcher(html).find()).isTrue();
     }
     @Test void verifiedParentHeaderAndStandaloneStateRenderWithoutMergingQuantities(){
         var c=context();c.setVariable("query","");c.setVariable("amazonStore",true);c.setVariable("shipmentHierarchy",true);c.setVariable("fbaReplenishmentEnabled",true);

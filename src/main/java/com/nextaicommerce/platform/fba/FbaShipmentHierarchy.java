@@ -21,6 +21,7 @@ public class FbaShipmentHierarchy {
  }
  public record Summary(int shipments,int matching,Long skus,Long shipped,Long received,String origin,String postal,String city,String destination,String status,String dates,FbaReadRepository.ShipmentCosts costs,String state){
  public Summary(int shipments,int matching,Long skus,Long shipped,Long received,String origin,String postal,String city,String destination,String status,String dates,FbaReadRepository.ShipmentCosts costs){this(shipments,matching,skus,shipped,received,origin,postal,city,destination,status,dates,costs,null);}
+ public String displayDate(FbaShipmentParents.Parent parent){return parent!=null&&parent.created()!=null?java.time.format.DateTimeFormatter.ofPattern("MM/dd/uuuu").withZone(java.time.ZoneOffset.UTC).format(parent.created()):dates;}
  public String label(FbaShipmentParents.Parent parent){return !parent.displayName().equals("Shipments")?parent.displayName():parent.created()!=null?"Shipments · Created "+java.time.format.DateTimeFormatter.ofPattern("MMM d, uuuu",Locale.US).withZone(java.time.ZoneOffset.UTC).format(parent.created()):dates.equals("—")?"Shipments":"Shipments · "+dates;}}
  static Summary summarize(List<FbaReadRepository.Shipment> rows,Map<String,FbaReadRepository.CompletedShipmentItems> identities,int matching){
   boolean complete=!rows.isEmpty()&&rows.stream().allMatch(r->r.itemsComplete()&&identities.containsKey(r.id())&&identities.get(r.id()).shipped()==r.shipped()&&identities.get(r.id()).received()==r.received());var skuSet=new HashSet<String>();boolean skuKnown=complete;
@@ -28,8 +29,13 @@ public class FbaShipmentHierarchy {
   long sent=rows.stream().mapToLong(FbaReadRepository.Shipment::shipped).sum(),received=rows.stream().mapToLong(FbaReadRepository.Shipment::received).sum();
   String postal=common(rows.stream().map(FbaReadRepository.Shipment::shipFromPostalCode).toList(),"Multiple origins"),city=common(rows.stream().map(FbaReadRepository.Shipment::shipFromCity).toList(),"Multiple origins");
   var costs=complete?FbaReadRepository.ShipmentCosts.aggregate(rows.stream().map(FbaReadRepository.Shipment::costs).toList(),rows.size()):new FbaReadRepository.ShipmentCosts(null,null,null,sent);
-  var dates=rows.stream().map(FbaReadRepository.Shipment::importedCreation).filter(Objects::nonNull).sorted().toList();String date="—";if(dates.size()==rows.size()&&!dates.isEmpty()){var format=java.time.format.DateTimeFormatter.ofPattern("MM/dd/uuuu").withZone(java.time.ZoneOffset.UTC);date=format.format(dates.getFirst());String last=format.format(dates.getLast());if(!last.equals(date))date+=" – "+last;}
+  var dates=rows.stream().map(FbaShipmentHierarchy::displayedChildDate).filter(Objects::nonNull).sorted().toList();String date="—";if(dates.size()==rows.size()&&!dates.isEmpty()){var format=java.time.format.DateTimeFormatter.ofPattern("MM/dd/uuuu");date=format.format(dates.getFirst());String last=format.format(dates.getLast());if(!last.equals(date))date+=" – "+last;}
   return new Summary(rows.size(),matching,skuKnown?(long)skuSet.size():null,complete?sent:null,complete?received:null,common(rows.stream().map(FbaReadRepository.Shipment::shipFrom).toList(),"Multiple origins"),postal,city,common(rows.stream().map(FbaReadRepository.Shipment::destination).toList(),"Multiple"),common(rows.stream().map(FbaReadRepository.Shipment::status).toList(),"Mixed statuses"),date,costs,common(rows.stream().map(FbaReadRepository.Shipment::shipFromState).toList(),""));
+ }
+ private static java.time.LocalDate displayedChildDate(FbaReadRepository.Shipment shipment){
+  // Use the same already displayed date as the child, including its validated name fallback.
+  try{return java.time.LocalDate.parse(shipment.createdPrimaryDisplay(),java.time.format.DateTimeFormatter.ofPattern("MM/dd/uuuu").withResolverStyle(java.time.format.ResolverStyle.STRICT));}
+  catch(java.time.format.DateTimeParseException unavailable){return null;}
  }
  private static String common(List<String> values,String mixed){if(values.isEmpty()||values.stream().anyMatch(v->v==null||v.isBlank()))return "—";return values.stream().distinct().count()==1?values.getFirst():mixed;}
  @Transactional(readOnly=true) public Page page(UUID tenant,UUID store,String query,int requestedPage,int requestedSize,String email,String status,UUID warehouse,boolean removed){

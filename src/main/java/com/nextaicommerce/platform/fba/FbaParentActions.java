@@ -11,7 +11,9 @@ import com.nextaicommerce.platform.web.MemberAccessService;
 public class FbaParentActions {
  private final JdbcTemplate jdbc;private final FbaShipmentParents parents;private final FbaBatchDeduction batches;private final FbaDepletionRepository stock;private final MemberAccessService access;private final FbaReadRepository read;
  public FbaParentActions(JdbcTemplate jdbc,FbaShipmentParents parents,FbaBatchDeduction batches,FbaDepletionRepository stock,MemberAccessService access,FbaReadRepository read){this.jdbc=jdbc;this.parents=parents;this.batches=batches;this.stock=stock;this.access=access;this.read=read;}
- public record Group(String parent,String name,List<String> shipments,String identity,String revision,int decreased){}
+ public record Group(String parent,String name,List<String> shipments,String identity,String revision,int decreased,List<String> remaining){
+  public Group(String parent,String name,List<String> shipments,String identity,String revision,int decreased){this(parent,name,shipments,identity,revision,decreased,decreased==0?shipments:List.of());}
+ }
  public record Request(String parent,UUID requestId,String identity,String groupRevision,String revision,List<FbaBatchDeduction.Choice> choices){}
  public record Visibility(String parent,String identity,String revision,boolean removed){}
  public record Review(Group group,List<FbaBatchDeduction.Plan> plans,List<String> blockers,String revision){}
@@ -28,7 +30,7 @@ public class FbaParentActions {
   var projection=parents.read(tenant,store,imported);var group=verified(parent,projection);
   var states=jdbc.queryForList("SELECT s.shipment_id,md5(s.raw_payload::text) source_revision,d.id::text decreased_id,d.source_revision decrease_revision FROM amazon_fba_shipments s LEFT JOIN fba_shipment_depletions d ON d.tenant_id=s.tenant_id AND d.marketplace_connection_id=s.marketplace_connection_id AND d.shipment_id=s.shipment_id WHERE s.tenant_id=? AND s.marketplace_connection_id=? AND s.shipment_id=ANY(?::text[]) ORDER BY s.shipment_id",tenant,store,group.shipments().toArray(String[]::new));
   if(states.size()!=group.shipments().size())throw new IllegalArgumentException("A shipment is missing. Review the complete shipping plan again.");
-  int decreased=(int)states.stream().filter(v->v.get("decreased_id")!=null).count();return new Group(parent,group.name(),group.shipments(),group.identity(),FbaShipmentParents.digest(group.identity()+states),decreased);
+  int decreased=(int)states.stream().filter(v->v.get("decreased_id")!=null).count();var remaining=states.stream().filter(v->v.get("decreased_id")==null).map(v->(String)v.get("shipment_id")).sorted().toList();return new Group(parent,group.name(),group.shipments(),group.identity(),FbaShipmentParents.digest(group.identity()+states),decreased,remaining);
  }
  static Group verified(String parent,FbaShipmentParents.Projection projection){
   var links=projection.links().entrySet().stream().filter(e->e.getValue().id().equals(parent)).sorted(Map.Entry.comparingByKey()).toList();if(links.isEmpty())throw new IllegalArgumentException("Shipping plan is unavailable or its relationship needs review.");
@@ -39,13 +41,21 @@ public class FbaParentActions {
   return new Group(parent,links.getFirst().getValue().displayName(),ids,FbaShipmentParents.digest(parent+ids+new TreeSet<>(expected)+evidence),null,0);
  }
  @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ) public FbaReadRepository.ParentItems contents(UUID tenant,UUID store,String parent,String query,int page){return read.parentItems(tenant,store,group(tenant,store,parent).shipments(),query,page);}
- @Transactional(readOnly=true) public Review preview(UUID tenant,UUID store,String parent){var g=group(tenant,store,parent);if(g.decreased()==g.shipments().size())return new Review(g,List.of(),List.of("All shipments are already decreased."),"");if(g.decreased()>0)return new Review(g,List.of(),List.of("Some shipments are already decreased. Review the remaining shipments individually; the whole plan was not decreased again."),"");if(g.shipments().size()>25)return new Review(g,List.of(),List.of("Review at most 25 shipments together. This complete plan is larger; no subset will be decreased."),"");var review=batches.preview(tenant,store,g.shipments());return new Review(g,review.plans(),review.blockers(),review.revision());}
- @Transactional public List<UUID> confirm(UUID tenant,UUID store,String email,Request r){if(r==null||r.requestId()==null||r.identity()==null||r.groupRevision()==null)throw new IllegalArgumentException("Review the complete shipping plan first.");authorize(tenant,store,email);lock(tenant,store);var g=group(tenant,store,r.parent());if(!g.identity().equals(r.identity()))throw new IllegalArgumentException("Shipping-plan membership changed. Review all shipments again.");
-  if(r.choices()==null||!r.choices().stream().map(FbaBatchDeduction.Choice::shipment).sorted().toList().equals(g.shipments()))throw new IllegalArgumentException("Every shipment in the verified plan must be included exactly once.");
+ @Transactional(readOnly=true) public Review preview(UUID tenant,UUID store,String parent){var g=group(tenant,store,parent);if(g.remaining().isEmpty())return new Review(g,List.of(),List.of("All shipments are already decreased."),"");if(g.remaining().size()>25)return new Review(g,List.of(),List.of("Review at most 25 remaining shipments together. No subset will be decreased."),"");var review=batches.preview(tenant,store,g.remaining());return new Review(g,review.plans(),review.blockers(),review.revision());}
+ @Transactional public List<UUID> confirm(UUID tenant,UUID store,String email,Request r){
+  if(r==null||r.requestId()==null||r.identity()==null||r.groupRevision()==null||r.choices()==null||r.choices().stream().anyMatch(c->c==null||c.shipment()==null))throw new IllegalArgumentException("Review the complete shipping plan first.");
+  authorize(tenant,store,email);lock(tenant,store);var g=group(tenant,store,r.parent());if(!g.identity().equals(r.identity()))throw new IllegalArgumentException("Shipping-plan membership changed. Review all shipments again.");
   for(String id:g.shipments())stock.lockShipment(tenant,store,id);g=group(tenant,store,r.parent());if(!g.identity().equals(r.identity()))throw new IllegalArgumentException("Shipping-plan membership changed. Review again.");
+  var selected=r.choices().stream().map(FbaBatchDeduction.Choice::shipment).sorted().toList();
   var context=Map.<String,Object>of("parent",r.parent(),"identity",r.identity(),"review",r.groupRevision());
-  boolean replay=Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM fba_shipment_depletions WHERE tenant_id=? AND approval->'batch'->>'id'=?)",Boolean.class,tenant,r.requestId().toString()));
-  if(!replay&&(!g.revision().equals(r.groupRevision())||g.decreased()!=0))throw new IllegalArgumentException("A shipment changed or was already decreased. Review the whole plan again.");
+  boolean replay=Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM fba_shipment_depletions WHERE tenant_id=? AND marketplace_connection_id=? AND approval->'batch'->>'id'=? AND approval#>>'{batch,parent,parent}'=? AND approval#>>'{batch,parent,identity}'=?)",Boolean.class,tenant,store,r.requestId().toString(),r.parent(),r.identity()));
+  if(replay){if(selected.isEmpty()||new HashSet<>(selected).size()!=selected.size()||!g.shipments().containsAll(selected))throw new IllegalArgumentException("Review every shipment from the saved parent decrease.");}
+  else{
+   if(!g.revision().equals(r.groupRevision()))throw new IllegalArgumentException("A shipment changed or was already decreased. Review the remaining plan again.");
+   if(g.remaining().isEmpty())throw new IllegalArgumentException("All shipments are already decreased.");
+   if(!selected.equals(g.remaining()))throw new IllegalArgumentException("Every remaining shipment in the verified plan must be included exactly once.");
+  }
+  // Existing REQUIRED batch transaction and exact mapped-allocation checks commit all remaining children or none.
   return batches.confirm(tenant,store,email,r.requestId(),r.revision(),r.choices(),context);
  }
  @Transactional public void visibility(UUID tenant,UUID store,String email,Visibility r){if(r==null)throw new IllegalArgumentException("Review the complete shipping plan first.");authorize(tenant,store,email);lock(tenant,store);var g=group(tenant,store,r.parent());for(String id:g.shipments())stock.lockShipment(tenant,store,id);g=group(tenant,store,r.parent());if(!g.identity().equals(r.identity())||!g.revision().equals(r.revision()))throw new IllegalArgumentException("Shipping plan changed. Review all shipments again.");for(String id:g.shipments())stock.removed(tenant,store,id,email,r.removed());}

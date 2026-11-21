@@ -28,5 +28,13 @@
   for(const detail of details.values()){detail.remaining=detail.lots.reduce((n,l)=>n+(remaining.get(l.layer)||0),0);for(const split of detail.splits)split.remaining=split.lots.reduce((n,l)=>n+(remaining.get(l.layer)||0),0);}
   return {choices,details,errors:[...new Set(errors)]};
  }
- root.FbaLocationAllocation={allocate};if(typeof module!=='undefined')module.exports={allocate};
+ function summarize(review){
+  const totals=new Map();for(const plan of review.plans){const p=plan.shipment;for(const line of p.lines){for(const product of review.presentation?.find(v=>v.sku===line.sku)?.products||[]){
+   const each=Number(line.unitsToDeduct)*Number(product.eachPerSku);if(!Number.isSafeInteger(each)||each<0)throw Error('Review whole-unit product mapping.');
+   const key=p.warehouse+'|'+product.item,pack=Number(product.masterCase),value=totals.get(key)||{item:product.item,name:product.name,warehouse:p.warehouse,warehouseName:p.warehouseName,each:0,caseSize:Number.isSafeInteger(pack)&&pack>0?pack:null};
+   value.each+=each;if(!Number.isSafeInteger(value.each))throw Error('Review product quantity.');if(value.caseSize!==pack)value.caseSize=null;totals.set(key,value);
+  }}}
+  return [...totals.values()].map(v=>({...v,cases:v.caseSize?Math.floor(v.each/v.caseSize):null,loose:v.caseSize?v.each%v.caseSize:null}));
+ }
+ root.FbaLocationAllocation={allocate,summarize};if(typeof module!=='undefined')module.exports={allocate,summarize};
 })(typeof window==='undefined'?globalThis:window);

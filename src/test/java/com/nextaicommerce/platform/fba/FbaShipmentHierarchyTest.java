@@ -18,4 +18,25 @@ class FbaShipmentHierarchyTest {
   assertThat(FbaShipmentHierarchy.depletionSummary(List.of("A","B"),Map.of("A",yes),true)).isEqualTo("Needs review");
   assertThat(FbaShipmentHierarchy.depletionSummary(List.of("A"),Map.of("A",yes),false)).isEqualTo("Needs review");
  }
+ @Test void parentDatePrefersVerifiedPlanCreationEvenWhenChildTimestampIsMissing(){
+  var child=new FbaReadRepository.Shipment("A","FBA shipment (11/18/2026 14:20)","SHIPPED","FC",null,null,1,5,0);
+  var summary=FbaShipmentHierarchy.summarize(List.of(child),Map.of(),1);
+  var parent=new FbaShipmentParents.Parent("P","Plan",null,null,"A",null,null,java.time.Instant.parse("2026-11-19T14:16:41Z"),Set.of("A"),"proof");
+  assertThat(child.importedCreation()).isNull();
+  assertThat(summary.displayDate(parent)).isEqualTo("11/19/2026");
+ }
+ @Test void parentWithoutCreationUsesCompleteValidatedChildDisplayDateRange(){
+  var a=new FbaReadRepository.Shipment("A","Shipment (11/18/2026 14:20)","SHIPPED","FC",null,null,1,5,0);
+  var b=new FbaReadRepository.Shipment("B","Shipment (11/19/2026 14:20)","SHIPPED","FC",null,null,1,5,0);
+  var parent=new FbaShipmentParents.Parent("P","Plan",null,null,"A");
+  assertThat(FbaShipmentHierarchy.summarize(List.of(a,b),Map.of(),2).displayDate(parent)).isEqualTo("11/18/2026 – 11/19/2026");
+  assertThat(FbaShipmentHierarchy.summarize(List.of(a,a),Map.of(),2).displayDate(parent)).isEqualTo("11/18/2026");
+ }
+ @Test void parentDateDoesNotInventMissingOrInvalidChildDates(){
+  var a=new FbaReadRepository.Shipment("A","Shipment (11/18/2026 14:20)","SHIPPED","FC",null,null,1,5,0);
+  var invalid=new FbaReadRepository.Shipment("B","Shipment (02/30/2026 14:20)","SHIPPED","FC",null,null,1,5,0);
+  var parent=new FbaShipmentParents.Parent("P","Plan",null,null,"A");
+  assertThat(FbaShipmentHierarchy.summarize(List.of(a,invalid),Map.of(),2).displayDate(parent)).isEqualTo("—");
+  assertThat(FbaShipmentHierarchy.summarize(List.of(),Map.of(),0).displayDate(parent)).isEqualTo("—");
+ }
 }

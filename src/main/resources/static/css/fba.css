@@ -254,7 +254,7 @@ html body.fba-shipments-page .fba-shipment-table>tbody>tr[data-fba-parent].is-se
 .fba-shipment-table .fba-operation-menu>summary::-webkit-details-marker{display:none}
 .fba-shipment-table .fba-operation-menu>summary img{width:28px;height:28px;object-fit:contain}
 
-.fba-shipment-table td .status-badge{display:table;margin-top:4px}
+.fba-shipment-table td .status-badge{display:inline-flex;align-items:center;box-sizing:border-box;max-width:100%;height:auto;min-height:0;margin-top:4px;padding:6px 9px;line-height:1.3;vertical-align:middle;overflow:visible}
 
 .fba-shipments-page .fba-origin-frame .fba-origin-city{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;-webkit-line-clamp:unset}
 .fba-record-operations .table-action-entry{width:100%;min-width:0}
@@ -266,4 +266,8 @@ html body .fba-shipment-table .fba-direct-actions .fba-row-icon img{width:28px;h
 
 /* Verified state overlays the existing pin; city remains its own unaltered line. */
 .fba-origin-frame .fba-origin-pin{position:relative;display:block;width:28px;height:28px;flex:0 0 28px}
-.fba-origin-frame .fba-origin-state{position:absolute;bottom:0;left:50%;transform:translateX(-50%);max-width:28px;padding:0 2px;border-radius:3px;background:var(--white);color:var(--blue);font-size:11px;font-weight:700;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fba-origin-frame .fba-origin-state-overlay{position:absolute;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;bottom:0;left:50%;transform:translateX(-50%);width:28px;height:14px;min-width:0;min-height:0;max-width:28px;padding:0 2px;border:0;border-radius:3px;background:var(--white);color:var(--blue);font-size:11px;font-weight:700;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.fba-shipment-table td[data-column=status]{overflow:visible}
+#fba-depletion-dialog .fba-parent-demand table{width:100%;border-collapse:collapse}
+#fba-depletion-dialog .fba-parent-demand h3{margin:0 0 8px}
