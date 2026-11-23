@@ -1,6 +1,7 @@
 (()=>{
  const dialog=document.querySelector('#package-manager');if(!dialog)return;
  const select=document.querySelector('#packing-package'),status=document.querySelector('#packing-status'),rows=dialog.querySelector('[data-package-rows]'),search=dialog.querySelector('[data-package-search]'),context=dialog.querySelector('[data-package-context]'),body=dialog.querySelector('.package-manager-body')||dialog;
+ const add=dialog.querySelector('[data-package-add]');
  let choices=[],selected='',opener,lastDate='',generation=0,saving=false,editing=false,dirty=()=>false,activeRow=null;
  const detail=document.createElement('div');detail.className='package-rate-detail';detail.hidden=true;body.append(detail);
  const money=c=>c.cost==null?(c.state==='VARIES'?'Varies by context':'Not available'):new Intl.NumberFormat(undefined,{style:'currency',currency:c.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(c.cost);
@@ -8,7 +9,7 @@
  const element=(tag,text,className)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(className)e.className=className;return e;};
  const button=(text,fn,className='secondary-button')=>{const b=element('button',text,className);b.type='button';b.onclick=fn;return b;};
  function clearActions(){dialog.querySelector('.package-rate-actions')?.remove();dialog.querySelectorAll('[data-packages-close]').forEach(b=>b.hidden=false);}
- function listMode(){activeRow=null;search.disabled=false;clearActions();detail.hidden=true;search.closest('label')?.removeAttribute('hidden');search.hidden=false;rows.parentElement.hidden=false;editing=false;context.textContent='';status.textContent='';}
+ function listMode(){activeRow=null;search.disabled=false;if(add){add.hidden=false;add.disabled=false;}clearActions();detail.hidden=true;search.closest('label')?.removeAttribute('hidden');search.hidden=false;rows.parentElement.hidden=false;editing=false;context.textContent='';status.textContent='';}
  const penSvg='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 16-1 4 4-1L20 7l-3-3Z M14 7l3 3"/></svg>';
  function pen(label,action){const b=button('',action,'package-list-edit');b.setAttribute('aria-label',label);b.dataset.tooltip=label;b.innerHTML=penSvg;return b;}
  function render(){rows.replaceChildren();const filtered=choices.filter(c=>c.name.toLowerCase().includes(search.value.toLowerCase()));for(const choice of filtered){
@@ -34,7 +35,7 @@
   function activate(focus){
    if(focus)returnLabel=focus===amount?'Edit planning rate for '+choice.name:focus===date?'Edit effective date for '+choice.name:(d?'Edit':'Save')+' dimensions for '+choice.name;
    if(saving||activeRow&&activeRow!==row)return;
-   if(!activeRow){activeRow=row;identity.querySelectorAll('button').forEach(b=>b.disabled=true);selected=choice.name;editing=true;search.disabled=true;clearActions();row.classList.add('editing');dirty=()=>changedDimensions()||changedRate();
+   if(!activeRow){if(add)add.disabled=true;activeRow=row;identity.querySelectorAll('button').forEach(b=>b.disabled=true);selected=choice.name;editing=true;search.disabled=true;clearActions();row.classList.add('editing');dirty=()=>changedDimensions()||changedRate();
     for(const other of rows.children)if(other!==row)other.querySelectorAll('input,select,button').forEach(n=>{n.disabled=true;if(n.tagName==='SELECT')n.dispatchEvent(new Event('platform-choice-sync'));});
     Object.values(values).forEach(i=>i.readOnly=false);amount.readOnly=date.readOnly=false;unit.disabled=false;unit.dispatchEvent(new Event('platform-choice-sync'));
     const actions=element('div',null,'package-rate-actions');const cancel=button('Cancel',async()=>{if(saving)return;if(dirty()&&!(window.NextAiConfirm&&await window.NextAiConfirm({title:'Discard changes?',message:'Your unsaved package changes will be lost.',accept:'Discard changes'})))return;listMode();render();restoreFocus();});
@@ -71,7 +72,7 @@
  function packageData(){if(packageLoad&&Date.now()-packageLoad.at<30000)return packageLoad.promise;const entry={at:Date.now(),promise:fetch('/app/orders/packing-packages',{headers:{Accept:'application/json'},cache:'no-store'}).then(async response=>{if(!response.ok)throw Error(response.status===403?'Package management requires access to all stores in this account.':'Could not load packages. Try again.');return response.json();})};packageLoad=entry;entry.promise.catch(()=>{if(packageLoad===entry)packageLoad=null;});return entry.promise;}
  async function load(){const version=++generation;status.textContent='Loading packages…';try{const data=await packageData();if(version!==generation||!dialog.open)return;choices=data;select.replaceChildren();for(const c of choices){const o=document.createElement('option');o.value=o.textContent=c.name;select.append(o);}if(!choices.some(c=>c.name===selected))selected=choices[0]?.name||'';select.value=selected;status.textContent='';render();}catch(e){if(version===generation)status.textContent=e.message;}}
  async function history(editImmediately=false){const version=++generation;status.textContent='Loading rate history…';try{const response=await fetch('/app/orders/packing-packages/history?'+new URLSearchParams({name:selected}),{headers:{Accept:'application/json'},cache:'no-store'});if(!response.ok)throw Error('Could not load rate history. Try again.');const data=await response.json();if(version!==generation||!dialog.open)return;showHistory(data);if(editImmediately)editRate(data,()=>{listMode();render();rows.querySelectorAll('.package-list-rate-edit').forEach(b=>{if(b.getAttribute('aria-label')==='Edit planning rate for '+data.name)b.focus({preventScroll:true});});});status.textContent='';}catch(e){if(version===generation)status.textContent=e.message;}}
- function showHistory(data){clearActions();search.closest('label')?.setAttribute('hidden','');search.hidden=true;rows.parentElement.hidden=true;detail.hidden=false;detail.replaceChildren();editing=false;context.textContent='';
+ function showHistory(data){if(add)add.hidden=true;clearActions();search.closest('label')?.setAttribute('hidden','');search.hidden=true;rows.parentElement.hidden=true;detail.hidden=false;detail.replaceChildren();editing=false;context.textContent='';
   const heading=element('div',null,'package-history-heading');heading.append(button('Back',()=>{++generation;listMode();render();rows.querySelectorAll('.package-list-name').forEach(b=>{if(b.textContent===selected)b.focus({preventScroll:true});});}),element('h3',data.name),button('Edit planning rate',()=>editRate(data)));detail.append(heading);
   const table=element('table',null,'package-rate-history'),head=element('thead'),titles=element('tr');for(const title of ['Effective from','Planning rate','Source'])titles.append(element('th',title));head.append(titles);table.append(head);const entries=element('tbody');
   function entry(date,amount,source){const row=element('tr');row.append(element('td',dateText(date)),element('td',money({cost:amount,currency:data.currency})),element('td',source));entries.append(row);}
@@ -104,6 +105,18 @@
    }catch(e){status.textContent=e.message;}finally{saving=false;save.disabled=cancel.disabled=false;Object.values(values).forEach(input=>input.disabled=false);unit.disabled=false;unit.dispatchEvent(new Event('platform-choice-sync'));}
   },'primary-button');actions.append(cancel,save);(dialog.querySelector('footer')||detail).append(actions);dialog.querySelectorAll('footer [data-packages-close]').forEach(b=>b.hidden=true);window.NextAiPlatformControls?.enhance(fields);values.length.focus();
  }
+ function createPackage(){
+  if(saving||activeRow)return;clearActions();editing=true;if(add)add.hidden=true;search.closest('label')?.setAttribute('hidden','');search.hidden=true;rows.parentElement.hidden=true;detail.hidden=false;detail.replaceChildren(element('h3','Add package'));
+  const label=element('label','Package name'),name=element('input');name.type='text';name.required=true;name.maxLength=120;name.autocomplete='off';label.append(name);detail.append(label);dirty=()=>name.value!=='';
+  const actions=element('div',null,'package-rate-actions'),cancel=button('Cancel',()=>{listMode();render();add?.focus();}),save=button('Save package',async()=>{
+   if(saving||!name.reportValidity())return;saving=true;save.disabled=cancel.disabled=name.disabled=true;status.textContent='Saving package…';
+   try{const csrf=document.querySelector('#packing-slip-csrf'),headers={'Content-Type':'application/json',Accept:'application/json'};if(csrf)headers[csrf.dataset.header||'X-CSRF-TOKEN']=csrf.value;
+    const response=await fetch('/app/orders/packing-packages/create',{method:'POST',headers,body:JSON.stringify({name:name.value})});const result=await response.json();if(!response.ok||result.status!=='created')throw Error(result.detail||result.message||'Could not add package. Your entry is retained.');
+    document.dispatchEvent(new CustomEvent('packages:updated',{detail:{kind:'create'}}));listMode();search.value='';await load();status.textContent='Package added.'+(status.textContent?' '+status.textContent:'');add?.focus();
+   }catch(e){status.textContent=e.message;}finally{saving=false;save.disabled=cancel.disabled=name.disabled=false;}
+  },'primary-button');actions.append(cancel,save);(dialog.querySelector('footer')||detail).append(actions);dialog.querySelectorAll('footer [data-packages-close]').forEach(b=>b.hidden=true);name.focus();
+ }
+ if(add)add.addEventListener('click',createPackage);
  document.querySelectorAll('[data-open-packages]').forEach(b=>b.addEventListener('click',()=>{opener=b;lastDate='';search.value='';listMode();dialog.showModal();load();}));
  document.querySelector('#packing-name-dialog').addEventListener('close',()=>{if(dialog.open)rows.querySelectorAll('.package-list-edit').forEach(b=>{if(b.getAttribute('aria-label')==='Rename or merge package '+selected)b.focus({preventScroll:true});});});
  async function close(){if(saving){status.textContent='Wait for the save to finish.';return;}if(editing&&dirty()){const accepted=window.NextAiConfirm?await window.NextAiConfirm({title:'Discard changes?',message:'Your unsaved package changes will be lost.',accept:'Discard changes'}):false;if(!accepted){detail.querySelector('input')?.focus();return;}}dialog.close();}

@@ -267,7 +267,14 @@ public class FbaReadRepository {
                     AND (i.seller_sku ILIKE ? ESCAPE '!' OR i.fnsku ILIKE ? ESCAPE '!'
                         OR EXISTS(SELECT 1 FROM amazon_listings l WHERE l.tenant_id=i.tenant_id
                           AND l.marketplace_connection_id=i.marketplace_connection_id AND l.seller_sku=i.seller_sku
-                          AND l.item_name ILIKE ? ESCAPE '!'))))
+                          AND l.item_name ILIKE ? ESCAPE '!')
+                        OR EXISTS(SELECT 1 FROM marketplace_sku_mappings m
+                          LEFT JOIN marketplace_sku_mapping_components c ON c.tenant_id=m.tenant_id AND c.marketplace_sku_mapping_id=m.id
+                          JOIN account_catalog_items a ON a.tenant_id=m.tenant_id AND a.id=coalesce(c.account_catalog_item_id,m.account_catalog_item_id)
+                          WHERE m.tenant_id=i.tenant_id AND m.marketplace_connection_id=i.marketplace_connection_id
+                            AND m.marketplace_sku=i.seller_sku AND m.status='ACTIVE'
+                            AND (a.account_sku ILIKE ? ESCAPE '!' OR EXISTS(SELECT 1 FROM global_product_identifiers gi
+                              WHERE gi.global_product_id=a.global_product_id AND gi.identifier_value ILIKE ? ESCAPE '!'))))))
             """;
         where+="""
             AND EXISTS(SELECT 1 FROM fba_shipment_user_preferences p JOIN app_users u ON u.id=p.user_id
@@ -279,7 +286,7 @@ public class FbaReadRepository {
                 AND upper(w.country_code)=upper(s.raw_payload#>>'{ShipFromAddress,CountryCode}')
                 AND nullif(upper(replace(btrim(w.postal_code),' ','')),'')=upper(replace(btrim(s.raw_payload#>>'{ShipFromAddress,PostalCode}'),' ','')))=?::text)
             """;
-        Object[] args={tenant,connection,q,match,match,match,match,match,match,email,removed,status,status,status,warehouse,warehouse};
+        Object[] args={tenant,connection,q,match,match,match,match,match,match,match,match,email,removed,status,status,status,warehouse,warehouse};
         return new ShipmentFilter(where,args);
     }
     @Transactional(readOnly=true)

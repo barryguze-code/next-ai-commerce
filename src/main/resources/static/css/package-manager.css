@@ -70,3 +70,5 @@ html[data-theme=dark] #package-manager .package-list-delete{color:#ff9ba5}
 html body.app-page #platform-confirm-dialog [data-confirm-accept].danger-button{background:#c9343f;border-color:#c9343f;color:#fff}
 /* Place each edit affordance before its value so long labels remain unambiguous. */
 .package-list-name-line .package-list-edit{flex-shrink:0}.package-list-dimension-cell>.package-list-edit{flex-shrink:0}.package-list-date{display:flex;align-items:center;gap:4px}.package-list-date input{min-width:0}
+
+.package-manager-toolbar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}.package-manager-toolbar .package-search{flex:1;min-width:180px}.package-manager-toolbar>button{flex:none}

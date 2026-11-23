@@ -20,4 +20,9 @@ class PackageManagementAccessTest {
   assertThat(c.savePackageDimensions("Carton",BigDecimal.ONE,BigDecimal.ONE,BigDecimal.ONE,"inches",0,session,auth)).containsEntry("status","saved");
   verify(packages).saveDimensions(tenant,"Carton",new PackingPackageNames.Dimensions(BigDecimal.ONE,BigDecimal.ONE,BigDecimal.ONE,"inches",0),"planner");
  }
+ @Test void standaloneCreationUsesExistingAccountAndAllStoreGuardWithoutCallingPackingSlip(){
+  var access=mock(WorkspaceAccessRepository.class);var packages=mock(PackingPackageNames.class);var slips=mock(PackingSlipRepository.class);var c=new OrderController(mock(OrderRepository.class),access,mock(com.nextaicommerce.platform.sync.AmazonManualOrderSync.class),slips);ReflectionTestUtils.setField(c,"packageNames",packages);var tenant=UUID.randomUUID();var session=new MockHttpSession();session.setAttribute("selectedTenantId",tenant);var auth=new UsernamePasswordAuthenticationToken("planner",null);
+  assertThatThrownBy(()->c.createPackage(Map.of("name","Carton"),session,auth)).hasMessageContaining("403");verifyNoInteractions(packages,slips);
+  when(access.canOperateAccount(tenant,"planner")).thenReturn(true);when(access.listConnections(tenant,"")).thenReturn(List.of());when(access.listAccountOptions("planner",false)).thenReturn(List.of());when(packages.create(tenant,"Carton","planner")).thenReturn("Carton");assertThat(c.createPackage(Map.of("name","Carton"),session,auth)).containsEntry("status","created").containsEntry("name","Carton");verifyNoInteractions(slips);verify(packages).create(tenant,"Carton","planner");
+ }
 }

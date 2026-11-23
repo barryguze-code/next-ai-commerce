@@ -123,6 +123,15 @@ public class PackingPackageNames {
   }
   if(change.dimensions()!=null)saveDimensions(tenant,change.name(),change.dimensions(),actor);
  }
+ /** Create an account choice only; never assign an order, recipe or commercial rate. */
+ @Transactional public String create(UUID tenant,String name,String actor){
+  scope(tenant);name=clean(name);if(Set.of("__custom","__recipe").contains(name.toLowerCase(Locale.ROOT))||"UPS".equalsIgnoreCase(name)||LEGACY.containsKey(name.toUpperCase(Locale.ROOT)))throw new IllegalArgumentException("Choose a user-defined package name.");
+  jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,137))",Object.class,tenant.toString());
+  if(existing(tenant,name)!=null)throw new IllegalArgumentException("A package with this name already exists.");
+  registerCustom(tenant,name);
+  jdbc.update("INSERT INTO audit_events(tenant_id,actor_user_id,action,target_type,target_id,details) SELECT ?,id,'PACKING_PACKAGE_CREATED','PACKING_PACKAGE',?,'{}'::jsonb FROM app_users WHERE lower(email)=lower(?)",tenant,name,actor);
+  return name;
+ }
  /** Called before saving a new free-format package, in the caller's transaction. */
  @Transactional public void registerCustom(UUID tenant,String name){
   scope(tenant);name=clean(name);jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,137))",Object.class,tenant.toString());

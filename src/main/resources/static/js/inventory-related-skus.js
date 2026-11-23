@@ -112,6 +112,7 @@ if(movementTarget)new MutationObserver(()=>movementTarget.querySelectorAll(".his
         const batch=m.expirationDate?' · Batch '+escapeHistory(formatCalendarDate(m.expirationDate)):' · FIFO batch';
         const reference=m.sourceReference&&m.sourceType!=="PHYSICAL_COUNT"?' · '+escapeHistory(m.sourceReference):'';
         article.innerHTML='<span>'+escapeHistory(m.movementLabel)+'</span><div><strong>'+escapeHistory(m.description||m.sourceLabel)+'</strong><small>'+formatHistoryDate(m.occurredAt)+batch+reference+'</small></div><b>'+(Number(m.quantity)>0?'+':'')+Math.round(Number(m.quantity))+' each</b><em>'+(m.currency&&m.unitCost!=null?escapeHistory(m.currency)+' '+Number(m.unitCost).toFixed(2):'Not valued')+'</em>';
+        if(m.wholeCases){const note=document.createElement('small');note.className='cell-note history-case-equivalent';note.textContent=m.wholeCases;note.title='Equivalent using current case pack';note.setAttribute('aria-label',m.wholeCases+' · Equivalent using current case pack');article.querySelector('b').append(note);}
         window.NextAiLedgerDesignPreview?.decorateMovement(article,m);target.append(article);
       }
       if(!target.children.length){feedback.textContent=mode==="received"?"No receipts recorded for this item.":"No movements recorded for "+(mode==="item"?"this item.":"this batch.");target.append(feedback);}

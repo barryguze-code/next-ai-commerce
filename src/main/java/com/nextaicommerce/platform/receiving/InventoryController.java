@@ -424,7 +424,7 @@ public class InventoryController {
         if(!java.util.Set.of("item","batch","received").contains(scope))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"Choose item, batch, or received history.");
         return inventory.movements(tenant(session),itemId,expirationDate,locationId,!"batch".equals(scope),page,"received".equals(scope)).stream().map(row->{
             Map<String,Object> view=new LinkedHashMap<>();
-            view.put("occurredAt",row.occurredAt());view.put("quantity",row.quantity());
+            view.put("occurredAt",row.occurredAt());view.put("quantity",row.quantity());view.put("wholeCases",row.wholeCases());
             view.put("currency",row.currency());view.put("unitCost",row.unitCost());
             view.put("sourceType",row.sourceType());view.put("sourceReference",row.sourceReference());
             view.put("movementLabel",row.movementLabel());view.put("sourceLabel",row.sourceLabel());

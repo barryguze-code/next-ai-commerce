@@ -133,7 +133,12 @@ public class InventoryRepository {
     }
     public record LedgerView(UUID id,UUID itemId,Instant occurredAt,String productName,String accountSku,String identifier,
             String entryType,BigDecimal quantity,LocalDate expirationDate,BigDecimal unitCost,String currency,
-            String sourceType,String sourceReference,String notes,String createdBy,String costStatus){
+            String sourceType,String sourceReference,String notes,String createdBy,String costStatus,BigDecimal unitsPerCase){
+        public LedgerView(UUID id,UUID itemId,Instant occurredAt,String productName,String accountSku,String identifier,String entryType,BigDecimal quantity,LocalDate expirationDate,BigDecimal unitCost,String currency,String sourceType,String sourceReference,String notes,String createdBy,String costStatus){this(id,itemId,occurredAt,productName,accountSku,identifier,entryType,quantity,expirationDate,unitCost,currency,sourceType,sourceReference,notes,createdBy,costStatus,null);}
+        public String wholeCases(){
+            if(quantity==null||quantity.signum()==0||quantity.stripTrailingZeros().scale()>0||unitsPerCase==null||unitsPerCase.signum()<=0||unitsPerCase.stripTrailingZeros().scale()>0||quantity.remainder(unitsPerCase).signum()!=0)return null;
+            var cases=quantity.divideToIntegralValue(unitsPerCase);return (cases.signum()>0?"+":"")+cases.stripTrailingZeros().toPlainString()+(cases.abs().compareTo(BigDecimal.ONE)==0?" case":" cases");
+        }
         public String occurredDisplay(){return LEDGER_TIME.format(occurredAt.atZone(ZoneId.systemDefault()));}
         public String quantityUnits(){
             String units=quantity.abs().setScale(0,java.math.RoundingMode.HALF_UP).toPlainString();
@@ -1249,7 +1254,7 @@ public class InventoryRepository {
                    item.account_sku,identifier.identifier_value,ledger.entry_type,ledger.quantity,
                    ledger.expiration_date,ledger.unit_cost,ledger.currency,ledger.source_type,
                    coalesce(po.po_number,document.document_number,amazon_order.amazon_order_id,shopify_order.order_name,fba_depletion.shipment_id,physical_count.id::text),
-                   ledger.notes,actor.email,ledger.cost_status
+                   ledger.notes,actor.email,ledger.cost_status,product.units_per_case
             FROM movements ledger
             JOIN account_catalog_items item ON item.tenant_id=ledger.tenant_id AND item.id=ledger.account_catalog_item_id
             JOIN global_catalog_products product ON product.id=item.global_product_id
@@ -1276,7 +1281,7 @@ public class InventoryRepository {
             """,(rs,row)->new LedgerView(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getTimestamp(3).toInstant(),rs.getString(4),
                 rs.getString(5),rs.getString(6),rs.getString(7),rs.getBigDecimal(8),rs.getObject(9,LocalDate.class),
                 rs.getBigDecimal(10),rs.getString(11),rs.getString(12),rs.getString(13),rs.getString(14),rs.getString(15),
-                rs.getString(16)),args.toArray());
+                rs.getString(16),rs.getBigDecimal(17)),args.toArray());
     }
     public List<LedgerView> movements(UUID tenantId,UUID itemId,LocalDate expirationDate){
         return movements(tenantId,itemId,expirationDate,null);

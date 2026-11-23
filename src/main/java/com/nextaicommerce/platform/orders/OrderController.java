@@ -190,6 +190,13 @@ public class OrderController {
         return packageCatalogue.choices(tenant(session),java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")));
     }
 
+    @PostMapping("/app/orders/packing-packages/create") @ResponseBody
+    Map<String,String> createPackage(@RequestBody Map<String,String> request,HttpSession session,Authentication auth){
+        requirePackageManagement(session,auth);
+        try{return Map.of("name",packageNames.create(tenant(session),request.get("name"),auth.getName()),"status","created");}
+        catch(IllegalArgumentException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,e.getMessage());}
+    }
+
     @GetMapping("/app/orders/packing-packages/history") @ResponseBody
     PackingPackageNames.History packageHistory(@RequestParam String name,HttpSession session,Authentication auth){
         requirePackageManagement(session,auth);
